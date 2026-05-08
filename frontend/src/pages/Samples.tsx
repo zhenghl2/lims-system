@@ -130,7 +130,7 @@ export default function Samples() {
       ),
     },
     {
-      title: "Received",
+      title: "Received Date",
       dataIndex: "receipt_date",
       key: "receipt_date",
       width: 120,
