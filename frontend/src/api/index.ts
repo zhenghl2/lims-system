@@ -1,9 +1,11 @@
 import api from "./client";
 import type {
   User, AuthTokens, Site, Sample, SampleStats,
-  Run, RunStats, Report, TestPanel, Order,
+  Run, RunStats, Report, TestPanel,
   Instrument, ReagentLot, Pageable,
   QCControlMaterial, QCRun, QCChart, QCEvent,
+  PanelStats as _PanelStats, CaseItem, CaseDetail, CaseSample as _cs, CaseDashboard,
+  CaseCreatePayload, ConfirmReceiptPayload, DeleteSamplePayload, WorkflowStep, SampleRun as _sr,
 } from "./types";
 
 // ── Auth ─────────────────────────────────────────────────────
@@ -43,8 +45,15 @@ export const samplesApi = {
     }),
   accept: (id: string) =>
     api.post(`/samples/${id}/accept/`),
+  uploadImage: (id: string, file: File) =>
+    api.post(`/samples/${id}/upload_image/`, file, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
+  statsByPanel: () => api.get("/samples/stats_by_panel/"),
   delete: (id: string) => api.delete(`/samples/${id}/`),
   stats: () => api.get<SampleStats>("/samples/stats/"),
+  batchCreate: (data: { samples: Record<string, unknown>[] }) =>
+    api.post("/samples/batch_create/", data),
 };
 
 // ── Runs ──────────────────────────────────────────────────────
@@ -81,6 +90,8 @@ export const stepsApi = {
   complete: (id: string, data?: Record<string, unknown>) =>
     api.post(`/runs/steps/${id}/complete/`, data),
   skip: (id: string) => api.post(`/runs/steps/${id}/skip/`),
+  update: (id: string, data: Record<string, unknown>) => api.patch(`/runs/steps/${id}/`, data),
+  get: (id: string) => api.get(`/runs/steps/${id}/`),
 };
 
 // ── Reports ───────────────────────────────────────────────────
@@ -155,15 +166,73 @@ export const reagentsApi = {
     api.get<ReagentLot[]>(`/reagents/lots/expiring/?days=${days}`),
 };
 
+// ── Users ────────────────────────────────────────────────────
+export const usersApi = {
+  list: (params?: Record<string, unknown>) =>
+    api.get("/users/", { params }),
+};
+
 // ── Orders ────────────────────────────────────────────────────
 export const ordersApi = {
   list: (params?: Record<string, unknown>) =>
-    api.get<Pageable<Order>>("/orders/", { params }),
-  get: (id: string) => api.get<Order>(`/orders/${id}/`),
+    api.get("/orders/", { params }) as any,
+  get: (id: string) => api.get(`/orders/${id}/`) as any,
   create: (data: Record<string, unknown>) =>
-    api.post<Order>("/orders/", data),
-  submit: (id: string) => api.post(`/orders/${id}/submit/`),
-  complete: (id: string) => api.post(`/orders/${id}/complete/`),
-  cancel: (id: string) => api.post(`/orders/${id}/cancel/`),
-  delete: (id: string) => api.delete(`/orders/${id}/`),
+    api.post("/orders/", data) as any,
+  submit: (id: string) => api.post(`/orders/${id}/submit/`) as any,
+  complete: (id: string) => api.post(`/orders/${id}/complete/`) as any,
+  cancel: (id: string) => api.post(`/orders/${id}/cancel/`) as any,
+  delete: (id: string) => api.delete(`/orders/${id}/`) as any,
+};
+
+// ── Cases (NIPPT) ─────────────────────────────────────────────
+export const casesApi = {
+  list: (params?: Record<string, unknown>) =>
+    api.get<Pageable<CaseItem>>("/cases/", { params }),
+  get: (id: string) => api.get<CaseDetail>(`/cases/${id}/`),
+  create: (data: CaseCreatePayload) =>
+    api.post<CaseDetail>("/cases/", data),
+  update: (id: string, data: Record<string, unknown>) =>
+    api.patch<CaseDetail>(`/cases/${id}/`, data),
+  confirmReceipt: (id: string, data: ConfirmReceiptPayload) =>
+    api.post(`/cases/${id}/confirm_receipt/`, data),
+  dashboard: () => api.get<CaseDashboard>("/cases/dashboard/"),
+  generateToken: (id: string) => api.post(`/cases/${id}/generate_token/`),
+  deleteCase: (id: string) => api.post(`/cases/${id}/delete_case/`),
+  deleteSample: (id: string, data: DeleteSamplePayload) =>
+    api.post(`/cases/${id}/delete_sample/`, data),
+  consumeToken: (token: string) => api.get(`/cases/public/info/${token}/`),
+  receive: (id: string, data: { sample_id: string; condition?: string }) =>
+    api.post(`/cases/${id}/confirm_receipt/`, data),
+  reject: (id: string, data: { sample_id: string; rejection_reason: string; rejection_note?: string }) =>
+    api.post(`/cases/${id}/reject/`, data),
+  resample: (id: string, data: { case_sample_id: string; patient_name?: string; sample_source?: string }) =>
+    api.post(`/cases/${id}/resample/`, data),
+  uploadReceiptPhoto: (id: string, formData: FormData) =>
+    api.post(`/cases/${id}/upload-receipt-photo/`, formData, {
+      headers: { "Content-Type": "multipart/form-data" },
+    }),
+};
+
+// ── Public Registration (NIPPT) ───────────────────────────────
+export const publicRegisterApi = {
+  info: (token: string) =>
+    api.get<{ case_number: string; panel: string; panel_name: string; expires: string }>(`/cases/public/info/${token}/`),
+  submit: (token: string, data: { roles: string[]; patient_names: string[]; dob?: string[] }) =>
+    api.post<{ case_number: string; message: string; sample_count: number }>(`/cases/public/register/${token}/`, data),
+};
+
+// ── Workflow Steps (NIPPT) ────────────────────────────────────
+export const workflowStepsApi = {
+  list: (params?: Record<string, unknown>) =>
+    api.get<Pageable<WorkflowStep>>("/runs/steps/", { params }),
+  get: (id: string) => api.get<WorkflowStep>(`/runs/steps/${id}/`),
+  start: (id: string) => api.post<WorkflowStep>(`/runs/steps/${id}/start/`),
+  complete: (id: string, data?: Record<string, unknown>) =>
+    api.post<WorkflowStep>(`/runs/steps/${id}/complete/`, data),
+  qcReview: (id: string, data: { qc_result: string; qc_notes?: string }) =>
+    api.post<WorkflowStep>(`/runs/steps/${id}/qc_review/`, data),
+  skip: (id: string) =>
+    api.post<WorkflowStep>(`/runs/steps/${id}/skip/`),
+  deleteStep: (id: string) => api.post(`/runs/steps/${id}/delete_step/`),
 };

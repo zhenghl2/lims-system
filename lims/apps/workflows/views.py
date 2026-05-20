@@ -8,6 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from datetime import date
 from .models import WorkflowProtocol, SampleRun, RunSample, WorkflowStep
+from lims.apps.users.models import User
 from .serializers import (
     WorkflowProtocolSerializer, RunSampleSerializer,
     SampleRunSerializer, SampleRunCreateSerializer, SampleRunDetailSerializer,
@@ -125,7 +126,21 @@ class SampleRunViewSet(viewsets.ModelViewSet):
                     {"step_id": "qc_review", "step_name": "QC Review", "step_order": 5, "required": True},
                 ]
                 # HPV uses PCR instead of library prep + sequencing
-                if panel.code == "HPV":
+                if panel.code == "NIPPT":
+                    default_steps = [
+                        {"step_id": "sample_receiving", "step_name": "Sample Receiving", "step_order": 1, "required": True},
+                        {"step_id": "plasma_separation", "step_name": "Plasma Separation", "step_order": 2, "required": True},
+                        {"step_id": "cfdna_extraction", "step_name": "cfDNA Extraction", "step_order": 3, "required": True},
+                        {"step_id": "library_construction", "step_name": "Library Construction", "step_order": 4, "required": True},
+                        {"step_id": "hybridization", "step_name": "Hybridization", "step_order": 5, "required": True},
+                        {"step_id": "purification", "step_name": "Purification", "step_order": 6, "required": True},
+                        {"step_id": "library_quantification", "step_name": "Library Quantification", "step_order": 7, "required": True},
+                        {"step_id": "sequencing", "step_name": "Sequencing", "step_order": 8, "required": True},
+                        {"step_id": "bioinformatics_analysis", "step_name": "Bioinformatics Analysis", "step_order": 9, "required": True},
+                        {"step_id": "data_interpretation", "step_name": "Data Interpretation", "step_order": 10, "required": True},
+                        {"step_id": "report_generation", "step_name": "Report Generation", "step_order": 11, "required": True},
+                    ]
+                elif panel.code == "HPV":
                     default_steps = [
                         {"step_id": "dna_extraction", "step_name": "DNA Extraction", "step_order": 1, "required": True},
                         {"step_id": "pcr_amplification", "step_name": "PCR Amplification", "step_order": 2, "required": True},
@@ -256,6 +271,15 @@ class SampleRunViewSet(viewsets.ModelViewSet):
                 prefix = f"RPT-{today}"
                 count = Report.objects.filter(report_number__startswith=prefix).count() + 1
                 report_number = f"{prefix}-{count:04d}"
+                # Collect workflow step results
+                step_results = {}
+                for step in run.steps.filter(sample=sample, status="COMPLETED").order_by("step_order"):
+                    step_results[step.step_name or step.step_id] = {
+                        "status": step.status,
+                        "observations": step.observations or "",
+                        "completed_at": str(step.completed_at) if step.completed_at else None,
+                    }
+
                 content = {
                     "run_number": run.run_number,
                     "panel": run.panel.code if run.panel else "",
@@ -268,6 +292,8 @@ class SampleRunViewSet(viewsets.ModelViewSet):
                     "receipt_date": str(sample.receipt_date) if sample.receipt_date else None,
                     "ordering_physician": sample.ordering_physician,
                     "ordering_facility": sample.ordering_facility,
+                    "results": rs.result_summary or {},
+                    "workflow_steps": step_results,
                     "status": "DRAFT",
                     "version": 1,
                     "generated_at": timezone.now().isoformat(),
@@ -301,7 +327,7 @@ class WorkflowStepViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = WorkflowStepSerializer
     filter_backends = [DjangoFilterBackend, OrderingFilter]
-    filterset_fields = ["status", "run"]
+    filterset_fields = ["status", "run", "sample"]
     ordering_fields = ["step_order"]
 
     def get_queryset(self):
@@ -322,14 +348,22 @@ class WorkflowStepViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
-        """Complete a step with optional experiment notes."""
+        """Complete experiment work - save step_data and mark PENDING_QC."""
         step = self.get_object()
-        step.status = "COMPLETED"
         from django.utils import timezone
+
+        step.status = "PENDING_QC"
         step.completed_at = timezone.now()
         step.performed_by = request.user
 
-        # Optional experiment record fields
+        if "performed_by" in request.data:
+            try:
+                step.performed_by = User.objects.get(id=request.data["performed_by"])
+            except User.DoesNotExist:
+                pass
+
+        if "step_data" in request.data:
+            step.step_data = request.data["step_data"]
         if "observations" in request.data:
             step.observations = request.data["observations"]
         if "reagent_lot_ids" in request.data:
@@ -345,8 +379,50 @@ class WorkflowStepViewSet(viewsets.ModelViewSet):
         if "deviation_note" in request.data:
             step.deviation_note = request.data["deviation_note"]
 
-        step.save(update_fields=["status", "completed_at", "performed_by", "observations",
-                                  "reagents_used", "instrument", "deviation_flag", "deviation_note"])
+        step.save(update_fields=[
+            "status", "completed_at", "performed_by", "step_data",
+            "observations", "reagents_used", "instrument",
+            "deviation_flag", "deviation_note",
+        ])
+        return Response(WorkflowStepSerializer(step).data)
+
+    @action(detail=True, methods=["post"])
+    def qc_review(self, request, pk=None):
+        """QC review: pass/fail + auto-advance to next step if PASS."""
+        step = self.get_object()
+        from django.utils import timezone
+
+        qc_result = request.data.get("qc_result", "PASS")
+        if qc_result not in ("PASS", "FAIL"):
+            raise ValidationError("qc_result must be PASS or FAIL")
+
+        step.qc_status = qc_result
+        step.qc_by = request.user
+        step.qc_at = timezone.now()
+
+        if "qc_notes" in request.data:
+            existing = step.observations or ""
+            step.observations = f"{existing}\n[QC: {qc_result}] {request.data['qc_notes']}"
+
+        if qc_result == "PASS":
+            step.status = "COMPLETED"
+            step.save(update_fields=[
+                "status", "qc_status", "qc_by", "qc_at", "observations",
+            ])
+            # Auto-activate next step
+            next_step = WorkflowStep.objects.filter(
+                run=step.run, step_order=step.step_order + 1, status="PENDING",
+            ).first()
+            if next_step:
+                next_step.status = "IN_PROGRESS"
+                next_step.started_at = timezone.now()
+                next_step.save(update_fields=["status", "started_at"])
+        else:
+            step.status = "FAILED"
+            step.save(update_fields=[
+                "status", "qc_status", "qc_by", "qc_at", "observations",
+            ])
+
         return Response(WorkflowStepSerializer(step).data)
 
     @action(detail=True, methods=["post"])
@@ -355,3 +431,12 @@ class WorkflowStepViewSet(viewsets.ModelViewSet):
         step.status = "SKIPPED"
         step.save(update_fields=["status"])
         return Response(WorkflowStepSerializer(step).data)
+    @action(detail=True, methods=["post"])
+    def delete_step(self, request, pk=None):
+        """Delete a workflow step. Any status allowed for testing cleanup."""
+        step = self.get_object()
+        step_name = step.step_name
+        step.delete()
+        return Response({
+            "message": f"Workflow step '{step_name}' deleted",
+        })

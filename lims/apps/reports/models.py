@@ -31,7 +31,7 @@ class Report(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     report_number = models.CharField(max_length=30, unique=True, db_index=True)
     sample = models.ForeignKey("samples.Sample", on_delete=models.PROTECT, related_name="reports")
-    run_sample = models.ForeignKey("workflows.RunSample", on_delete=models.PROTECT, null=True, blank=True)
+    run_sample = models.ForeignKey("workflows.RunSample", on_delete=models.SET_NULL, null=True, blank=True)
     template = models.ForeignKey(ReportTemplate, on_delete=models.PROTECT)
     content = models.JSONField(default=dict)  # Report data fields
     pdf_file_path = models.CharField(max_length=500, blank=True)

@@ -35,6 +35,7 @@ DJANGO_APPS = [
 THIRD_PARTY_APPS = [
     "rest_framework",
     "rest_framework.authtoken",
+    "rest_framework_simplejwt.token_blacklist",
     "drf_spectacular",
     "django_filters",
     "corsheaders",
@@ -47,7 +48,6 @@ LOCAL_APPS = [
     "lims.apps.users",
     "lims.apps.organizations",
     "lims.apps.samples",
-    "lims.apps.orders",
     "lims.apps.workflows",
     "lims.apps.reagents",
     "lims.apps.instruments",
@@ -60,6 +60,8 @@ LOCAL_APPS = [
     "lims.apps.regulatory",
     "lims.apps.audit",
     "lims.apps.notifications",
+    "lims.apps.cases",
+    "lims.apps.hpv",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

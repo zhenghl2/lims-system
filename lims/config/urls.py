@@ -19,7 +19,6 @@ api_v1_patterns = [
     path("", include("lims.apps.users.urls", namespace="auth")),
     path("", include("lims.apps.organizations.urls", namespace="organizations")),
     path("samples/", include("lims.apps.samples.urls", namespace="samples")),
-    path("", include("lims.apps.orders.urls", namespace="orders")),
     path("runs/", include("lims.apps.workflows.urls", namespace="workflows")),
     path("reagents/", include("lims.apps.reagents.urls", namespace="reagents")),
     path("instruments/", include("lims.apps.instruments.urls", namespace="instruments")),
@@ -32,6 +31,8 @@ api_v1_patterns = [
     path("notifications/", include("lims.apps.notifications.urls", namespace="notifications")),
     path("quality/", include("lims.apps.quality.urls", namespace="quality")),
     path("regulatory/", include("lims.apps.regulatory.urls", namespace="regulatory")),
+    path("cases/", include("lims.apps.cases.urls", namespace="cases")),
+    path("hpv/", include("lims.apps.hpv.urls", namespace="hpv")),
 ]
 
 urlpatterns = [

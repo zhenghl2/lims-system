@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Layout, Menu, Typography, Avatar, Dropdown, Space, theme as antdTheme, Badge } from "antd";
 import {
-  DashboardOutlined, BarcodeOutlined, InboxOutlined,
+  DashboardOutlined, BarcodeOutlined,
   ExperimentOutlined, FileTextOutlined, SafetyCertificateOutlined,
   ToolOutlined, MedicineBoxOutlined, BookOutlined,
   TeamOutlined, CloudServerOutlined, AuditOutlined,
@@ -20,10 +20,8 @@ const MENU_ITEMS = [
   // Core
   { key: "/",           icon: <DashboardOutlined />,       label: "Dashboard" },
   { key: "/samples",    icon: <BarcodeOutlined />,         label: "Samples" },
-  { key: "/orders",     icon: <InboxOutlined />,           label: "Orders" },
   { key: "/runs",       icon: <ExperimentOutlined />,      label: "Runs" },
-  { key: "/protocols",  icon: <FileTextOutlined />,        label: "Protocols" },
-  { key: "/reports",    icon: <FileTextOutlined />,        label: "Reports" },
+  { key: "/protocols",  icon: <FileTextOutlined />,        label: "Protocols" },  { key: "/reports",    icon: <FileTextOutlined />,        label: "Reports" },
   // Quality
   {
     key: "quality-group",

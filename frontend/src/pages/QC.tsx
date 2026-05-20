@@ -52,7 +52,7 @@ const EVENT_STATUS_COLORS: Record<string, string> = {
 
 // ── QC Control Materials Tab ───────────────────────────────
 function MaterialsTab() {
-  const { items, total, page, loading, fetch, setPage } = usePaginated(
+  const { items, total, page, loading, fetch, setPage } = usePaginated<QCControlMaterial>(
     ({ page, size }) =>
       qcApi.listMaterials({ page, page_size: size }),
   );
@@ -201,7 +201,7 @@ function MaterialsTab() {
 
 // ── QC Runs Tab ────────────────────────────────────────────
 function RunsTab() {
-  const { items, total, page, loading, fetch, setPage } = usePaginated(
+  const { items, total, page, loading, fetch, setPage } = usePaginated<QCRun>(
     ({ page, size }) =>
       qcApi.listRuns({ page, page_size: size, ordering: "-created_at" }),
   );
@@ -538,7 +538,7 @@ function ChartsTab() {
 
 // ── QC Events (CAPA) Tab ───────────────────────────────────
 function EventsTab() {
-  const { items, total, page, loading, fetch, setPage, setSearch, search } = usePaginated(
+  const { items, total, page, loading, fetch, setPage, setSearch, search } = usePaginated<QCEvent>(
     ({ page, size }) =>
       qcApi.listEvents({ page, page_size: size, ordering: "-created_at" }),
     { ordering: '-created_at' },

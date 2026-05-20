@@ -11,23 +11,26 @@ class ReportTemplateSerializer(serializers.ModelSerializer):
 
 
 class ReportListSerializer(serializers.ModelSerializer):
-    sample_barcode = serializers.CharField(source="sample.barcode", read_only=True)
+    sample_barcode = serializers.CharField(source="sample.sample_id", read_only=True, default="")
     patient_name = serializers.CharField(source="sample.patient_name", read_only=True, default="")
-    panel_code = serializers.CharField(source="sample.testpanel", read_only=True, default="")
+    panel_code = serializers.SerializerMethodField()
+
+    def get_panel_code(self, obj):
+        return obj.sample.panel.code if obj.sample.panel else ""
 
     class Meta:
         model = Report
         fields = [
             "id", "report_number", "sample", "sample_barcode", "patient_name", "panel_code",
-            "status", "version_number", "released_at", "created_at",
+            "status", "version_number", "released_at", "created_at", "content",
         ]
 
 
 class ReportSerializer(serializers.ModelSerializer):
     """Full report detail."""
-    sample_barcode = serializers.CharField(source="sample.barcode", read_only=True)
+    sample_barcode = serializers.CharField(source="sample.sample_id", read_only=True, default="")
     patient_name = serializers.CharField(source="sample.patient_name", read_only=True, default="")
-    panel_code = serializers.CharField(source="sample.testpanel", read_only=True, default="")
+    panel_code = serializers.SerializerMethodField()
     reviewed_by_name = serializers.SerializerMethodField()
     verified_by_name = serializers.SerializerMethodField()
     signed_by_name = serializers.SerializerMethodField()
@@ -39,6 +42,9 @@ class ReportSerializer(serializers.ModelSerializer):
             "report_number", "reviewed_by", "reviewed_at",
             "verified_by", "verified_at", "signed_by", "signed_at", "released_at",
         ]
+
+    def get_panel_code(self, obj):
+        return obj.sample.panel.code if obj.sample.panel else ""
 
     def get_reviewed_by_name(self, obj):
         if obj.reviewed_by:

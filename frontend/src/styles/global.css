@@ -11,3 +11,15 @@ body {
 
 /* Smooth transitions */
 .ant-layout-sider { transition: width 0.2s ease; }
+
+
+/* Results tab — row-level HIGH_RISK highlighting */
+.row-high-risk {
+  background-color: #fff1f0 !important;
+}
+.row-high-risk:hover > td {
+  background-color: #ffe7e7 !important;
+}
+.row-high-risk td {
+  border-bottom: 1px solid #ffccc7 !important;
+}

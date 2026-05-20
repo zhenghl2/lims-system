@@ -2,11 +2,12 @@ import { useState, useEffect } from "react";
 import {
   Table, Card, Button, Space, Tag, Typography, Input,
   Modal, Form, Select, message, Tooltip, DatePicker, Popconfirm,
+  Image,
 } from "antd";
 import {
   PlusOutlined, SearchOutlined, BarcodeOutlined,
   ReloadOutlined, CheckOutlined, CloseOutlined, EditOutlined,
-  DeleteOutlined,
+  DeleteOutlined, CameraOutlined, MinusCircleOutlined,
 } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi, panelsApi } from "../api";
@@ -45,6 +46,25 @@ const SAMPLE_TYPE_OPTIONS = [
   { value: "4c30b9d5-9d17-45f0-bc7c-7bee88d1f5c6", label: "Liquid-Based Cytology" },
 ];
 
+interface BatchRow {
+  key: string;
+  sampleType: string;
+  patientName: string;
+  patientId: string;
+  collectionDate: dayjs.Dayjs;
+  panelId: string | undefined;
+}
+
+let _batchKey = 0;
+const newBatchRow = (): BatchRow => ({
+  key: String(++_batchKey),
+  sampleType: "plasma-cfdna",
+  patientName: "",
+  patientId: "",
+  collectionDate: dayjs(),
+  panelId: undefined,
+});
+
 export default function Samples() {
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
@@ -56,6 +76,10 @@ export default function Samples() {
   const [rejectSample, setRejectSample] = useState<Sample | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [panels, setPanels] = useState<{ id: string; code: string; name: string }[]>([]);
+  const [uploadingSample, setUploadingSample] = useState<string | null>(null);
+  const [batchCreateOpen, setBatchCreateOpen] = useState(false);
+  const [batchRows, setBatchRows] = useState<BatchRow[]>([newBatchRow()]);
+  const [batchSubmitting, setBatchSubmitting] = useState(false);
 
   // ── Filters ──────────────────────────────────────────────────
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
@@ -71,8 +95,8 @@ export default function Samples() {
   if (dateRange[1]) filters.receipt_date__to = dateRange[1];
 
   const { items, total, page, loading, fetch, setPage, setSearch, search } =
-    usePaginated(
-      samplesApi.list,
+    usePaginated<Sample>(
+      samplesApi.list as any,
       { autoFetch: true, ordering: "-receipt_date", filters }
     );
 
@@ -92,6 +116,28 @@ export default function Samples() {
     } catch {
       message.error("Failed to delete sample");
     }
+  };
+
+  const handleUploadImage = (sample: Sample) => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.capture = "environment";
+    input.onchange = async (e: Event) => {
+      const file = (e.target as HTMLInputElement).files?.[0];
+      if (!file) return;
+      setUploadingSample(sample.id);
+      try {
+        await samplesApi.uploadImage(sample.id, file);
+        message.success("Photo uploaded");
+        fetch();
+      } catch {
+        message.error("Upload failed");
+      } finally {
+        setUploadingSample(null);
+      }
+    };
+    input.click();
   };
 
   const columns = [
@@ -117,6 +163,23 @@ export default function Samples() {
     { title: "Sample Type", dataIndex: "sample_type_code", key: "sample_type_code", width: 140 },
     { title: "Panel", dataIndex: "panel_info", key: "panel_info", width: 100,
       render: (t: string) => t ? <Tag>{t}</Tag> : "-"
+    },
+    { title: "Picture", dataIndex: "image", key: "image", width: 90,
+      render: (img: string, record: Sample) =>
+        img ? (
+          <Image
+            src={img}
+            width={40}
+            height={40}
+            style={{ objectFit: "cover", borderRadius: 4, cursor: "pointer" }}
+            preview={{ mask: "View" }}
+          />
+        ) : (
+          <CameraOutlined
+            style={{ fontSize: 18, color: "#bbb", cursor: "pointer" }}
+            onClick={() => handleUploadImage(record)}
+          />
+        )
     },
     {
       title: "Status",
@@ -158,6 +221,13 @@ export default function Samples() {
                 });
                 setEditOpen(true);
               }}
+            />
+          </Tooltip>
+          <Tooltip title="Upload Photo">
+            <Button
+              icon={<CameraOutlined />} size="small" type="text"
+              loading={uploadingSample === record.id}
+              onClick={() => handleUploadImage(record)}
             />
           </Tooltip>
           {record.status === "RECEIVED" && (
@@ -272,6 +342,40 @@ export default function Samples() {
     }
   };
 
+const handleBatchSubmit = async () => {
+    setBatchSubmitting(true);
+    try {
+      const typeMap: Record<string, string> = {
+        "plasma-cfdna": "d64f2a8f-19ce-47f4-8a92-9bbc3019e52c",
+        "cervical-swab": "326ae28b-6a71-4ec6-b816-c1cb2d93a484",
+        "lbc": "4c30b9d5-9d17-45f0-bc7c-7bee88d1f5c6",
+      };
+      const samples = batchRows.map(row => ({
+        sample_type_id: typeMap[row.sampleType] || row.sampleType,
+        panel_id: row.panelId || undefined,
+        patient_name: row.patientName || "",
+        patient_id: row.patientId || "",
+        collection_date: row.collectionDate.format("YYYY-MM-DD"),
+      }));
+      const res: any = await (samplesApi as any).batchCreate({ samples });
+      const { created, errors } = res.data || res;
+      if (created?.length) {
+        message.success(`Batch created ${created.length} sample(s)`);
+      }
+      if (errors?.length) {
+        const errMsgs = errors.map((e: any) => `Row ${e.row + 1}: ${JSON.stringify(e.errors)}`).join("; ");
+        message.warning(`Some rows failed: ${errMsgs}`);
+      }
+      setBatchCreateOpen(false);
+      setBatchRows([newBatchRow()]);
+      fetch();
+    } catch (err: any) {
+      message.error("Batch create failed");
+    } finally {
+      setBatchSubmitting(false);
+    }
+  };
+
   const handleEditSubmit = async (values: Record<string, unknown>) => {
     if (!editSample) return;
     setSubmitting(true);
@@ -374,6 +478,9 @@ export default function Samples() {
             <Text type="secondary">{total} total</Text>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setReceiveOpen(true)}>
               Receive Sample
+            </Button>
+            <Button icon={<PlusOutlined />} onClick={() => setBatchCreateOpen(true)}>
+              Batch Create
             </Button>
           </Space>
         </div>
@@ -530,6 +637,135 @@ export default function Samples() {
           </Form.Item>
         </Form>
       </Modal>
+    
+      {/* ── Batch Create Modal ────────────────────────────────── */}
+      <Modal
+        title={
+          <Space>
+            <PlusOutlined style={{ color: "#1677ff" }} />
+            Batch Create Samples
+          </Space>
+        }
+        open={batchCreateOpen}
+        onCancel={() => { setBatchCreateOpen(false); setBatchRows([newBatchRow()]); }}
+        footer={
+          <Space>
+            <Button onClick={() => { setBatchCreateOpen(false); setBatchRows([newBatchRow()]); }}>Cancel</Button>
+            <Button type="primary" onClick={handleBatchSubmit} loading={batchSubmitting}>
+              Submit All ({batchRows.length})
+            </Button>
+          </Space>
+        }
+        width={900}
+        destroyOnClose
+      >
+        <div style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <Text type="secondary">Fill in each row to create a sample. Collection date defaults to today.</Text>
+          <Button
+            type="dashed"
+            icon={<PlusOutlined />}
+            onClick={() => setBatchRows(prev => [...prev, newBatchRow()])}
+          >
+            Add Row
+          </Button>
+        </div>
+        <div style={{ maxHeight: 500, overflow: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ borderBottom: "1px solid #f0f0f0" }}>
+                <th style={{ padding: "8px 6px", textAlign: "left", width: 170 }}>Sample Type</th>
+                <th style={{ padding: "8px 6px", textAlign: "left", width: 140 }}>Patient Name</th>
+                <th style={{ padding: "8px 6px", textAlign: "left", width: 140 }}>Patient ID</th>
+                <th style={{ padding: "8px 6px", textAlign: "left", width: 145 }}>Collection Date</th>
+                <th style={{ padding: "8px 6px", textAlign: "left", width: 160 }}>Panel</th>
+                <th style={{ padding: "8px 6px", textAlign: "center", width: 50 }}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {batchRows.map((row, idx) => (
+                <tr key={row.key} style={{ borderBottom: "1px solid #f5f5f5" }}>
+                  <td style={{ padding: "4px 6px" }}>
+                    <Select
+                      value={row.sampleType}
+                      onChange={v => {
+                        const next = [...batchRows];
+                        next[idx] = { ...next[idx], sampleType: v };
+                        setBatchRows(next);
+                      }}
+                      style={{ width: "100%" }}
+                      options={[
+                        { label: "cfDNA (Plasma)", value: "plasma-cfdna" },
+                        { label: "Cervical Swab", value: "cervical-swab" },
+                        { label: "LBC (SurePath)", value: "lbc" },
+                      ]}
+                    />
+                  </td>
+                  <td style={{ padding: "4px 6px" }}>
+                    <Input
+                      value={row.patientName}
+                      onChange={e => {
+                        const next = [...batchRows];
+                        next[idx] = { ...next[idx], patientName: e.target.value };
+                        setBatchRows(next);
+                      }}
+                      placeholder="Name"
+                    />
+                  </td>
+                  <td style={{ padding: "4px 6px" }}>
+                    <Input
+                      value={row.patientId}
+                      onChange={e => {
+                        const next = [...batchRows];
+                        next[idx] = { ...next[idx], patientId: e.target.value };
+                        setBatchRows(next);
+                      }}
+                      placeholder="Auto"
+                    />
+                  </td>
+                  <td style={{ padding: "4px 6px" }}>
+                    <DatePicker
+                      value={row.collectionDate}
+                      onChange={v => {
+                        const next = [...batchRows];
+                        next[idx] = { ...next[idx], collectionDate: v || dayjs() };
+                        setBatchRows(next);
+                      }}
+                      style={{ width: "100%" }}
+                      format="YYYY-MM-DD"
+                    />
+                  </td>
+                  <td style={{ padding: "4px 6px" }}>
+                    <Select
+                      value={row.panelId}
+                      onChange={v => {
+                        const next = [...batchRows];
+                        next[idx] = { ...next[idx], panelId: v };
+                        setBatchRows(next);
+                      }}
+                      style={{ width: "100%" }}
+                      placeholder="Optional"
+                      allowClear
+                      options={panels.map(p => ({ value: p.id, label: p.code }))}
+                    />
+                  </td>
+                  <td style={{ padding: "4px 6px", textAlign: "center" }}>
+                    {batchRows.length > 1 && (
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<MinusCircleOutlined />}
+                        onClick={() => setBatchRows(prev => prev.filter((_, i) => i !== idx))}
+                      />
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Modal>
+
     </DashboardLayout>
   );
 }

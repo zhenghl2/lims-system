@@ -1,7 +1,7 @@
 """Sample serializers."""
 import datetime
 from rest_framework import serializers
-from .models import Sample, SampleType, TestPanel, SampleMovement, SampleAliquot
+from .models import Sample, SamplePhoto, SampleType, TestPanel, SampleMovement, SampleAliquot
 
 
 class SampleTypeSerializer(serializers.ModelSerializer):
@@ -22,6 +22,7 @@ class SampleSerializer(serializers.ModelSerializer):
     sample_type_id = serializers.UUIDField(write_only=True)
     site_id = serializers.SerializerMethodField()
     movements_count = serializers.SerializerMethodField()
+    received_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = Sample
@@ -29,20 +30,30 @@ class SampleSerializer(serializers.ModelSerializer):
             "id", "sample_id", "additional_barcodes", "sample_type", "sample_type_id",
             "patient_id", "patient_name", "patient_dob", "patient_sex",
             "ordering_physician", "ordering_facility",
+            "age", "source_institution", "institution_sample_id",
+            "hpv_sample_type", "test_item",
             "collection_date", "collection_time",
-            "receipt_date", "receipt_time", "receipt_temp", "transport_time_days",
+            "receipt_date", "receipt_time", "receipt_temp",
+            "received_by", "received_by_name",
+            "transport_time_days",
             "status", "rejection_reason", "rejection_note",
             "consent_given", "consent_date",
             "site", "site_id", "created_by", "created_at", "updated_at", "is_deleted",
+            "image",
             "movements_count",
         ]
-        read_only_fields = ["sample_id", "transport_time_days", "status", "site", "created_by", "movements_count"]
+        read_only_fields = ["sample_id", "image", "transport_time_days", "status", "site", "created_by", "movements_count"]
 
     def get_site_id(self, obj):
         return str(obj.site_id) if obj.site else None
 
     def get_movements_count(self, obj):
         return obj.movements.count()
+
+    def get_received_by_name(self, obj):
+        if obj.received_by:
+            return obj.received_by.name
+        return None
 
     def create(self, validated_data):
         user = self.context["request"].user
@@ -68,15 +79,27 @@ class SampleListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for list views."""
     sample_type_code = serializers.CharField(source="sample_type.code", read_only=True)
     panel_info = serializers.SerializerMethodField()
+    received_by_name = serializers.SerializerMethodField()
     patient_name = serializers.CharField(read_only=True)
     ordering_physician = serializers.CharField(read_only=True)
     ordering_facility = serializers.CharField(read_only=True)
+
+    def get_received_by_name(self, obj):
+        if obj.received_by:
+            return obj.received_by.name
+        return None
 
     class Meta:
         model = Sample
         fields = ["id", "sample_id", "sample_type_code", "patient_id", "patient_name", "status",
                    "receipt_date", "collection_date", "panel_info", "created_at",
-                   "ordering_physician", "ordering_facility"]
+                   "ordering_physician", "ordering_facility",
+                   "patient_sex", "age", "source_institution", "institution_sample_id",
+            "hpv_sample_type", "test_item",
+                   "hpv_sample_type", "test_item",
+            "hpv_sample_type", "test_item",
+                   "received_by_name",
+                   "image"]
 
     def get_panel_info(self, obj):
         if obj.panel_id:
@@ -86,14 +109,19 @@ class SampleListSerializer(serializers.ModelSerializer):
 
 class SampleReceiveSerializer(serializers.ModelSerializer):
     """Serializer for sample receipt (create + auto-barcode)."""
-    sample_type_id = serializers.UUIDField(write_only=True)
+    sample_type_id = serializers.UUIDField(write_only=True, required=False)
     panel_id = serializers.UUIDField(write_only=True, required=False)
+    panel_code = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = Sample
         fields = [
-            "sample_type_id", "panel_id", "patient_id", "patient_name", "patient_dob",
-            "patient_sex", "ordering_physician", "ordering_facility",
+            "sample_type_id", "panel_id", "panel_code", "patient_id", "patient_name", "patient_dob",
+            "patient_sex", "age", "source_institution", "institution_sample_id",
+            "hpv_sample_type", "test_item",
+                   "hpv_sample_type", "test_item",
+            "hpv_sample_type", "test_item",
+            "ordering_physician", "ordering_facility",
             "collection_date", "collection_time", "receipt_temp", "consent_given",
             "receipt_date", "receipt_time",
         ]
@@ -104,6 +132,11 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
             "receipt_time": {"required": False},
             "patient_dob": {"required": False, "allow_null": True},
             "patient_sex": {"required": False, "allow_blank": True},
+            "age": {"required": False, "allow_null": True},
+            "source_institution": {"required": False, "allow_blank": True},
+            "institution_sample_id": {"required": False, "allow_blank": True},
+            "hpv_sample_type": {"required": False, "allow_blank": True},
+            "test_item": {"required": False, "allow_blank": True},
             "ordering_physician": {"required": False, "allow_blank": True},
             "ordering_facility": {"required": False, "allow_blank": True},
             "receipt_temp": {"required": False, "allow_blank": True},
@@ -117,6 +150,15 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
         # Pop write-only fields
         sample_type_id = validated_data.pop("sample_type_id", None)
         panel_id = validated_data.pop("panel_id", None)
+        panel_code = validated_data.pop("panel_code", None)
+        # Resolve panel_code to panel_id
+        if panel_code and not panel_id:
+            try:
+                from .models import TestPanel
+                panel_obj = TestPanel.objects.get(code=panel_code, is_active=True)
+                panel_id = panel_obj.id
+            except Exception:
+                pass
 
         # Set receipt date/time defaults if not provided
         if "receipt_date" not in validated_data or validated_data.get("receipt_date") is None:
@@ -130,6 +172,16 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
         if "collection_time" not in validated_data or validated_data.get("collection_time") is None:
             validated_data["collection_time"] = now.time()
 
+        # Auto-generate patient_id from panel prefix if blank
+        if not validated_data.get("patient_id") and panel_id:
+            try:
+                panel = TestPanel.objects.get(id=panel_id)
+                prefix = panel.code
+                count = Sample.objects.filter(patient_id__startswith=prefix).count() + 1
+                validated_data["patient_id"] = f"{prefix}{count:04d}"
+            except TestPanel.DoesNotExist:
+                pass
+
         # Auto-generate sample_id
         validated_data["sample_id"] = self._generate_barcode()
 
@@ -138,6 +190,12 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
         validated_data["site"] = user_site if user_site else self._get_default_site()
         validated_data["created_by"] = user
 
+        # Auto-assign default sample type if not provided
+        if not sample_type_id:
+            from .models import SampleType
+            default_st = SampleType.objects.first()
+            if default_st:
+                sample_type_id = default_st.id
         # Create sample with sample_type_id passed directly to the FK
         if panel_id:
             validated_data["panel_id"] = panel_id
@@ -156,7 +214,9 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
 class SampleRejectSerializer(serializers.Serializer):
     """Reject a sample with reason."""
     rejection_reason = serializers.CharField(max_length=100)
-    rejection_note = serializers.CharField(required=False)
+    rejection_note = serializers.CharField(required=False, allow_blank=True)
+    rejection_handling = serializers.CharField(required=False, allow_blank=True)
+    rejection_communication = serializers.CharField(required=False, allow_blank=True)
 
 
 class SampleMovementSerializer(serializers.ModelSerializer):
@@ -180,3 +240,47 @@ class SampleAliquotSerializer(serializers.ModelSerializer):
         model = SampleAliquot
         fields = ["id", "parent_sample", "child_sample", "aliquot_type", "volume_ml", "sample_id", "created_at"]
         read_only_fields = ["created_at"]
+
+class SamplePhotoSerializer(serializers.ModelSerializer):
+    """Serializer for receiving photos with sample links."""
+    uploaded_by_name = serializers.CharField(source="uploaded_by.username", read_only=True)
+    sample_ids = serializers.CharField(write_only=True, required=False, allow_blank=True,
+        help_text="JSON array of sample IDs to associate this photo with (e.g. '[1,2,3]')")
+
+    class Meta:
+        model = SamplePhoto
+        fields = [
+            "id", "image", "uploaded_by", "uploaded_by_name",
+            "created_at", "notes", "sample_ids",
+        ]
+        read_only_fields = ["id", "uploaded_by", "uploaded_by_name", "created_at"]
+
+    def create(self, validated_data):
+        sample_ids_raw = validated_data.pop("sample_ids", "")
+        validated_data["uploaded_by"] = self.context["request"].user
+        photo = super().create(validated_data)
+        # Parse sample_ids from JSON string or list
+        if sample_ids_raw:
+            try:
+                import json as _json
+                ids = _json.loads(sample_ids_raw) if isinstance(sample_ids_raw, str) else sample_ids_raw
+                if ids:
+                    from .models import Sample
+                    samples = Sample.objects.filter(id__in=ids)
+                    photo.samples.set(samples)
+            except Exception:
+                pass  # Ignore parse errors
+        return photo
+
+class SamplePhotoListSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for listing photos."""
+    uploaded_by_name = serializers.CharField(source="uploaded_by.username", read_only=True)
+    sample_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = SamplePhoto
+        fields = ["id", "image", "uploaded_by_name", "created_at", "notes", "sample_count"]
+
+    def get_sample_count(self, obj):
+        return obj.samples.count()
+

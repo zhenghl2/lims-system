@@ -1,12 +1,16 @@
 """Authentication URLs."""
-from django.urls import path
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from .views import (
     LoginView, LogoutView, MFASetupView, MFAVerifyView, ChangePasswordView,
-    RequestPasswordResetView, MeView,
+    RequestPasswordResetView, MeView, UserViewSet,
 )
 
 app_name = "auth"
+
+router = DefaultRouter()
+router.register("users", UserViewSet, basename="user")
 
 urlpatterns = [
     path("login/", LoginView.as_view(), name="login"),
@@ -17,4 +21,5 @@ urlpatterns = [
     path("change-password/", ChangePasswordView.as_view(), name="change_password"),
     path("request-password-reset/", RequestPasswordResetView.as_view(), name="request_password_reset"),
     path("me/", MeView.as_view(), name="me"),
+    path("", include(router.urls)),
 ]

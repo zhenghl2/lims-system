@@ -71,7 +71,12 @@ class ReportViewSet(viewsets.ModelViewSet):
         report.status = "SIGNED"
         report.signed_by = request.user
         report.signed_at = timezone.now()
-        ElectronicSignature.objects.create(report=report, user=request.user, ip=request.META.get("REMOTE_ADDR", ""))
+        ElectronicSignature.objects.create(
+            entity_type="report", entity_id=report.id,
+            action="SIGN", meaning=f"Signed report {report.report_number}",
+            user=request.user,
+            ip_address=request.META.get("REMOTE_ADDR", ""),
+        )
         report.save(update_fields=["status", "signed_by", "signed_at"])
         return Response({"status": "SIGNED"})
 
@@ -83,6 +88,23 @@ class ReportViewSet(viewsets.ModelViewSet):
         run = report.run_sample.run if report.run_sample else None
         # Pull result_summary from run_sample if available
         results_data = report.run_sample.result_summary if report.run_sample else {}
+
+        # Also collect completed step observations from the run
+        if report.run_sample and report.run_sample.run:
+            steps = report.run_sample.run.steps.filter(
+                sample=report.sample, status="COMPLETED"
+            ).order_by("step_order")
+            if steps.exists():
+                step_results = {}
+                for step in steps:
+                    step_results[step.step_name or step.step_id] = {
+                        "status": step.status,
+                        "observations": step.observations or "",
+                        "completed_at": str(step.completed_at) if step.completed_at else None,
+                    }
+                # Merge step results into result summary (step results take priority)
+                results_data = {**results_data, "workflow_steps": step_results}
+
         content = {
             "report_number": report.report_number,
             "panel": sample.panel.code if sample.panel else "",
@@ -123,4 +145,7 @@ class ReportViewSet(viewsets.ModelViewSet):
         report.status = "RELEASED"
         report.released_at = timezone.now()
         report.save(update_fields=["status", "released_at"])
+        # Mark sample as REPORTED when report is released
+        report.sample.status = "REPORTED"
+        report.sample.save(update_fields=["status", "updated_at"])
         return Response({"status": "RELEASED"})

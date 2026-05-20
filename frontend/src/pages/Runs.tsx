@@ -1,10 +1,10 @@
 import { useState, useEffect, useMemo } from "react";
-import { Table, Card, Button, Space, Tag, Typography, Modal, Form, Select, Input, message, Transfer, DatePicker, Tabs, Badge, Tooltip, Popconfirm } from "antd";
+import { Table, Card, Button, Space, Tag, Typography, Modal, Form, Select, Input, message, Transfer, DatePicker, Tabs, Badge, Tooltip, Popconfirm, Dropdown, Checkbox } from "antd";
 import type { TransferItem } from "antd/es/transfer";
-import { PlusOutlined, ReloadOutlined, EyeOutlined, ArrowRightOutlined, StepForwardOutlined, CheckCircleOutlined, PlayCircleOutlined, FileTextOutlined, MinusCircleOutlined, DeleteOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, EyeOutlined, ArrowRightOutlined, StepForwardOutlined, CheckCircleOutlined, PlayCircleOutlined, FileTextOutlined, MinusCircleOutlined, DeleteOutlined, ExclamationCircleOutlined } from "@ant-design/icons";
 import DashboardLayout from "../components/DashboardLayout";
-import { runsApi, samplesApi, panelsApi, instrumentsApi, stepsApi } from "../api";
-import type { Run, Sample, TestPanel, Instrument } from "../api/types";
+import { runsApi, samplesApi, panelsApi, instrumentsApi, stepsApi, usersApi } from "../api";
+import type { Run, Sample, TestPanel, Instrument, User } from "../api/types";
 import dayjs from "dayjs";
 import type { Dayjs } from "dayjs";
 
@@ -103,7 +103,7 @@ export default function Runs() {
       setSampleDetailMap(detailMap);
       setAvailableSamples(samples.map((s) => ({
         key: s.id,
-        title: `${s.sample_id} — ${s.patient_name || "N/A"}`,
+        title: `${s.sample_id}-${s.patient_id || "N/A"}`,
         description: `Type: ${s.sample_type_code} | Received: ${s.receipt_date}`,
       })));
 
@@ -134,6 +134,7 @@ export default function Runs() {
   const [selectedStep, setSelectedStep] = useState<any>(null);
   const [stepForm] = Form.useForm();
   const [stepSubmitting, setStepSubmitting] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
   const [activeTab, setActiveTab] = useState("matrix");
   // Result entry state { runSampleId: { field: value } }
   const [resultEntries, setResultEntries] = useState<Record<string, Record<string, unknown>>>({});
@@ -151,11 +152,19 @@ export default function Runs() {
     }
   };
 
+  const fetchUsers = async () => {
+    try {
+      const res = await usersApi.list({ limit: 200 });
+      setUsers((res.data.results ?? res.data) as User[]);
+    } catch { /* silent */ }
+  };
+
   const openSteps = (run: Run) => {
     setSelectedRun(run);
     setStepsVisible(true);
     setActiveTab("matrix");
     fetchRunDetail(run.id);
+    fetchUsers();
   };
 
   // ── Matrix helpers ────────────────────────────────────────
@@ -195,6 +204,15 @@ export default function Runs() {
     return map;
   }, [runDetail?.run_samples]);
 
+  const handleAssignPerformer = async (stepId: string, userId: string | undefined) => {
+    try {
+      await stepsApi.update(stepId, { performed_by: userId || null });
+      if (selectedRun) fetchRunDetail(selectedRun.id);
+    } catch {
+      message.error("Failed to update performer");
+    }
+  };
+
   const handleStepStart = async (step: any) => {
     try {
       await stepsApi.start(step.id);
@@ -213,6 +231,7 @@ export default function Runs() {
       if (values.observations) data.observations = values.observations;
       if (values.reagent_lot_ids) data.reagent_lot_ids = values.reagent_lot_ids;
       if (values.instrument_id) data.instrument_id = values.instrument_id;
+      if (values.performed_by) data.performed_by = values.performed_by;
       if (values.deviation_flag) data.deviation_flag = true;
       if (values.deviation_note) data.deviation_note = values.deviation_note;
 
@@ -237,6 +256,62 @@ export default function Runs() {
     } catch (err: any) {
       message.error(err?.response?.data?.detail || "Failed to skip step");
     }
+  };
+
+  const [batchLoading, setBatchLoading] = useState<string | null>(null);
+
+  const handleBatchStart = async (stepId: string) => {
+    setBatchLoading(stepId);
+    const allSteps = (runDetail?.steps || []) as any[];
+    const targetSteps = allSteps.filter(
+      (s: any) => (s.step_id ?? s.step_name) === stepId && s.status === "PENDING"
+    );
+    let ok = 0, fail = 0;
+    for (const s of targetSteps) {
+      try { await stepsApi.start(s.id); ok++; }
+      catch { fail++; }
+    }
+    setBatchLoading(null);
+    if (ok > 0 && fail === 0) message.success(`Started ${ok} step(s)`);
+    else if (ok > 0) message.warning(`Started ${ok}, failed ${fail}`);
+    else message.error("No pending steps to start");
+    if (selectedRun) fetchRunDetail(selectedRun.id);
+  };
+
+  const handleBatchSkip = async (stepId: string) => {
+    setBatchLoading(stepId);
+    const allSteps = (runDetail?.steps || []) as any[];
+    const targetSteps = allSteps.filter(
+      (s: any) => (s.step_id ?? s.step_name) === stepId && s.status === "PENDING"
+    );
+    let ok = 0, fail = 0;
+    for (const s of targetSteps) {
+      try { await stepsApi.skip(s.id); ok++; }
+      catch { fail++; }
+    }
+    setBatchLoading(null);
+    if (ok > 0 && fail === 0) message.success(`Skipped ${ok} step(s)`);
+    else if (ok > 0) message.warning(`Skipped ${ok}, failed ${fail}`);
+    else message.error("No pending steps to skip");
+    if (selectedRun) fetchRunDetail(selectedRun.id);
+  };
+
+  const handleRowBatchStart = async (sampleId: string) => {
+    setBatchLoading(`row_${sampleId}`);
+    const allSteps = (runDetail?.steps || []) as any[];
+    const targetSteps = allSteps.filter(
+      (s: any) => s.sample === sampleId && s.status === "PENDING"
+    );
+    let ok = 0, fail = 0;
+    for (const s of targetSteps) {
+      try { await stepsApi.start(s.id); ok++; }
+      catch { fail++; }
+    }
+    setBatchLoading(null);
+    if (ok > 0 && fail === 0) message.success(`Started ${ok} step(s) for sample`);
+    else if (ok > 0) message.warning(`Started ${ok}, failed ${fail}`);
+    else message.error("No pending steps to start");
+    if (selectedRun) fetchRunDetail(selectedRun.id);
   };
 
   const handleSaveResults = async () => {
@@ -326,17 +401,68 @@ export default function Runs() {
         makeInput("notes", "Notes", 150),
       ];
     }
-    if (panelCode === "NIPT") {
+    if (panelCode === "NIPT" || panelCode === "NIPT_PLUS") {
+      const getVal = (record: any, key: string) =>
+        resultEntries[record.id]?.[key] ?? record.result_summary?.[key];
+      const zInput = (key: string, title: string, w = 100) => ({
+        title,
+        key,
+        width: w,
+        render: (_: any, record: any) => {
+          const v = String(getVal(record, key) ?? "");
+          const num = parseFloat(v);
+          const alert = !isNaN(num) && num > 3;
+          return (
+            <Input size="small" placeholder={title} value={v}
+              onChange={(e) => setResultEntries((prev) => ({
+                ...prev, [record.id]: { ...prev[record.id], [key]: e.target.value },
+              }))}
+              style={alert ? { borderColor: "#ff4d4f", backgroundColor: "#fff1f0" } : undefined}
+            />
+          );
+        },
+      });
       return [
         ...baseCols,
-        makeSelect("result", "Result", [
-          { value: "LOW_RISK", label: "LOW RISK" },
-          { value: "HIGH_RISK", label: "HIGH RISK" },
-        ]),
-        makeInput("z_score_13", "Z-Score 13", 90),
-        makeInput("z_score_18", "Z-Score 18", 90),
-        makeInput("z_score_21", "Z-Score 21", 90),
-        makeInput("fetal_fraction", "FF %", 80),
+        {
+          title: "Result", key: "result", width: 130,
+          render: (_: any, record: any) => {
+            const val = getVal(record, "result");
+            return (
+              <Select size="small" placeholder="Result" value={val}
+                onChange={(v) => setResultEntries((prev) => ({
+                  ...prev, [record.id]: { ...prev[record.id], result: v },
+                }))}
+                options={[
+                  { value: "LOW_RISK", label: "LOW RISK" },
+                  { value: "HIGH_RISK", label: "⚠ HIGH RISK" },
+                ]}
+                allowClear
+                style={{ width: 130 }}
+                status={val === "HIGH_RISK" ? "error" : undefined}
+              />
+            );
+          },
+        },
+        zInput("z_score_13", "Z-Score 13"),
+        zInput("z_score_18", "Z-Score 18"),
+        zInput("z_score_21", "Z-Score 21"),
+        {
+          title: "FF %", key: "fetal_fraction", width: 90,
+          render: (_: any, record: any) => {
+            const v = String(getVal(record, "fetal_fraction") ?? "");
+            const num = parseFloat(v);
+            const low = !isNaN(num) && num < 4 && v !== "";
+            return (
+              <Input size="small" placeholder="FF%" value={v}
+                onChange={(e) => setResultEntries((prev) => ({
+                  ...prev, [record.id]: { ...prev[record.id], fetal_fraction: e.target.value },
+                }))}
+                status={low ? "warning" : undefined}
+              />
+            );
+          },
+        },
         makeSelect("fetal_sex", "Sex", [
           { value: "Male", label: "Male" },
           { value: "Female", label: "Female" },
@@ -356,10 +482,21 @@ export default function Runs() {
         width: 220,
         render: (_: unknown, record: any) => (
           <div>
-            <Text strong copyable={{ text: record.sample_barcode }}>
-              {record.sample_barcode}
-            </Text>
-            <br />
+            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <Text strong copyable={{ text: record.sample_barcode }}>
+                {record.sample_barcode}
+              </Text>
+              <Tooltip title="Start all pending steps for this sample">
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<PlayCircleOutlined />}
+                  loading={batchLoading === `row_${record.sample}`}
+                  onClick={(e) => { e.stopPropagation(); handleRowBatchStart(record.sample); }}
+                  style={{ color: "#1677ff", padding: "0 2px", minWidth: 20, height: 20 }}
+                />
+              </Tooltip>
+            </div>
             <Text type="secondary" style={{ fontSize: 12 }}>
               {record.sample_patient_id || "—"}
             </Text>
@@ -371,11 +508,21 @@ export default function Runs() {
       const sid = step.step_id ?? step.step_name;
       return {
         title: (
-          <Tooltip title={`Step ${step.step_order}: ${step.step_name}`}>
-            <span style={{ writingMode: "vertical-rl", textOrientation: "mixed", fontSize: 12 }}>
-              {step.step_name}
-            </span>
-          </Tooltip>
+          <Dropdown
+            menu={{
+              items: [
+                { key: "start", label: "Start All", icon: <PlayCircleOutlined />, onClick: () => handleBatchStart(sid) },
+                { key: "skip", label: "Skip All", icon: <MinusCircleOutlined />, onClick: () => handleBatchSkip(sid) },
+              ],
+            }}
+            trigger={["contextMenu"]}
+          >
+            <Tooltip title={`Step ${step.step_order}: ${step.step_name}` + " (right-click for batch)"}>
+              <span style={{ writingMode: "vertical-rl", textOrientation: "mixed", fontSize: 12, cursor: "context-menu" }}>
+                {batchLoading === sid ? "…" : step.step_name}
+              </span>
+            </Tooltip>
+          </Dropdown>
         ),
         key: sid,
         width: 80,
@@ -406,6 +553,14 @@ export default function Runs() {
                 >
                   Done
                 </Button>
+              )}
+              {status === "COMPLETED" && s.completed_at && (
+                <Tooltip title={`${s.performed_by_name || '—'} · ${dayjs(s.completed_at).format('MM-DD HH:mm')}`}>
+                  <Text type="secondary" style={{ fontSize: 9, lineHeight: '12px' }}>
+                    {s.performed_by_name ? s.performed_by_name.split(' ').map((n: string) => n[0]).join('') : '?'}
+                    <br />{dayjs(s.completed_at).format('HH:mm')}
+                  </Text>
+                </Tooltip>
               )}
             </div>
           );
@@ -709,12 +864,21 @@ export default function Runs() {
       >
         {selectedRun && (
           <div style={{ marginBottom: 16 }}>
-            <Space wrap size="large">
+            <Space wrap size="large" style={{ marginBottom: 4 }}>
               <span><strong>Panel:</strong> {selectedRun.panel_name}</span>
+              {selectedRun.protocol_name && <span><strong>Protocol:</strong> {selectedRun.protocol_name}</span>}
               <span><strong>Sequencer:</strong> {selectedRun.sequencer_name || "Not assigned"}</span>
               <span><strong>Samples:</strong> {selectedRun.sample_count}</span>
               <span><strong>Status:</strong> <Tag color={STATUS_COLORS[selectedRun.status]}>{selectedRun.status.replace(/_/g, " ")}</Tag></span>
             </Space>
+            <div style={{ fontSize: 12, color: "#888" }}>
+              {selectedRun.barcode && <span style={{ marginRight: 16 }}><strong>Barcode:</strong> {selectedRun.barcode}</span>}
+              {selectedRun.operator_name && <span style={{ marginRight: 16 }}><strong>Operator:</strong> {selectedRun.operator_name}</span>}
+              {selectedRun.planned_date && <span style={{ marginRight: 16 }}><strong>Planned:</strong> {selectedRun.planned_date}</span>}
+              {selectedRun.start_date && <span style={{ marginRight: 16 }}><strong>Started:</strong> {dayjs(selectedRun.start_date).format("YYYY-MM-DD HH:mm")}</span>}
+              {selectedRun.end_date && <span style={{ marginRight: 16 }}><strong>Ended:</strong> {dayjs(selectedRun.end_date).format("YYYY-MM-DD HH:mm")}</span>}
+              {selectedRun.notes && <span><strong>Notes:</strong> {selectedRun.notes}</span>}
+            </div>
           </div>
         )}
         <Tabs
@@ -799,11 +963,38 @@ export default function Runs() {
                     { title: "Status", dataIndex: "status", key: "status", width: 100, render: (s: string) => (
                       <Tag color={STEP_STATUS_COLORS[s] || "default"}>{s.replace(/_/g, " ")}</Tag>
                     )},
-                    { title: "Performed By", dataIndex: "performed_by_name", key: "performer", width: 120, render: (t: string) => t || "-" },
+                    { title: "Started", dataIndex: "started_at", key: "started", width: 130, render: (t: string) => t ? dayjs(t).format("MM-DD HH:mm") : "—" },
+                    { title: "Completed", dataIndex: "completed_at", key: "completed", width: 130, render: (t: string) => t ? dayjs(t).format("MM-DD HH:mm") : "—" },
+                    { title: "Duration", key: "duration", width: 90, render: (_: any, r: any) => {
+                      if (r.started_at && r.completed_at) {
+                        const dur = dayjs(r.completed_at).diff(dayjs(r.started_at), "minute");
+                        return dur >= 60 ? Math.floor(dur / 60) + "h " + (dur % 60) + "m" : dur + "m";
+                      }
+                      return "—";
+                    }},
+                    { title: "Performed By", dataIndex: "performed_by_name", key: "performer", width: 160, render: (_t: string, r: any) => (
+    <Select
+      size="small"
+      style={{ width: 140 }}
+      placeholder="-"
+      value={r.performed_by || undefined}
+      allowClear
+      showSearch
+      optionFilterProp="label"
+      options={users.map((u: any) => ({ value: u.id, label: `${u.first_name} ${u.last_name}`.trim() || u.username }))}
+      onChange={(val) => handleAssignPerformer(r.id, val)}
+      onClick={(e) => e.stopPropagation()}
+    />
+  ) },
                     { title: "Instrument", dataIndex: "instrument_name", key: "instrument", width: 120, render: (t: string) => t || "-" },
                     { title: "Observations", dataIndex: "observations", key: "obs", render: (t: string) => (
                       <Text type="secondary" style={{ fontSize: 12 }}>{t || "-"}</Text>
                     )},
+                    { title: "Dev", key: "dev", width: 50, align: "center" as const, render: (_: any, r: any) =>
+                      r.deviation_flag
+                        ? <Tooltip title={r.deviation_note || 'Deviation reported'}><ExclamationCircleOutlined style={{ color: '#faad14' }} /></Tooltip>
+                        : <Text type="secondary">—</Text>
+                    },
                   ]}
                   locale={{ emptyText: "No workflow steps found" }}
                 />
@@ -835,6 +1026,11 @@ export default function Runs() {
                     rowKey="id"
                     pagination={false}
                     scroll={{ x: 800 }}
+                    rowClassName={(_: any, index: number) => {
+                      const record = samplesInRun[index];
+                      const result = record?.result_summary?.result;
+                      return result === "HIGH_RISK" ? "row-high-risk" : "";
+                    }}
                     columns={[
                       ...resultColumns,
                       {
@@ -882,11 +1078,17 @@ export default function Runs() {
               options={instruments.map((i) => ({ value: i.id, label: `${i.name} (${i.model})` }))}
             />
           </Form.Item>
+          <Form.Item name="performed_by" label="Performed By">
+            <Select
+              placeholder="Select technician (default: you)"
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              options={users.map((u: any) => ({ value: u.id, label: `${u.first_name} ${u.last_name}`.trim() || u.username }))}
+            />
+          </Form.Item>
           <Form.Item name="deviation_flag" valuePropName="checked">
-            <Space>
-              <input type="checkbox" id="deviation" />
-              <label htmlFor="deviation">Deviation / Exception occurred</label>
-            </Space>
+            <Checkbox>Deviation / Exception occurred</Checkbox>
           </Form.Item>
           <Form.Item name="deviation_note" label="Deviation Note">
             <TextArea rows={2} placeholder="Describe any deviation from SOP..." />

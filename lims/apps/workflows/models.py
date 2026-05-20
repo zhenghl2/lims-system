@@ -122,6 +122,25 @@ class WorkflowStep(models.Model):
     observations = models.TextField(blank=True)
     deviation_flag = models.BooleanField(default=False)
     deviation_note = models.TextField(blank=True)
+
+    # NIPPT: structured step data + QC tracking
+    step_data = models.JSONField(default=dict, blank=True)
+    qc_status = models.CharField(
+        max_length=20,
+        default="PENDING",
+        choices=[
+            ("PENDING", "Pending QC"),
+            ("PASS", "Passed QC"),
+            ("FAIL", "Failed QC"),
+            ("NA", "Not Applicable"),
+        ],
+    )
+    qc_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="qc_steps"
+    )
+    qc_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

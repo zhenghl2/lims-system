@@ -1,14 +1,30 @@
 """Authentication and user views."""
-from rest_framework import status, generics, permissions
+from rest_framework import status, generics, permissions, viewsets
 from rest_framework.response import Response
 from rest_framework.request import Request
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
-from .serializers import LoginSerializer, ChangePasswordSerializer, UserMeSerializer
+from rest_framework.filters import SearchFilter
+from .serializers import LoginSerializer, ChangePasswordSerializer, UserMeSerializer, UserListSerializer
 from .mfa import setup_totp, verify_totp_code
+from .models import User
 import logging
 
 logger = logging.getLogger("lims.auth")
+
+
+class UserViewSet(viewsets.ReadOnlyModelViewSet):
+    """List/search users for assignment (performed_by, etc.)."""
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = UserListSerializer
+    filter_backends = [SearchFilter]
+    search_fields = ["first_name", "last_name", "username", "employee_id"]
+
+    def get_queryset(self):
+        qs = User.objects.filter(is_active=True)
+        if self.request.user.site_id:
+            qs = qs.filter(site=self.request.user.site)
+        return qs
 
 
 class LoginView(APIView):
@@ -65,8 +81,6 @@ class MFAVerifyView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request: Request):
-        # This requires a temporary token from the initial login
-        # Implementation would use a temporary session token
         return Response({"message": "MFA verification requires temporary session token"}, status=status.HTTP_400_BAD_REQUEST)
 
 
@@ -87,7 +101,6 @@ class RequestPasswordResetView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def post(self, request: Request):
-        # Implementation: generate token, send email
         return Response({"message": "If the email exists, a reset link has been sent"})
 
 

@@ -1,6 +1,6 @@
 """Organization serializers."""
 from rest_framework import serializers
-from .models import Site, Department
+from .models import Site, Department, Receiver
 
 
 class SiteSerializer(serializers.ModelSerializer):
@@ -29,3 +29,10 @@ class DepartmentSerializer(serializers.ModelSerializer):
         model = Department
         fields = ["id", "site", "name", "code", "is_active", "created_at"]
         read_only_fields = ["created_at"]
+
+class ReceiverSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Receiver
+        fields = ["id", "name", "is_active", "created_at"]
+        read_only_fields = ["created_at"]
+

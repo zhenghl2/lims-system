@@ -36,8 +36,15 @@ class UserMeSerializer(serializers.ModelSerializer):
         model = User
         fields = ["id", "employee_id", "username", "email", "first_name", "last_name",
                    "full_name", "locale", "timezone", "mfa_enabled",
-                   "site_id", "roles", "last_login"]
+                   "site_id", "roles", "last_login", "allowed_panels"]
         read_only_fields = fields
+
+    allowed_panels = serializers.SerializerMethodField()
+
+    def get_allowed_panels(self, obj):
+        if obj.site and obj.site.allowed_panels:
+            return obj.site.allowed_panels
+        return []  # empty list = all panels accessible
 
     def get_full_name(self, obj):
         return f"{obj.first_name} {obj.last_name}"
@@ -64,3 +71,25 @@ class ChangePasswordSerializer(serializers.Serializer):
         if attrs["new_password"] == request.user.username or attrs["new_password"] == request.user.email:
             raise serializers.ValidationError("Password cannot be your username or email")
         return attrs
+
+
+
+class UserListSerializer(serializers.ModelSerializer):
+    """Compact user info for dropdowns/selectors (performed_by, etc.)."""
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = ["id", "employee_id", "username", "first_name", "last_name", "full_name"]
+        read_only_fields = fields
+
+    allowed_panels = serializers.SerializerMethodField()
+
+    def get_allowed_panels(self, obj):
+        if obj.site and obj.site.allowed_panels:
+            return obj.site.allowed_panels
+        return []  # empty list = all panels accessible
+
+    def get_full_name(self, obj):
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        return name or obj.username

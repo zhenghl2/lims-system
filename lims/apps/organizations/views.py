@@ -2,8 +2,8 @@
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from .models import Site, Department
-from .serializers import SiteSerializer, DepartmentSerializer
+from .models import Site, Department, Receiver
+from .serializers import SiteSerializer, DepartmentSerializer, ReceiverSerializer
 
 
 class SitePermission(permissions.BasePermission):
@@ -38,3 +38,30 @@ class DepartmentViewSet(viewsets.ModelViewSet):
         if self.request.user.site_id:
             qs = qs.filter(site=self.request.user.site)
         return qs
+
+class ReceiverViewSet(viewsets.ReadOnlyModelViewSet):
+    """List receivers (no password exposure)."""
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ReceiverSerializer
+    queryset = Receiver.objects.filter(is_active=True)
+
+    @action(detail=False, methods=["post"])
+    def verify(self, request):
+        """Verify receiver password. Body: {receiver_id, password}."""
+        from django.contrib.auth.hashers import check_password
+        receiver_id = request.data.get("receiver_id")
+        password = request.data.get("password", "")
+
+        if not receiver_id or not password:
+            return Response({"valid": False, "error": "receiver_id and password are required"}, status=400)
+
+        try:
+            receiver = Receiver.objects.get(id=receiver_id, is_active=True)
+        except Receiver.DoesNotExist:
+            return Response({"valid": False, "error": "Receiver not found"}, status=404)
+
+        valid = check_password(password, receiver.password)
+        if valid:
+            return Response({"valid": True, "receiver_name": receiver.name})
+        return Response({"valid": False, "error": "密码错误"}, status=400)
+

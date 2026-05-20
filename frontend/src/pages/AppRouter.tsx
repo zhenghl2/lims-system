@@ -8,7 +8,6 @@ import { useAuthStore } from "../store/auth";
 const Login           = lazy(() => import("./Login"));
 const Dashboard       = lazy(() => import("./Dashboard"));
 const Samples         = lazy(() => import("./Samples"));
-const Orders          = lazy(() => import("./Orders"));
 const Runs            = lazy(() => import("./Runs"));
 const Reports         = lazy(() => import("./Reports"));
 const Instruments     = lazy(() => import("./Instruments"));
@@ -48,7 +47,6 @@ export default function AppRouter() {
         {/* Protected — fully implemented */}
         <Route path="/"       element={<Protected><Dashboard /></Protected>} />
         <Route path="/samples" element={<Protected><Samples /></Protected>} />
-        <Route path="/orders"  element={<Protected><Orders /></Protected>} />
         <Route path="/runs"    element={<Protected><Runs /></Protected>} />
         <Route path="/reports" element={<Protected><Reports /></Protected>} />
         <Route path="/instruments" element={<Protected><Instruments /></Protected>} />

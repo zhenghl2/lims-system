@@ -55,6 +55,7 @@ class SampleRunSerializer(serializers.ModelSerializer):
     panel_code = serializers.CharField(source="panel.code", read_only=True)
     panel_name = serializers.CharField(source="panel.name", read_only=True)
     sequencer_name = serializers.CharField(source="sequencer.name", read_only=True)
+    protocol_name = serializers.CharField(source="protocol.name", read_only=True, default=None)
     sample_count = serializers.SerializerMethodField()
     operator_name = serializers.SerializerMethodField()
 
@@ -62,7 +63,7 @@ class SampleRunSerializer(serializers.ModelSerializer):
         model = SampleRun
         fields = [
             "id", "run_number", "barcode", "panel", "panel_code", "panel_name",
-            "protocol", "sequencer", "sequencer_name", "status",
+            "protocol", "protocol_name", "sequencer", "sequencer_name", "status",
             "planned_date", "start_date", "end_date",
             "operator", "operator_name", "notes",
             "sample_count", "created_at", "updated_at",
@@ -106,6 +107,7 @@ class WorkflowStepSerializer(serializers.ModelSerializer):
     sample_barcode = serializers.CharField(source="sample.sample_id", read_only=True, default=None)
     performed_by_name = serializers.SerializerMethodField()
     instrument_name = serializers.SerializerMethodField()
+    qc_by_name = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkflowStep
@@ -114,7 +116,9 @@ class WorkflowStepSerializer(serializers.ModelSerializer):
             "step_id", "step_name", "step_order", "status",
             "started_at", "completed_at", "performed_by", "performed_by_name",
             "reagents_used", "instrument", "instrument_name", "observations",
-            "deviation_flag", "deviation_note", "created_at",
+            "deviation_flag", "deviation_note",
+            "step_data", "qc_status", "qc_by", "qc_by_name", "qc_at",
+            "created_at",
         ]
         read_only_fields = ["created_at"]
 
@@ -125,6 +129,11 @@ class WorkflowStepSerializer(serializers.ModelSerializer):
 
     def get_instrument_name(self, obj):
         return obj.instrument.name if obj.instrument else None
+
+    def get_qc_by_name(self, obj):
+        if obj.qc_by:
+            return f"{obj.qc_by.first_name} {obj.qc_by.last_name}".strip() or obj.qc_by.username
+        return None
 
 
 class WorkflowStepUpdateSerializer(serializers.Serializer):
