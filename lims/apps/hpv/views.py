@@ -632,6 +632,103 @@ class HpvResultViewSet(viewsets.ModelViewSet):
                     batch.save()
         return Response(HpvResultSerializer(result).data)
 
+    # ── report_html ──
+    @action(detail=True, methods=["GET"])
+    def report_html(self, request, pk=None):
+        """Generate a printable HTML report."""
+        result = self.get_object()
+        sample = result.sample
+        if not sample:
+            return Response({"error": "No sample linked"}, status=400)
+
+        LOW_RISK = ["6", "11", "42", "43", "81", "83"]
+        HIGH_RISK = ["16", "18", "26", "31", "33", "35", "39", "45", "51", "52", "53", "56", "58", "59", "66", "68", "73", "82"]
+        genotypes = result.genotype_results or {}
+        positives = [k for k, v in genotypes.items() if v == "+"]
+        all_neg = len(positives) == 0
+
+        def rc(gt):
+            v = genotypes.get(gt, "")
+            if v == "+":
+                return '<span style="color:#cf1322;font-weight:bold">' + "\u9633\u6027\uff08+\uff09" + '</span>'
+            return "\u9634\u6027\uff08-\uff09"
+
+        rows_low = ""
+        for gt in LOW_RISK:
+            rows_low += '<tr><td>HPV-{}'.format(gt) + '\uff08\u4f4e\u5371\u578b\uff09</td><td>PCR-\u53cd\u5411\u70b9\u6742\u4ea4\u6cd5</td><td>{}</td><td>\u9634\u6027\uff08-\uff09</td></tr>'.format(rc(gt))
+
+        rows_high = ""
+        for gt in HIGH_RISK:
+            rows_high += '<tr><td>HPV-{}'.format(gt) + '\uff08\u9ad8\u5371\u578b\uff09</td><td>PCR-\u53cd\u5411\u70b9\u6742\u4ea4\u6cd5</td><td>{}</td><td>\u9634\u6027\uff08-\uff09</td></tr>'.format(rc(gt))
+
+        if all_neg:
+            summary = "\u68c0\u6d4b\u4e0a\u8ff023\u79cdHPV\u57fa\u56e0\u578b\uff0c\u7ed3\u679c\u5747\u4e3a\u9634\u6027\u3002"
+        else:
+            pos_list = "\u3001".join(["HPV{}".format(p) for p in positives])
+            summary = "\u68c0\u6d4b\u4e0a\u8ff023\u79cdHPV\u57fa\u56e0\u578b\uff0c\u5176\u4e2d{}\u9633\u6027\uff0c\u5176\u4f59\u4e9a\u578b\u5747\u4e3a\u9634\u6027\u3002".format(pos_list)
+
+        patient_name = sample.patient_name or ""
+        sample_id = sample.sample_id or ""
+        batch_number = result.batch.batch_number if result.batch else ""
+        kit_type = result.kit_type or "HPV_23"
+        today = timezone.now().strftime("%Y.%m.%d")
+        now_str = timezone.now().strftime("%Y.%m.%d %H:%M")
+
+        html = """<!DOCTYPE html>
+<html lang="zh">
+<head><meta charset="UTF-8"><title>HPV Report - """ + sample_id + """</title>
+<style>
+@media print { body { -webkit-print-color-adjust: exact; } }
+body { font-family: 'SimSun','Songti SC',serif; font-size:13px; color:#333; max-width:740px; margin:30px auto; line-height:1.6; }
+.header { text-align:center; margin-bottom:8px; }
+.header h1 { font-size:15px; margin:2px 0; font-weight:bold; }
+.header .en { font-size:10px; color:#666; }
+.title { text-align:center; font-size:16px; font-weight:bold; margin:12px 0; border-bottom:2px solid #333; padding-bottom:6px; }
+table { width:100%; border-collapse:collapse; margin:8px 0; font-size:12px; }
+table.info td { padding:4px 6px; border:1px solid #999; }
+table.result th { background:#e6f0fa; padding:5px 6px; border:1px solid #999; text-align:center; font-weight:bold; }
+table.result td { padding:4px 6px; border:1px solid #999; text-align:center; }
+table.result tr.section td { background:#f0f0f0; font-weight:bold; text-align:left; }
+.summary { margin:10px 0; padding:8px; border:1px solid #999; }
+.interpretation { margin:10px 0; }
+.interpretation h3 { font-size:13px; margin:6px 0; }
+.interpretation p { margin:3px 0; }
+.footer { margin-top:20px; font-size:11px; }
+.footer .disclaimer { color:#999; font-size:10px; }
+</style></head><body>
+<div class="header"><h1>\u53a6\u95e8\u6021\u751f\u65b9\u548c\u533b\u5b66\u68c0\u9a8c\u5b9e\u9a8c\u5ba4</h1>
+<div class="en">XIAMEN YISHENGFANGHE MEDICAL LABORATORY</div></div>
+<div class="title">\u4eba\u4e73\u5934\u72b6\u7624\u75c5\u6bd2HPV\u57fa\u56e0\uff0823\u578b\uff09\u68c0\u9a8c\u62a5\u544a\u5355</div>
+<table class="info">
+<tr><td><b>\u59d3\u540d\uff1a</b>""" + patient_name + """</td><td><b>\u6807\u672c\u7c7b\u578b\uff1a</b>\u5bab\u9888\u8131\u843d\u7ec6\u80de</td><td><b>\u6837\u672c\u7f16\u53f7\uff1a</b>""" + sample_id + """</td><td><b>\u63a5\u6536\u65e5\u671f\uff1a</b></td></tr>
+<tr><td><b>\u6027\u522b\uff1a</b></td><td><b>\u6807\u672c\u8bf4\u660e\uff1a</b>\u5408\u683c</td><td><b>\u5b9e\u9a8c\u7f16\u53f7\uff1a</b>""" + batch_number + """</td><td><b>\u68c0\u6d4b\u65e5\u671f\uff1a</b>""" + today + """</td></tr>
+<tr><td><b>\u5e74\u9f84\uff1a</b></td><td><b>\u9001\u68c0\u673a\u6784\uff1a</b></td><td><b>\u8bd5\u5242\u76d2\uff1a</b>""" + kit_type + """</td><td></td></tr>
+</table>
+<table class="result">
+<tr><th>\u9879\u76ee</th><th>\u68c0\u6d4b\u65b9\u6cd5</th><th>\u68c0\u6d4b\u7ed3\u679c</th><th>\u53c2\u8003\u533a\u95f4</th></tr>
+<tr class="section"><td colspan="4">\u4eba\u4e73\u5934\u72b6\u7624\u75c5\u6bd2(HPV)\u4f4e\u5371\u578b\uff086\u79cd\uff09</td></tr>
+""" + rows_low + """
+<tr class="section"><td colspan="4">\u4eba\u4e73\u5934\u72b6\u7624\u75c5\u6bd2(HPV)\u9ad8\u5371\u578b\uff0817\u79cd\uff09</td></tr>
+""" + rows_high + """
+<tr><td colspan="4" style="text-align:left;padding:6px"><b>\u68c0\u6d4b\u4eea\u5668\u540d\u79f0\u53ca\u578b\u53f7\uff1a</b><br>\u5168\u81ea\u52a8\u6838\u9178\u63d0\u53d6\u4eea\uff08\u578b\u53f7YN-AP48\uff09<br>\u5168\u81ea\u52a8\u6838\u9178\u5206\u5b50\u6742\u4ea4\u4eea\uff08\u578b\u53f7YN-H48\uff09</td></tr>
+</table>
+<div class="summary"><span class="label">\u68c0\u6d4b\u7ed3\u679c\uff1a</span><br>""" + summary + """</div>
+<div class="interpretation"><h3>\u7ed3\u679c\u5efa\u8bae\u548c\u89e3\u91ca\uff1a</h3>
+<p>1. \u4eba\u4e73\u5934\u72b6\u7624\u75c5\u6bd2\uff08HPV\uff09\u57fa\u56e0\u5206\u578b\u68c0\u6d4b\u662f\u5bab\u9888\u75c5\u53d8\u53ca\u5bab\u9888\u764c\u7b5b\u67e5\u7684\u4e3b\u8981\u624b\u6bb5\u3002\u6021\u751f\u65b9\u548cHPV\u68c0\u6d4b\u901a\u8fc7\u5206\u6790\u5973\u6027\u5bab\u9888\u8131\u843d\u7ec6\u80de\u6837\u672c\uff0c\u80fd\u591f\u68c0\u6d4b\u548c\u9274\u5b9a23\u79cd\u57fa\u56e0\u578b\u7684HPV\u611f\u67d3\uff0c\u5305\u62ec6\u79cd\u4f4e\u5371\u578b\uff086\u300111\u300142\u300143\u300181\u300183\uff09\u300117\u79cd\u9ad8\u5371\u578b\uff0816\u300118\u300126\u300131\u300133\u300135\u300139\u300145\u300151\u300152\u300153\u300156\u300158\u300159\u300166\u300168\u300173\u300182\uff09\u3002</p>
+<p>(1) \u9ad8\u5371\u578bHPV\u7684\u6301\u7eed\u611f\u67d3\u662f\u5f15\u8d77\u5bab\u9888\u764c\u7684\u4e3b\u8981\u539f\u56e0\u3002</p>
+<p>(2) \u4f4e\u5371\u578bHPV\u7684\u611f\u67d3\u80fd\u5f15\u8d77\u5bab\u9888\u4e0a\u76ae\u4f4e\u5ea6\u75c5\u53d8\u548c\u826f\u6027\u6e7f\u75e3\u3002</p>
+<p>2. HPV\u9634\u6027\u5efa\u8bae\u8bf71\u5e74\u540e\u590d\u67e5\u3002\u590d\u8bca\u7ed3\u679c\u4ecd\u4e3aHPV\u9634\u6027\uff0c\u968f\u8bbf\u95f4\u9694\u53ef\u4ee5\u5ef6\u81f33-5\u5e74\u3002</p>
+<p>3. HPV\u9633\u6027\u8005\u4e0d\u8981\u6709\u592a\u5927\u7684\u5fc3\u7406\u538b\u529b\uff0c\u65e0\u8bba\u9ad8\u5371\u578b\u6216\u4f4e\u5371\u578b\uff0c\u5927\u90e8\u5206\u4ebaHPV\u611f\u67d3\u4f1a\u81ea\u884c\u6d88\u9000\uff08HPV\u81ea\u7136\u6d88\u9000\u671f8-10\u4e2a\u6708\uff09\u3002HPV\u68c0\u6d4b\u9633\u6027\u4e0d\u4ee3\u8868\u4f1a\u5f97\u764c\u75c7\uff0c\u6301\u7eed\u8ddf\u8e2a\u68c0\u6d4b\u53ef\u4ee5\u5c06\u764c\u75c7\u53d1\u751f\u6d88\u706d\u5728\u840c\u82bd\u9636\u6bb5\u3002</p>
+<p>HPV\u9633\u6027\u8005\u5efa\u8bae\u8fdb\u884c\u7ec6\u80de\u5b66\u68c0\u6d4b\uff1a\u7ec6\u80de\u5b66\u68c0\u6d4b\u7ed3\u679c\u6b63\u5e38\u8005\u6bcf\u5e74\u8ddf\u8e2a\u968f\u8bca\u4e00\u6b21\uff1b\u5f02\u5e38\u8005\u8bf7\u54a8\u8be2\u533b\u751f\u8fdb\u884c\u8fdb\u4e00\u6b65\u8bca\u65ad\u4e0e\u6cbb\u7597\u3002</p>
+<p>4. \u91c7\u6837\u65b9\u6cd5\u4e0d\u51c6\u786e\u6216\u6709\u672a\u7ecf\u9a8c\u8bc1\u7684\u5e72\u6270\u7269\u8d28\u6c61\u67d3\u6837\u54c1\uff0c\u53ef\u80fd\u9020\u6210\u5047\u9634\u6027\u7ed3\u679c\u3002</p></div>
+<div class="footer">
+<div class="signatures"><b>\u68c0\u9a8c\u8005\uff1a</b>________________&emsp;&emsp;<b>\u5ba1\u6838\u8005\uff1a</b>________________&emsp;&emsp;<b>\u65f6\u95f4\uff1a</b>""" + now_str + """</div>
+<p>\u5907\u6ce8\uff1a\u672c\u68c0\u6d4b\u7ed3\u679c\u4ec5\u5bf9\u6765\u6837\u8d1f\u8d23\uff0c\u4f9b\u4e34\u5e8a\u53c2\u8003\uff0c\u5982\u6709\u7591\u95ee\u8bf7\u5728\u6536\u5230\u62a5\u544a\u540e7\u5929\u5185\u63d0\u51fa\u3002</p>
+<p class="disclaimer">\u5730\u5740\uff1a\u53a6\u95e8\u706b\u70ac\u9ad8\u65b0\u533a\u521b\u4e1a\u56ed\u706b\u70ac\u4e1c\u8def11-15\u53f7\u4f1f\u4e1a\u697c\u5317\u697c305B\u5ba4</p></div>
+</body></html>"""
+        return Response({"html": html})
+
+
     # ── mark_reportable ──
     @action(detail=True, methods=["POST"])
     @transaction.atomic
