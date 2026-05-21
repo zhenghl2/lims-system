@@ -38,15 +38,17 @@ export default function HpvReports() {
   const downloadReport = (record: any) => {
     const resultId = record.content?.hpv_result_id;
     if (!resultId) return;
+    setHtmlLoading(true);
     api.get(`/hpv/results/${resultId}/report_html/`).then(({ data }) => {
-      const blob = new Blob([data.html], { type: 'text/html;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `HPV_Report_${record.sample_id || record.report_number}.html`;
-      a.click();
-      URL.revokeObjectURL(url);
-    }).catch(() => {});
+      const printWin = window.open('', '_blank');
+      if (printWin) {
+        printWin.document.write(data.html);
+        printWin.document.close();
+        printWin.onload = () => printWin.print();
+        // Fallback: print after short delay
+        setTimeout(() => printWin.print(), 500);
+      }
+    }).catch(() => {}).finally(() => setHtmlLoading(false));
   };
 
   const columns = [
@@ -68,7 +70,7 @@ export default function HpvReports() {
         record.content?.hpv_result_id ? (
           <Space>
             <Button size="small" icon={<EyeOutlined />} onClick={() => viewReport(record)}>View</Button>
-            <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadReport(record)}>Download</Button>
+            <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadReport(record)}>PDF</Button>
           </Space>
         ) : <Button size="small" disabled>—</Button>
       ),

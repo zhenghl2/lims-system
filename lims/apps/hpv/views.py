@@ -738,11 +738,9 @@ table.result tr.section td { background:#f0f0f0; font-weight:bold; text-align:le
 <p>HPV\u9633\u6027\u8005\u5efa\u8bae\u8fdb\u884c\u7ec6\u80de\u5b66\u68c0\u6d4b\uff1a\u7ec6\u80de\u5b66\u68c0\u6d4b\u7ed3\u679c\u6b63\u5e38\u8005\u6bcf\u5e74\u8ddf\u8e2a\u968f\u8bca\u4e00\u6b21\uff1b\u5f02\u5e38\u8005\u8bf7\u54a8\u8be2\u533b\u751f\u8fdb\u884c\u8fdb\u4e00\u6b65\u8bca\u65ad\u4e0e\u6cbb\u7597\u3002</p>
 <p>4. \u91c7\u6837\u65b9\u6cd5\u4e0d\u51c6\u786e\u6216\u6709\u672a\u7ecf\u9a8c\u8bc1\u7684\u5e72\u6270\u7269\u8d28\u6c61\u67d3\u6837\u54c1\uff0c\u53ef\u80fd\u9020\u6210\u5047\u9634\u6027\u7ed3\u679c\u3002</p></div>
 <div class="footer">
-<div style="text-align:right;margin-bottom:8px">
-<img src="/signatures/report_stamp.png" style="width:100px;height:auto;opacity:0.85" />
-</div>
-<div class="signatures" style="margin-bottom:8px">
+<div class="signatures" style="margin-bottom:10px;position:relative">
 <b>\u68c0\u9a8c\u8005\uff1a</b>""" + tester_name + """&emsp;&emsp;<b>\u5ba1\u6838\u8005\uff1a</b>""" + reviewer_name + """&emsp;&emsp;<b>\u65f6\u95f4\uff1a</b>""" + now_str + """
+<img src="/signatures/report_stamp.png" style="position:absolute;right:0;top:-80px;width:100px;height:auto;opacity:0.85;z-index:1" />
 </div>
 <p>\u5907\u6ce8\uff1a\u672c\u68c0\u6d4b\u7ed3\u679c\u4ec5\u5bf9\u6765\u6837\u8d1f\u8d23\uff0c\u4f9b\u4e34\u5e8a\u53c2\u8003\uff0c\u5982\u6709\u7591\u95ee\u8bf7\u5728\u6536\u5230\u62a5\u544a\u540e7\u5929\u5185\u63d0\u51fa\u3002</p>
 <p class="disclaimer">\u5730\u5740\uff1a\u53a6\u95e8\u706b\u70ac\u9ad8\u65b0\u533a\u521b\u4e1a\u56ed\u706b\u70ac\u4e1c\u8def11-15\u53f7\u4f1f\u4e1a\u697c\u5317\u697c305B\u5ba4</p></div>
