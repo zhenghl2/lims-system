@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
-import { Table, Tag, Typography, Button, Modal, Spin, Space } from "antd";
-import { EyeOutlined, DownloadOutlined } from "@ant-design/icons";
+import { Table, Tag, Typography, Button, Modal, Spin, Space, Card, Row, Col, Input, message } from "antd";
+import { EyeOutlined, DownloadOutlined, CheckOutlined } from "@ant-design/icons";
 import api from "../api/client";
-const { Title } = Typography;
+const { Title, Text } = Typography;
+
+const REVIEWERS = [
+  { name: "陈菊玲", image: "/signatures/陈菊玲.png" },
+  { name: "李彩娟", image: "/signatures/李彩娟.png" },
+  { name: "杨思婷", image: "/signatures/杨思婷.jpg" },
+];
+
 const STATUS_MAP: Record<string, string> = {
   DRAFT: "default", PENDING_REVIEW: "processing", VERIFIED: "blue",
   RELEASED: "green", REJECTED: "red",
@@ -13,6 +20,11 @@ export default function HpvReports() {
   const [reportHtml, setReportHtml] = useState("");
   const [htmlLoading, setHtmlLoading] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [genModalOpen, setGenModalOpen] = useState(false);
+  const [genRecord, setGenRecord] = useState<any>(null);
+  const [selectedReviewer, setSelectedReviewer] = useState("");
+  const [reviewerPassword, setReviewerPassword] = useState("");
+  const [genLoading, setGenLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -35,6 +47,42 @@ export default function HpvReports() {
     } finally { setHtmlLoading(false); }
   };
 
+  const openGenerate = (record: any) => {
+    setGenRecord(record);
+    setSelectedReviewer("");
+    setReviewerPassword("");
+    setGenModalOpen(true);
+  };
+
+  const confirmGenerate = async () => {
+    if (!selectedReviewer) { message.warning("请选择审核者"); return; }
+    if (!reviewerPassword) { message.warning("请输入审核者密码"); return; }
+    setGenLoading(true);
+    try {
+      await api.post("/hpv/results/verify_reviewer/", {
+        reviewer: selectedReviewer,
+        password: reviewerPassword,
+      });
+      // On success, trigger PDF print
+      const resultId = genRecord?.content?.hpv_result_id;
+      if (resultId) {
+        const { data } = await api.get(`/hpv/results/${resultId}/report_html/`);
+        const printWin = window.open('', '_blank');
+        if (printWin) {
+          printWin.document.write(data.html);
+          printWin.document.close();
+          setTimeout(() => printWin.print(), 500);
+        }
+      }
+      setGenModalOpen(false);
+      message.success("报告已生成并发送至打印机");
+    } catch (e: any) {
+      const d = e?.response?.data;
+      const msg = d?.error || d?.detail || "验证失败";
+      message.error(msg);
+    } finally { setGenLoading(false); }
+  };
+
   const downloadReport = (record: any) => {
     const resultId = record.content?.hpv_result_id;
     if (!resultId) return;
@@ -44,8 +92,6 @@ export default function HpvReports() {
       if (printWin) {
         printWin.document.write(data.html);
         printWin.document.close();
-        printWin.onload = () => printWin.print();
-        // Fallback: print after short delay
         setTimeout(() => printWin.print(), 500);
       }
     }).catch(() => {}).finally(() => setHtmlLoading(false));
@@ -65,12 +111,13 @@ export default function HpvReports() {
     },
     { title: "Created", dataIndex: "created_at", key: "created_at", width: 100, render: (d: string) => d?.slice(0, 10) },
     {
-      title: "Actions", key: "actions", width: 100,
+      title: "Actions", key: "actions", width: 180,
       render: (_: any, record: any) => (
         record.content?.hpv_result_id ? (
           <Space>
             <Button size="small" icon={<EyeOutlined />} onClick={() => viewReport(record)}>View</Button>
             <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadReport(record)}>PDF</Button>
+            <Button size="small" type="primary" onClick={() => openGenerate(record)}>Generate</Button>
           </Space>
         ) : <Button size="small" disabled>—</Button>
       ),
@@ -81,13 +128,56 @@ export default function HpvReports() {
     <div>
       <Title level={4}>HPV Reports</Title>
       <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={{ pageSize: 20 }} />
-      <Modal title="HPV Report" open={modalOpen} onCancel={() => setModalOpen(false)}
+      
+      {/* Preview Modal */}
+      <Modal title="HPV Report Preview" open={modalOpen} onCancel={() => setModalOpen(false)}
         width={800} footer={null} style={{ top: 20 }}>
         <Spin spinning={htmlLoading}>
           {reportHtml ? (
             <iframe srcDoc={reportHtml} style={{ width: "100%", height: "70vh", border: "none" }} />
           ) : null}
         </Spin>
+      </Modal>
+
+      {/* Generate Report Modal */}
+      <Modal title="生成报告" open={genModalOpen} onCancel={() => setGenModalOpen(false)}
+        footer={[
+          <Button key="cancel" onClick={() => setGenModalOpen(false)}>取消</Button>,
+          <Button key="confirm" type="primary" loading={genLoading} onClick={confirmGenerate}
+            disabled={!selectedReviewer || !reviewerPassword}>确认生成</Button>,
+        ]}
+        width={560}>
+        <Text strong style={{ display: "block", marginBottom: 16 }}>选择审核者</Text>
+        <Row gutter={[12, 12]}>
+          {REVIEWERS.map(r => (
+            <Col span={8} key={r.name}>
+              <Card
+                hoverable
+                size="small"
+                onClick={() => setSelectedReviewer(r.name)}
+                style={{
+                  border: selectedReviewer === r.name ? "2px solid #1890ff" : "1px solid #d9d9d9",
+                  textAlign: "center", cursor: "pointer",
+                }}
+                bodyStyle={{ padding: 8 }}>
+                <img src={r.image} alt={r.name} style={{ width: "100%", height: 70, objectFit: "contain", marginBottom: 4 }} />
+                <div>
+                  <Text strong style={{ fontSize: 12 }}>{r.name}</Text>
+                  {selectedReviewer === r.name && <CheckOutlined style={{ color: "#1890ff", marginLeft: 4 }} />}
+                </div>
+              </Card>
+            </Col>
+          ))}
+        </Row>
+        <div style={{ marginTop: 16, textAlign: "center" }}>
+          <Input.Password
+            placeholder="请输入审核者密码"
+            value={reviewerPassword}
+            onChange={e => setReviewerPassword(e.target.value)}
+            style={{ maxWidth: 240 }}
+            onPressEnter={confirmGenerate}
+          />
+        </div>
       </Modal>
     </div>
   );

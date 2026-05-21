@@ -24,8 +24,8 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
     form.setFieldsValue({
       pcr_date: pdata.pcr_date ? dayjs(pdata.pcr_date) : null,
       pcr_time: pdata.pcr_time ? dayjs(pdata.pcr_time, "HH:mm") : dayjs(),
-      biosafety_cabinet: pdata.biosafety_cabinet || "",
-      pcr_instrument: pdata.pcr_instrument || "",
+      biosafety_cabinet: pdata.biosafety_cabinet || "YSFH-EI-004-01",
+      pcr_instrument: pdata.pcr_instrument || "YSFH-EI-024-07",
       kit_type: pdata.kit_type || undefined,
       reagent_lot: pdata.reagent_lot || "",
       reagent_expiry: pdata.reagent_expiry || "",
@@ -88,12 +88,12 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
             </Form.Item>
           </Col>
           <Col span={6}>
-            <Form.Item name="biosafety_cabinet" label="生物安全柜编号" rules={[{ required: true }]}>
+            <Form.Item name="biosafety_cabinet" label="生物安全柜编号">
               <Input placeholder="例：BSC-A2-01" />
             </Form.Item>
           </Col>
           <Col span={6}>
-            <Form.Item name="pcr_instrument" label="PCR 仪编号" rules={[{ required: true }]}>
+            <Form.Item name="pcr_instrument" label="PCR 仪编号">
               <Input placeholder="例：YSFH-EI-024-07" />
             </Form.Item>
           </Col>

@@ -28,7 +28,7 @@ export default function HybridizationTab({ batch, wells, onRefresh }: { batch: a
     form.setFieldsValue({
       hybridization_date: hdata.hybridization_date ? dayjs(hdata.hybridization_date) : null,
       hybridization_time: hdata.hybridization_time || "",
-      hybridization_instrument: hdata.hybridization_instrument || "",
+      hybridization_instrument: hdata.hybridization_instrument || "YSFH-EI-055",
       sds_1pct_date: hdata.reagents?.sds_1pct_date ? dayjs(hdata.reagents.sds_1pct_date) : null,
       h2o2_3pct_date: hdata.reagents?.h2o2_3pct_date ? dayjs(hdata.reagents.h2o2_3pct_date) : null,
       denatured_product_added: hdata.denatured_product_added || false,
@@ -104,7 +104,7 @@ export default function HybridizationTab({ batch, wells, onRefresh }: { batch: a
             </Form.Item>
           </Col>
           <Col span={8}>
-            <Form.Item name="hybridization_instrument" label="杂交仪编号" rules={[{ required: true }]}>
+            <Form.Item name="hybridization_instrument" label="杂交仪编号">
               <Input placeholder="例：YSFH-EI-055" />
             </Form.Item>
           </Col>

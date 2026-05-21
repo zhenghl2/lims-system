@@ -23,8 +23,8 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
     form.setFieldsValue({
       extraction_date: edata.extraction_date ? dayjs(edata.extraction_date) : dayjs(),
       extraction_time: edata.extraction_time || dayjs().format("HH:mm"),
-      biosafety_cabinet: edata.biosafety_cabinet || "",
-      extraction_instrument: edata.extraction_instrument || "",
+      biosafety_cabinet: edata.biosafety_cabinet || "YSFH-EI-004-01",
+      extraction_instrument: edata.extraction_instrument || "YSFH-EI-056",
       kit_type: edata.kit_type || undefined,
       reagent_lot: edata.reagent_lot || "",
       reagent_expiry: edata.reagent_expiry || "",
@@ -81,14 +81,14 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
             </Form.Item>
           </Col>
           <Col span={8}>
-            <Form.Item name="biosafety_cabinet" label="生物安全柜编号" rules={[{ required: true }]}>
+            <Form.Item name="biosafety_cabinet" label="生物安全柜编号">
               <Input placeholder="例：BSC-A2-01" />
             </Form.Item>
           </Col>
         </Row>
         <Row gutter={16}>
           <Col span={8}>
-            <Form.Item name="extraction_instrument" label="核酸提取仪编号" rules={[{ required: true }]}>
+            <Form.Item name="extraction_instrument" label="核酸提取仪编号">
               <Input placeholder="例：YSFH-EI-010-01" />
             </Form.Item>
           </Col>
