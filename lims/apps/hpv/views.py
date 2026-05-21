@@ -615,6 +615,16 @@ class HpvResultViewSet(viewsets.ModelViewSet):
             if batch.status not in ("LOCKED", "COMPLETED"):
                 batch.status = "LOCKED"
                 batch.save()
+        else:
+            # If this was the last OUT_OF_CONTROL well, unlock the batch
+            batch = result.batch
+            if batch.status == "LOCKED":
+                still_locked = HpvResult.objects.filter(
+                    batch=batch, qc_status="OUT_OF_CONTROL"
+                ).exists()
+                if not still_locked:
+                    batch.status = "HYBRIDIZATION"
+                    batch.save()
         return Response(HpvResultSerializer(result).data)
 
     # ── mark_reportable ──
