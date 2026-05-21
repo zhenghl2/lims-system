@@ -64,7 +64,6 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
 
     for (const w of wells) {
       const wl = w.well_label;
-      if (isControlWell(wl)) continue;
       if (!w.sample_id_display) continue;
       if (!m[wl]) m[wl] = { ...defaultGenos };
       if (!ic[wl]) ic[wl] = "+";
