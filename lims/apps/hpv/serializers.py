@@ -302,7 +302,7 @@ class HpvResultBatchUpdateSerializer(serializers.Serializer):
     """Bulk update genotype_results for multiple samples in a batch."""
     batch_id = serializers.UUIDField()
     results = serializers.ListField(
-        child=serializers.DictField(child=serializers.CharField(allow_blank=True))
+        child=serializers.DictField()
     )
 
 
