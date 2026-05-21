@@ -613,6 +613,9 @@ class HpvResultViewSet(viewsets.ModelViewSet):
         if status == "OUT_OF_CONTROL":
             batch = result.batch
             if batch.status not in ("LOCKED", "COMPLETED"):
+                # Store previous status before locking
+                if not batch.lock_prev_status:
+                    batch.lock_prev_status = batch.status
                 batch.status = "LOCKED"
                 batch.save()
         else:
@@ -623,7 +626,9 @@ class HpvResultViewSet(viewsets.ModelViewSet):
                     batch=batch, qc_status="OUT_OF_CONTROL"
                 ).exists()
                 if not still_locked:
-                    batch.status = "HYBRIDIZATION"
+                    # Restore previous status, then clear the stored value
+                    batch.status = batch.lock_prev_status or "HYBRIDIZATION"
+                    batch.lock_prev_status = ""
                     batch.save()
         return Response(HpvResultSerializer(result).data)
 

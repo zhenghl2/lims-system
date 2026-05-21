@@ -17,6 +17,7 @@ class HpvBatch(models.Model):
         "organizations.Site", on_delete=models.PROTECT, related_name="hpv_batches"
     )
 
+    lock_prev_status = models.CharField(max_length=30, blank=True, default="", help_text="Pre-lock status for auto-restore")
     status = models.CharField(
         max_length=20, default="PLANNED", db_index=True,
         choices=[

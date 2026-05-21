@@ -148,6 +148,8 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
       setLocalResults((prev: any[]) => prev.map((r: any) =>
         r.well_label === _wl ? { ...r, qc_status: status } : r
       ));
+      // Refresh parent so batch LOCKED/UNLOCK status updates in UI
+      onRefresh();
     } catch (e: any) {
       const data = e?.response?.data;
       const msg = data?.error || data?.detail || (typeof data === "object" && data !== null ? Object.values(data).flat()[0] : null);
