@@ -424,10 +424,23 @@ class HpvResultViewSet(viewsets.ModelViewSet):
                 continue
 
             try:
-                result = HpvResult.objects.get(batch_id=batch_id, sample__sample_id=sample_id)
-            except HpvResult.DoesNotExist:
-                errors.append({"error": f"result not found", "sample": sample_id})
+                sample_obj = Sample.objects.get(sample_id=sample_id)
+            except Sample.DoesNotExist:
+                errors.append({"error": f"sample not found: {sample_id}", "item": item})
                 continue
+            well = HpvWellPosition.objects.filter(batch_id=batch_id, sample=sample_obj).first()
+            if not well:
+                errors.append({"error": f"well not found for sample: {sample_id}", "item": item})
+                continue
+            result, _created = HpvResult.objects.get_or_create(
+                batch_id=batch_id,
+                well_position=well,
+                defaults={
+                    "sample": sample_obj,
+                    "kit_type": "HPV_15",
+                    "review_status": "DRAFT",
+                }
+            )
 
             # Update genotype_results
             if "genotype_results" in item:

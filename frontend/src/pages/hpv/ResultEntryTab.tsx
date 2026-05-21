@@ -74,15 +74,26 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
   };
 
   const batchUpdate = async () => {
-    const payload = results.map((r: any) => {
-      const wl = r.well_label || "";
-      return {
-        sample: r.sample_display || r.sample,
-        genotype_results: matrix[wl] || {},
-        ic_result: icMatrix[wl] || "",
-        biotin_result: biotinMatrix[wl] || "",
-      };
-    });
+    // Iterate over wells (not results) so first-time saves also work
+    const payload = wells
+      .filter((w: any) => w.sample_id_display && !isControlWell(w.well_label))
+      .map((w: any) => {
+        const wl = w.well_label;
+        const gt = matrix[wl];
+        // Skip rows with no genotype data entered
+        if (!gt || Object.values(gt).every((v: any) => !v)) return null;
+        return {
+          sample: w.sample_id_display,
+          genotype_results: gt,
+          ic_result: icMatrix[wl] || "",
+          biotin_result: biotinMatrix[wl] || "",
+        };
+      })
+      .filter(Boolean);
+    if (payload.length === 0) {
+      message.warning("没有可保存的数据，请先在表格中录入结果");
+      return;
+    }
     setSaving(true);
     try {
       const { data } = await api.post("/hpv/results/batch_update/", {
