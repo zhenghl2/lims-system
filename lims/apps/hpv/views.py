@@ -736,6 +736,18 @@ table.result tr.section td { background:#f0f0f0; font-weight:bold; text-align:le
 </body></html>"""
         return Response({"html": html})
 
+    # ── verify_reviewer ──
+    @action(detail=False, methods=["POST"], url_path="verify_reviewer")
+    def verify_reviewer(self, request):
+        """Verify reviewer password for report generation."""
+        reviewer = request.data.get("reviewer", "")
+        password = request.data.get("password", "")
+        valid_reviewers = ["\u9648\u83ca\u73b2", "\u674e\u5f69\u5a1f", "\u6768\u601d\u5a77"]
+        if reviewer not in valid_reviewers:
+            return Response({"error": "\u65e0\u6548\u7684\u5ba1\u6838\u8005"}, status=400)
+        if password != "123456":
+            return Response({"error": "\u5bc6\u7801\u9519\u8bef"}, status=400)
+        return Response({"success": True, "reviewer": reviewer})
 
     # ── mark_reportable ──
     @action(detail=True, methods=["POST"])
