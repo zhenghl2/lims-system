@@ -674,43 +674,33 @@ class HpvResultViewSet(viewsets.ModelViewSet):
         today = timezone.now().strftime("%Y.%m.%d")
         now_str = timezone.now().strftime("%Y.%m.%d %H:%M")
 
-        # Extract signer names from batch electronic signatures
-        tester_name = ""
-        reviewer_name = ""
-        batch_obj = result.batch
-        if batch_obj:
-            sigs = []
-            for stage in ["extraction_data", "pcr_data", "hybridization_data"]:
-                data = getattr(batch_obj, stage, None) or {}
-                sig = data.get("operator_signature", {})
-                if sig and sig.get("username"):
-                    sigs.append(sig["username"])
-            if sigs:
-                tester_name = sigs[0]
-            if len(sigs) > 1:
-                reviewer_name = sigs[-1]
+        # Fixed signers with electronic signature images
+        tester_name = "\u6768\u601d\u5a77"
+        reviewer_name = "\u9648\u83ca\u73b2"
+        tester_sig_img = '<img src="/signatures/\u6768\u601d\u5a77.jpg" style="height:40px;vertical-align:middle;margin-left:4px" />'
+        reviewer_sig_img = '<img src="/signatures/\u9648\u83ca\u73b2.png" style="height:40px;vertical-align:middle;margin-left:4px" />'
 
         html = """<!DOCTYPE html>
 <html lang="zh">
 <head><meta charset="UTF-8"><title>HPV Report - """ + sample_id + """</title>
 <style>
-@media print { body { -webkit-print-color-adjust: exact; } }
-body { font-family: 'SimSun','Songti SC',serif; font-size:13px; color:#333; max-width:740px; margin:30px auto; line-height:1.6; }
-.header { text-align:center; margin-bottom:8px; }
-.header h1 { font-size:15px; margin:2px 0; font-weight:bold; }
-.header .en { font-size:10px; color:#666; }
-.title { text-align:center; font-size:16px; font-weight:bold; margin:12px 0; border-bottom:2px solid #333; padding-bottom:6px; }
-table { width:100%; border-collapse:collapse; margin:8px 0; font-size:12px; }
-table.info td { padding:4px 6px; border:1px solid #999; }
-table.result th { background:#e6f0fa; padding:5px 6px; border:1px solid #999; text-align:center; font-weight:bold; }
-table.result td { padding:4px 6px; border:1px solid #999; text-align:center; }
-table.result tr.section td { background:#f0f0f0; font-weight:bold; text-align:left; }
-.summary { margin:10px 0; padding:8px; border:1px solid #999; }
-.interpretation { margin:10px 0; }
-.interpretation h3 { font-size:13px; margin:6px 0; }
-.interpretation p { margin:3px 0; }
-.footer { margin-top:20px; font-size:11px; }
-.footer .disclaimer { color:#999; font-size:10px; }
+@media print { body { -webkit-print-color-adjust: exact; margin:10px; } }
+body { font-family: 'SimSun','Songti SC',serif; font-size:11px; color:#333; max-width:740px; margin:10px auto; line-height:1.35; }
+.header { text-align:center; margin-bottom:4px; }
+.header h1 { font-size:13px; margin:1px 0; font-weight:bold; }
+.header .en { font-size:9px; color:#666; }
+.title { text-align:center; font-size:14px; font-weight:bold; margin:6px 0; border-bottom:1.5px solid #333; padding-bottom:3px; }
+table { width:100%; border-collapse:collapse; margin:4px 0; font-size:10px; }
+table.info td { padding:2px 4px; border:1px solid #999; }
+table.result th { background:#e6f0fa; padding:2px 3px; border:1px solid #999; text-align:center; font-weight:bold; font-size:9px; }
+table.result td { padding:1px 3px; border:1px solid #999; text-align:center; font-size:9px; }
+table.result tr.section td { background:#f0f0f0; font-weight:bold; text-align:left; font-size:9px; }
+.summary { margin:6px 0; padding:4px 6px; border:1px solid #999; font-size:11px; }
+.interpretation { margin:6px 0; font-size:10px; }
+.interpretation h3 { font-size:11px; margin:3px 0; }
+.interpretation p { margin:2px 0; }
+.footer { margin-top:10px; font-size:10px; }
+.footer .disclaimer { color:#999; font-size:9px; }
 </style></head><body>
 <div class="header"><h1>\u53a6\u95e8\u6021\u751f\u65b9\u548c\u533b\u5b66\u68c0\u9a8c\u5b9e\u9a8c\u5ba4</h1>
 <div class="en">XIAMEN YISHENGFANGHE MEDICAL LABORATORY</div></div>
@@ -738,9 +728,8 @@ table.result tr.section td { background:#f0f0f0; font-weight:bold; text-align:le
 <p>HPV\u9633\u6027\u8005\u5efa\u8bae\u8fdb\u884c\u7ec6\u80de\u5b66\u68c0\u6d4b\uff1a\u7ec6\u80de\u5b66\u68c0\u6d4b\u7ed3\u679c\u6b63\u5e38\u8005\u6bcf\u5e74\u8ddf\u8e2a\u968f\u8bca\u4e00\u6b21\uff1b\u5f02\u5e38\u8005\u8bf7\u54a8\u8be2\u533b\u751f\u8fdb\u884c\u8fdb\u4e00\u6b65\u8bca\u65ad\u4e0e\u6cbb\u7597\u3002</p>
 <p>4. \u91c7\u6837\u65b9\u6cd5\u4e0d\u51c6\u786e\u6216\u6709\u672a\u7ecf\u9a8c\u8bc1\u7684\u5e72\u6270\u7269\u8d28\u6c61\u67d3\u6837\u54c1\uff0c\u53ef\u80fd\u9020\u6210\u5047\u9634\u6027\u7ed3\u679c\u3002</p></div>
 <div class="footer">
-<div class="signatures" style="margin-bottom:10px;position:relative">
-<b>\u68c0\u9a8c\u8005\uff1a</b>""" + tester_name + """&emsp;&emsp;<b>\u5ba1\u6838\u8005\uff1a</b>""" + reviewer_name + """&emsp;&emsp;<b>\u65f6\u95f4\uff1a</b>""" + now_str + """
-<img src="/signatures/report_stamp.png" style="position:absolute;right:0;top:-80px;width:100px;height:auto;opacity:0.85;z-index:1" />
+<div class="signatures" style="margin-bottom:10px">
+<b>\u68c0\u9a8c\u8005\uff1a</b>""" + tester_name + tester_sig_img + """&emsp;&emsp;<b>\u5ba1\u6838\u8005\uff1a</b>""" + reviewer_name + reviewer_sig_img + """&emsp;&emsp;<b>\u65f6\u95f4\uff1a</b>""" + now_str + """
 </div>
 <p>\u5907\u6ce8\uff1a\u672c\u68c0\u6d4b\u7ed3\u679c\u4ec5\u5bf9\u6765\u6837\u8d1f\u8d23\uff0c\u4f9b\u4e34\u5e8a\u53c2\u8003\uff0c\u5982\u6709\u7591\u95ee\u8bf7\u5728\u6536\u5230\u62a5\u544a\u540e7\u5929\u5185\u63d0\u51fa\u3002</p>
 <p class="disclaimer">\u5730\u5740\uff1a\u53a6\u95e8\u706b\u70ac\u9ad8\u65b0\u533a\u521b\u4e1a\u56ed\u706b\u70ac\u4e1c\u8def11-15\u53f7\u4f1f\u4e1a\u697c\u5317\u697c305B\u5ba4</p></div>
