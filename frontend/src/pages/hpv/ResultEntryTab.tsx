@@ -391,11 +391,13 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
                           { value: "OUT_OF_CONTROL", label: "失控" },
                         ]}
                       />
-                    ) : (
+                    ) : result ? (
                       <Space size={2}>
                         <Button size="small" onClick={() => handleRetest(result)}>复查</Button>
                         <Button size="small" type="primary" onClick={() => handleReport(result)}>报告</Button>
                       </Space>
+                    ) : (
+                      <Text type="secondary" style={{ fontSize: 11 }}>请先保存结果</Text>
                     )}
                   </td>
                 </tr>
