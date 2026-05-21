@@ -634,11 +634,71 @@ class HpvResultViewSet(viewsets.ModelViewSet):
 
     # ── mark_reportable ──
     @action(detail=True, methods=["POST"])
+    @transaction.atomic
     def mark_reportable(self, request, pk=None):
-        """Mark result as reportable."""
+        """Mark result as reportable and create a Report record."""
         result = self.get_object()
         result.review_status = "REVIEWED"
         result.save()
+
+        # Create Report record so it appears in Reports module
+        if result.sample:
+            from lims.apps.reports.models import Report, ReportTemplate
+            from lims.apps.organizations.models import Site
+
+            # Find HPV template (prefer Chinese)
+            template = ReportTemplate.objects.filter(
+                code__istartswith="hpv", is_active=True
+            ).order_by("code").first()
+
+            if template:
+                # Generate report number: RPT-HPV-YYYYMMDD-XXXX
+                today = timezone.now().strftime("%Y%m%d")
+                last = Report.objects.filter(
+                    report_number__startswith=f"RPT-HPV-{today}"
+                ).order_by("-report_number").first()
+                if last:
+                    seq = int(last.report_number[-4:]) + 1
+                else:
+                    seq = 1
+                report_number = f"RPT-HPV-{today}-{seq:04d}"
+
+                # Get site from batch or user
+                site = result.batch.site if result.batch and result.batch.site else (
+                    request.user.site if hasattr(request.user, 'site') and request.user.site else Site.objects.first()
+                )
+
+                # Collect genotype results for report content
+                positives = [k for k, v in (result.genotype_results or {}).items() if v == "+"]
+                content = {
+                    "sample_id": result.sample.sample_id,
+                    "patient_name": result.sample.patient_name or "",
+                    "kit_type": result.kit_type,
+                    "genotype_results": result.genotype_results or {},
+                    "positive_genotypes": positives,
+                    "ic_result": result.ic_result,
+                    "biotin_result": result.biotin_result,
+                    "auto_interpretation": result.auto_interpretation,
+                    "review_status": "REVIEWED",
+                    "generated_at": timezone.now().isoformat(),
+                }
+
+                report, created = Report.objects.get_or_create(
+                    sample=result.sample,
+                    template=template,
+                    defaults={
+                        "report_number": report_number,
+                        "site": site,
+                        "content": content,
+                        "status": "DRAFT",
+                    }
+                )
+                if not created:
+                    # Update existing report content
+                    report.content = content
+                    report.status = "DRAFT"
+                    report.save()
+
         return Response(HpvResultSerializer(result).data)
 
 
