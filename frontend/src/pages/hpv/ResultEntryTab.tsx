@@ -18,7 +18,7 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
   const [icMatrix, setIcMatrix] = useState<Record<string, string>>({});
   const [biotinMatrix, setBiotinMatrix] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
-  const [localResults, setLocalResults] = useState<any[]>([]);
+  const [localResults, setLocalResults] = useState<any[]>(results);
 
   // Sync localResults when results prop changes (batch switch / initial load)
   useEffect(() => { setLocalResults(results); }, [results]);

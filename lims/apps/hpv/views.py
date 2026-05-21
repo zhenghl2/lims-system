@@ -153,7 +153,7 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
             )
 
         data = request.data
-        required_fields = ["extraction_date", "operator", "reviewer"]
+        required_fields = ["extraction_date"]
         for field in required_fields:
             if field not in data:
                 return Response({"error": f"缺少必填字段: {field}"}, status=400)
@@ -197,13 +197,14 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
             )
 
         data = request.data
-        required = ["pcr_date", "operator", "reviewer", "kit_type", "pcr_instrument"]
+        required = ["pcr_date", "kit_type", "pcr_instrument"]
         for field in required:
             if not data.get(field):
                 return Response({"error": f"缺少必填字段: {field}"}, status=400)
 
         batch.pcr_data = {
             "pcr_date": data.get("pcr_date", ""),
+            "pcr_time": data.get("pcr_time", ""),
             "biosafety_cabinet": data.get("biosafety_cabinet", ""),
             "pcr_instrument": data.get("pcr_instrument", ""),
             "kit_type": data.get("kit_type", ""),
@@ -246,7 +247,7 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
             )
 
         data = request.data
-        required = ["hybridization_date", "operator", "reviewer"]
+        required = ["hybridization_date"]
         for field in required:
             if not data.get(field):
                 return Response({"error": f"缺少必填字段: {field}"}, status=400)
@@ -256,13 +257,8 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
             "hybridization_time": data.get("hybridization_time", ""),
             "hybridization_instrument": data.get("hybridization_instrument", ""),
             "reagents": {
-                "ssc_20x": data.get("ssc_20x", ""),
-                "sds_1pct": data.get("sds_1pct", ""),
-                "sodium_citrate": data.get("sodium_citrate", ""),
-                "tmb": data.get("tmb", ""),
-                "pod": data.get("pod", ""),
-                "h2o2_3pct": data.get("h2o2_3pct", ""),
-                "purified_water": data.get("purified_water", ""),
+                "sds_1pct_date": data.get("sds_1pct_date", ""),
+                "h2o2_3pct_date": data.get("h2o2_3pct_date", ""),
             },
             "self_prepared_reagent_dates": data.get("self_prepared_reagent_dates", {}),
             "strip_placement_order": data.get("strip_placement_order", ""),
@@ -272,6 +268,7 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
             }),
             "denatured_product_added": data.get("denatured_product_added", False),
             "post_experiment_notes": data.get("post_experiment_notes", ""),
+            "well_assignments": data.get("well_assignments", {}),
             "operator_signature": data.get("operator"),
             "reviewer_signature": data.get("reviewer"),
             "saved_by": request.user.username,
@@ -336,7 +333,11 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         stage = request.data.get("stage", "")
         role = request.data.get("role", "")  # operator / reviewer
-        username = request.user.username
+        signer_name = request.data.get("signer", "").strip()
+        password = request.data.get("password", "").strip()
+        if not password or password != "123456":
+            return Response({"error": "密码错误"}, status=400)
+        username = signer_name if signer_name else request.user.username
         timestamp = timezone.now().isoformat()
 
         stage_map = {
@@ -571,6 +572,47 @@ class HpvResultViewSet(viewsets.ModelViewSet):
             "result": HpvResultSerializer(result).data,
             "retest_record": HpvRetestRecordSerializer(retest).data,
         })
+    # ── qc_status ──
+    @action(detail=False, methods=["POST"], url_path="qc_status")
+    def qc_status(self, request):
+        """Set QC status. Auto-creates result if needed."""
+        status = request.data.get("qc_status", "")
+        if status not in ("IN_CONTROL", "OUT_OF_CONTROL"):
+            return Response({"error": "无效状态"}, status=400)
+
+        batch_id = request.data.get("batch_id")
+        well_label = request.data.get("well_label")
+        result_id = request.data.get("result_id")
+
+        if result_id:
+            result = self.get_queryset().get(pk=result_id)
+        elif batch_id and well_label:
+            well = HpvWellPosition.objects.get(batch_id=batch_id, well_label=well_label)
+            result, _ = HpvResult.objects.get_or_create(
+                batch_id=batch_id, well_position=well,
+                defaults={"sample": well.sample, "kit_type": "HPV_15", "review_status": "DRAFT"}
+            )
+        else:
+            return Response({"error": "缺少 result_id 或 batch_id+well_label"}, status=400)
+
+        result.qc_status = status
+        result.save()
+        if status == "OUT_OF_CONTROL":
+            batch = result.batch
+            if batch.status not in ("LOCKED", "COMPLETED"):
+                batch.status = "LOCKED"
+                batch.save()
+        return Response(HpvResultSerializer(result).data)
+
+    # ── mark_reportable ──
+    @action(detail=True, methods=["POST"])
+    def mark_reportable(self, request, pk=None):
+        """Mark result as reportable."""
+        result = self.get_object()
+        result.review_status = "REVIEWED"
+        result.save()
+        return Response(HpvResultSerializer(result).data)
+
 
 
 # ─── Membrane Photo ViewSet ──────────────────────────────────────────

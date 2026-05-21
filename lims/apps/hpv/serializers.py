@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from datetime import date
 from django.utils import timezone
-from lims.apps.samples.models import TestPanel
+from lims.apps.samples.models import Sample, TestPanel
 from lims.apps.organizations.models import Site
 from .models import HpvBatch, HpvWellPosition, HpvResult, HpvMembranePhoto, HpvRetestRecord
 
@@ -85,7 +85,7 @@ class HpvBatchCreateSerializer(serializers.ModelSerializer):
     """Serializer for batch creation — allows setting created_by from context."""
     batch_number = serializers.CharField(
         max_length=30, required=False, allow_blank=True,
-        help_text="Leave empty to auto-generate as YYYYMMDD-NN"
+        help_text="Leave empty to auto-generate as YYYYMMDD-MMDD (月批次+日批次)"
     )
     well_labels = serializers.ListField(
         child=serializers.CharField(max_length=6), write_only=True, required=False,
@@ -107,14 +107,18 @@ class HpvBatchCreateSerializer(serializers.ModelSerializer):
         user = self.context["request"].user
 
         # Auto-generate batch number if not provided
+        # Format: YYYYMMDD-MMDD (月累计批次 + 日累计批次)
         if not validated_data.get("batch_number"):
-            today = date.today().strftime("%Y%m%d")
-            count = HpvBatch.objects.filter(batch_number__startswith=today).count()
-            validated_data["batch_number"] = f"{today}-{count + 1:02d}"
+            today = date.today()
+            today_str = today.strftime("%Y%m%d")
+            month_str = today.strftime("%Y%m")
+            month_count = HpvBatch.objects.filter(batch_number__startswith=month_str).count()
+            day_count = HpvBatch.objects.filter(batch_number__startswith=today_str).count()
+            validated_data["batch_number"] = f"{today_str}-{month_count + 1:02d}{day_count + 1:02d}"
 
         # Auto-populate panel: all batches on this endpoint are HPV
         if "panel_id" not in validated_data and "panel" not in validated_data:
-            from lims.apps.samples.models import TestPanel, Sample
+            from lims.apps.samples.models import Sample, TestPanel, Sample
             panel = TestPanel.objects.filter(code="HPV", is_active=True).first()
             if not panel:
                 from rest_framework import serializers as _srz
@@ -261,7 +265,7 @@ class HpvResultSerializer(serializers.ModelSerializer):
             "well_position", "well_label",
             "kit_type", "genotype_results",
             "ic_result", "biotin_result",
-            "auto_interpretation", "review_status", "status_display",
+            "auto_interpretation", "review_status", "status_display", "qc_status",
             "reviewer_1", "reviewer_2",
             "modification_log", "rejection_reason",
             "created_at", "updated_at",
@@ -310,6 +314,8 @@ class HpvResultReviewSerializer(serializers.Serializer):
 # ─── Membrane Photo ─────────────────────────────────────────────────
 
 class HpvMembranePhotoSerializer(serializers.ModelSerializer):
+    sample = serializers.PrimaryKeyRelatedField(queryset=Sample.objects.all(), required=False, allow_null=True)
+
     class Meta:
         model = HpvMembranePhoto
         fields = ["id", "batch", "sample", "image", "well_position",
@@ -326,13 +332,16 @@ class HpvRetestRecordSerializer(serializers.ModelSerializer):
     original_batch_number = serializers.CharField(
         source="original_batch.batch_number", read_only=True
     )
+    new_batch_number = serializers.CharField(
+        source="new_batch.batch_number", read_only=True
+    )
 
     class Meta:
         model = HpvRetestRecord
         fields = [
             "id", "original_sample", "original_sample_display",
             "original_batch", "original_batch_number",
-            "new_batch",
+            "new_batch", "new_batch_number",
             "retest_date", "retest_reason",
             "original_result", "original_interpretation",
             "retest_result", "retest_interpretation",

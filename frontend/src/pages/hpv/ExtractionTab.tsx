@@ -2,7 +2,16 @@ import { useEffect, useState } from "react";
 import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message } from "antd";
 import dayjs from "dayjs";
 import api from "../../api/client";
+import SignerModal from "./SignerModal";
 import { EXTRACTION_STEPS, KIT_TYPES, ROWS_48, COLS_48, wellLabel } from "./constants";
+
+
+const SIGNER_IMAGES: Record<string, string> = {
+  "陈菊玲": "/signatures/陈菊玲.png",
+  "李彩娟": "/signatures/李彩娟.png",
+  "杨思婷": "/signatures/杨思婷.jpg",
+};
+const get_signer_image = (name: string) => SIGNER_IMAGES[name] || "";
 
 export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any; wells: any[]; onRefresh: () => void }) {
   const [form] = Form.useForm();
@@ -19,8 +28,6 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
       kit_type: edata.kit_type || undefined,
       reagent_lot: edata.reagent_lot || "",
       reagent_expiry: edata.reagent_expiry || "",
-      operator: edata.operator_signature || "",
-      reviewer: edata.reviewer_signature || "",
     });
     setSteps(edata.step_confirmations || {});
   }, [edata, form]);
@@ -40,26 +47,24 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
         reagent_lot: vals.reagent_lot,
         reagent_expiry: vals.reagent_expiry,
         step_confirmations: steps,
-        operator: vals.operator,
-        reviewer: vals.reviewer,
       });
       message.success("核酸提取记录已保存");
       onRefresh();
     } catch (e: any) {
-      if (e?.errorFields) return;
+      if (e?.errorFields) { message.warning("请填写所有必填项"); return; }
       const data = e?.response?.data;
       const msg = data?.error || data?.detail || (typeof data === "object" && data !== null ? Object.values(data).flat()[0] : null);
       message.error(msg || "保存失败");
     } finally { setSaving(false); }
   };
 
-  const signStage = async (role: "operator" | "reviewer") => {
-    try {
-      await api.post(`/hpv/batches/${batch.id}/sign/`, { stage: "extraction", role });
-      message.success(`${role === "operator" ? "操作人" : "复核人"}签名完成`);
-      onRefresh();
-    } catch (e: any) { message.error(e?.response?.data?.error || "签名失败"); }
-  };
+  const opSig2 = edata.operator_signature;
+  const revSig2 = edata.reviewer_signature;
+  const operatorSigned = !!(opSig2 && typeof opSig2 === "object" && opSig2.username);
+  const reviewerSigned = !!(revSig2 && typeof revSig2 === "object" && revSig2.username);
+  const [operatorModalOpen, setOperatorModalOpen] = useState(false);
+  const [reviewerModalOpen, setReviewerModalOpen] = useState(false);
+
 
   return (
     <div>
@@ -103,18 +108,7 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
             </Form.Item>
           </Col>
         </Row>
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="operator" label="操作人签名" rules={[{ required: true }]}>
-              <Input placeholder="输入姓名或工号" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="reviewer" label="复核人签名" rules={[{ required: true }]}>
-              <Input placeholder="输入姓名或工号" />
-            </Form.Item>
-          </Col>
-        </Row>
+
       </Form>
 
       <Card title="步骤确认" size="small" style={{ marginBottom: 16 }}>
@@ -156,9 +150,40 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
 
       <Space>
         <Button type="primary" onClick={saveExtraction} loading={saving}>保存提取记录</Button>
-        <Button onClick={() => signStage("operator")}>操作人签名</Button>
-        <Button onClick={() => signStage("reviewer")}>复核人签名</Button>
+        {operatorSigned ? (
+          <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
+            onClick={() => setOperatorModalOpen(true)}>
+            <img src={get_signer_image(opSig2.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            操作人: {opSig2.username} ✓
+          </Button>
+        ) : (
+          <Button type="primary" onClick={() => setOperatorModalOpen(true)}>操作人签名</Button>
+        )}
+        {reviewerSigned ? (
+          <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
+            onClick={() => setReviewerModalOpen(true)}>
+            <img src={get_signer_image(revSig2.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            复核人: {revSig2.username} ✓
+          </Button>
+        ) : (
+          <Button type="primary" onClick={() => setReviewerModalOpen(true)}>复核人签名</Button>
+        )}
       </Space>
-    </div>
+    
+      <SignerModal
+        open={operatorModalOpen} role="operator" roleLabel="操作人"
+        batchId={batch.id} stage="extraction"
+        currentSigner={opSig2?.username || null}
+        onDone={() => { setOperatorModalOpen(false); onRefresh(); }}
+        onCancel={() => setOperatorModalOpen(false)}
+      />
+      <SignerModal
+        open={reviewerModalOpen} role="reviewer" roleLabel="复核人"
+        batchId={batch.id} stage="extraction"
+        currentSigner={revSig2?.username || null}
+        onDone={() => { setReviewerModalOpen(false); onRefresh(); }}
+        onCancel={() => setReviewerModalOpen(false)}
+      />
+</div>
   );
 }

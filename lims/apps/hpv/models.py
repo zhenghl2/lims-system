@@ -81,7 +81,8 @@ class HpvResult(models.Model):
         HpvBatch, on_delete=models.CASCADE, related_name="results"
     )
     sample = models.ForeignKey(
-        "samples.Sample", on_delete=models.PROTECT, related_name="hpv_results"
+        "samples.Sample", on_delete=models.PROTECT, related_name="hpv_results",
+        null=True, blank=True
     )
     well_position = models.ForeignKey(
         HpvWellPosition, on_delete=models.PROTECT, null=True, blank=True
@@ -104,6 +105,12 @@ class HpvResult(models.Model):
 
     auto_interpretation = models.CharField(max_length=30, blank=True)
 
+    qc_status = models.CharField(
+        max_length=20,
+        choices=[("IN_CONTROL", "在控"), ("OUT_OF_CONTROL", "失控")],
+        default="IN_CONTROL",
+        blank=True,
+    )
     review_status = models.CharField(
         max_length=20, default="DRAFT", db_index=True,
         choices=[
@@ -146,7 +153,8 @@ class HpvMembranePhoto(models.Model):
         HpvBatch, on_delete=models.CASCADE, related_name="membrane_photos"
     )
     sample = models.ForeignKey(
-        "samples.Sample", on_delete=models.PROTECT, related_name="hpv_membrane_photos"
+        "samples.Sample", on_delete=models.PROTECT, related_name="hpv_membrane_photos",
+        null=True, blank=True
     )
 
     image = models.ImageField(upload_to="hpv/membrane_photos/%Y/%m/")

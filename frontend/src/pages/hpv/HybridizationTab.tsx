@@ -1,16 +1,27 @@
 import { useEffect, useState } from "react";
-import { Form, Input, DatePicker, Button, Card, Row, Col, Descriptions, Space, Typography, Upload, message } from "antd";
-import { CameraOutlined, CheckCircleOutlined } from "@ant-design/icons";
+import { Form, Input, DatePicker, Button, Card, Row, Col, Space, Typography, message } from "antd";
 import dayjs from "dayjs";
 import api from "../../api/client";
-import { ROWS_48, COLS_48, wellLabel } from "./constants";
+import SignerModal from "./SignerModal";
 
 const { Text } = Typography;
-const { TextArea } = Input;
 
-export default function HybridizationTab({ batch, wells, photos, onRefresh }: { batch: any; wells: any[]; photos: any[]; onRefresh: () => void }) {
+const HYB_ROWS = ["A", "B", "C"];
+const HYB_COLS = Array.from({ length: 16 }, (_, i) => i + 1);
+const HYB_WELL_LABELS = HYB_COLS.flatMap(c => HYB_ROWS.map(r => `${r}${c}`));
+
+
+const SIGNER_IMAGES: Record<string, string> = {
+  "陈菊玲": "/signatures/陈菊玲.png",
+  "李彩娟": "/signatures/李彩娟.png",
+  "杨思婷": "/signatures/杨思婷.jpg",
+};
+const get_signer_image = (name: string) => SIGNER_IMAGES[name] || "";
+
+export default function HybridizationTab({ batch, wells, onRefresh }: { batch: any; wells: any[]; onRefresh: () => void }) {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
+  const [wellAssignments, setWellAssignments] = useState<Record<string, string>>({});
   const hdata = batch.hybridization_data || {};
 
   useEffect(() => {
@@ -18,20 +29,32 @@ export default function HybridizationTab({ batch, wells, photos, onRefresh }: { 
       hybridization_date: hdata.hybridization_date ? dayjs(hdata.hybridization_date) : null,
       hybridization_time: hdata.hybridization_time || "",
       hybridization_instrument: hdata.hybridization_instrument || "",
-      ssc_20x: hdata.reagents?.ssc_20x || "",
-      sds_1pct: hdata.reagents?.sds_1pct || "",
-      sodium_citrate: hdata.reagents?.sodium_citrate || "",
-      tmb: hdata.reagents?.tmb || "",
-      pod: hdata.reagents?.pod || "",
-      h2o2_3pct: hdata.reagents?.h2o2_3pct || "",
-      purified_water: hdata.reagents?.purified_water || "",
-      strip_placement_order: hdata.strip_placement_order || "",
+      sds_1pct_date: hdata.reagents?.sds_1pct_date ? dayjs(hdata.reagents.sds_1pct_date) : null,
+      h2o2_3pct_date: hdata.reagents?.h2o2_3pct_date ? dayjs(hdata.reagents.h2o2_3pct_date) : null,
       denatured_product_added: hdata.denatured_product_added || false,
       post_experiment_notes: hdata.post_experiment_notes || "",
-      operator: hdata.operator_signature || "",
-      reviewer: hdata.reviewer_signature || "",
     });
+    setWellAssignments(hdata.well_assignments || {});
   }, [hdata, form]);
+
+  const autoFill = () => {
+    const assigned = wells
+      .filter((w: any) => w.sample)
+      .map((w: any) => w.sample_id_display || w.barcode || w.internal_number || "");
+    const assignments: Record<string, string> = {};
+    HYB_WELL_LABELS.forEach((label, idx) => {
+      if (idx < assigned.length) assignments[label] = assigned[idx];
+    });
+    const start = assigned.length;
+    assignments[HYB_WELL_LABELS[start]] = "阴性对照";
+    assignments[HYB_WELL_LABELS[start + 1]] = "阳性对照";
+    assignments[HYB_WELL_LABELS[start + 2]] = "弱阳性对照";
+    setWellAssignments(assignments);
+  };
+
+  const updateWell = (label: string, value: string) => {
+    setWellAssignments(prev => ({ ...prev, [label]: value }));
+  };
 
   const saveHyb = async () => {
     try {
@@ -41,14 +64,11 @@ export default function HybridizationTab({ batch, wells, photos, onRefresh }: { 
         hybridization_date: vals.hybridization_date?.format("YYYY-MM-DD"),
         hybridization_time: vals.hybridization_time,
         hybridization_instrument: vals.hybridization_instrument,
-        ssc_20x: vals.ssc_20x, sds_1pct: vals.sds_1pct,
-        sodium_citrate: vals.sodium_citrate, tmb: vals.tmb,
-        pod: vals.pod, h2o2_3pct: vals.h2o2_3pct,
-        purified_water: vals.purified_water,
-        strip_placement_order: vals.strip_placement_order,
+        sds_1pct_date: vals.sds_1pct_date?.format("YYYY-MM-DD"),
+        h2o2_3pct_date: vals.h2o2_3pct_date?.format("YYYY-MM-DD"),
         denatured_product_added: vals.denatured_product_added,
         post_experiment_notes: vals.post_experiment_notes,
-        operator: vals.operator, reviewer: vals.reviewer,
+        well_assignments: wellAssignments,
       });
       message.success("杂交记录已保存");
       onRefresh();
@@ -60,27 +80,14 @@ export default function HybridizationTab({ batch, wells, photos, onRefresh }: { 
     } finally { setSaving(false); }
   };
 
-  const signHyb = async (role: "operator" | "reviewer") => {
-    try {
-      await api.post(`/hpv/batches/${batch.id}/sign/`, { stage: "hybridization", role });
-      message.success("签名完成"); onRefresh();
-    } catch (e: any) { message.error(e?.response?.data?.error || "签名失败"); }
-  };
+  const opSig = hdata.operator_signature;
+  const revSig = hdata.reviewer_signature;
+  const operatorSigned = !!(opSig && typeof opSig === "object" && opSig.username);
+  const reviewerSigned = !!(revSig && typeof revSig === "object" && revSig.username);
+  const [operatorModalOpen, setOperatorModalOpen] = useState(false);
+  const [reviewerModalOpen, setReviewerModalOpen] = useState(false);
 
-  const uploadPhoto = async (wellLabel: string, file: File) => {
-    const well = wells.find((w: any) => w.well_label === wellLabel);
-    if (!well) { message.error("找不到对应孔位"); return; }
-    const fd = new FormData();
-    fd.append("batch", batch.id);
-    fd.append("sample", well.sample);
-    fd.append("well_position", wellLabel);
-    fd.append("image", file);
-    try {
-      await api.post("/hpv/photos/", fd, { headers: { "Content-Type": "multipart/form-data" } });
-      message.success(`${wellLabel} 照片上传成功`);
-      onRefresh();
-    } catch (e: any) { message.error(e?.response?.data?.error || "照片上传失败"); }
-  };
+
 
   return (
     <div>
@@ -103,79 +110,114 @@ export default function HybridizationTab({ batch, wells, photos, onRefresh }: { 
           </Col>
         </Row>
 
-        <Card title="试剂" size="small" style={{ marginBottom: 16 }}>
+        <Card title="自配试剂配置日期" size="small" style={{ marginBottom: 16 }}>
           <Row gutter={16}>
-            <Col span={6}><Form.Item name="ssc_20x" label="20×SSC"><Input /></Form.Item></Col>
-            <Col span={6}><Form.Item name="sds_1pct" label="1% SDS"><Input /></Form.Item></Col>
-            <Col span={6}><Form.Item name="sodium_citrate" label="1M 柠檬酸钠"><Input /></Form.Item></Col>
-            <Col span={6}><Form.Item name="tmb" label="TMB"><Input /></Form.Item></Col>
-            <Col span={6}><Form.Item name="pod" label="POD"><Input /></Form.Item></Col>
-            <Col span={6}><Form.Item name="h2o2_3pct" label="3% H2O2"><Input /></Form.Item></Col>
-            <Col span={6}><Form.Item name="purified_water" label="纯化水"><Input /></Form.Item></Col>
+            <Col span={12}>
+              <Form.Item name="sds_1pct_date" label="1% SDS 配置日期" rules={[{ required: true, message: "请选择1% SDS配置日期" }]}>
+                <DatePicker style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="h2o2_3pct_date" label="3% H2O2 配置日期" rules={[{ required: true, message: "请选择3% H2O2配置日期" }]}>
+                <DatePicker style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
           </Row>
         </Card>
 
         <Card title="杂交参数" size="small" style={{ marginBottom: 16 }}>
-          <Descriptions size="small" column={3}>
-            <Descriptions.Item label="温度">51℃</Descriptions.Item>
-            <Descriptions.Item label="摇摆混匀">2min</Descriptions.Item>
-            <Descriptions.Item label="膜条放置顺序">
-              <Form.Item name="strip_placement_order" noStyle><Input placeholder="例：A1-H6" /></Form.Item>
-            </Descriptions.Item>
-          </Descriptions>
+          <Row gutter={16}>
+            <Col span={8}><Text><strong>温度：</strong>51℃</Text></Col>
+            <Col span={8}><Text><strong>摇摆混匀：</strong>2min</Text></Col>
+            <Col span={8}>
+              <Form.Item name="denatured_product_added" valuePropName="checked" noStyle>
+                <label style={{ cursor: "pointer" }}>
+                  <input type="checkbox" readOnly checked={form.getFieldValue("denatured_product_added")} style={{ marginRight: 6 }} />
+                  变性产物已加入杂交液
+                </label>
+              </Form.Item>
+            </Col>
+          </Row>
         </Card>
 
-        <Form.Item name="denatured_product_added" valuePropName="checked" label="变性产物已加入杂交液" />
-
-        <Card title={`膜条照片 (${photos.length}/${wells.length})`} size="small" style={{ marginBottom: 16 }}
-          extra={<Text type="secondary">必须上传所有照片才能进入结果录入</Text>}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 4 }}>
-            {ROWS_48.map(r =>
-              COLS_48.map(c => {
-                const wl = wellLabel(r, c);
-                const well = wells.find((w: any) => w.well_label === wl);
-                const photo = photos.find((p: any) => p.well_position === wl);
+        <Card
+          title={`杂交仪孔位 (3×16) — 共 ${Object.keys(wellAssignments).filter(k => wellAssignments[k]).length}/48`}
+          size="small"
+          style={{ marginBottom: 16 }}
+          extra={
+            <Space>
+              <Button size="small" onClick={autoFill}>自动填入样本</Button>
+              <Button size="small" danger onClick={() => setWellAssignments({})}>清空</Button>
+            </Space>
+          }
+        >
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(16, 1fr)", gap: 2 }}>
+            {HYB_ROWS.map(r =>
+              HYB_COLS.map(c => {
+                const label = `${r}${c}`;
                 return (
-                  <div key={wl} style={{
-                    border: `1px solid ${photo ? "#52c41a" : "#ff4d4f"}`,
-                    borderRadius: 4, padding: 4, textAlign: "center", minHeight: 60,
-                    background: photo ? "#f6ffed" : "#fff1f0",
+                  <div key={label} style={{
+                    border: "1px solid #d9d9d9", borderRadius: 2, padding: "2px 1px", textAlign: "center",
+                    background: wellAssignments[label]?.includes("对照") ? "#fff7e6" : "#fff",
                   }}>
-                    <div style={{ fontWeight: 600, fontSize: 11 }}>{wl}</div>
-                    {!well ? <Text type="secondary" style={{ fontSize: 10 }}>—</Text> :
-                      photo ? <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 18 }} /> :
-                      <Upload showUploadList={false} customRequest={({ file }: any) => uploadPhoto(wl, file)}>
-                        <Button size="small" icon={<CameraOutlined />} type="link">拍照</Button>
-                      </Upload>
-                    }
+                    <div style={{ fontSize: 9, color: "#888", lineHeight: 1.2 }}>{label}</div>
+                    <Input
+                      size="small"
+                      value={wellAssignments[label] || ""}
+                      onChange={e => updateWell(label, e.target.value)}
+                      style={{ fontSize: 10, padding: "0 2px", textAlign: "center", height: 22 }}
+                      placeholder="-"
+                    />
                   </div>
                 );
               })
             )}
           </div>
+          <div style={{ marginTop: 8, fontSize: 12, color: "#888" }}>
+            提示：点击「自动填入样本」将按本批次核酸提取样本顺序填充，最后3孔为对照。可手动修改或清空任意孔位。
+          </div>
         </Card>
 
         <Form.Item name="post_experiment_notes" label="实验后处理记录">
-          <TextArea rows={2} />
+          <Input.TextArea rows={2} />
         </Form.Item>
-        <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="operator" label="操作人签名" rules={[{ required: true }]}>
-              <Input placeholder="输入姓名或工号" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="reviewer" label="复核人签名" rules={[{ required: true }]}>
-              <Input placeholder="输入姓名或工号" />
-            </Form.Item>
-          </Col>
-        </Row>
       </Form>
       <Space>
         <Button type="primary" onClick={saveHyb} loading={saving}>保存杂交记录</Button>
-        <Button onClick={() => signHyb("operator")}>操作人签名</Button>
-        <Button onClick={() => signHyb("reviewer")}>复核人签名</Button>
+        {operatorSigned ? (
+          <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
+            onClick={() => setOperatorModalOpen(true)}>
+            <img src={get_signer_image(opSig.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            操作人: {opSig.username} ✓
+          </Button>
+        ) : (
+          <Button type="primary" onClick={() => setOperatorModalOpen(true)}>操作人签名</Button>
+        )}
+        {reviewerSigned ? (
+          <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
+            onClick={() => setReviewerModalOpen(true)}>
+            <img src={get_signer_image(revSig.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            复核人: {revSig.username} ✓
+          </Button>
+        ) : (
+          <Button type="primary" onClick={() => setReviewerModalOpen(true)}>复核人签名</Button>
+        )}
       </Space>
-    </div>
+    
+      <SignerModal
+        open={operatorModalOpen} role="operator" roleLabel="操作人"
+        batchId={batch.id} stage="hybridization"
+        currentSigner={opSig?.username || null}
+        onDone={() => { setOperatorModalOpen(false); onRefresh(); }}
+        onCancel={() => setOperatorModalOpen(false)}
+      />
+      <SignerModal
+        open={reviewerModalOpen} role="reviewer" roleLabel="复核人"
+        batchId={batch.id} stage="hybridization"
+        currentSigner={revSig?.username || null}
+        onDone={() => { setReviewerModalOpen(false); onRefresh(); }}
+        onCancel={() => setReviewerModalOpen(false)}
+      />
+</div>
   );
 }

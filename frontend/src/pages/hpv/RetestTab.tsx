@@ -26,13 +26,13 @@ export default function RetestTab({ batch }: { batch: any }) {
   };
 
   const columns: ColumnsType<any> = [
-    { title: "原样本", dataIndex: "original_sample_display", key: "sample", width: 130 },
-    { title: "原批次", dataIndex: "original_batch_number", key: "batch", width: 130 },
-    { title: "复查日期", dataIndex: "retest_date", key: "date", width: 110 },
-    { title: "原因", dataIndex: "retest_reason", key: "reason", width: 120,
+    { title: "样本编号", dataIndex: "original_sample_display", key: "sample", width: 130 },
+    { title: "初检批次", dataIndex: "original_batch_number", key: "batch", width: 130 },
+    { title: "复查批次", dataIndex: "new_batch_number", key: "batch", width: 110 },
+    { title: "复查原因", dataIndex: "retest_reason", key: "reason", width: 120,
       render: (v: string) => <Tag>{reasonLabels[v] || v}</Tag>,
     },
-    { title: "原结果", dataIndex: "original_interpretation", key: "orig", width: 100 },
+    { title: "初检结果", dataIndex: "original_interpretation", key: "orig", width: 100 },
     { title: "复查结果", dataIndex: "retest_interpretation", key: "retest", width: 100,
       render: (v: string) => v || <Text type="secondary">待录入</Text>,
     },

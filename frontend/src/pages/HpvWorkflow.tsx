@@ -4,7 +4,7 @@ import {
   Space, Typography, message, Empty, Spin, Dropdown, Statistic, InputNumber,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { PlusOutlined, ReloadOutlined, SyncOutlined, DeleteOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, SyncOutlined, DeleteOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import api from "../api/client";
 
@@ -27,9 +27,9 @@ export default function HpvWorkflow() {
   const [batchDetail, setBatchDetail] = useState<any>(null);
   const [wells, setWells] = useState<any[]>([]);
   const [results, setResults] = useState<any[]>([]);
-  const [photos, setPhotos] = useState<any[]>([]);
   const [detailLoading, setDetailLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("extraction");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -49,19 +49,33 @@ export default function HpvWorkflow() {
     setDetailLoading(true);
     setActiveTab("extraction");
     try {
-      const [bd, w, r, p] = await Promise.all([
+      const [bd, w, r] = await Promise.all([
         api.get(`/hpv/batches/${batch.id}/`),
         api.get(`/hpv/batches/${batch.id}/wells/`),
         api.get("/hpv/results/", { params: { batch: batch.id } }),
-        api.get("/hpv/photos/", { params: { batch: batch.id } }),
       ]);
       setBatchDetail(bd.data);
       setWells(Array.isArray(w.data) ? w.data : []);
       setResults(Array.isArray(r.data.results) ? r.data.results : (Array.isArray(r.data) ? r.data : []));
-      setPhotos(Array.isArray(p.data.results) ? p.data.results : (Array.isArray(p.data) ? p.data : []));
     } catch (e: any) { message.error(e?.response?.data?.error || "加载批次详情失败"); }
     finally { setDetailLoading(false); }
   }, []);
+
+  const refreshDetail = useCallback(async () => {
+    if (!selectedBatch) return;
+    setDetailLoading(true);
+    try {
+      const [bd, w, r] = await Promise.all([
+        api.get(`/hpv/batches/${selectedBatch.id}/`),
+        api.get(`/hpv/batches/${selectedBatch.id}/wells/`),
+        api.get("/hpv/results/", { params: { batch: selectedBatch.id } }),
+      ]);
+      setBatchDetail(bd.data);
+      setWells(Array.isArray(w.data) ? w.data : []);
+      setResults(Array.isArray(r.data.results) ? r.data.results : (Array.isArray(r.data) ? r.data : []));
+    } catch (e: any) { message.error(e?.response?.data?.error || "刷新批次详情失败"); }
+    finally { setDetailLoading(false); }
+  }, [selectedBatch]);
 
   const batchColumns: ColumnsType<any> = [
     { title: "批次号", dataIndex: "batch_number", key: "batch_number", width: 140 },
@@ -121,18 +135,28 @@ export default function HpvWorkflow() {
 
   return (
     <div style={{ display: "flex", gap: 16, height: "calc(100vh - 140px)" }}>
-      <div style={{ width: 540, flexShrink: 0, display: "flex", flexDirection: "column" }}>
+      <div style={{ width: sidebarCollapsed ? 50 : 540, flexShrink: 0, display: "flex", flexDirection: "column", transition: "width 0.25s" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <Title level={5} style={{ margin: 0 }}>HPV 分析批</Title>
-          <Space>
-            <Select placeholder="全部状态" allowClear size="small" style={{ width: 110 }}
-              value={statusFilter} onChange={setStatusFilter}
-              options={Object.entries(STATUS_LABEL).map(([k, v]) => ({ value: k, label: v }))}
-            />
-            <Button size="small" icon={<ReloadOutlined />} onClick={fetchBatches} />
-            <CreateBatchModal onCreated={() => { fetchBatches(); }} />
-          </Space>
+          {sidebarCollapsed ? (
+            <Button type="text" icon={<MenuFoldOutlined />} onClick={() => setSidebarCollapsed(false)}
+              style={{ padding: 4 }} title="展开批次列表" />
+          ) : (
+            <>
+              <Title level={5} style={{ margin: 0 }}>HPV 分析批</Title>
+              <Space>
+                <Select placeholder="全部状态" allowClear size="small" style={{ width: 110 }}
+                  value={statusFilter} onChange={setStatusFilter}
+                  options={Object.entries(STATUS_LABEL).map(([k, v]) => ({ value: k, label: v }))}
+                />
+                <Button size="small" icon={<ReloadOutlined />} onClick={fetchBatches} />
+                <CreateBatchModal onCreated={() => { fetchBatches(); }} />
+                <Button type="text" icon={<MenuUnfoldOutlined />} onClick={() => setSidebarCollapsed(true)}
+                  style={{ padding: 4 }} title="折叠批次列表" />
+              </Space>
+            </>
+          )}
         </div>
+        {!sidebarCollapsed && (
         <Table rowKey="id" columns={batchColumns} dataSource={batches} loading={loading}
           size="small" pagination={{ pageSize: 15, size: "small" }} scroll={{ y: "calc(100vh - 280px)" }}
           onRow={(rec) => ({
@@ -140,6 +164,7 @@ export default function HpvWorkflow() {
             style: { background: selectedBatch?.id === rec.id ? "#e6f4ff" : undefined, cursor: "pointer" },
           })}
         />
+        )}
       </div>
 
       <div style={{ flex: 1, overflow: "auto", border: "1px solid #f0f0f0", borderRadius: 8, padding: 16 }}>
@@ -166,10 +191,10 @@ export default function HpvWorkflow() {
             </div>
             <Tabs activeKey={activeTab} onChange={setActiveTab} items={batchDetailTabs.map(tab => {
               let children: React.ReactNode = <Empty description="功能开发中" />;
-              if (tab.key === "extraction") children = <ExtractionTab batch={batchDetail} wells={wells} onRefresh={() => selectBatch(batchDetail)} />;
-              else if (tab.key === "pcr") children = <PcrTab batch={batchDetail} onRefresh={() => selectBatch(batchDetail)} />;
-              else if (tab.key === "hybridization") children = <HybridizationTab batch={batchDetail} wells={wells} photos={photos} onRefresh={() => selectBatch(batchDetail)} />;
-              else if (tab.key === "results") children = <ResultEntryTab batch={batchDetail} results={results} wells={wells} photos={photos} onRefresh={() => selectBatch(batchDetail)} />;
+              if (tab.key === "extraction") children = <ExtractionTab batch={batchDetail} wells={wells} onRefresh={refreshDetail} />;
+              else if (tab.key === "pcr") children = <PcrTab batch={batchDetail} onRefresh={refreshDetail} />;
+              else if (tab.key === "hybridization") children = <HybridizationTab batch={batchDetail} wells={wells} onRefresh={refreshDetail} />;
+              else if (tab.key === "results") children = <ResultEntryTab batch={batchDetail} results={results} wells={wells} onRefresh={refreshDetail} />;
               else if (tab.key === "retests") children = <RetestTab batch={batchDetail} />;
               return { ...tab, children };
             })} />
@@ -264,8 +289,8 @@ function CreateBatchModal({ onCreated }: { onCreated: () => void }) {
           </div>
         )}
         <Form form={form} layout="vertical">
-          <Form.Item name="batch_number" label="批次号" rules={[{ required: false }]} extra="留空则自动生成，格式：YYYYMMDD-NN">
-            <Input placeholder="留空自动生成，例：20260519-01" />
+          <Form.Item name="batch_number" label="批次号" rules={[{ required: false }]} extra="留空则自动生成，格式：YYYYMMDD-MMDD（月批次+日批次）">
+            <Input placeholder="留空自动生成，例：20260521-0301" />
           </Form.Item>
           <Form.Item name="planned_count" label="本批次计划检测样本数">
             <InputNumber min={1} max={48} placeholder="最多48孔" style={{ width: "100%" }} />

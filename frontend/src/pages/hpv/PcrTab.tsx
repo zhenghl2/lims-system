@@ -1,8 +1,17 @@
 import { useEffect, useState } from "react";
-import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Descriptions, Space, Tag, message } from "antd";
+import { Form, Input, DatePicker, TimePicker, Select, Button, Card, Row, Col, Checkbox, Descriptions, Space, Tag, message } from "antd";
 import dayjs from "dayjs";
 import api from "../../api/client";
+import SignerModal from "./SignerModal";
 import { PCR_STEPS, HPV_KIT_TYPES } from "./constants";
+
+
+const SIGNER_IMAGES: Record<string, string> = {
+  "陈菊玲": "/signatures/陈菊玲.png",
+  "李彩娟": "/signatures/李彩娟.png",
+  "杨思婷": "/signatures/杨思婷.jpg",
+};
+const get_signer_image = (name: string) => SIGNER_IMAGES[name] || "";
 
 export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: () => void }) {
   const [form] = Form.useForm();
@@ -14,14 +23,13 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
   useEffect(() => {
     form.setFieldsValue({
       pcr_date: pdata.pcr_date ? dayjs(pdata.pcr_date) : null,
+      pcr_time: pdata.pcr_time ? dayjs(pdata.pcr_time, "HH:mm") : dayjs(),
       biosafety_cabinet: pdata.biosafety_cabinet || "",
       pcr_instrument: pdata.pcr_instrument || "",
       kit_type: pdata.kit_type || undefined,
       reagent_lot: pdata.reagent_lot || "",
       reagent_expiry: pdata.reagent_expiry || "",
       pcr_program: pdata.pcr_program || "",
-      operator: pdata.operator_signature || "",
-      reviewer: pdata.reviewer_signature || "",
     });
     setSteps(pdata.step_confirmations || {});
     setQcWeak(pdata.weak_positive_control);
@@ -34,6 +42,7 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
       setSaving(true);
       await api.post(`/hpv/batches/${batch.id}/save_pcr/`, {
         pcr_date: vals.pcr_date?.format("YYYY-MM-DD"),
+        pcr_time: vals.pcr_time?.format("HH:mm"),
         biosafety_cabinet: vals.biosafety_cabinet,
         pcr_instrument: vals.pcr_instrument,
         kit_type: vals.kit_type,
@@ -44,8 +53,6 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
         positive_control: { count: 1 },
         weak_positive_control: qcWeak,
         step_confirmations: steps,
-        operator: vals.operator,
-        reviewer: vals.reviewer,
       });
       message.success("PCR 记录已保存");
       onRefresh();
@@ -57,28 +64,35 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
     } finally { setSaving(false); }
   };
 
-  const signPcr = async (role: "operator" | "reviewer") => {
-    try {
-      await api.post(`/hpv/batches/${batch.id}/sign/`, { stage: "pcr", role });
-      message.success("签名完成"); onRefresh();
-    } catch (e: any) { message.error(e?.response?.data?.error || "签名失败"); }
-  };
+  const opSig = pdata.operator_signature;
+  const revSig = pdata.reviewer_signature;
+  const operatorSigned = !!(opSig && typeof opSig === "object" && opSig.username);
+  const reviewerSigned = !!(revSig && typeof revSig === "object" && revSig.username);
+  const [operatorModalOpen, setOperatorModalOpen] = useState(false);
+  const [reviewerModalOpen, setReviewerModalOpen] = useState(false);
+
+
 
   return (
     <div>
       <Form form={form} layout="vertical">
         <Row gutter={16}>
-          <Col span={8}>
+          <Col span={6}>
             <Form.Item name="pcr_date" label="实验日期" rules={[{ required: true }]}>
               <DatePicker style={{ width: "100%" }} />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col span={6}>
+            <Form.Item name="pcr_time" label="实验时间">
+              <TimePicker style={{ width: "100%" }} format="HH:mm" />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
             <Form.Item name="biosafety_cabinet" label="生物安全柜编号" rules={[{ required: true }]}>
               <Input placeholder="例：BSC-A2-01" />
             </Form.Item>
           </Col>
-          <Col span={8}>
+          <Col span={6}>
             <Form.Item name="pcr_instrument" label="PCR 仪编号" rules={[{ required: true }]}>
               <Input placeholder="例：YSFH-EI-024-07" />
             </Form.Item>
@@ -121,16 +135,7 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
           </Col>
         </Row>
         <Row gutter={16}>
-          <Col span={12}>
-            <Form.Item name="operator" label="操作人签名" rules={[{ required: true }]}>
-              <Input placeholder="输入姓名或工号" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item name="reviewer" label="复核人签名" rules={[{ required: true }]}>
-              <Input placeholder="输入姓名或工号" />
-            </Form.Item>
-          </Col>
+
         </Row>
       </Form>
 
@@ -146,9 +151,40 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
 
       <Space>
         <Button type="primary" onClick={savePcr} loading={saving}>保存 PCR 记录</Button>
-        <Button onClick={() => signPcr("operator")}>操作人签名</Button>
-        <Button onClick={() => signPcr("reviewer")}>复核人签名</Button>
+        {operatorSigned ? (
+          <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
+            onClick={() => setOperatorModalOpen(true)}>
+            <img src={get_signer_image(opSig.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            操作人: {opSig.username} ✓
+          </Button>
+        ) : (
+          <Button type="primary" onClick={() => setOperatorModalOpen(true)}>操作人签名</Button>
+        )}
+        {reviewerSigned ? (
+          <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
+            onClick={() => setReviewerModalOpen(true)}>
+            <img src={get_signer_image(revSig.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            复核人: {revSig.username} ✓
+          </Button>
+        ) : (
+          <Button type="primary" onClick={() => setReviewerModalOpen(true)}>复核人签名</Button>
+        )}
       </Space>
-    </div>
+    
+      <SignerModal
+        open={operatorModalOpen} role="operator" roleLabel="操作人"
+        batchId={batch.id} stage="pcr"
+        currentSigner={opSig?.username || null}
+        onDone={() => { setOperatorModalOpen(false); onRefresh(); }}
+        onCancel={() => setOperatorModalOpen(false)}
+      />
+      <SignerModal
+        open={reviewerModalOpen} role="reviewer" roleLabel="复核人"
+        batchId={batch.id} stage="pcr"
+        currentSigner={revSig?.username || null}
+        onDone={() => { setReviewerModalOpen(false); onRefresh(); }}
+        onCancel={() => setReviewerModalOpen(false)}
+      />
+</div>
   );
 }
