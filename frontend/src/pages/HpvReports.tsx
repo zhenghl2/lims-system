@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { Table, Tag, Typography, Button, Modal, Spin } from "antd";
-import { EyeOutlined } from "@ant-design/icons";
+import { Table, Tag, Typography, Button, Modal, Spin, Space } from "antd";
+import { EyeOutlined, DownloadOutlined } from "@ant-design/icons";
 import api from "../api/client";
 const { Title } = Typography;
 const STATUS_MAP: Record<string, string> = {
@@ -35,6 +35,20 @@ export default function HpvReports() {
     } finally { setHtmlLoading(false); }
   };
 
+  const downloadReport = (record: any) => {
+    const resultId = record.content?.hpv_result_id;
+    if (!resultId) return;
+    api.get(`/hpv/results/${resultId}/report_html/`).then(({ data }) => {
+      const blob = new Blob([data.html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `HPV_Report_${record.sample_id || record.report_number}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }).catch(() => {});
+  };
+
   const columns = [
     { title: "Report #", dataIndex: "report_number", key: "report_number", width: 140 },
     { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 130 },
@@ -52,7 +66,10 @@ export default function HpvReports() {
       title: "Actions", key: "actions", width: 100,
       render: (_: any, record: any) => (
         record.content?.hpv_result_id ? (
-          <Button size="small" icon={<EyeOutlined />} onClick={() => viewReport(record)}>View</Button>
+          <Space>
+            <Button size="small" icon={<EyeOutlined />} onClick={() => viewReport(record)}>View</Button>
+            <Button size="small" icon={<DownloadOutlined />} onClick={() => downloadReport(record)}>Download</Button>
+          </Space>
         ) : <Button size="small" disabled>—</Button>
       ),
     },
