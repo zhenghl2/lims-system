@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Row, Col, Card, Statistic, Typography, Input, Button, Table, Tag, Descriptions, Space, Spin, Empty, Steps, message, Image } from "antd";
-import { ExperimentOutlined, InboxOutlined, SyncOutlined, FileDoneOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
+import { ExperimentOutlined, InboxOutlined, SyncOutlined, FileDoneOutlined, SearchOutlined, ReloadOutlined, CheckCircleOutlined, CloseCircleOutlined, CheckOutlined } from "@ant-design/icons";
 import api from "../api/client";
 
 const { Title, Text } = Typography;
@@ -36,7 +36,7 @@ export default function HpvDashboard() {
   const [loadingDetail, setLoadingDetail] = useState(false);
 
   useEffect(() => {
-    api.get("/samples/stats/", { params: { panel: "HPV" } })
+    api.get("/hpv/batches/dashboard_stats/")
       .then(r => setStats(r.data))
       .catch(() => {});
   }, []);
@@ -133,7 +133,22 @@ export default function HpvDashboard() {
         </Col>
         <Col xs={24} sm={12} lg={6}>
           <Card>
+            <Statistic title="Received" value={s.received || 0} prefix={<CheckCircleOutlined />} valueStyle={{ color: "#1890ff" }} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic title="Rejected" value={s.rejected || 0} prefix={<CloseCircleOutlined />} valueStyle={{ color: "#ff4d4f" }} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
             <Statistic title="In Process" value={s.in_progress || 0} prefix={<SyncOutlined spin={!!(s.in_progress)} />} valueStyle={{ color: "#1890ff" }} />
+          </Card>
+        </Col>
+        <Col xs={24} sm={12} lg={6}>
+          <Card>
+            <Statistic title="Completed" value={s.completed || 0} prefix={<CheckOutlined />} valueStyle={{ color: "#52c41a" }} />
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>

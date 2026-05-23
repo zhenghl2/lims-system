@@ -25,7 +25,7 @@ api.interceptors.response.use(
       const refresh = localStorage.getItem("refresh_token");
       if (refresh) {
         try {
-          const { data } = await axios.post("api/v1/refresh/", { refresh });
+          const { data } = await axios.post("/api/v1/refresh/", { refresh });
           localStorage.setItem("access_token", data.access);
           localStorage.setItem("refresh_token", data.refresh);
           originalRequest.headers.Authorization = `Bearer ${data.access}`;

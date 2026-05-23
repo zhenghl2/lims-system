@@ -1,23 +1,17 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message } from "antd";
 import dayjs from "dayjs";
 import api from "../../api/client";
 import SignerModal from "./SignerModal";
-import { EXTRACTION_STEPS, KIT_TYPES, ROWS_48, COLS_48, wellLabel } from "./constants";
+import { getSignStatus, EXTRACTION_STEPS, KIT_TYPES, ROWS_48, COLS_48, wellLabel, getSignerImage } from "./constants";
 
 
-const SIGNER_IMAGES: Record<string, string> = {
-  "陈菊玲": "/signatures/陈菊玲.png",
-  "李彩娟": "/signatures/李彩娟.png",
-  "杨思婷": "/signatures/杨思婷.jpg",
-};
-const get_signer_image = (name: string) => SIGNER_IMAGES[name] || "";
 
 export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any; wells: any[]; onRefresh: () => void }) {
   const [form] = Form.useForm();
   const [steps, setSteps] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
-  const edata = batch.extraction_data || {};
+  const edata = useMemo(() => batch.extraction_data || {}, [batch.extraction_data]);
 
   useEffect(() => {
     form.setFieldsValue({
@@ -33,6 +27,15 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
   }, [edata, form]);
 
   const toggleStep = (key: string) => setSteps(prev => ({ ...prev, [key]: !prev[key] }));
+
+
+  const savePdf = async () => {
+    try {
+      const { data } = await api.get(`/hpv/batches/${batch.id}/experiment_record/?stage=extraction`);
+      const w = window.open("", "_blank");
+      if (w) { w.document.write(data.html); w.document.close(); setTimeout(() => w.print(), 500); }
+    } catch (e) { message.error("生成PDF失败"); }
+  };
 
   const saveExtraction = async () => {
     try {
@@ -58,10 +61,8 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
     } finally { setSaving(false); }
   };
 
-  const opSig2 = edata.operator_signature;
-  const revSig2 = edata.reviewer_signature;
-  const operatorSigned = !!(opSig2 && typeof opSig2 === "object" && opSig2.username);
-  const reviewerSigned = !!(revSig2 && typeof revSig2 === "object" && revSig2.username);
+  const { signed: operatorSigned, name: operatorSigner } = getSignStatus(edata, "operator");
+  const { signed: reviewerSigned, name: reviewerSigner } = getSignStatus(edata, "reviewer");
   const [operatorModalOpen, setOperatorModalOpen] = useState(false);
   const [reviewerModalOpen, setReviewerModalOpen] = useState(false);
 
@@ -150,11 +151,12 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
 
       <Space>
         <Button type="primary" onClick={saveExtraction} loading={saving}>保存提取记录</Button>
+        <Button onClick={savePdf}>保存PDF</Button>
         {operatorSigned ? (
           <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
             onClick={() => setOperatorModalOpen(true)}>
-            <img src={get_signer_image(opSig2.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
-            操作人: {opSig2.username} ✓
+            <img src={getSignerImage(operatorSigner)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            操作人: {operatorSigner} ✓
           </Button>
         ) : (
           <Button type="primary" onClick={() => setOperatorModalOpen(true)}>操作人签名</Button>
@@ -162,8 +164,8 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
         {reviewerSigned ? (
           <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
             onClick={() => setReviewerModalOpen(true)}>
-            <img src={get_signer_image(revSig2.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
-            复核人: {revSig2.username} ✓
+            <img src={getSignerImage(reviewerSigner)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            复核人: {reviewerSigner} ✓
           </Button>
         ) : (
           <Button type="primary" onClick={() => setReviewerModalOpen(true)}>复核人签名</Button>
@@ -173,14 +175,14 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
       <SignerModal
         open={operatorModalOpen} role="operator" roleLabel="操作人"
         batchId={batch.id} stage="extraction"
-        currentSigner={opSig2?.username || null}
+        currentSigner={operatorSigner || null}
         onDone={() => { setOperatorModalOpen(false); onRefresh(); }}
         onCancel={() => setOperatorModalOpen(false)}
       />
       <SignerModal
         open={reviewerModalOpen} role="reviewer" roleLabel="复核人"
         batchId={batch.id} stage="extraction"
-        currentSigner={revSig2?.username || null}
+        currentSigner={reviewerSigner || null}
         onDone={() => { setReviewerModalOpen(false); onRefresh(); }}
         onCancel={() => setReviewerModalOpen(false)}
       />

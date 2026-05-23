@@ -1,24 +1,18 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { Form, Input, DatePicker, TimePicker, Select, Button, Card, Row, Col, Checkbox, Descriptions, Space, Tag, message } from "antd";
 import dayjs from "dayjs";
 import api from "../../api/client";
 import SignerModal from "./SignerModal";
-import { PCR_STEPS, HPV_KIT_TYPES } from "./constants";
+import { getSignStatus, PCR_STEPS, HPV_KIT_TYPES, getSignerImage } from "./constants";
 
 
-const SIGNER_IMAGES: Record<string, string> = {
-  "陈菊玲": "/signatures/陈菊玲.png",
-  "李彩娟": "/signatures/李彩娟.png",
-  "杨思婷": "/signatures/杨思婷.jpg",
-};
-const get_signer_image = (name: string) => SIGNER_IMAGES[name] || "";
 
 export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: () => void }) {
   const [form] = Form.useForm();
   const [steps, setSteps] = useState<Record<string, boolean>>({});
   const [qcWeak, setQcWeak] = useState<string | undefined>(undefined);
   const [saving, setSaving] = useState(false);
-  const pdata = batch.pcr_data || {};
+  const pdata = useMemo(() => batch.pcr_data || {}, [batch.pcr_data]);
 
   useEffect(() => {
     form.setFieldsValue({
@@ -36,6 +30,15 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
   }, [pdata, form]);
 
   const toggleStep = (key: string) => setSteps(prev => ({ ...prev, [key]: !prev[key] }));
+
+  const savePdf = async () => {
+    try {
+      const { data } = await api.get(`/hpv/batches/${batch.id}/experiment_record/?stage=pcr`);
+      const w = window.open("", "_blank");
+      if (w) { w.document.write(data.html); w.document.close(); setTimeout(() => w.print(), 500); }
+    } catch (e) { message.error("生成PDF失败"); }
+  };
+
   const savePcr = async () => {
     try {
       const vals = await form.validateFields();
@@ -57,17 +60,15 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
       message.success("PCR 记录已保存");
       onRefresh();
     } catch (e: any) {
-      if (e?.errorFields) return;
+      if (e?.errorFields) { message.warning("请填写所有必填项"); return; }
       const data = e?.response?.data;
       const msg = data?.error || data?.detail || (typeof data === "object" && data !== null ? Object.values(data).flat()[0] : null);
       message.error(msg || "保存失败");
     } finally { setSaving(false); }
   };
 
-  const opSig = pdata.operator_signature;
-  const revSig = pdata.reviewer_signature;
-  const operatorSigned = !!(opSig && typeof opSig === "object" && opSig.username);
-  const reviewerSigned = !!(revSig && typeof revSig === "object" && revSig.username);
+  const { signed: operatorSigned, name: operatorSigner } = getSignStatus(pdata, "operator");
+  const { signed: reviewerSigned, name: reviewerSigner } = getSignStatus(pdata, "reviewer");
   const [operatorModalOpen, setOperatorModalOpen] = useState(false);
   const [reviewerModalOpen, setReviewerModalOpen] = useState(false);
 
@@ -134,9 +135,6 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
             </Form.Item>
           </Col>
         </Row>
-        <Row gutter={16}>
-
-        </Row>
       </Form>
 
       <Card title="步骤确认" size="small" style={{ marginBottom: 16 }}>
@@ -151,11 +149,12 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
 
       <Space>
         <Button type="primary" onClick={savePcr} loading={saving}>保存 PCR 记录</Button>
+        <Button onClick={savePdf}>保存PDF</Button>
         {operatorSigned ? (
           <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
             onClick={() => setOperatorModalOpen(true)}>
-            <img src={get_signer_image(opSig.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
-            操作人: {opSig.username} ✓
+            <img src={getSignerImage(operatorSigner)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            操作人: {operatorSigner} ✓
           </Button>
         ) : (
           <Button type="primary" onClick={() => setOperatorModalOpen(true)}>操作人签名</Button>
@@ -163,8 +162,8 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
         {reviewerSigned ? (
           <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
             onClick={() => setReviewerModalOpen(true)}>
-            <img src={get_signer_image(revSig.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
-            复核人: {revSig.username} ✓
+            <img src={getSignerImage(reviewerSigner)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            复核人: {reviewerSigner} ✓
           </Button>
         ) : (
           <Button type="primary" onClick={() => setReviewerModalOpen(true)}>复核人签名</Button>
@@ -174,14 +173,14 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
       <SignerModal
         open={operatorModalOpen} role="operator" roleLabel="操作人"
         batchId={batch.id} stage="pcr"
-        currentSigner={opSig?.username || null}
+        currentSigner={operatorSigner || null}
         onDone={() => { setOperatorModalOpen(false); onRefresh(); }}
         onCancel={() => setOperatorModalOpen(false)}
       />
       <SignerModal
         open={reviewerModalOpen} role="reviewer" roleLabel="复核人"
         batchId={batch.id} stage="pcr"
-        currentSigner={revSig?.username || null}
+        currentSigner={reviewerSigner || null}
         onDone={() => { setReviewerModalOpen(false); onRefresh(); }}
         onCancel={() => setReviewerModalOpen(false)}
       />

@@ -62,25 +62,13 @@ export default function HpvReceiving() {
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
 
   const fetchTabCounts = useCallback(() => {
-    Promise.all([
-      api.get("/samples/", { params: { panel: "HPV", status: "REGISTERED,RECEIVING", limit: 1 } }),
-      api.get("/samples/", { params: { panel: "HPV", status: "RECEIVED", limit: 1 } }),
-      api.get("/hpv/batches/"),
-    ]).then(([pRes, rRes, bRes]) => {
-      const pending = pRes.data?.count ?? 0;
-      const receivedTotal = rRes.data?.count ?? 0;
-      // Exclude batched samples from Received count
-      const batches = (bRes.data.results || bRes.data || []);
-      const batchedIds = new Set<string>();
-      batches.forEach((b: any) => {
-        (b.well_positions || []).forEach((wp: any) => {
-          if (wp.sample) batchedIds.add(wp.sample);
-        });
-      });
+    // Use HPV-specific dashboard stats for consistency
+    api.get("/hpv/batches/dashboard_stats/").then((res) => {
+      const ds = res.data || {};
       setTabCounts(prev => ({
         ...prev,
-        pending,
-        received: Math.max(0, receivedTotal - batchedIds.size),
+        pending: ds.pending ?? 0,
+        received: ds.received ?? 0,
       }));
     }).catch(() => {});
   }, []);
@@ -96,7 +84,7 @@ export default function HpvReceiving() {
         .finally(() => setLoading(false));
     } else if (activeTab === "received") {
       Promise.all([
-        api.get("/samples/", { params: { panel: "HPV", status: "RECEIVED", limit: 200 } }),
+        api.get("/samples/", { params: { panel: "HPV", status: "RECEIVED,ACCEPTED", limit: 200 } }),
         api.get("/hpv/batches/"),
       ]).then(([r, bRes]) => {
         const batches = (bRes.data.results || bRes.data || []);
@@ -113,7 +101,7 @@ export default function HpvReceiving() {
     } else if (activeTab === "pending_experiment") {
       // Fetch RECEIVED samples + NEEDS_RETEST samples + all batches (to exclude already-assigned samples)
       Promise.all([
-        api.get("/samples/", { params: { panel: "HPV", status: "RECEIVED", limit: 200 } }),
+        api.get("/samples/", { params: { panel: "HPV", status: "RECEIVED,ACCEPTED", limit: 200 } }),
         api.get("/hpv/results/", { params: { review_status: "NEEDS_RETEST" } }),
         api.get("/hpv/batches/"),
       ]).then(([receivedRes, retestRes, batchesRes]) => {

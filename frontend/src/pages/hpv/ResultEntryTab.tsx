@@ -2,17 +2,19 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { Button, Card, Select, Tag, Space, Typography, message, Upload } from "antd";
 import { CheckCircleOutlined, UploadOutlined, ZoomInOutlined, ZoomOutOutlined } from "@ant-design/icons";
 import api from "../../api/client";
-import { GENOTYPE_23, REVIEW_STATUS_LABEL, REVIEW_STATUS_COLOR } from "./constants";
+import { GENOTYPE_23, REVIEW_STATUS_LABEL, REVIEW_STATUS_COLOR, getSignStatus, getSignerImage } from "./constants";
+import SignerModal from "./SignerModal";
 
 const { Text } = Typography;
+
+const GENO_OPTIONS = [{ value: "", label: "" }, { value: "+", label: "+" }, { value: "-", label: "-" }];
 
 export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
   batch: any; results: any[]; wells: any[]; onRefresh: () => void;
 }) {
   const [mode, setMode] = useState<"entry" | "review">("entry");
 
-  const kitType = batch.pcr_data?.kit_type || "HPV_15";
-  const genotypes = kitType === "HPV_23" ? GENOTYPE_23 : GENOTYPE_23; // force 23
+    const genotypes = GENOTYPE_23; // 23-type panel
 
   const [matrix, setMatrix] = useState<Record<string, Record<string, string>>>({});
   const [icMatrix, setIcMatrix] = useState<Record<string, string>>({});
@@ -22,6 +24,13 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
 
   // Sync localResults when results prop changes (batch switch / after save)
   useEffect(() => { setLocalResults(results); }, [results]);
+
+  // ── Signatures ──
+  const rdata = batch.result_data || {};
+  const { signed: operatorSigned, name: operatorSigner } = getSignStatus(rdata, "operator");
+  const { signed: reviewerSigned, name: reviewerSigner } = getSignStatus(rdata, "reviewer");
+  const [operatorModalOpen, setOperatorModalOpen] = useState(false);
+  const [reviewerModalOpen, setReviewerModalOpen] = useState(false);
 
   // ── Photo upload + zoom viewer ──
   const [photos, setPhotos] = useState<any[]>([]);
@@ -38,7 +47,7 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
     try {
       const { data } = await api.get("/hpv/photos/", { params: { batch: batch.id } });
       setPhotos(data.results || data || []);
-    } catch { /* silent */ }
+    } catch { /* photo load failed — non-critical */ }
     finally { setLoadingPhotos(false); }
   }, [batch.id]);
 
@@ -99,6 +108,15 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
   const positiveList = (genoData: Record<string, string>): string => {
     if (!genoData) return "—";
     return Object.entries(genoData).filter(([, v]) => v === "+").map(([k]) => k).join(", ") || "—";
+  };
+
+  
+  const savePdf = async () => {
+    try {
+      const { data } = await api.get(`/hpv/batches/${batch.id}/experiment_record/?stage=result_entry`);
+      const w = window.open("", "_blank");
+      if (w) { w.document.write(data.html); w.document.close(); setTimeout(() => w.print(), 500); }
+    } catch (e) { message.error("生成PDF失败"); }
   };
 
   const batchUpdate = async () => {
@@ -224,6 +242,25 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
         <Button type={mode === "entry" ? "primary" : "default"} onClick={() => setMode("entry")}>结果录入</Button>
         <Button type={mode === "review" ? "primary" : "default"} onClick={() => setMode("review")}>复核（双审）</Button>
         <Button onClick={batchUpdate} type="primary" loading={saving} icon={<CheckCircleOutlined />}>保存结果</Button>
+        <Button onClick={savePdf}>保存PDF</Button>
+        {operatorSigned ? (
+          <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
+            onClick={() => setOperatorModalOpen(true)}>
+            <img src={getSignerImage(operatorSigner)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            操作人: {operatorSigner} ✓
+          </Button>
+        ) : (
+          <Button type="primary" onClick={() => setOperatorModalOpen(true)}>操作人签名</Button>
+        )}
+        {reviewerSigned ? (
+          <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
+            onClick={() => setReviewerModalOpen(true)}>
+            <img src={getSignerImage(reviewerSigner)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            复核人: {reviewerSigner} ✓
+          </Button>
+        ) : (
+          <Button type="primary" onClick={() => setReviewerModalOpen(true)}>复核人签名</Button>
+        )}
       </Space>
 
       {/* ── Photo upload + zoom viewer ── */}
@@ -350,11 +387,7 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
                       {mode === "entry" ? (
                         <Select size="small" style={{ width: 50 }} value={genotypeData[gt] || ""}
                           onChange={(v: string) => setCell(wl, gt, v)}
-                          options={[
-                            { value: "", label: "" },
-                            { value: "+", label: "+" },
-                            { value: "-", label: "-" },
-                          ]}
+                          options={GENO_OPTIONS}
                         />
                       ) : (
                         <Tag color={genotypeData[gt] === "+" ? "red" : "default"} style={{ fontSize: 10, margin: 0 }}>
@@ -367,7 +400,7 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
                     {mode === "entry" ? (
                       <Select size="small" style={{ width: 50 }} value={icVal}
                         onChange={(v: string) => setMatrixIc(wl, v)}
-                        options={[{ value: "", label: "" }, { value: "+", label: "+" }, { value: "-", label: "-" }]}
+                        options={GENO_OPTIONS}
                       />
                     ) : (
                       <Tag color={icVal === "+" ? "green" : icVal === "-" ? "red" : "default"} style={{ fontSize: 10, margin: 0 }}>
@@ -379,7 +412,7 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
                     {mode === "entry" ? (
                       <Select size="small" style={{ width: 50 }} value={bioVal}
                         onChange={(v: string) => setMatrixBio(wl, v)}
-                        options={[{ value: "", label: "" }, { value: "+", label: "+" }, { value: "-", label: "-" }]}
+                        options={GENO_OPTIONS}
                       />
                     ) : (
                       <Tag color={bioVal === "+" ? "blue" : bioVal === "-" ? "red" : "default"} style={{ fontSize: 10, margin: 0 }}>
@@ -431,6 +464,21 @@ export default function ResultEntryTab({ batch, results, wells, onRefresh }: {
           </tbody>
         </table>
       </div>
+
+      <SignerModal
+        open={operatorModalOpen} role="operator" roleLabel="操作人"
+        batchId={batch.id} stage="result_entry"
+        currentSigner={operatorSigner || null}
+        onDone={() => { setOperatorModalOpen(false); onRefresh(); }}
+        onCancel={() => setOperatorModalOpen(false)}
+      />
+      <SignerModal
+        open={reviewerModalOpen} role="reviewer" roleLabel="复核人"
+        batchId={batch.id} stage="result_entry"
+        currentSigner={reviewerSigner || null}
+        onDone={() => { setReviewerModalOpen(false); onRefresh(); }}
+        onCancel={() => setReviewerModalOpen(false)}
+      />
     </div>
   );
 }

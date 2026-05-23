@@ -11,7 +11,6 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from .models import Sample, SamplePhoto, SampleType, TestPanel, SampleMovement
 from lims.apps.organizations.models import Receiver
-from django.contrib.auth.hashers import check_password
 from .serializers import (
     SamplePhotoSerializer, SamplePhotoListSerializer,
     SampleSerializer, SampleListSerializer, SampleReceiveSerializer,
@@ -19,8 +18,6 @@ from .serializers import (
 )
 from rest_framework import status
 from lims.core.permissions import IsSiteScoped
-
-
 class SampleViewSet(viewsets.ModelViewSet):
     """CRUD + actions for samples."""
     permission_classes = [IsAuthenticated, IsSiteScoped]
@@ -29,7 +26,6 @@ class SampleViewSet(viewsets.ModelViewSet):
     # receipt_date range handled in get_queryset via custom filter
     search_fields = ["sample_id", "patient_id", "patient_name"]
     ordering_fields = ["receipt_date", "created_at", "sample_id"]
-
     def get_queryset(self):
         qs = Sample.objects.filter(is_deleted=False)
         # Exclude NIPPT samples — these belong to the NIPPT subsystem (Cases API)
@@ -69,21 +65,18 @@ class SampleViewSet(viewsets.ModelViewSet):
         if "receipt_date__to" in params:
             qs = qs.filter(receipt_date__lte=params["receipt_date__to"])
         return qs.select_related("sample_type", "site").prefetch_related("movements", "run_samples")
-
     def get_serializer_class(self):
         if self.action == "list":
             return SampleListSerializer
         if self.action == "create":
             return SampleReceiveSerializer
         return SampleSerializer
-
     @transaction.atomic
     def create(self, request, *args, **kwargs):
         """Receive a new sample."""
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         sample = serializer.save()
-
         # Log movement
         SampleMovement.objects.create(
             sample=sample,
@@ -92,7 +85,6 @@ class SampleViewSet(viewsets.ModelViewSet):
             performed_by=request.user,
         )
         return Response(SampleSerializer(sample).data, status=status.HTTP_201_CREATED)
-
     @action(detail=True, methods=["post"])
     def reject(self, request, pk=None):
         """Reject a sample."""
@@ -105,40 +97,33 @@ class SampleViewSet(viewsets.ModelViewSet):
         sample.rejection_handling = serializer.validated_data.get("rejection_handling", "")
         sample.rejection_communication = serializer.validated_data.get("rejection_communication", "")
         sample.save(update_fields=["status", "rejection_reason", "rejection_note", "rejection_handling", "rejection_communication", "updated_at"])
-
         SampleMovement.objects.create(
             sample=sample, to_location="REJECTED",
             reason="REJECTION", performed_by=request.user,
         )
         return Response({"status": "REJECTED", "sample_id": sample.sample_id})
-
     @action(detail=True, methods=["post"])
     def accept(self, request, pk=None):
         """Accept a sample with receiver verification."""
         sample = self.get_object()
         receiver_id = request.data.get("receiver_id")
-        receiver_password = request.data.get("receiver_password", "")
         receipt_date = request.data.get("receipt_date")
-
+        password = request.data.get("password", "")
         if receiver_id:
             try:
                 receiver = Receiver.objects.get(id=receiver_id, is_active=True)
             except Receiver.DoesNotExist:
                 return Response({"error": "签收人不存在"}, status=status.HTTP_400_BAD_REQUEST)
-            if not check_password(receiver_password, receiver.password):
+            if not receiver.check_password(password):
                 return Response({"error": "签收人密码错误"}, status=status.HTTP_400_BAD_REQUEST)
             sample.received_by = receiver
-
         sample.status = "RECEIVED"
-
         if receipt_date:
             from datetime import datetime
             sample.receipt_date = datetime.strptime(receipt_date, "%Y-%m-%d").date()
         else:
             sample.receipt_date = timezone.now().date()
-
         sample.save(update_fields=["status", "received_by", "receipt_date", "updated_at"])
-
         SampleMovement.objects.create(
             sample=sample, to_location="RECEIVING",
             reason="RECEIPT", performed_by=request.user,
@@ -148,7 +133,6 @@ class SampleViewSet(viewsets.ModelViewSet):
             "sample_id": sample.sample_id,
             "received_by": receiver.name if receiver_id and sample.received_by else None,
         })
-
     @action(detail=True, methods=["post"], url_path="upload-image", parser_classes=[MultiPartParser, FormParser])
     def upload_image(self, request, pk=None):
         sample = self.get_object()
@@ -157,7 +141,6 @@ class SampleViewSet(viewsets.ModelViewSet):
         sample.image = request.FILES["image"]
         sample.save(update_fields=["image", "updated_at"])
         return Response({"detail": "Image uploaded", "image": request.build_absolute_uri(sample.image.url) if sample.image else None})
-
     @action(detail=True, methods=["post"])
     def move(self, request, pk=None):
         """Record sample movement."""
@@ -166,7 +149,6 @@ class SampleViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         movement = serializer.save()
         return Response(SampleMovementSerializer(movement).data, status=status.HTTP_201_CREATED)
-
     @action(detail=False, methods=["get"])
     def stats(self, request):
         """Get sample statistics for dashboard."""
@@ -175,8 +157,11 @@ class SampleViewSet(viewsets.ModelViewSet):
         stats = {
             "total": qs.count(),
             "pending": qs.filter(status="REGISTERED").count() + qs.filter(status="RECEIVING").count(),
+            "received": qs.filter(status="RECEIVED").count(),
             "in_progress": qs.filter(status__in=["IN_PROCESS", "ACCEPTED"]).count(),
+            "completed": qs.filter(status="COMPLETED").count(),
             "reported": qs.filter(status="REPORTED").count(),
+            "rejected": qs.filter(status="REJECTED").count(),
             "total_received_today": qs.filter(receipt_date=today).count(),
             "total_in_process": qs.filter(status="IN_PROCESS").count(),
             "total_completed": qs.filter(status="COMPLETED").count(),
@@ -190,10 +175,8 @@ class SampleViewSet(viewsets.ModelViewSet):
         from django.db.models import Count, Q
         qs = self.get_queryset()
         panels = TestPanel.objects.filter(is_active=True)
-
         results = []
         from lims.apps.reports.models import Report
-
         for panel in panels:
             samples = qs.filter(panel=panel)
             aggregations = samples.aggregate(
@@ -215,7 +198,6 @@ class SampleViewSet(viewsets.ModelViewSet):
                 **aggregations,
             })
         return Response(results)
-
     @action(detail=False, methods=["post"])
     def batch_create(self, request):
         """Create multiple samples in batch. Accepts {"samples": [{...}, ...]}."""
@@ -224,7 +206,6 @@ class SampleViewSet(viewsets.ModelViewSet):
             return Response(
                 {"error": "Expected 'samples' array"}, status=status.HTTP_400_BAD_REQUEST
             )
-
         created = []
         errors = []
         for i, data in enumerate(samples_data):
@@ -241,47 +222,36 @@ class SampleViewSet(viewsets.ModelViewSet):
                 created.append(SampleListSerializer(sample).data)
             else:
                 errors.append({"row": i, "errors": serializer.errors})
-
         status_code = status.HTTP_201_CREATED if created else status.HTTP_400_BAD_REQUEST
         return Response({"created": created, "errors": errors, "total": len(samples_data)}, status=status_code)
-
     def destroy(self, request, *args, **kwargs):
         """Soft-delete sample."""
         sample = self.get_object()
         sample.is_deleted = True
         sample.save(update_fields=["is_deleted", "updated_at"])
         return Response({"detail": "Sample deleted."}, status=status.HTTP_204_NO_CONTENT)
-
-
 class SampleTypeViewSet(viewsets.ReadOnlyModelViewSet):
     """List sample types."""
     permission_classes = [IsAuthenticated]
     serializer_class = SampleTypeSerializer
     queryset = SampleType.objects.filter(is_active=True)
-
-
 class TestPanelViewSet(viewsets.ReadOnlyModelViewSet):
     """List available test panels."""
     permission_classes = [IsAuthenticated, IsSiteScoped]
     serializer_class = TestPanelSerializer
-
     def get_queryset(self):
         qs = TestPanel.objects.filter(is_active=True)
         if self.request.user.site_id:
             qs = qs.filter(site=self.request.user.site)
         return qs
-
-
 class SamplePhotoViewSet(viewsets.ModelViewSet):
     """Upload and manage sample receiving photos."""
     permission_classes = [IsAuthenticated, IsSiteScoped]
     http_method_names = ["get", "post", "delete"]
-
     def get_serializer_class(self):
         if self.action == "list" or self.action == "retrieve":
             return SamplePhotoListSerializer
         return SamplePhotoSerializer
-
     def get_queryset(self):
         qs = SamplePhoto.objects.all()
         # Filter by sample if requested
@@ -289,4 +259,3 @@ class SamplePhotoViewSet(viewsets.ModelViewSet):
         if sample_id:
             qs = qs.filter(samples__id=sample_id)
         return qs.select_related("uploaded_by").prefetch_related("samples")
-

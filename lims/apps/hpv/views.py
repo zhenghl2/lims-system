@@ -18,15 +18,15 @@ from .serializers import (
     HpvRetestRecordSerializer,
 )
 
-from lims.apps.samples.models import Sample
+from lims.apps.samples.models import Sample, TestPanel
 
 # ─── Permissions ────────────────────────────────────────────────────
 
 class IsAuthenticatedOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
         if request.method in permissions.SAFE_METHODS:
-            return request.user and request.user.is_authenticated
-        return request.user and request.user.is_authenticated
+            return True
+        return bool(request.user and request.user.is_authenticated)
 
 # ─── Batch ViewSet ───────────────────────────────────────────────────
 
@@ -144,6 +144,7 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
     # ── save_extraction ──
 
     @action(detail=True, methods=["POST"])
+    @transaction.atomic
     def save_extraction(self, request, pk=None):
         """Save extraction stage data."""
         batch = self.get_object()
@@ -188,6 +189,7 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
     # ── save_pcr ──
 
     @action(detail=True, methods=["POST"])
+    @transaction.atomic
     def save_pcr(self, request, pk=None):
         """Save PCR stage data."""
         batch = self.get_object()
@@ -238,6 +240,7 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
     # ── save_hybridization ──
 
     @action(detail=True, methods=["POST"])
+    @transaction.atomic
     def save_hybridization(self, request, pk=None):
         """Save hybridization stage data."""
         batch = self.get_object()
@@ -284,6 +287,7 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
     # ── advance_status ──
 
     @action(detail=True, methods=["POST"])
+    @transaction.atomic
     def advance_status(self, request, pk=None):
         """Advance batch to the next status with guard checks."""
         batch = self.get_object()
@@ -328,6 +332,7 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
     # ── sign ──
 
     @action(detail=True, methods=["POST"])
+    @transaction.atomic
     def sign(self, request, pk=None):
         """Record electronic signatures for the current stage."""
         batch = self.get_object()
@@ -368,6 +373,52 @@ class HpvBatchViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         wells = batch.well_positions.prefetch_related("sample").all()
         return Response(HpvWellPositionSerializer(wells, many=True).data)
+
+    @action(detail=False, methods=["get"])
+    def dashboard_stats(self, request):
+        """HPV-specific dashboard stats accounting for batch workflow."""
+        hpv_panel = TestPanel.objects.filter(code="HPV", is_active=True).first()
+        if not hpv_panel:
+            return Response({"error": "HPV panel not found"}, status=404)
+
+        base_qs = Sample.objects.filter(panel=hpv_panel, is_deleted=False)
+        total = base_qs.count()
+
+        batched_ids = list(
+            HpvWellPosition.objects.filter(
+                sample__isnull=False, sample__is_deleted=False
+            ).values_list("sample_id", flat=True).distinct()
+        )
+        completed_batch_ids = list(
+            HpvBatch.objects.filter(status="COMPLETED").values_list("id", flat=True)
+        )
+        completed_batched_ids = list(
+            HpvWellPosition.objects.filter(
+                batch_id__in=completed_batch_ids, sample__isnull=False
+            ).values_list("sample_id", flat=True).distinct()
+        )
+        reported_ids = list(
+            base_qs.filter(status="REPORTED").values_list("id", flat=True)
+        )
+
+        active_batched_ids = [x for x in batched_ids if x not in completed_batched_ids]
+
+        pending = base_qs.filter(status__in=["REGISTERED", "RECEIVING"]).count()
+        rejected = base_qs.filter(status="REJECTED").count()
+        reported = len(reported_ids)
+        in_process = len(active_batched_ids)
+        completed = len([x for x in completed_batched_ids if x not in reported_ids])
+        received_not_batched = total - pending - rejected - reported - in_process - completed
+
+        return Response({
+            "total": total,
+            "pending": pending,
+            "received": received_not_batched,
+            "rejected": rejected,
+            "in_progress": in_process,
+            "completed": completed,
+            "reported": reported,
+        })
 
     def destroy(self, request, *args, **kwargs):
         """Delete a batch. Nullifies retest FK references to avoid PROTECT errors."""

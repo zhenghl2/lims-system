@@ -50,3 +50,22 @@ export const HPV_KIT_TYPES = [
 ];
 
 export function wellLabel(r: string, c: number) { return `${r}${c}`; }
+
+/** Parse signature from stage data. Returns {signed: bool, name: string, time: string}. */
+export function getSignStatus(stageData: any, role: "operator" | "reviewer") {
+  const key = role === "operator" ? "operator_signature" : "reviewer_signature";
+  const sig = stageData?.[key];
+  if (!sig || typeof sig !== "object" || !sig.username) {
+    return { signed: false, name: "", time: "" };
+  }
+  return { signed: true, name: sig.username, time: sig.signed_at || "" };
+}
+
+/** Signer name → signature image path. */
+export const SIGNER_IMAGES: Record<string, string> = {
+  "陈菊玲": "/signatures/陈菊玲.png",
+  "李彩娟": "/signatures/李彩娟.png",
+  "杨思婷": "/signatures/杨思婷.jpg",
+};
+export const SIGNER_NAMES = Object.keys(SIGNER_IMAGES);
+export function getSignerImage(name: string) { return SIGNER_IMAGES[name] || ""; }

@@ -44,15 +44,13 @@ export default function HpvWorkflow() {
 
   useEffect(() => { fetchBatches(); }, [fetchBatches]);
 
-  const selectBatch = useCallback(async (batch: any) => {
-    setSelectedBatch(batch);
+  const fetchBatchDetail = useCallback(async (batchId: string) => {
     setDetailLoading(true);
-    setActiveTab("extraction");
     try {
       const [bd, w, r] = await Promise.all([
-        api.get(`/hpv/batches/${batch.id}/`),
-        api.get(`/hpv/batches/${batch.id}/wells/`),
-        api.get("/hpv/results/", { params: { batch: batch.id } }),
+        api.get(`/hpv/batches/${batchId}/`),
+        api.get(`/hpv/batches/${batchId}/wells/`),
+        api.get("/hpv/results/", { params: { batch: batchId } }),
       ]);
       setBatchDetail(bd.data);
       setWells(Array.isArray(w.data) ? w.data : []);
@@ -61,21 +59,16 @@ export default function HpvWorkflow() {
     finally { setDetailLoading(false); }
   }, []);
 
-  const refreshDetail = useCallback(async () => {
+  const selectBatch = useCallback(async (batch: any) => {
+    setSelectedBatch(batch);
+    setActiveTab("extraction");
+    fetchBatchDetail(batch.id);
+  }, [fetchBatchDetail]);
+
+  const refreshDetail = useCallback(() => {
     if (!selectedBatch) return;
-    setDetailLoading(true);
-    try {
-      const [bd, w, r] = await Promise.all([
-        api.get(`/hpv/batches/${selectedBatch.id}/`),
-        api.get(`/hpv/batches/${selectedBatch.id}/wells/`),
-        api.get("/hpv/results/", { params: { batch: selectedBatch.id } }),
-      ]);
-      setBatchDetail(bd.data);
-      setWells(Array.isArray(w.data) ? w.data : []);
-      setResults(Array.isArray(r.data.results) ? r.data.results : (Array.isArray(r.data) ? r.data : []));
-    } catch (e: any) { message.error(e?.response?.data?.error || "刷新批次详情失败"); }
-    finally { setDetailLoading(false); }
-  }, [selectedBatch]);
+    fetchBatchDetail(selectedBatch.id);
+  }, [selectedBatch, fetchBatchDetail]);
 
   const batchColumns: ColumnsType<any> = [
     { title: "批次号", dataIndex: "batch_number", key: "batch_number", width: 140 },
@@ -195,7 +188,7 @@ export default function HpvWorkflow() {
               else if (tab.key === "pcr") children = <PcrTab batch={batchDetail} onRefresh={refreshDetail} />;
               else if (tab.key === "hybridization") children = <HybridizationTab batch={batchDetail} wells={wells} onRefresh={refreshDetail} />;
               else if (tab.key === "results") children = <ResultEntryTab batch={batchDetail} results={results} wells={wells} onRefresh={refreshDetail} />;
-              else if (tab.key === "retests") children = <RetestTab batch={batchDetail} />;
+              else if (tab.key === "retests") children = <RetestTab batch={batchDetail} onRefresh={refreshDetail} />;
               return { ...tab, children };
             })} />
           </>
@@ -215,22 +208,8 @@ function CreateBatchModal({ onCreated }: { onCreated: () => void }) {
 
   const loadPendingCount = async () => {
     try {
-      const [sRes, rRes, bRes] = await Promise.all([
-        api.get("/samples/", { params: { panel: "HPV", status: "RECEIVED", limit: 1 } }),
-        api.get("/hpv/results/", { params: { review_status: "NEEDS_RETEST", limit: 1 } }),
-        api.get("/hpv/batches/"),
-      ]);
-      const received = sRes.data?.count ?? 0;
-      const retest = rRes.data?.count ?? 0;
-      // Subtract samples already assigned to well positions
-      const batches = (bRes.data.results || bRes.data || []);
-      const batchedIds = new Set<string>();
-      batches.forEach((b: any) => {
-        (b.well_positions || []).forEach((wp: any) => {
-          if (wp.sample) batchedIds.add(wp.sample);
-        });
-      });
-      setPendingCount(Math.max(0, received + retest - batchedIds.size));
+      const { data } = await api.get("/hpv/batches/pending_stats/");
+      setPendingCount(data.total || 0);
     } catch {
       setPendingCount(0);
     }
@@ -258,7 +237,7 @@ function CreateBatchModal({ onCreated }: { onCreated: () => void }) {
       form.resetFields();
       onCreated();
     } catch (e: any) {
-      if (e?.errorFields) return;
+      if (e?.errorFields) { message.warning("请填写所有必填项"); return; }
       let msg = e?.response?.data?.error || e?.response?.data?.detail;
       if (!msg) {
         const data = e?.response?.data;

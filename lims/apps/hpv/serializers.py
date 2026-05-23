@@ -67,7 +67,7 @@ class HpvBatchSerializer(serializers.ModelSerializer):
         fields = [
             "id", "batch_number", "panel", "site",
             "status", "status_display",
-            "extraction_data", "pcr_data", "hybridization_data",
+            "extraction_data", "pcr_data", "hybridization_data", "result_data",
             "well_positions", "result_count", "membrane_photo_count",
             "created_by", "created_by_name",
             "created_at", "updated_at",

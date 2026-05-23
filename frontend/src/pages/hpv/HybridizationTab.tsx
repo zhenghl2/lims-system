@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
-import { Form, Input, DatePicker, Button, Card, Row, Col, Space, Typography, message } from "antd";
+import { useEffect, useState, useMemo } from "react";
+import { Form, Input, DatePicker, Button, Card, Row, Col, Space, Typography, message, Checkbox } from "antd";
 import dayjs from "dayjs";
 import api from "../../api/client";
 import SignerModal from "./SignerModal";
+import { getSignStatus, getSignerImage } from "./constants";
 
 const { Text } = Typography;
 
@@ -11,18 +12,12 @@ const HYB_COLS = Array.from({ length: 16 }, (_, i) => i + 1);
 const HYB_WELL_LABELS = HYB_COLS.flatMap(c => HYB_ROWS.map(r => `${r}${c}`));
 
 
-const SIGNER_IMAGES: Record<string, string> = {
-  "陈菊玲": "/signatures/陈菊玲.png",
-  "李彩娟": "/signatures/李彩娟.png",
-  "杨思婷": "/signatures/杨思婷.jpg",
-};
-const get_signer_image = (name: string) => SIGNER_IMAGES[name] || "";
 
 export default function HybridizationTab({ batch, wells, onRefresh }: { batch: any; wells: any[]; onRefresh: () => void }) {
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [wellAssignments, setWellAssignments] = useState<Record<string, string>>({});
-  const hdata = batch.hybridization_data || {};
+  const hdata = useMemo(() => batch.hybridization_data || {}, [batch.hybridization_data]);
 
   useEffect(() => {
     form.setFieldsValue({
@@ -56,6 +51,15 @@ export default function HybridizationTab({ batch, wells, onRefresh }: { batch: a
     setWellAssignments(prev => ({ ...prev, [label]: value }));
   };
 
+
+  const savePdf = async () => {
+    try {
+      const { data } = await api.get(`/hpv/batches/${batch.id}/experiment_record/?stage=hybridization`);
+      const w = window.open("", "_blank");
+      if (w) { w.document.write(data.html); w.document.close(); setTimeout(() => w.print(), 500); }
+    } catch (e) { message.error("生成PDF失败"); }
+  };
+
   const saveHyb = async () => {
     try {
       const vals = await form.validateFields();
@@ -73,17 +77,15 @@ export default function HybridizationTab({ batch, wells, onRefresh }: { batch: a
       message.success("杂交记录已保存");
       onRefresh();
     } catch (e: any) {
-      if (e?.errorFields) return;
+      if (e?.errorFields) { message.warning("请填写所有必填项"); return; }
       const data = e?.response?.data;
       const msg = data?.error || data?.detail || (typeof data === "object" && data !== null ? Object.values(data).flat()[0] : null);
       message.error(msg || "保存失败");
     } finally { setSaving(false); }
   };
 
-  const opSig = hdata.operator_signature;
-  const revSig = hdata.reviewer_signature;
-  const operatorSigned = !!(opSig && typeof opSig === "object" && opSig.username);
-  const reviewerSigned = !!(revSig && typeof revSig === "object" && revSig.username);
+  const { signed: operatorSigned, name: operatorSigner } = getSignStatus(hdata, "operator");
+  const { signed: reviewerSigned, name: reviewerSigner } = getSignStatus(hdata, "reviewer");
   const [operatorModalOpen, setOperatorModalOpen] = useState(false);
   const [reviewerModalOpen, setReviewerModalOpen] = useState(false);
 
@@ -131,11 +133,8 @@ export default function HybridizationTab({ batch, wells, onRefresh }: { batch: a
             <Col span={8}><Text><strong>摇摆混匀：</strong>2min</Text></Col>
             <Col span={8}>
               <Form.Item name="denatured_product_added" valuePropName="checked" noStyle>
-                <label style={{ cursor: "pointer" }}>
-                  <input type="checkbox" readOnly checked={form.getFieldValue("denatured_product_added")} style={{ marginRight: 6 }} />
-                  变性产物已加入杂交液
-                </label>
-              </Form.Item>
+                  <Checkbox>已加入变性产物</Checkbox>
+                </Form.Item>
             </Col>
           </Row>
         </Card>
@@ -184,11 +183,12 @@ export default function HybridizationTab({ batch, wells, onRefresh }: { batch: a
       </Form>
       <Space>
         <Button type="primary" onClick={saveHyb} loading={saving}>保存杂交记录</Button>
+        <Button onClick={savePdf}>保存PDF</Button>
         {operatorSigned ? (
           <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
             onClick={() => setOperatorModalOpen(true)}>
-            <img src={get_signer_image(opSig.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
-            操作人: {opSig.username} ✓
+            <img src={getSignerImage(operatorSigner)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            操作人: {operatorSigner} ✓
           </Button>
         ) : (
           <Button type="primary" onClick={() => setOperatorModalOpen(true)}>操作人签名</Button>
@@ -196,8 +196,8 @@ export default function HybridizationTab({ batch, wells, onRefresh }: { batch: a
         {reviewerSigned ? (
           <Button type="default" style={{ color: "#52c41a", borderColor: "#52c41a" }}
             onClick={() => setReviewerModalOpen(true)}>
-            <img src={get_signer_image(revSig.username)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
-            复核人: {revSig.username} ✓
+            <img src={getSignerImage(reviewerSigner)} alt="" style={{ height: 16, marginRight: 4, verticalAlign: "middle" }} />
+            复核人: {reviewerSigner} ✓
           </Button>
         ) : (
           <Button type="primary" onClick={() => setReviewerModalOpen(true)}>复核人签名</Button>
@@ -207,14 +207,14 @@ export default function HybridizationTab({ batch, wells, onRefresh }: { batch: a
       <SignerModal
         open={operatorModalOpen} role="operator" roleLabel="操作人"
         batchId={batch.id} stage="hybridization"
-        currentSigner={opSig?.username || null}
+        currentSigner={operatorSigner || null}
         onDone={() => { setOperatorModalOpen(false); onRefresh(); }}
         onCancel={() => setOperatorModalOpen(false)}
       />
       <SignerModal
         open={reviewerModalOpen} role="reviewer" roleLabel="复核人"
         batchId={batch.id} stage="hybridization"
-        currentSigner={revSig?.username || null}
+        currentSigner={reviewerSigner || null}
         onDone={() => { setReviewerModalOpen(false); onRefresh(); }}
         onCancel={() => setReviewerModalOpen(false)}
       />

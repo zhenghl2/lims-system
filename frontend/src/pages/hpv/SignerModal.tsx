@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Modal, Button, Card, Row, Col, Typography, message, Input } from "antd";
 import { CheckOutlined } from "@ant-design/icons";
+import { SIGNER_IMAGES } from "./constants";
 import api from "../../api/client";
 
 const { Text } = Typography;
@@ -10,11 +11,7 @@ interface Signer {
   image: string;
 }
 
-const SIGNERS: Signer[] = [
-  { name: "陈菊玲", image: "/signatures/陈菊玲.png" },
-  { name: "李彩娟", image: "/signatures/李彩娟.png" },
-  { name: "杨思婷", image: "/signatures/杨思婷.jpg" },
-];
+const SIGNERS: Signer[] = Object.entries(SIGNER_IMAGES as Record<string, string>).map(([name, image]) => ({ name, image }));
 
 interface Props {
   open: boolean;

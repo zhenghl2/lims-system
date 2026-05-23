@@ -36,6 +36,7 @@ class HpvBatch(models.Model):
     extraction_data = models.JSONField(default=dict, blank=True)
     pcr_data = models.JSONField(default=dict, blank=True)
     hybridization_data = models.JSONField(default=dict, blank=True)
+    result_data = models.JSONField(default=dict, blank=True)
 
     created_by = models.ForeignKey(
         User, on_delete=models.PROTECT, related_name="hpv_batches_created"
@@ -185,7 +186,8 @@ class HpvRetestRecord(models.Model):
         related_name="hpv_retest_originals"
     )
     original_batch = models.ForeignKey(
-        HpvBatch, on_delete=models.PROTECT, related_name="retest_originals"
+        HpvBatch, on_delete=models.PROTECT, null=True, blank=True,
+        related_name="retest_originals"
     )
 
     new_batch = models.ForeignKey(

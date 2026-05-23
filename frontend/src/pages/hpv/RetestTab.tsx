@@ -5,7 +5,12 @@ import api from "../../api/client";
 
 const { Text } = Typography;
 
-export default function RetestTab({ batch }: { batch: any }) {
+const REASON_LABELS: Record<string, string> = {
+  POSITIVE: "阳性结果复查", IC_NO_SIGNAL: "IC 无信号",
+  QC_FAILURE: "质控失控", OTHER: "其他原因",
+};
+
+export default function RetestTab({ batch, onRefresh: _onRefresh }: { batch: any; onRefresh: () => void }) {
   const [retests, setRetests] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -20,17 +25,12 @@ export default function RetestTab({ batch }: { batch: any }) {
     finally { setLoading(false); }
   };
 
-  const reasonLabels: Record<string, string> = {
-    POSITIVE: "阳性结果复查", IC_NO_SIGNAL: "IC 无信号",
-    QC_FAILURE: "质控失控", OTHER: "其他原因",
-  };
-
   const columns: ColumnsType<any> = [
     { title: "样本编号", dataIndex: "original_sample_display", key: "sample", width: 130 },
     { title: "初检批次", dataIndex: "original_batch_number", key: "batch", width: 130 },
     { title: "复查批次", dataIndex: "new_batch_number", key: "batch", width: 110 },
     { title: "复查原因", dataIndex: "retest_reason", key: "reason", width: 120,
-      render: (v: string) => <Tag>{reasonLabels[v] || v}</Tag>,
+      render: (v: string) => <Tag>{REASON_LABELS[v] || v}</Tag>,
     },
     { title: "初检结果", dataIndex: "original_interpretation", key: "orig", width: 100 },
     { title: "复查结果", dataIndex: "retest_interpretation", key: "retest", width: 100,
