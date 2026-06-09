@@ -4,7 +4,7 @@ import { Link, useLocation } from "react-router-dom";
 import { Layout, Menu, Typography, Avatar, Dropdown, Space, theme as antdTheme, Badge } from "antd";
 import {
   DashboardOutlined, BarcodeOutlined,
-  FileTextOutlined, SafetyCertificateOutlined,
+  ExperimentOutlined, FileTextOutlined, SafetyCertificateOutlined,
   ToolOutlined, MedicineBoxOutlined, BookOutlined,
   TeamOutlined, CloudServerOutlined, AuditOutlined,
   BellOutlined, InboxOutlined,
@@ -33,7 +33,7 @@ export default function DashboardLayout({ children, header }: Props) {
     { key: "/",              icon: <DashboardOutlined />,       label: t("nav.dashboard") },
     { key: "/samples",       icon: <BarcodeOutlined />,         label: t("nav.samples") },
     { key: "/receiving",    icon: <InboxOutlined />,           label: "Receiving" },
-    { key: "/protocols",     icon: <FileTextOutlined />,        label: t("nav.protocols") },
+    { key: "/workflow",      icon: <ExperimentOutlined />,      label: t("nav.protocols") },
     { key: "/reports",       icon: <FileTextOutlined />,        label: t("nav.reports") },
     {
       key: "quality-group",

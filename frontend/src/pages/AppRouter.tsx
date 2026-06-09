@@ -10,6 +10,7 @@ const Login           = lazy(() => import("./Login"));
 const Dashboard       = lazy(() => import("./Dashboard"));
 const NiptSamples     = lazy(() => import("./NiptSamples"));
 const NiptReceiving   = lazy(() => import("./NiptReceiving"));
+const NiptWorkflow    = lazy(() => import("./NiptWorkflow"));
 const Reports         = lazy(() => import("./Reports"));
 const Instruments     = lazy(() => import("./Instruments"));
 const Reagents        = lazy(() => import("./Reagents"));
@@ -20,7 +21,6 @@ const Bioinformatics  = lazy(() => import("./Bioinformatics"));
 const Quality         = lazy(() => import("./Quality"));
 const AuditLog        = lazy(() => import("./AuditLog"));
 const Notifications   = lazy(() => import("./Notifications"));
-const Protocols       = lazy(() => import("./Protocols"));
 
 // Loading fallback
 const PageLoading = () => (
@@ -66,7 +66,7 @@ export default function AppRouter() {
         <Route path="/audit"             element={<Protected><AuditLog /></Protected>} />
         <Route path="/notifications"     element={<Protected><Notifications /></Protected>} />
 
-        <Route path="/protocols"     element={<Protected><Protocols /></Protected>} />
+        <Route path="/workflow"   element={<Protected><NiptWorkflow /></Protected>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
