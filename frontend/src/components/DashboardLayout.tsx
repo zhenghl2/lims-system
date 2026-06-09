@@ -33,7 +33,7 @@ export default function DashboardLayout({ children, header }: Props) {
     { key: "/",              icon: <DashboardOutlined />,       label: t("nav.dashboard") },
     { key: "/samples",       icon: <BarcodeOutlined />,         label: t("nav.samples") },
     { key: "/receiving",    icon: <InboxOutlined />,           label: "Receiving" },
-    { key: "/workflow",      icon: <ExperimentOutlined />,      label: t("nav.protocols") },
+    { key: "/workflow",      icon: <ExperimentOutlined />,      label: t("nav.workflow") },
     { key: "/reports",       icon: <FileTextOutlined />,        label: t("nav.reports") },
     {
       key: "quality-group",
