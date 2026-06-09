@@ -200,7 +200,7 @@ export default function Protocols() {
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <div>
           <Typography.Title level={4} style={{ margin: 0 }}>Protocols — NGS-NIPT Workflow</Typography.Title>
-          <Text type="secondary">Standard workflow: Nucleic Acid Extraction → Library Prep → Sequencing → Bioinformatics → Report</Text>
+          <Text type="secondary">Standard workflow: 核酸提取 → 文库构建 → 上机测序 → 生物信息分析</Text>
         </div>
         <Space>
           <Select allowClear placeholder="Filter by panel" style={{ width: 160 }} value={panelFilter} onChange={setPanelFilter} options={panels.map(p => ({ value: p.id, label: p.code }))} />
