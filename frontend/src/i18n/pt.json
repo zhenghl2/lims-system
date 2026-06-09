@@ -1,0 +1,54 @@
+{
+  "app": {
+    "title": "NGS LIMS",
+    "subtitle": "Sistema de Gestão de Informações Laboratoriais"
+  },
+  "nav": {
+    "dashboard": "Painel",
+    "samples": "Amostras",
+    "runs": "Execuções",
+    "protocols": "Protocolos",
+    "reports": "Relatórios",
+    "qualityManagement": "Gestão da Qualidade",
+    "qc": "CQ",
+    "documents": "Documentos",
+    "training": "Treinamento",
+    "resourceManagement": "Gestão de Recursos",
+    "instruments": "Instrumentos",
+    "reagents": "Reagentes",
+    "bioinformatics": "Bioinformática",
+    "auditLog": "Registro de Auditoria",
+    "notifications": "Notificações",
+    "settings": "Configurações",
+    "signOut": "Sair",
+    "toggleSidebar": "Alternar barra lateral"
+  },
+  "tabs": {
+    "nipt": "NIPT",
+    "nippt": "NIPPT",
+    "hpv": "HPV"
+  },
+  "auth": {
+    "username": "Nome de usuário",
+    "password": "Senha",
+    "signIn": "Entrar"
+  },
+  "common": {
+    "loading": "Carregando...",
+    "cancel": "Cancelar",
+    "save": "Salvar",
+    "delete": "Excluir",
+    "edit": "Editar",
+    "create": "Criar",
+    "search": "Pesquisar",
+    "reset": "Redefinir",
+    "confirm": "Confirmar",
+    "back": "Voltar",
+    "actions": "Ações",
+    "status": "Status",
+    "noData": "Sem dados",
+    "total": "Total",
+    "yes": "Sim",
+    "no": "Não"
+  }
+}

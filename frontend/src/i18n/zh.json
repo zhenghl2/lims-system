@@ -1,0 +1,54 @@
+{
+  "app": {
+    "title": "NGS LIMS",
+    "subtitle": "实验室信息管理系统"
+  },
+  "nav": {
+    "dashboard": "仪表盘",
+    "samples": "样本",
+    "runs": "运行",
+    "protocols": "实验方案",
+    "reports": "报告",
+    "qualityManagement": "质量管理",
+    "qc": "质量控制",
+    "documents": "文档",
+    "training": "培训",
+    "resourceManagement": "资源管理",
+    "instruments": "仪器",
+    "reagents": "试剂",
+    "bioinformatics": "生物信息学",
+    "auditLog": "审计日志",
+    "notifications": "通知",
+    "settings": "设置",
+    "signOut": "退出登录",
+    "toggleSidebar": "切换侧边栏"
+  },
+  "tabs": {
+    "nipt": "NIPT",
+    "nippt": "NIPPT",
+    "hpv": "HPV"
+  },
+  "auth": {
+    "username": "用户名",
+    "password": "密码",
+    "signIn": "登录"
+  },
+  "common": {
+    "loading": "加载中...",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "create": "新建",
+    "search": "搜索",
+    "reset": "重置",
+    "confirm": "确认",
+    "back": "返回",
+    "actions": "操作",
+    "status": "状态",
+    "noData": "暂无数据",
+    "total": "总计",
+    "yes": "是",
+    "no": "否"
+  }
+}

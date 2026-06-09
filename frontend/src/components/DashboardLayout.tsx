@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { Layout, Menu, Typography, Avatar, Dropdown, Space, theme as antdTheme, Badge } from "antd";
 import {
@@ -12,42 +12,9 @@ import {
   UserOutlined, LogoutOutlined, SettingOutlined,
 } from "@ant-design/icons";
 import { useAuthStore } from "../store/auth";
+import { useTranslation } from "../i18n/useTranslation";
 const { Sider, Header, Content, Footer } = Layout;
 const { Text } = Typography;
-
-// ── Sidebar menu items (grouped) ─────────────────────────────────
-const MENU_ITEMS = [
-  // Core
-  { key: "/",           icon: <DashboardOutlined />,       label: "Dashboard" },
-  { key: "/samples",    icon: <BarcodeOutlined />,         label: "Samples" },
-  { key: "/runs",       icon: <ExperimentOutlined />,      label: "Runs" },
-  { key: "/protocols",  icon: <FileTextOutlined />,        label: "Protocols" },  { key: "/reports",    icon: <FileTextOutlined />,        label: "Reports" },
-  // Quality
-  {
-    key: "quality-group",
-    label: "质量管理",
-    type: "group" as const,
-    children: [
-      { key: "/qc",         icon: <SafetyCertificateOutlined />, label: "QC" },
-      { key: "/documents",  icon: <BookOutlined />,              label: "Documents" },
-      { key: "/training",   icon: <TeamOutlined />,              label: "Training" },
-    ],
-  },
-  // Resources
-  {
-    key: "resource-group",
-    label: "资源管理",
-    type: "group" as const,
-    children: [
-      { key: "/instruments", icon: <ToolOutlined />,            label: "Instruments" },
-      { key: "/reagents",    icon: <MedicineBoxOutlined />,     label: "Reagents" },
-    ],
-  },
-  { key: "/bioinformatics", icon: <CloudServerOutlined />,     label: "Bioinformatics" },
-  // Audit & Notifications
-  { key: "/audit",          icon: <AuditOutlined />,              label: "Audit Log" },
-  { key: "/notifications",  icon: <BellOutlined />,               label: "Notifications" },
-];
 
 interface Props {
   children: ReactNode;
@@ -56,9 +23,41 @@ interface Props {
 
 export default function DashboardLayout({ children, header }: Props) {
   const { user, logout } = useAuthStore();
+  const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(false);
   const location = useLocation();
   const { token } = antdTheme.useToken();
+
+  // ── Sidebar menu items (i18n) ─────────────────────────────────
+  const menuItems = useMemo(() => [
+    { key: "/",              icon: <DashboardOutlined />,       label: t("nav.dashboard") },
+    { key: "/samples",       icon: <BarcodeOutlined />,         label: t("nav.samples") },
+    { key: "/runs",          icon: <ExperimentOutlined />,      label: t("nav.runs") },
+    { key: "/protocols",     icon: <FileTextOutlined />,        label: t("nav.protocols") },
+    { key: "/reports",       icon: <FileTextOutlined />,        label: t("nav.reports") },
+    {
+      key: "quality-group",
+      label: t("nav.qualityManagement"),
+      type: "group" as const,
+      children: [
+        { key: "/qc",         icon: <SafetyCertificateOutlined />, label: t("nav.qc") },
+        { key: "/documents",  icon: <BookOutlined />,              label: t("nav.documents") },
+        { key: "/training",   icon: <TeamOutlined />,              label: t("nav.training") },
+      ],
+    },
+    {
+      key: "resource-group",
+      label: t("nav.resourceManagement"),
+      type: "group" as const,
+      children: [
+        { key: "/instruments", icon: <ToolOutlined />,            label: t("nav.instruments") },
+        { key: "/reagents",    icon: <MedicineBoxOutlined />,     label: t("nav.reagents") },
+      ],
+    },
+    { key: "/bioinformatics", icon: <CloudServerOutlined />,     label: t("nav.bioinformatics") },
+    { key: "/audit",          icon: <AuditOutlined />,           label: t("nav.auditLog") },
+    { key: "/notifications",  icon: <BellOutlined />,            label: t("nav.notifications") },
+  ], [t]);
 
   const userMenuItems = [
     {
@@ -67,8 +66,8 @@ export default function DashboardLayout({ children, header }: Props) {
       disabled: false as const,
     },
     { type: "divider" as const },
-    { key: "settings", icon: <SettingOutlined />, label: "Settings" },
-    { key: "logout", icon: <LogoutOutlined />, label: "Sign Out", danger: true },
+    { key: "settings", icon: <SettingOutlined />, label: t("nav.settings") },
+    { key: "logout", icon: <LogoutOutlined />, label: t("nav.signOut"), danger: true },
   ];
 
   return (
@@ -87,7 +86,7 @@ export default function DashboardLayout({ children, header }: Props) {
           padding: "0 16px",
         }}>
           <Text strong style={{ fontSize: collapsed ? 18 : 20, color: token.colorPrimary }}>
-            {collapsed ? "LIMS" : "NGS LIMS"}
+            {collapsed ? "LIMS" : t("app.title")}
           </Text>
         </div>
 
@@ -95,8 +94,7 @@ export default function DashboardLayout({ children, header }: Props) {
         <Menu
           mode="inline"
           selectedKeys={[location.pathname]}
-          items={MENU_ITEMS.map((item) => {
-            // Group headers: recurse into children, don't link the header itself
+          items={menuItems.map((item) => {
             if (item.type === "group") {
               return {
                 ...item,
@@ -128,7 +126,7 @@ export default function DashboardLayout({ children, header }: Props) {
             <button
               onClick={() => setCollapsed(!collapsed)}
               style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18 }}
-              aria-label="Toggle sidebar"
+              aria-label={t("nav.toggleSidebar")}
             >
               {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             </button>
@@ -176,7 +174,7 @@ export default function DashboardLayout({ children, header }: Props) {
 
         {/* Footer */}
         <Footer style={{ textAlign: "center", color: token.colorTextDescription }}>
-          NGS LIMS &copy; {new Date().getFullYear()}
+          {t("app.title")} &copy; {new Date().getFullYear()}
         </Footer>
       </Layout>
     </Layout>

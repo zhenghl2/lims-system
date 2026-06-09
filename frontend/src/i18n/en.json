@@ -1,0 +1,54 @@
+{
+  "app": {
+    "title": "NGS LIMS",
+    "subtitle": "Laboratory Information Management System"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "samples": "Samples",
+    "runs": "Runs",
+    "protocols": "Protocols",
+    "reports": "Reports",
+    "qualityManagement": "Quality Management",
+    "qc": "QC",
+    "documents": "Documents",
+    "training": "Training",
+    "resourceManagement": "Resource Management",
+    "instruments": "Instruments",
+    "reagents": "Reagents",
+    "bioinformatics": "Bioinformatics",
+    "auditLog": "Audit Log",
+    "notifications": "Notifications",
+    "settings": "Settings",
+    "signOut": "Sign Out",
+    "toggleSidebar": "Toggle sidebar"
+  },
+  "tabs": {
+    "nipt": "NIPT",
+    "nippt": "NIPPT",
+    "hpv": "HPV"
+  },
+  "auth": {
+    "username": "Username",
+    "password": "Password",
+    "signIn": "Sign In"
+  },
+  "common": {
+    "loading": "Loading...",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "reset": "Reset",
+    "confirm": "Confirm",
+    "back": "Back",
+    "actions": "Actions",
+    "status": "Status",
+    "noData": "No data",
+    "total": "Total",
+    "yes": "Yes",
+    "no": "No"
+  }
+}
