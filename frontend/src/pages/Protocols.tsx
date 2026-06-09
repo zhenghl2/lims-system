@@ -39,11 +39,10 @@ interface Protocol {
 
 // NGS-NIPT Standard Workflow Steps
 const NGS_NIPT_STEPS: StepDef[] = [
-  { step_id: "dna_extraction",    step_name: "Nucleic Acid Extraction",    step_order: 1, required: true,  description: "cfDNA extraction from maternal plasma (Streck BCT)" },
-  { step_id: "library_prep",      step_name: "Library Preparation",        step_order: 2, required: true,  description: "End repair, A-tailing, adapter ligation, PCR amplification" },
-  { step_id: "sequencing",        step_name: "Sequencing",                 step_order: 3, required: true,  description: "NGS sequencing on Illumina/MGI platform" },
-  { step_id: "bioinformatics",    step_name: "Bioinformatics Analysis",    step_order: 4, required: true,  description: "Read alignment, GC correction, z-score calculation" },
-  { step_id: "report_generation", step_name: "Report Generation",          step_order: 5, required: true,  description: "Risk assessment, report drafting, review & sign-off" },
+  { step_id: "dna_extraction",    step_name: "核酸提取",                   step_order: 1, required: true,  description: "cfDNA extraction from maternal plasma" },
+  { step_id: "library_prep",      step_name: "文库构建",                   step_order: 2, required: true,  description: "End repair, A-tailing, adapter ligation, PCR amplification" },
+  { step_id: "sequencing",        step_name: "上机测序",                   step_order: 3, required: true,  description: "NGS sequencing on Illumina/MGI platform" },
+  { step_id: "bioinformatics",    step_name: "生物信息分析",               step_order: 4, required: true,  description: "Read alignment, GC correction, z-score calculation" },
 ];
 
 export default function Protocols() {

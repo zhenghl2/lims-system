@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import { Spin } from "antd";
 import AuthLayout from "../components/AuthLayout";
+import DashboardLayout from "../components/DashboardLayout";
 import { useAuthStore } from "../store/auth";
 
 // Lazy-loaded pages — all real implementations
@@ -46,8 +47,8 @@ export default function AppRouter() {
 
         {/* Protected — fully implemented */}
         <Route path="/"       element={<Protected><Dashboard /></Protected>} />
-        <Route path="/samples"   element={<Protected><NiptSamples /></Protected>} />
-        <Route path="/receiving" element={<Protected><NiptReceiving /></Protected>} />
+        <Route path="/samples"   element={<Protected><DashboardLayout><NiptSamples /></DashboardLayout></Protected>} />
+        <Route path="/receiving" element={<Protected><DashboardLayout><NiptReceiving /></DashboardLayout></Protected>} />
         <Route path="/reports" element={<Protected><Reports /></Protected>} />
         <Route path="/instruments" element={<Protected><Instruments /></Protected>} />
         <Route path="/reagents"    element={<Protected><Reagents /></Protected>} />
