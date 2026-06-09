@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm } from "antd";
+import { Table, Button, Tag, Switch, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm } from "antd";
 import { PlusOutlined, MinusCircleOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
@@ -39,6 +39,9 @@ interface BatchRow {
   sourceInstitution: string;
   institutionSampleId: string;
   sampleType: string;
+  maternalWeight: number | null;
+  ivfStatus: boolean;
+  multipleGestation: boolean;
   panelCode: string;
   collectionDate: dayjs.Dayjs;
 }
@@ -55,6 +58,9 @@ const newBatchRow = (): BatchRow => ({
   institutionSampleId: "",
   sampleType: "PLASMA_CFDNA",
   panelCode: "",
+  maternalWeight: null,
+  ivfStatus: false,
+  multipleGestation: false,
   collectionDate: dayjs(),
 });
 
@@ -74,6 +80,9 @@ function parseExcelPaste(text: string): BatchRow[] {
       institutionSampleId: (cols[6] || "").trim(),
       sampleType: (cols[7] || "PLASMA_CFDNA").trim(),
       panelCode: (cols[8] || "").trim(),
+      maternalWeight: null,
+      ivfStatus: false,
+      multipleGestation: false,
       collectionDate: cols[9] ? dayjs(cols[9].trim()) : dayjs(),
     });
   }
@@ -132,6 +141,9 @@ export default function NiptSamples() {
         source_institution: values.sourceInstitution,
         institution_sample_id: values.institutionSampleId,
         sample_type_code: values.sampleType,
+        maternal_weight: values.maternalWeight,
+        ivf_status: values.ivfStatus,
+        multiple_gestation: values.multipleGestation,
         panel: values.panelCode || undefined,
         collection_date: values.collectionDate ? values.collectionDate.format("YYYY-MM-DD") : undefined,
       });
@@ -161,6 +173,9 @@ export default function NiptSamples() {
         source_institution: r.sourceInstitution,
         institution_sample_id: r.institutionSampleId,
         sample_type_code: r.sampleType,
+        maternal_weight: r.maternalWeight,
+        ivf_status: r.ivfStatus,
+        multiple_gestation: r.multipleGestation,
         panel: r.panelCode || undefined,
         collection_date: r.collectionDate.format("YYYY-MM-DD"),
       }));
@@ -281,6 +296,17 @@ export default function NiptSamples() {
             </Form.Item>
             <Form.Item name="gestationalWeeks" label="Gestational Weeks">
               <InputNumber min={1} max={45} style={{ width: 140 }} placeholder="Weeks" />
+            </Form.Item>
+          </Space>
+          <Space style={{ display: "flex" }} size="middle">
+            <Form.Item name="maternalWeight" label="Maternal Weight (kg)">
+              <InputNumber min={30} max={200} step={0.1} style={{ width: 140 }} placeholder="kg" />
+            </Form.Item>
+            <Form.Item name="ivfStatus" label="IVF" valuePropName="checked">
+              <Switch />
+            </Form.Item>
+            <Form.Item name="multipleGestation" label="Multiple Gestation" valuePropName="checked">
+              <Switch />
             </Form.Item>
           </Space>
           <Form.Item name="sampleType" label="Sample Type" initialValue="PLASMA_CFDNA">
