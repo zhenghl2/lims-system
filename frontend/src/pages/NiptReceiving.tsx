@@ -8,12 +8,12 @@ const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 const STATUS_MAP: Record<string, string> = {
-  REGISTERED: "default", RECEIVING: "processing", RECEIVED: "blue",
+  REGISTERED: "default", RECEIVED: "blue",
   IN_PROCESS: "orange", COMPLETED: "green",
 };
 
 const STATUS_LABELS: Record<string, string> = {
-  REGISTERED: "Registered", RECEIVING: "Receiving", RECEIVED: "Received",
+  REGISTERED: "Registered", RECEIVED: "Received",
   IN_PROCESS: "In Process", COMPLETED: "Completed", REPORTED: "Reported",
   REJECTED: "Rejected",
 };
@@ -67,7 +67,7 @@ export default function NiptReceiving() {
 
   const fetchData = useCallback(() => {
     setLoading(true);
-    const statusParam = activeTab === "pending" ? "REGISTERED,RECEIVING" : "RECEIVED,IN_PROCESS,COMPLETED,REPORTED";
+    const statusParam = activeTab === "pending" ? "REGISTERED" : "RECEIVED,IN_PROCESS,COMPLETED,REPORTED";
     samplesApi.list({ status: statusParam, page_size: 100 }).then((res: any) => {
       setData((res.data as any).results || res.data || []);
     }).catch(() => message.error("Failed to load samples")).finally(() => setLoading(false));

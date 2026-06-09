@@ -31,7 +31,7 @@ class WorkflowProtocol(models.Model):
 class SampleRun(models.Model):
     """A sequencing run containing multiple samples."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    run_number = models.CharField(max_length=30, db_index=True)
+    run_number = models.CharField(max_length=30, unique=True, db_index=True)
     panel = models.ForeignKey("samples.TestPanel", on_delete=models.PROTECT, related_name="runs")
     protocol = models.ForeignKey(WorkflowProtocol, on_delete=models.PROTECT, null=True, blank=True)
     sequencer = models.ForeignKey("instruments.Instrument", on_delete=models.PROTECT, null=True, blank=True)
