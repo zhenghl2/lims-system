@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Table, Button, Tag, Space, Typography, Modal, Form, Select, Input, InputNumber, DatePicker, TimePicker, message, Popconfirm, Card, Empty, Row, Col, Tabs } from "antd";
+import { Table, Button, Tag, Space, Typography, Modal, Form, Select, Input, InputNumber, DatePicker, message, Popconfirm, Card, Empty, Row, Col, Tabs } from "antd";
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { runsApi, panelsApi, samplesApi } from "../api";
@@ -141,58 +141,100 @@ export default function NiptWorkflow() {
       case "extraction":
         return (
           <Row gutter={[16, 16]}>
-            <Col span={8}><Form.Item name="ext_date" label="实验日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="ext_time" label="实验时间"><TimePicker format="HH:mm" style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="bsc_id" label="生物安全柜编号"><Input placeholder="e.g. BSC-A2-01" /></Form.Item></Col>
-            <Col span={8}><Form.Item name="extractor_id" label="核酸提取仪编号"><Input placeholder="e.g. 001" /></Form.Item></Col>
-            <Col span={8}><Form.Item name="kit_type" label="试剂盒类型" rules={[{ required: true }]}><Select placeholder="Select" options={[{ value: "PN-16E", label: "PN-16E" }, { value: "PN-96E", label: "PN-96E" }]} /></Form.Item></Col>
-            <Col span={4}><Form.Item name="kit_lot" label="试剂批次" rules={[{ required: true }]}><Input placeholder="Lot #" /></Form.Item></Col>
-            <Col span={4}><Form.Item name="kit_expiry" label="有效期"><Input placeholder="YYYY-MM" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_date" label="实验日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_operator" label="实验人员" rules={[{ required: true }]}><Input placeholder="Name" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_kit" label="提取试剂盒" rules={[{ required: true }]}><Select placeholder="Select" options={[
+              { value: "QIAamp_DNA", label: "QIAamp Circulating Nucleic Acid" },
+              { value: "MagMAX", label: "MagMAX Cell-Free DNA" },
+              { value: "TIANamp", label: "TIANamp Micro DNA" },
+            ]} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_kit_lot" label="试剂批次" rules={[{ required: true }]}><Input placeholder="Lot #" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_volume" label="血浆体积 (mL)" rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 4.0" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_elution" label="洗脱体积 (μL)"><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 60" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_conc" label="DNA 浓度 (ng/μL)" rules={[{ required: true }]}><InputNumber min={0} step={0.01} style={{ width: "100%" }} placeholder="e.g. 0.45" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_total" label="DNA 总量 (ng)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 27" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_a260a280" label="A260/A280"><InputNumber min={0} max={3} step={0.01} style={{ width: "100%" }} placeholder="e.g. 1.85" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_a260a230" label="A260/A230"><InputNumber min={0} max={3} step={0.01} style={{ width: "100%" }} placeholder="e.g. 2.1" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_qc" label="质控结果" rules={[{ required: true }]}><Select placeholder="Pass / Fail" options={[{ value: "PASS", label: "✅ 合格" }, { value: "FAIL", label: "❌ 不合格" }]} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="ext_qc_note" label="质控备注"><Input placeholder="如不合格，说明原因" /></Form.Item></Col>
             <Col span={24}><Form.Item name="ext_notes" label="备注"><Input.TextArea rows={2} placeholder="记录实验观察..." /></Form.Item></Col>
           </Row>
         );
       case "library":
         return (
           <Row gutter={[16, 16]}>
-            <Col span={8}><Form.Item name="lib_date" label="实验日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="lib_operator" label="实验人员"><Input placeholder="Name" /></Form.Item></Col>
-            <Col span={8}><Form.Item name="lib_kit" label="文库构建试剂盒" rules={[{ required: true }]}><Select placeholder="Select" options={[{ value: "KAPA", label: "KAPA HyperPrep" }, { value: "NEB", label: "NEBNext Ultra II" }, { value: "MGI", label: "MGI Easy" }]} /></Form.Item></Col>
-            <Col span={4}><Form.Item name="lib_kit_lot" label="试剂批次"><Input placeholder="Lot #" /></Form.Item></Col>
-            <Col span={4}><Form.Item name="lib_conc" label="文库浓度 (ng/μL)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 25" /></Form.Item></Col>
-            <Col span={4}><Form.Item name="lib_input" label="Input DNA (ng)"><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 100" /></Form.Item></Col>
-            <Col span={4}><Form.Item name="lib_pcr" label="PCR 循环数"><InputNumber min={0} max={20} style={{ width: "100%" }} placeholder="e.g. 8" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_date" label="实验日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_operator" label="实验人员" rules={[{ required: true }]}><Input placeholder="Name" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_kit" label="文库试剂盒" rules={[{ required: true }]}><Select placeholder="Select" options={[
+              { value: "KAPA_HyperPrep", label: "KAPA HyperPrep Kit" },
+              { value: "NEBNext_UltraII", label: "NEBNext Ultra II" },
+              { value: "MGI_Easy", label: "MGI Easy Prep" },
+            ]} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_kit_lot" label="试剂批次" rules={[{ required: true }]}><Input placeholder="Lot #" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_input" label="Input DNA (ng)" rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 10" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_conc" label="文库浓度 (ng/μL)"><InputNumber min={0} step={0.01} style={{ width: "100%" }} placeholder="e.g. 25" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_molar" label="摩尔浓度 (nM)"><InputNumber min={0} step={0.01} style={{ width: "100%" }} placeholder="e.g. 8.5" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_size" label="片段大小 (bp)"><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 310" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_pcr" label="PCR 循环数"><InputNumber min={0} max={20} style={{ width: "100%" }} placeholder="e.g. 8" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_index" label="Index 编号"><Input placeholder="e.g. N701+S501" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_qc" label="质控结果" rules={[{ required: true }]}><Select placeholder="Pass / Fail" options={[{ value: "PASS", label: "✅ 合格" }, { value: "FAIL", label: "❌ 不合格" }]} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="lib_qc_note" label="质控备注"><Input placeholder="如不合格，说明原因" /></Form.Item></Col>
             <Col span={24}><Form.Item name="lib_notes" label="备注"><Input.TextArea rows={2} placeholder="记录文库构建观察..." /></Form.Item></Col>
           </Row>
         );
       case "sequencing":
         return (
           <Row gutter={[16, 16]}>
-            <Col span={8}><Form.Item name="seq_date" label="测序日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="seq_instrument" label="测序仪编号" rules={[{ required: true }]}><Input placeholder="e.g. MGI-2000" /></Form.Item></Col>
-            <Col span={8}><Form.Item name="seq_chip" label="测序芯片类型"><Select placeholder="Select" options={[{ value: "FCL", label: "FCL" }, { value: "FCS", label: "FCS" }]} /></Form.Item></Col>
-            <Col span={4}><Form.Item name="seq_conc" label="上样浓度 (pM)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 12" /></Form.Item></Col>
-            <Col span={4}><Form.Item name="seq_reads" label="目标数据量 (M reads)"><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 25" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_date" label="测序日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_operator" label="操作人员"><Input placeholder="Name" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_instrument" label="测序仪型号" rules={[{ required: true }]}><Select placeholder="Select" options={[
+              { value: "MGISEQ2000", label: "MGISEQ-2000" },
+              { value: "NextSeq550", label: "NextSeq 550" },
+              { value: "NovaSeq6000", label: "NovaSeq 6000" },
+            ]} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_chip" label="芯片/Flow Cell"><Select placeholder="Select" options={[
+              { value: "FCL", label: "FCL" }, { value: "FCS", label: "FCS" },
+              { value: "S1", label: "S1" }, { value: "S2", label: "S2" },
+            ]} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_conc" label="上样浓度 (pM)" rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 12" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_read_type" label="Read 类型"><Select placeholder="Select" options={[{ value: "SE75", label: "SE75" }, { value: "PE150", label: "PE150" }]} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_target_reads" label="目标数据量 (M reads)" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 25" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_actual_reads" label="实际数据量 (M reads)"><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 25.3" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_q30" label="Q30 (%)"><InputNumber min={0} max={100} step={0.1} style={{ width: "100%" }} placeholder="e.g. 92.5" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_error_rate" label="错误率 (%)"><InputNumber min={0} max={100} step={0.01} style={{ width: "100%" }} placeholder="e.g. 0.15" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_qc" label="质控结果" rules={[{ required: true }]}><Select placeholder="Pass / Fail" options={[{ value: "PASS", label: "✅ 合格" }, { value: "FAIL", label: "❌ 不合格" }]} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_qc_note" label="质控备注"><Input placeholder="如不合格，说明原因" /></Form.Item></Col>
             <Col span={24}><Form.Item name="seq_notes" label="备注"><Input.TextArea rows={2} placeholder="记录测序观察..." /></Form.Item></Col>
           </Row>
         );
       case "bioinformatics":
         return (
           <Row gutter={[16, 16]}>
-            <Col span={8}><Form.Item name="bio_date" label="分析日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={8}><Form.Item name="bio_operator" label="分析人员"><Input placeholder="Name" /></Form.Item></Col>
-            <Col span={8}><Form.Item name="bio_version" label="分析软件版本"><Input placeholder="e.g. v3.2.1" /></Form.Item></Col>
-            <Col span={4}><Form.Item name="bio_q30" label="Q30 (%)"><InputNumber min={0} max={100} step={0.1} style={{ width: "100%" }} placeholder="e.g. 92" /></Form.Item></Col>
-            <Col span={4}><Form.Item name="bio_gc" label="GC 含量 (%)"><InputNumber min={0} max={100} step={0.1} style={{ width: "100%" }} placeholder="e.g. 42" /></Form.Item></Col>
-            <Col span={4}><Form.Item name="bio_data" label="有效数据 (Mb)"><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 15" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_date" label="分析日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_operator" label="分析人员" rules={[{ required: true }]}><Input placeholder="Name" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_software" label="分析软件/版本" rules={[{ required: true }]}><Input placeholder="e.g. WisecondorX v1.2" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_genome" label="参考基因组"><Select placeholder="Select" options={[{ value: "hg19", label: "hg19 (GRCh37)" }, { value: "hg38", label: "hg38 (GRCh38)" }]} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_mapped" label="Unique Mapped (%)"><InputNumber min={0} max={100} step={0.1} style={{ width: "100%" }} placeholder="e.g. 85.2" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_gc" label="GC 含量 (%)"><InputNumber min={0} max={100} step={0.1} style={{ width: "100%" }} placeholder="e.g. 42.1" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_dup" label="Duplication (%)"><InputNumber min={0} max={100} step={0.1} style={{ width: "100%" }} placeholder="e.g. 3.5" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_data" label="有效数据量 (Mb)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 15.2" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_ff" label="FF 胎儿分数 (%)"><InputNumber min={0} max={100} step={0.01} style={{ width: "100%" }} placeholder="e.g. 10.5" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_z13" label="Chr13 Z-score"><InputNumber step={0.01} style={{ width: "100%" }} placeholder="e.g. 0.85" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_z18" label="Chr18 Z-score"><InputNumber step={0.01} style={{ width: "100%" }} placeholder="e.g. 1.23" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_z21" label="Chr21 Z-score"><InputNumber step={0.01} style={{ width: "100%" }} placeholder="e.g. -0.42" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_qc" label="质控结果" rules={[{ required: true }]}><Select placeholder="Pass / Fail" options={[{ value: "PASS", label: "✅ 合格" }, { value: "FAIL", label: "❌ 不合格" }]} /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_qc_note" label="质控备注"><Input placeholder="如不合格，说明原因" /></Form.Item></Col>
+            <Col span={6}><Form.Item name="bio_conclusion" label="分析结论"><Select placeholder="Select" options={[
+              { value: "LOW_RISK", label: "低风险" }, { value: "HIGH_RISK", label: "高风险" },
+              { value: "NO_CALL", label: "无法判定" },
+            ]} /></Form.Item></Col>
             <Col span={24}><Form.Item name="bio_notes" label="备注"><Input.TextArea rows={2} placeholder="记录生信分析观察..." /></Form.Item></Col>
           </Row>
         );
       default:
         return <Empty description="Select a step" />;
     }
-  };
-
-  return (
+  };  return (
     <DashboardLayout>
       <div style={{ display: "flex", gap: 24, height: "calc(100vh - 160px)" }}>
         {/* Left: Batch List */}
