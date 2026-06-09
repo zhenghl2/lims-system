@@ -9,6 +9,8 @@ env = environ.Env(
     REDIS_URL=(str, "redis://localhost:6379/0"),
     DJANGO_ALLOWED_HOSTS=(list, "*"),
     LIMS_SITE_CODE=(str, "DEFAULT"),
+    WECHAT_APPID=(str, ""),
+    WECHAT_SECRET=(str, ""),
 )
 
 # Build paths
@@ -58,10 +60,12 @@ LOCAL_APPS = [
     "lims.apps.training",
     "lims.apps.quality",
     "lims.apps.regulatory",
+    "lims.apps.lims_api",
     "lims.apps.audit",
     "lims.apps.notifications",
     "lims.apps.cases",
     "lims.apps.hpv",
+    "lims.apps.wechat",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -232,3 +236,5 @@ LOGGING = {
 
 # Site code (for multi-site)
 SITE_CODE = env("LIMS_SITE_CODE")
+WECHAT_APPID = env("WECHAT_APPID")
+WECHAT_SECRET = env("WECHAT_SECRET")

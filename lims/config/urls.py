@@ -33,6 +33,8 @@ api_v1_patterns = [
     path("regulatory/", include("lims.apps.regulatory.urls", namespace="regulatory")),
     path("cases/", include("lims.apps.cases.urls", namespace="cases")),
     path("hpv/", include("lims.apps.hpv.urls", namespace="hpv")),
+    path("wechat/", include("lims.apps.wechat.urls", namespace="wechat")),
+    path("lims/", include("lims.apps.lims_api.urls", namespace="lims_api")),
 ]
 
 urlpatterns = [
