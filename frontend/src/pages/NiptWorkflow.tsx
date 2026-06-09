@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
-import { Table, Button, Tag, Space, Typography, Modal, Form, Select, message, Popconfirm, Steps, Card, Empty, Row, Col } from "antd";
+import { Table, Button, Tag, Space, Typography, Modal, Form, Select, Input, message, Popconfirm, Steps, Card, Empty, Row, Col } from "antd";
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
-import { runsApi, protocolsApi, panelsApi, samplesApi } from "../api";
+import { runsApi, panelsApi, samplesApi } from "../api";
 import DashboardLayout from "../components/DashboardLayout";
 
 const { Title, Text } = Typography;
@@ -45,7 +45,6 @@ export default function NiptWorkflow() {
   const [createLoading, setCreateLoading] = useState(false);
   const [form] = Form.useForm();
 
-  const [protocols, setProtocols] = useState<any[]>([]);
   const [panels, setPanels] = useState<any[]>([]);
   const [samples, setSamples] = useState<any[]>([]);
 
@@ -78,9 +77,8 @@ export default function NiptWorkflow() {
 
   // Load form options
   useEffect(() => {
-    protocolsApi.list().then(r => setProtocols((r.data as any).results || [])).catch(() => {});
     panelsApi.list().then(r => setPanels((r.data as any).results || r.data || [])).catch(() => {});
-    samplesApi.list({ status: "RECEIVED,IN_PROCESS", page_size: 200 }).then(r => setSamples((r.data as any).results || [])).catch(() => {});
+    samplesApi.list({ status: "RECEIVED", page_size: 200 }).then(r => setSamples((r.data as any).results || [])).catch(() => {});
   }, [createOpen]);
 
   // Create batch
@@ -89,8 +87,8 @@ export default function NiptWorkflow() {
       const values = await form.validateFields();
       setCreateLoading(true);
       const payload: any = {
+        run_number: values.batch_number,
         panel: values.panel,
-        protocol: values.protocol || undefined,
         sample_ids: values.sample_ids || [],
       };
       await runsApi.create(payload);
@@ -247,11 +245,11 @@ export default function NiptWorkflow() {
       {/* Create Batch Modal */}
       <Modal title="Create NIPT Batch" open={createOpen} onOk={handleCreate} onCancel={() => setCreateOpen(false)} confirmLoading={createLoading} width={600} destroyOnClose>
         <Form form={form} layout="vertical">
+          <Form.Item name="batch_number" label="Batch Number" rules={[{ required: true, message: "Enter batch number" }]}>
+            <Input placeholder="e.g. NIPT-BATCH-001" />
+          </Form.Item>
           <Form.Item name="panel" label="Test Panel" rules={[{ required: true, message: "Select test panel" }]}>
             <Select placeholder="Select test panel" options={panels.map((p: any) => ({ value: p.id, label: `${p.code} - ${p.name}` }))} />
-          </Form.Item>
-          <Form.Item name="protocol" label="Protocol">
-            <Select allowClear placeholder="Select protocol (optional)" options={protocols.map((p: any) => ({ value: p.id, label: `${p.name} v${p.version}` }))} />
           </Form.Item>
           <Form.Item name="sample_ids" label="Add Samples">
             <Select mode="multiple" allowClear placeholder="Select samples to add" showSearch
