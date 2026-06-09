@@ -7,8 +7,8 @@ import { useAuthStore } from "../store/auth";
 // Lazy-loaded pages — all real implementations
 const Login           = lazy(() => import("./Login"));
 const Dashboard       = lazy(() => import("./Dashboard"));
-const Samples         = lazy(() => import("./Samples"));
-const Runs            = lazy(() => import("./Runs"));
+const NiptSamples     = lazy(() => import("./NiptSamples"));
+const NiptReceiving   = lazy(() => import("./NiptReceiving"));
 const Reports         = lazy(() => import("./Reports"));
 const Instruments     = lazy(() => import("./Instruments"));
 const Reagents        = lazy(() => import("./Reagents"));
@@ -46,8 +46,8 @@ export default function AppRouter() {
 
         {/* Protected — fully implemented */}
         <Route path="/"       element={<Protected><Dashboard /></Protected>} />
-        <Route path="/samples" element={<Protected><Samples /></Protected>} />
-        <Route path="/runs"    element={<Protected><Runs /></Protected>} />
+        <Route path="/samples"   element={<Protected><NiptSamples /></Protected>} />
+        <Route path="/receiving" element={<Protected><NiptReceiving /></Protected>} />
         <Route path="/reports" element={<Protected><Reports /></Protected>} />
         <Route path="/instruments" element={<Protected><Instruments /></Protected>} />
         <Route path="/reagents"    element={<Protected><Reagents /></Protected>} />

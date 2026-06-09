@@ -4,10 +4,10 @@ import { Link, useLocation } from "react-router-dom";
 import { Layout, Menu, Typography, Avatar, Dropdown, Space, theme as antdTheme, Badge } from "antd";
 import {
   DashboardOutlined, BarcodeOutlined,
-  ExperimentOutlined, FileTextOutlined, SafetyCertificateOutlined,
+  FileTextOutlined, SafetyCertificateOutlined,
   ToolOutlined, MedicineBoxOutlined, BookOutlined,
   TeamOutlined, CloudServerOutlined, AuditOutlined,
-  BellOutlined,
+  BellOutlined, InboxOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined,
   UserOutlined, LogoutOutlined, SettingOutlined,
 } from "@ant-design/icons";
@@ -32,7 +32,7 @@ export default function DashboardLayout({ children, header }: Props) {
   const menuItems = useMemo(() => [
     { key: "/",              icon: <DashboardOutlined />,       label: t("nav.dashboard") },
     { key: "/samples",       icon: <BarcodeOutlined />,         label: t("nav.samples") },
-    { key: "/runs",          icon: <ExperimentOutlined />,      label: t("nav.runs") },
+    { key: "/receiving",    icon: <InboxOutlined />,           label: "Receiving" },
     { key: "/protocols",     icon: <FileTextOutlined />,        label: t("nav.protocols") },
     { key: "/reports",       icon: <FileTextOutlined />,        label: t("nav.reports") },
     {
