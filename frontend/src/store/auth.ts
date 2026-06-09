@@ -16,6 +16,7 @@ interface AuthStore {
   // Actions
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
+  updateLocale: (locale: string) => Promise<void>;
   fetchUser: () => Promise<void>;
   setAccessToken: (token: string) => void;
   initialize: () => void;
@@ -60,6 +61,18 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       set({ isLoading: false });
       throw err;
     }
+  },
+
+
+  updateLocale: async (locale: string) => {
+    const token = get().accessToken;
+    if (!token) return;
+    try {
+      const { default: api } = await import("../api/client");
+      await api.patch("/me/locale/", { locale });
+      const user = get().user;
+      if (user) set({ user: { ...user, locale } });
+    } catch { /* ignore */ }
   },
 
   logout: async () => {

@@ -138,8 +138,20 @@ export default function DashboardLayout({ children, header }: Props) {
           </Space>
 
           <Space size="middle">
-            {user?.site_id && (
-              <Badge size="small" status="processing" text={user.locale?.toUpperCase()} />
+            {user && (
+              <Dropdown menu={{
+                items: [
+                  { key: 'en', label: '🇬🇧 English' },
+                  { key: 'zh', label: '🇨🇳 中文' },
+                  { key: 'pt', label: '🇧🇷 Português' },
+                ],
+                selectedKeys: [user.locale || 'en'],
+                onClick: ({ key }) => {
+                  useAuthStore.getState().updateLocale(key);
+                },
+              }} trigger={['click']}>
+                <Badge size="small" status="processing" text={user.locale?.toUpperCase()} style={{ cursor: 'pointer' }} />
+              </Dropdown>
             )}
             <Dropdown menu={{ items: userMenuItems, onClick: (e) => {
               if (e.key === "logout") logout();

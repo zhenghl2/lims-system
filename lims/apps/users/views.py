@@ -5,7 +5,7 @@ from rest_framework.request import Request
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework.filters import SearchFilter
-from .serializers import LoginSerializer, ChangePasswordSerializer, UserMeSerializer, UserListSerializer
+from .serializers import LoginSerializer, ChangePasswordSerializer, UserMeSerializer, UserListSerializer, UpdateLocaleSerializer
 from .mfa import setup_totp, verify_totp_code
 from .models import User
 import logging
@@ -110,3 +110,13 @@ class MeView(generics.RetrieveAPIView):
 
     def get_object(self):
         return self.request.user
+
+
+class UpdateLocaleView(APIView):
+    """Update the current user's locale preference."""
+    def patch(self, request):
+        serializer = UpdateLocaleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        request.user.locale = serializer.validated_data["locale"]
+        request.user.save(update_fields=["locale", "updated_at"])
+        return Response({"locale": request.user.locale, "message": "Locale updated"})

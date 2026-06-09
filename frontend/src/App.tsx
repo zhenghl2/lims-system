@@ -6,6 +6,7 @@ import { useAuthStore } from "./store/auth";
 import AppRouter from "./pages/AppRouter";
 import enUS from "antd/locale/en_US";
 import zhCN from "antd/locale/zh_CN";
+import ptBR from "antd/locale/pt_BR";
 
 const NipptRouter = lazy(() => import("./pages/NipptRouter"));
 const HpvRouter = lazy(() => import("./pages/HpvRouter"));
@@ -19,6 +20,7 @@ const queryClient = new QueryClient({
 const LOCALES: Record<string, typeof enUS> = {
   en: enUS,
   zh: zhCN,
+  pt: ptBR,
 };
 
 // Map panel codes to tab keys

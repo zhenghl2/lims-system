@@ -93,3 +93,11 @@ class UserListSerializer(serializers.ModelSerializer):
     def get_full_name(self, obj):
         name = f"{obj.first_name} {obj.last_name}".strip()
         return name or obj.username
+
+
+class UpdateLocaleSerializer(serializers.Serializer):
+    locale = serializers.ChoiceField(choices=[
+        ("en", "English"),
+        ("zh", "中文"),
+        ("pt", "Português"),
+    ])
