@@ -4,6 +4,7 @@ import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined } from
 import dayjs from "dayjs";
 import { runsApi, panelsApi, samplesApi } from "../api";
 import DashboardLayout from "../components/DashboardLayout";
+import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
 
@@ -31,6 +32,7 @@ function getStepIndex(status: string): number {
 }
 
 export default function NiptWorkflow() {
+  const { t } = useTranslation();
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
@@ -87,11 +89,11 @@ export default function NiptWorkflow() {
       const payload: any = { panel: values.panel, samples: values.sample_ids || [], notes: values.batch_number || "" };
       if (values.batch_number) payload.notes = "Batch: " + values.batch_number;
       await runsApi.create(payload);
-      message.success("Batch created");
+      message.success(t("workflow.batchCreated"));
       setCreateOpen(false); form.resetFields(); fetchBatches();
     } catch (err: any) {
       if (err?.errorFields) return;
-      message.error(err?.response?.data?.detail || "Failed");
+      message.error(err?.response?.data?.detail || t("common.failed"));
     } finally { setCreateLoading(false); }
   };
 
@@ -108,7 +110,7 @@ export default function NiptWorkflow() {
       setSelectedBatch({ ...selectedBatch, status });
       setActiveStep(STEPS[getStepIndex(status)]?.key || "extraction");
       fetchBatches(); fetchDetail(selectedBatch.id);
-    } catch { message.error("Failed"); }
+    } catch { message.error(t("common.failed")); }
   };
 
   const handleStepSave = async () => {
@@ -252,7 +254,7 @@ export default function NiptWorkflow() {
         {/* Right: Batch Detail */}
         <Card style={{ flex: 1, overflow: "auto" }} bodyStyle={{ padding: 24 }}>
           {!selectedBatch ? (
-            <Empty description="Select a batch to view workflow" style={{ marginTop: 80 }} />
+            <Empty description={t("workflow.selectBatch")} style={{ marginTop: 80 }} />
           ) : detailLoading ? (
             <div style={{ textAlign: "center", padding: 80 }}>Loading...</div>
           ) : (
