@@ -84,7 +84,9 @@ export default function NiptWorkflow() {
     try {
       const values = await form.validateFields();
       setCreateLoading(true);
-      await runsApi.create({ run_number: values.batch_number, panel: values.panel, sample_ids: values.sample_ids || [] });
+      const payload: any = { panel: values.panel, samples: values.sample_ids || [], notes: values.batch_number || "" };
+      if (values.batch_number) payload.notes = "Batch: " + values.batch_number;
+      await runsApi.create(payload);
       message.success("Batch created");
       setCreateOpen(false); form.resetFields(); fetchBatches();
     } catch (err: any) {
