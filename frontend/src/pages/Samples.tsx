@@ -1,3 +1,4 @@
+import { useTranslation } from "../i18n/useTranslation";
 import { useState, useEffect } from "react";
 import {
   Table, Card, Button, Space, Tag, Typography, Input,
@@ -66,6 +67,7 @@ const newBatchRow = (): BatchRow => ({
 });
 
 export default function Samples() {
+  const { t } = useTranslation();
   const [form] = Form.useForm();
   const [editForm] = Form.useForm();
   const [rejectForm] = Form.useForm();
@@ -142,7 +144,7 @@ export default function Samples() {
 
   const columns = [
     {
-      title: "Sample ID",
+      title: t("Sample ID"),
       dataIndex: "sample_id",
       key: "sample_id",
       width: 180,
@@ -154,17 +156,17 @@ export default function Samples() {
         </Space>
       ),
     },
-    { title: "Patient ID", dataIndex: "patient_id", key: "patient_id", width: 130,
+    { title: t("Patient ID"), dataIndex: "patient_id", key: "patient_id", width: 130,
       render: (t: string) => t || "-"
     },
-    { title: "Patient Name", dataIndex: "patient_name", key: "patient_name", width: 150,
+    { title: t("Patient Name"), dataIndex: "patient_name", key: "patient_name", width: 150,
       render: (t: string) => t || "-"
     },
-    { title: "Sample Type", dataIndex: "sample_type_code", key: "sample_type_code", width: 140 },
-    { title: "Panel", dataIndex: "panel_info", key: "panel_info", width: 100,
+    { title: t("Sample Type"), dataIndex: "sample_type_code", key: "sample_type_code", width: 140 },
+    { title: t("Panel"), dataIndex: "panel_info", key: "panel_info", width: 100,
       render: (t: string) => t ? <Tag>{t}</Tag> : "-"
     },
-    { title: "Picture", dataIndex: "image", key: "image", width: 90,
+    { title: t("Picture"), dataIndex: "image", key: "image", width: 90,
       render: (img: string, record: Sample) =>
         img ? (
           <Image
@@ -182,7 +184,7 @@ export default function Samples() {
         )
     },
     {
-      title: "Status",
+      title: t("Status"),
       dataIndex: "status",
       key: "status",
       width: 130,
@@ -193,14 +195,14 @@ export default function Samples() {
       ),
     },
     {
-      title: "Received Date",
+      title: t("Received Date"),
       dataIndex: "receipt_date",
       key: "receipt_date",
       width: 120,
       render: (d: string) => dayjs(d).format("YYYY-MM-DD"),
     },
     {
-      title: "Actions",
+      title: t("Actions"),
       key: "actions",
       width: 220,
       fixed: "right" as const,
@@ -415,7 +417,7 @@ const handleBatchSubmit = async () => {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
           <Space wrap>
             <Search
-              placeholder="Search sample ID or patient ID..."
+              placeholder={t("Search sample ID or patient ID...")}
               prefix={<SearchOutlined />}
               style={{ width: 280 }}
               value={search}
@@ -424,7 +426,7 @@ const handleBatchSubmit = async () => {
               allowClear
             />
             <Select
-              placeholder="Status"
+              placeholder={t("Status")}
               allowClear
               style={{ width: 140 }}
               options={STATUS_OPTIONS}
@@ -432,7 +434,7 @@ const handleBatchSubmit = async () => {
               onChange={(v) => setStatusFilter(v)}
             />
             <Select
-              placeholder="Panel"
+              placeholder={t("Panel")}
               allowClear
               style={{ width: 180 }}
               options={panels.map(p => ({ value: p.id, label: `${p.code} — ${p.name}` }))}
@@ -440,7 +442,7 @@ const handleBatchSubmit = async () => {
               onChange={(v) => setPanelFilter(v)}
             />
             <Select
-              placeholder="Sample Type"
+              placeholder={t("Sample Type")}
               allowClear
               style={{ width: 180 }}
               options={SAMPLE_TYPE_OPTIONS}
@@ -522,7 +524,7 @@ const handleBatchSubmit = async () => {
       >
         <Form form={form} layout="vertical" onFinish={handleReceive} style={{ marginTop: 16 }}>
           <Form.Item name="sample_type_id" label="Sample Type" rules={[{ required: true, message: "Please select a sample type" }]}>
-            <Select placeholder="Select..." options={[
+            <Select placeholder={t("Select...")} options={[
               { label: "Maternal Plasma (cfDNA) — Streck BCT", value: "plasma-cfdna" },
               { label: "Cervical Swab — PreservCyt", value: "cervical-swab" },
               { label: "Liquid-Based Cytology — SurePath", value: "lbc" },
@@ -530,13 +532,13 @@ const handleBatchSubmit = async () => {
           </Form.Item>
 
           <Form.Item name="panel_id" label="Test Panel">
-            <Select placeholder="Select test panel (optional)" allowClear options={panels.map(p => ({
+            <Select placeholder={t("Select test panel (optional)")} allowClear options={panels.map(p => ({
               value: p.id, label: `${p.code} — ${p.name}`,
             }))} />
           </Form.Item>
 
           <Form.Item name="patient_id" label="Patient ID">
-            <Input placeholder="Leave blank to auto-generate" />
+            <Input placeholder={t("Leave blank to auto-generate")} />
           </Form.Item>
 
           <Form.Item name="patient_name" label="Patient Name">
@@ -556,7 +558,7 @@ const handleBatchSubmit = async () => {
           </Form.Item>
 
           <Form.Item name="receipt_temp" label="Transport Temperature">
-            <Input placeholder="e.g. 4C, ambient" />
+            <Input placeholder={t("e.g. 4C, ambient")} />
           </Form.Item>
 
           <div style={{ textAlign: "right", marginTop: 8 }}>
@@ -596,7 +598,7 @@ const handleBatchSubmit = async () => {
             <Input />
           </Form.Item>
           <Form.Item name="receipt_temp" label="Transport Temperature">
-            <Input placeholder="e.g. 4C, ambient" />
+            <Input placeholder={t("e.g. 4C, ambient")} />
           </Form.Item>
           <div style={{ textAlign: "right", marginTop: 8 }}>
             <Space>
@@ -623,7 +625,7 @@ const handleBatchSubmit = async () => {
       >
         <Form form={rejectForm} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item name="reason" label="Reason" rules={[{ required: true }]}>
-            <Select placeholder="Select a reason" options={[
+            <Select placeholder={t("Select a reason")} options={[
               { value: "HEMOLYZED", label: "Hemolyzed" },
               { value: "INSUFFICIENT_VOLUME", label: "Insufficient volume" },
               { value: "WRONG_CONTAINER", label: "Wrong container" },
@@ -708,7 +710,7 @@ const handleBatchSubmit = async () => {
                         next[idx] = { ...next[idx], patientName: e.target.value };
                         setBatchRows(next);
                       }}
-                      placeholder="Name"
+                      placeholder={t("Name")}
                     />
                   </td>
                   <td style={{ padding: "4px 6px" }}>
@@ -719,7 +721,7 @@ const handleBatchSubmit = async () => {
                         next[idx] = { ...next[idx], patientId: e.target.value };
                         setBatchRows(next);
                       }}
-                      placeholder="Auto"
+                      placeholder={t("Auto")}
                     />
                   </td>
                   <td style={{ padding: "4px 6px" }}>
@@ -743,7 +745,7 @@ const handleBatchSubmit = async () => {
                         setBatchRows(next);
                       }}
                       style={{ width: "100%" }}
-                      placeholder="Optional"
+                      placeholder={t("Optional")}
                       allowClear
                       options={panels.map(p => ({ value: p.id, label: p.code }))}
                     />
