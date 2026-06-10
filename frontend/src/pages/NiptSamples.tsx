@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Switch, Upload } from "antd";
-import { PlusOutlined, DeleteOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
+import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Switch, Upload, Popover, Checkbox } from "antd";
+import { PlusOutlined, DeleteOutlined, ReloadOutlined, UploadOutlined, SettingOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
 
@@ -25,40 +25,40 @@ const SOURCE_OPTIONS = [
   { label: "Other", value: "" },
 ];
 
-const ALL_COLUMNS = [
-  { key: "source", title: "Source", dataIndex: "source_institution", width: 100, render: (v: string) => v || "-" },
-  { key: "test_option", title: "Test Option", dataIndex: "test_option", width: 100, render: (v: string) => v || "-" },
-  { key: "external_id", title: "Accessioning ID", dataIndex: "external_id", width: 140, render: (v: string) => <Text code>{v || "-"}</Text> },
-  { key: "collection_date", title: "Collection Date", dataIndex: "collection_date", width: 110, render: (v: string) => v || "-" },
-  { key: "acceptance_date", title: "Acceptance Date", dataIndex: "acceptance_date", width: 110, render: (v: string) => v || "-" },
-  { key: "physician", title: "Physician", dataIndex: "physician", width: 100, render: (v: string) => v || "-" },
-  { key: "patient_id", title: "Patient ID", dataIndex: "id_card", width: 160, render: (v: string) => v || "-" },
-  { key: "patient_name", title: "Name", dataIndex: "patient_name", width: 100 },
-  { key: "patient_dob", title: "DOB", dataIndex: "patient_dob", width: 100, render: (v: string) => v || "-" },
-  { key: "age", title: "Age", dataIndex: "age", width: 60 },
-  { key: "gestational_weeks", title: "Gest. Weeks", dataIndex: "gestational_weeks", width: 80, render: (v: number) => v || "-" },
-  { key: "report_code", title: "Report Code", dataIndex: "report_code", width: 120, render: (v: string) => v || "-" },
-  { key: "send_report_id", title: "Send Report ID", dataIndex: "send_report_id", width: 120, render: (v: string) => v || "-" },
-  { key: "lmp", title: "LMP", dataIndex: "last_menstrual_period", width: 100, render: (v: string) => v || "-" },
-  { key: "twins", title: "Twin", dataIndex: "multiple_gestation", width: 60, render: (v: boolean) => v ? <Tag color="orange">Twin</Tag> : "-" },
-  { key: "ivf", title: "IVF", dataIndex: "ivf_status", width: 60, render: (v: boolean) => v ? <Tag color="purple">IVF</Tag> : "-" },
-  { key: "pregnancy_history", title: "Preg. History", dataIndex: "pregnancy_history", width: 100, render: (v: string) => v || "-" },
-  { key: "diagnosis", title: "Diagnosis", dataIndex: "clinical_diagnosis", width: 130, render: (v: string) => v || "-" },
-  { key: "fedex", title: "FedEx No.", dataIndex: "fedex_no", width: 120, render: (v: string) => v || "-" },
-  { key: "zscore_21", title: "Z21", dataIndex: "zscore_21", width: 70, render: (v: number) => v?.toFixed(3) || "-" },
-  { key: "zscore_18", title: "Z18", dataIndex: "zscore_18", width: 70, render: (v: number) => v?.toFixed(3) || "-" },
-  { key: "zscore_13", title: "Z13", dataIndex: "zscore_13", width: 70, render: (v: number) => v?.toFixed(3) || "-" },
-  { key: "t21", title: "T21", dataIndex: "t21", width: 60 },
-  { key: "t18", title: "T18", dataIndex: "t18", width: 60 },
-  { key: "t13", title: "T13", dataIndex: "t13", width: 60 },
-  { key: "xo", title: "XO", dataIndex: "xo", width: 55 },
-  { key: "xxx", title: "XXX", dataIndex: "xxx", width: 55 },
-  { key: "xxy", title: "XXY", dataIndex: "xxy", width: 55 },
-  { key: "xyy", title: "XYY", dataIndex: "xyy", width: 55 },
-  { key: "all_chrom", title: "All", dataIndex: "all_chrom", width: 55 },
-  { key: "fetal_fraction", title: "FF%", dataIndex: "fetal_fraction", width: 55, render: (v: number) => v ? `${v}%` : "-" },
-  { key: "gender", title: "Sex", dataIndex: "gender", width: 55 },
-  { key: "other", title: "Other", dataIndex: "other", width: 100, render: (v: string) => v || "-" },
+const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;visible:boolean;render?:(v:any)=>React.ReactNode}> = [
+  { key: "source", title: "Source", dataIndex: "source_institution", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "test_option", title: "Test Option", dataIndex: "test_option", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "external_id", title: "Accessioning ID", dataIndex: "external_id", visible: true, width: 140, render: (v: string) => <Text code>{v || "-"}</Text> },
+  { key: "collection_date", title: "Collection Date", dataIndex: "collection_date", visible: true, width: 110, render: (v: string) => v || "-" },
+  { key: "acceptance_date", title: "Acceptance Date", dataIndex: "acceptance_date", visible: true, width: 110, render: (v: string) => v || "-" },
+  { key: "physician", title: "Physician", dataIndex: "physician", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "patient_id", title: "Patient ID", dataIndex: "id_card", visible: true, width: 160, render: (v: string) => v || "-" },
+  { key: "patient_name", title: "Name", dataIndex: "patient_name", visible: true, width: 100 },
+  { key: "patient_dob", title: "DOB", dataIndex: "patient_dob", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "age", title: "Age", dataIndex: "age", visible: true, width: 60 },
+  { key: "gestational_weeks", title: "Gest. Weeks", dataIndex: "gestational_weeks", visible: true, width: 80, render: (v: number) => v || "-" },
+  { key: "report_code", title: "Report Code", dataIndex: "report_code", visible: true, width: 120, render: (v: string) => v || "-" },
+  { key: "send_report_id", title: "Send Report ID", dataIndex: "send_report_id", visible: true, width: 120, render: (v: string) => v || "-" },
+  { key: "lmp", title: "LMP", dataIndex: "last_menstrual_period", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "twins", title: "Twin", dataIndex: "multiple_gestation", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="orange">Twin</Tag> : "-" },
+  { key: "ivf", title: "IVF", dataIndex: "ivf_status", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="purple">IVF</Tag> : "-" },
+  { key: "pregnancy_history", title: "Preg. History", dataIndex: "pregnancy_history", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "diagnosis", title: "Diagnosis", dataIndex: "clinical_diagnosis", visible: true, width: 130, render: (v: string) => v || "-" },
+  { key: "fedex", title: "FedEx No.", dataIndex: "fedex_no", visible: true, width: 120, render: (v: string) => v || "-" },
+  { key: "zscore_21", title: "Z21", dataIndex: "zscore_21", visible: true, width: 70, render: (v: number) => v?.toFixed(3) || "-" },
+  { key: "zscore_18", title: "Z18", dataIndex: "zscore_18", visible: true, width: 70, render: (v: number) => v?.toFixed(3) || "-" },
+  { key: "zscore_13", title: "Z13", dataIndex: "zscore_13", visible: true, width: 70, render: (v: number) => v?.toFixed(3) || "-" },
+  { key: "t21", title: "T21", dataIndex: "t21", visible: true, width: 60 },
+  { key: "t18", title: "T18", dataIndex: "t18", visible: true, width: 60 },
+  { key: "t13", title: "T13", dataIndex: "t13", visible: true, width: 60 },
+  { key: "xo", title: "XO", dataIndex: "xo", visible: true, width: 55 },
+  { key: "xxx", title: "XXX", dataIndex: "xxx", visible: true, width: 55 },
+  { key: "xxy", title: "XXY", dataIndex: "xxy", visible: true, width: 55 },
+  { key: "xyy", title: "XYY", dataIndex: "xyy", visible: true, width: 55 },
+  { key: "all_chrom", title: "All", dataIndex: "all_chrom", visible: true, width: 55 },
+  { key: "fetal_fraction", title: "FF%", dataIndex: "fetal_fraction", visible: true, width: 55, render: (v: number) => v ? `${v}%` : "-" },
+  { key: "gender", title: "Sex", dataIndex: "gender", visible: true, width: 55 },
+  { key: "other", title: "Other", dataIndex: "other", visible: true, width: 100, render: (v: string) => v || "-" },
 ];
 
 export default function NiptSamples() {
@@ -75,12 +75,14 @@ export default function NiptSamples() {
   const [fileModalOpen, setFileModalOpen] = useState(false);
   const [fileSource, setFileSource] = useState("Thai BKK");
   const [fileList, setFileList] = useState<any[]>([]);
+  const [colConfig, setColConfig] = useState(ALL_COLUMNS.map(c => ({...c})));
   const [form] = Form.useForm();
 
+  const visibleCols = colConfig.filter(c => c.visible);
   const columns = [
-    { key: "sample_id", title: "Sample ID", dataIndex: "sample_id", width: 170, render: (v: string) => <Text code>{v}</Text> },
-    ...ALL_COLUMNS,
-    { key: "status", title: "Status", dataIndex: "status", width: 100, render: (v: string) => <Tag color={STATUS_MAP[v]}>{v}</Tag> },
+    { key: "sample_id", title: "Sample ID", dataIndex: "sample_id", visible: true, width: 170, render: (v: string) => <Text code>{v}</Text> },
+    ...visibleCols,
+    { key: "status", title: "Status", dataIndex: "status", visible: true, width: 100, render: (v: string) => <Tag color={STATUS_MAP[v]}>{v}</Tag> },
     { key: "actions", title: "", width: 50, fixed: "right" as const,
       render: (_: any, record: any) => (
         <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
@@ -89,6 +91,10 @@ export default function NiptSamples() {
       ),
     },
   ];
+
+  const toggleCol = (key: string) => {
+    setColConfig(prev => prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c));
+  };
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -169,6 +175,17 @@ export default function NiptSamples() {
         <Title level={4} style={{ margin: 0 }}>NIPT Sample Registration</Title>
         <Space>
           <Button icon={<ReloadOutlined />} onClick={fetchData}>Refresh</Button>
+          <Popover trigger="click" title="Column Display" content={
+              <div style={{ maxHeight: 400, overflow: "auto", minWidth: 200 }}>
+                {colConfig.map(c => (
+                  <div key={c.key} style={{ marginBottom: 4 }}>
+                    <Checkbox checked={c.visible} onChange={() => toggleCol(c.key)}>{c.title}</Checkbox>
+                  </div>
+                ))}
+              </div>
+            }>
+              <Button icon={<SettingOutlined />}>Columns</Button>
+            </Popover>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setModalOpen(true); }}>Register</Button>
           <Button icon={<PlusOutlined />} onClick={() => setBatchMode(true)}>Batch Import</Button>
           <Button icon={<UploadOutlined />} onClick={() => { setFileModalOpen(true); setFileList([]); }}>Register from File</Button>
