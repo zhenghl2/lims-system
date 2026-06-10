@@ -14,6 +14,7 @@ services:
       - "8000:8000"
     environment:
       - DJANGO_SETTINGS_MODULE=lims.config.settings.prod
+      - DJANGO_ALLOWED_HOSTS=123.56.45.184,localhost,web,docker-web-1
       - DJANGO_DEBUG=true
       - DJANGO_SECRET_KEY=dev-se...e-me
       - DATABASE_URL=postgresql://lims:***@db:5432/lims
