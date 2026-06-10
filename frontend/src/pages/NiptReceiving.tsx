@@ -54,11 +54,14 @@ export default function NiptReceiving() {
   const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
 
   const fetchTabCounts = useCallback(() => {
-    samplesApi.stats().then((res: any) => {
-      const ds = res.data || {};
+    samplesApi.statsByPanel().then((res: any) => {
+      const panels = (res.data || []) as Array<Record<string,number|string>>;
+      const nipt = panels.find((p: any) => p.panel_code === "NIPT") || {};
+      const niptPlus = panels.find((p: any) => p.panel_code === "NIPT_PLUS") || {};
+      const niptFull = panels.find((p: any) => p.panel_code === "NIPT_FULL") || {};
       setTabCounts({
-        pending: ds.total_received_today ?? 0,
-        received: ds.total_in_process ?? 0,
+        pending: Number(nipt.pending || 0) + Number(niptPlus.pending || 0) + Number(niptFull.pending || 0),
+        received: Number(nipt.received || 0) + Number(niptPlus.received || 0) + Number(niptFull.received || 0),
       });
     }).catch(() => {});
   }, []);
