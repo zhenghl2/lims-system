@@ -68,6 +68,12 @@ class Sample(models.Model):
     gestational_weeks = models.PositiveSmallIntegerField(null=True, blank=True)
     id_card = models.CharField(max_length=50, blank=True, default="")
     external_id = models.CharField(max_length=100, blank=True, default="")
+    maternal_weight = models.FloatField(null=True, blank=True, help_text="Maternal weight in kg")
+    maternal_bmi = models.FloatField(null=True, blank=True, help_text="Maternal BMI")
+    ivf_status = models.BooleanField(default=False, help_text="IVF conception")
+    multiple_gestation = models.BooleanField(default=False, help_text="Multiple gestation (twins etc.)")
+    fetal_fraction = models.FloatField(null=True, blank=True, help_text="Fetal fraction percentage")
+    clinical_diagnosis = models.TextField(blank=True, default="", help_text="Clinical diagnosis / adverse pregnancy history")
 
     report_code = models.CharField(max_length=50, blank=True, default="", help_text="Report code from external lab (Thai/Brazil)")
     send_report_id = models.CharField(max_length=50, blank=True, default="", help_text="Send report ID")
@@ -203,6 +209,7 @@ class SampleAliquot(models.Model):
     """Aliquots derived from parent samples."""
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     parent_sample = models.ForeignKey(Sample, on_delete=models.CASCADE, related_name="aliquots")
+
     child_sample = models.ForeignKey(Sample, on_delete=models.CASCADE, related_name="parent_of")
     aliquot_type = models.CharField(max_length=50)  # 'PLASMA', 'EXTRACTED_DNA', 'LIBRARY'
     volume_ml = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
