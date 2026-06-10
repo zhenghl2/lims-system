@@ -94,7 +94,7 @@ class SampleListSerializer(serializers.ModelSerializer):
         fields = ["id", "sample_id", "sample_type_code", "patient_id", "patient_name", "status",
                    "receipt_date", "collection_date", "panel_info", "created_at",
                    "ordering_physician", "ordering_facility",
-                   "patient_sex", "age", "source_institution", "institution_sample_id",
+                   "patient_sex", "age", "gestational_weeks", "source_institution", "institution_sample_id",
             "hpv_sample_type", "test_item",
                    "hpv_sample_type", "test_item",
             "hpv_sample_type", "test_item",
@@ -117,7 +117,7 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
         model = Sample
         fields = [
             "sample_type_id", "panel_id", "panel_code", "patient_id", "patient_name", "patient_dob",
-            "patient_sex", "age", "source_institution", "institution_sample_id",
+            "patient_sex", "age", "gestational_weeks", "source_institution", "institution_sample_id",
             "hpv_sample_type", "test_item",
                    "hpv_sample_type", "test_item",
             "hpv_sample_type", "test_item",

@@ -11,8 +11,18 @@ export default function NiptDashboard() {
 
   useEffect(() => {
     samplesApi.statsByPanel().then(r => {
-      const all = r.data || {};
-      setStats(all["NIPT"] || all["NIPT_PLUS"] || {});
+      const panels = (r.data || []) as Array<Record<string, number|string>>;
+      const nipt = panels.find(p => p.panel_code === "NIPT") || {};
+      const niptPlus = panels.find(p => p.panel_code === "NIPT_PLUS") || {};
+      setStats({
+        total: Number(nipt.total || 0) + Number(niptPlus.total || 0),
+        received: Number(nipt.received || 0) + Number(niptPlus.received || 0),
+        in_process: Number(nipt.in_process || 0) + Number(niptPlus.in_process || 0),
+        completed: Number(nipt.completed || 0) + Number(niptPlus.completed || 0),
+        reported: Number(nipt.reported || 0) + Number(niptPlus.reported || 0),
+        rejected: Number(nipt.rejected || 0) + Number(niptPlus.rejected || 0),
+        pending: Number(nipt.total || 0) + Number(niptPlus.total || 0),
+      });
     }).catch(() => {});
     runsApi.list({ panel_code: "NIPT,NIPT_PLUS", page_size: 5, ordering: "-created_at" })
       .then(r => setRunStats((r.data as any)?.results || [])).catch(() => {});
@@ -21,10 +31,10 @@ export default function NiptDashboard() {
   const s = stats as Record<string, number>;
 
   const statCards = [
-    { title: "Total Samples", value: s.total || 0, icon: <ExperimentOutlined />, color: "#1677ff" },
-    { title: "Registered", value: (s.total_received_today || 0) + (s.pending || 0), icon: <InboxOutlined />, color: "#faad14" },
-    { title: "In Process", value: s.total_in_process || 0, icon: <SyncOutlined spin />, color: "#722ed1" },
-    { title: "Completed", value: s.total_completed || 0, icon: <CheckCircleOutlined />, color: "#52c41a" },
+    { title: "Total", value: s.total || 0, icon: <ExperimentOutlined />, color: "#1677ff" },
+    { title: "Received", value: s.received || 0, icon: <InboxOutlined />, color: "#faad14" },
+    { title: "In Process", value: s.in_process || 0, icon: <SyncOutlined spin />, color: "#722ed1" },
+    { title: "Completed", value: s.completed || 0, icon: <CheckCircleOutlined />, color: "#52c41a" },
     { title: "Reported", value: s.reported || 0, icon: <FileDoneOutlined />, color: "#13c2c2" },
     { title: "Rejected", value: s.rejected || 0, icon: <CloseCircleOutlined />, color: "#ff4d4f" },
   ];

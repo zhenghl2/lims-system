@@ -22,7 +22,8 @@ const STATUS_LABELS: Record<string, string> = {
 const SAMPLE_TYPE_MAP: Record<string, string> = {
   PLASMA_CFDNA: "cfDNA Plasma",
   PERIPHERAL_BLOOD: "Peripheral Blood",
-};
+};
+
 
 const PANEL_MAP: Record<string, string> = {
   NIPT: "NIPT",
@@ -113,7 +114,7 @@ export default function NiptSamples() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, unknown> = { page, page_size: pageSize };
+      const params: Record<string, unknown> = { page, page_size: pageSize, panel: "NIPT" };
       if (search) params.search = search;
       if (statusFilter && statusFilter !== ALL_STATUSES) params.status = statusFilter;
       const res = await samplesApi.list(params);
@@ -302,7 +303,7 @@ export default function NiptSamples() {
             <Form.Item name="maternalWeight" label="Maternal Weight (kg)">
               <InputNumber min={30} max={200} step={0.1} style={{ width: 140 }} placeholder="kg" />
             </Form.Item>
-            <Form.Item name="ivfStatus" label="IVF" valuePropName="checked">
+            <Form.Item name="ivfStatus" label="IVF" valuePropName="checked">
               <Switch />
             </Form.Item>
             <Form.Item name="multipleGestation" label="Multiple Gestation" valuePropName="checked">
