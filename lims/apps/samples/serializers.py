@@ -91,19 +91,7 @@ class SampleListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Sample
-        fields = ["id", "sample_id", "sample_type_code", "patient_id", "patient_name", "status",
-                   "receipt_date", "collection_date", "panel_info", "created_at",
-                   "ordering_physician", "ordering_facility",
-                   "patient_sex", "age", "gestational_weeks",
-            "id_card", "external_id",
-            "maternal_weight", "maternal_bmi", "ivf_status", "multiple_gestation", "fetal_fraction", "clinical_diagnosis",
-            "id_card", "external_id",
-            "maternal_weight", "maternal_bmi", "ivf_status", "multiple_gestation", "fetal_fraction", "clinical_diagnosis", "source_institution", "institution_sample_id",
-            "hpv_sample_type", "test_item",
-                   "hpv_sample_type", "test_item",
-            "hpv_sample_type", "test_item",
-                   "received_by_name",
-                   "image"]
+        fields = "__all__"
 
     def get_panel_info(self, obj):
         if obj.panel_id:
