@@ -7,16 +7,16 @@ services:
       dockerfile: docker/Dockerfile.web
     command: gunicorn lims.config.wsgi:application --bind 0.0.0.0:8000 --workers 4 --threads 2 --timeout 120
     volumes:
-      - ../:/app
+      - ../../:/app
       - staticfiles:/app/staticfiles
       - media:/app/media
     ports:
       - "8000:8000"
     environment:
-      - DJANGO_SETTINGS_MODULE=config.settings.dev
+      - DJANGO_SETTINGS_MODULE=lims.config.settings.prod
       - DJANGO_DEBUG=true
       - DJANGO_SECRET_KEY=dev-secret-key-change-me
-      - DATABASE_URL=postgresql://lims:lims@db:5432/lims
+      - DATABASE_URL=postgresql://lims:lims12345@db:5432/lims
       - REDIS_URL=redis://redis:6379/0
       - LIMS_SITE_CODE=DEFAULT
     depends_on:
@@ -33,12 +33,12 @@ services:
       dockerfile: docker/Dockerfile.worker
     command: celery -A lims.celery_app worker -l INFO --concurrency=4
     volumes:
-      - ../:/app
+      - ../../:/app
     environment:
-      - DJANGO_SETTINGS_MODULE=config.settings.dev
+      - DJANGO_SETTINGS_MODULE=lims.config.settings.prod
       - DJANGO_DEBUG=true
       - DJANGO_SECRET_KEY=dev-secret-key-change-me
-      - DATABASE_URL=postgresql://lims:lims@db:5432/lims
+      - DATABASE_URL=postgresql://lims:lims12345@db:5432/lims
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - db
@@ -52,10 +52,10 @@ services:
       dockerfile: docker/Dockerfile.worker
     command: celery -A lims.celery_app beat -l INFO
     volumes:
-      - ../:/app
+      - ../../:/app
     environment:
-      - DJANGO_SETTINGS_MODULE=config.settings.dev
-      - DATABASE_URL=postgresql://lims:lims@db:5432/lims
+      - DJANGO_SETTINGS_MODULE=lims.config.settings.prod
+      - DATABASE_URL=postgresql://lims:lims12345@db:5432/lims
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - db

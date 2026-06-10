@@ -66,6 +66,8 @@ class Sample(models.Model):
     patient_name = models.CharField(max_length=200, blank=True)
     patient_dob = models.DateField(null=True, blank=True)
     gestational_weeks = models.PositiveSmallIntegerField(null=True, blank=True)
+    id_card = models.CharField(max_length=50, blank=True, default="")
+    external_id = models.CharField(max_length=100, blank=True, default="")
     patient_sex = models.CharField(max_length=1, blank=True, choices=[("M", "Male"), ("F", "Female")])
     age = models.PositiveSmallIntegerField(null=True, blank=True, help_text="Age in years")
     source_institution = models.CharField(max_length=200, blank=True, help_text="Source institution")

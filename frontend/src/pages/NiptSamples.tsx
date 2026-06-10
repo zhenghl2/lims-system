@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { Table, Button, Tag, Switch, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm } from "antd";
-import { PlusOutlined, MinusCircleOutlined, DeleteOutlined, SearchOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Popover, Checkbox } from "antd";
+import { PlusOutlined, DeleteOutlined, ReloadOutlined, SettingOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
 
@@ -13,108 +13,70 @@ const STATUS_MAP: Record<string, string> = {
   REJECTED: "red",
 };
 
-const STATUS_LABELS: Record<string, string> = {
-  REGISTERED: "Registered", RECEIVING: "Receiving", RECEIVED: "Received",
-  IN_PROCESS: "In Process", COMPLETED: "Completed", REPORTED: "Reported",
-  REJECTED: "Rejected",
-};
+const ALL_STATUSES = "";
 
-const SAMPLE_TYPE_MAP: Record<string, string> = {
-  PLASMA_CFDNA: "cfDNA Plasma",
-  PERIPHERAL_BLOOD: "Peripheral Blood",
-};
+const PANEL_OPTIONS = [
+  { label: "NIPT Basic", value: "NIPT" },
+  { label: "NIPT Basic-All", value: "NIPT_PLUS" },
+  { label: "NIPT Plus", value: "NIPT_FULL" },
+];
 
+const SOURCE_OPTIONS = [
+  { label: "泰国BCC", value: "泰国BCC" },
+  { label: "巴西", value: "巴西" },
+  { label: "Other", value: "" },
+];
 
-const PANEL_MAP: Record<string, string> = {
-  NIPT: "NIPT",
-  NIPT_PLUS: "NIPT-PLUS",
-};
-
-interface BatchRow {
+interface ColumnConfig {
   key: string;
-  sampleId: string;
-  patientName: string;
-  patientId: string;
-  age: number | null;
-  gestationalWeeks: number | null;
-  sourceInstitution: string;
-  institutionSampleId: string;
-  sampleType: string;
-  maternalWeight: number | null;
-  ivfStatus: boolean;
-  multipleGestation: boolean;
-  panelCode: string;
-  collectionDate: dayjs.Dayjs;
+  title: string;
+  dataIndex: string;
+  visible: boolean;
+  width?: number;
+  render?: (val: any, record: any) => React.ReactNode;
 }
-
-let _batchKey = 0;
-const newBatchRow = (): BatchRow => ({
-  key: String(++_batchKey),
-  sampleId: "",
-  patientName: "",
-  patientId: "",
-  age: null,
-  gestationalWeeks: null,
-  sourceInstitution: "",
-  institutionSampleId: "",
-  sampleType: "PLASMA_CFDNA",
-  panelCode: "",
-  maternalWeight: null,
-  ivfStatus: false,
-  multipleGestation: false,
-  collectionDate: dayjs(),
-});
-
-function parseExcelPaste(text: string): BatchRow[] {
-  const lines = text.trim().split(/\r?\n/).filter(l => l.trim());
-  const rows: BatchRow[] = [];
-  for (const line of lines) {
-    const cols = line.split("\t");
-    rows.push({
-      key: String(++_batchKey),
-      sampleId: (cols[0] || "").trim(),
-      patientName: (cols[1] || "").trim(),
-      patientId: (cols[2] || "").trim(),
-      age: cols[3] ? parseInt(cols[3].trim(), 10) || null : null,
-      gestationalWeeks: cols[4] ? parseInt(cols[4].trim(), 10) || null : null,
-      sourceInstitution: (cols[5] || "").trim(),
-      institutionSampleId: (cols[6] || "").trim(),
-      sampleType: (cols[7] || "PLASMA_CFDNA").trim(),
-      panelCode: (cols[8] || "").trim(),
-      maternalWeight: null,
-      ivfStatus: false,
-      multipleGestation: false,
-      collectionDate: cols[9] ? dayjs(cols[9].trim()) : dayjs(),
-    });
-  }
-  return rows.length > 0 ? rows : [newBatchRow()];
-}
-
-const ALL_STATUSES = "REGISTERED,RECEIVING,RECEIVED,IN_PROCESS,COMPLETED,REPORTED,REJECTED";
 
 export default function NiptSamples() {
   const [data, setData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState(ALL_STATUSES);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>(ALL_STATUSES);
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [createLoading, setCreateLoading] = useState(false);
-
-  const [batchOpen, setBatchOpen] = useState(false);
-  const [batchRows, setBatchRows] = useState<BatchRow[]>([newBatchRow()]);
-  const [batchLoading, setBatchLoading] = useState(false);
-  const [excelText, setExcelText] = useState("");
-
+  const [modalOpen, setModalOpen] = useState(false);
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchText, setBatchText] = useState("");
   const [form] = Form.useForm();
+
+  // Column visibility state
+  const [columnConfigs, setColumnConfigs] = useState<ColumnConfig[]>([
+    { key: "sample_id", title: "Sample ID", dataIndex: "sample_id", visible: true, width: 160, render: (v: string) => <Text code>{v}</Text> },
+    { key: "patient_name", title: "Patient Name", dataIndex: "patient_name", visible: true, width: 130 },
+    { key: "id_card", title: "ID Card", dataIndex: "id_card", visible: true, width: 160, render: (v: string) => v || "-" },
+    { key: "age", title: "Age", dataIndex: "age", visible: true, width: 70 },
+    { key: "gestational_weeks", title: "Gest. Weeks", dataIndex: "gestational_weeks", visible: true, width: 90, render: (v: number) => v || "-" },
+    { key: "source_institution", title: "Source", dataIndex: "source_institution", visible: true, width: 100, render: (v: string) => v || "-" },
+    { key: "external_id", title: "External ID", dataIndex: "external_id", visible: true, width: 130, render: (v: string) => v || "-" },
+    { key: "panel", title: "Panel", dataIndex: "panel", visible: true, width: 110, render: (v: any) => <Tag>{v?.code || "-"}</Tag> },
+    { key: "sample_type", title: "Sample Type", dataIndex: "sample_type", visible: false, width: 130, render: (v: any) => v?.name || "-" },
+    { key: "status", title: "Status", dataIndex: "status", visible: true, width: 100, render: (v: string) => <Tag color={STATUS_MAP[v]}>{v}</Tag> },
+    { key: "receipt_date", title: "Receipt Date", dataIndex: "receipt_date", visible: false, width: 110, render: (v: string) => v || "-" },
+    { key: "actions", title: "Actions", dataIndex: "actions", visible: true, width: 80,
+      render: (_: any, record: any) => (
+        <Popconfirm title="Delete this sample?" onConfirm={() => handleDelete(record.id)}>
+          <Button size="small" danger icon={<DeleteOutlined />} />
+        </Popconfirm>
+      ),
+    },
+  ]);
+
+  const visibleColumns = columnConfigs.filter(c => c.visible);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params: Record<string, unknown> = { page, page_size: pageSize, panel: "NIPT" };
+      const params: Record<string, unknown> = { page, page_size: pageSize, panel: "NIPT,NIPT_PLUS,NIPT_FULL" };
       if (search) params.search = search;
       if (statusFilter && statusFilter !== ALL_STATUSES) params.status = statusFilter;
       const res = await samplesApi.list(params);
@@ -129,282 +91,222 @@ export default function NiptSamples() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const handleCreate = async () => {
+  const handleRegister = async () => {
     try {
       const values = await form.validateFields();
-      setCreateLoading(true);
-      await samplesApi.create({
-        sample_id: values.sampleId || undefined,
-        patient_name: values.patientName,
-        patient_id: values.patientId || undefined,
+      const payload: Record<string, unknown> = {
+        patient_name: values.patient_name,
         age: values.age,
-        gestational_weeks: values.gestationalWeeks,
-        source_institution: values.sourceInstitution,
-        institution_sample_id: values.institutionSampleId,
-        sample_type_code: values.sampleType,
-        maternal_weight: values.maternalWeight,
-        ivf_status: values.ivfStatus,
-        multiple_gestation: values.multipleGestation,
-        panel: values.panelCode || undefined,
-        collection_date: values.collectionDate ? values.collectionDate.format("YYYY-MM-DD") : undefined,
-      });
+        gestational_weeks: values.gestational_weeks,
+        sample_type_id: values.sample_type_id,
+        panel_code: values.panel,
+        source_institution: values.source === "" ? values.source_other : values.source,
+        id_card: values.id_card || "",
+        external_id: values.external_id || "",
+        collection_date: values.collection_date ? dayjs(values.collection_date).format("YYYY-MM-DD") : undefined,
+      };
+      await samplesApi.create(payload);
       message.success("Sample registered");
-      setCreateOpen(false);
+      setModalOpen(false);
       form.resetFields();
       fetchData();
-    } catch (err: any) {
-      if (err?.errorFields) return;
-      message.error(err?.response?.data?.detail || "Failed to create sample");
-    } finally {
-      setCreateLoading(false);
+    } catch (e: any) {
+      if (e?.errorFields) return;
+      message.error("Failed to register sample");
     }
   };
 
-  const handleBatchCreate = async () => {
-    const validRows = batchRows.filter(r => r.patientName.trim());
-    if (validRows.length === 0) { message.warning("At least one sample with patient name is required"); return; }
-    setBatchLoading(true);
+  const handleBatchRegister = async () => {
+    const lines = batchText.trim().split("\n").filter(l => l.trim());
+    if (lines.length === 0) { message.warning("No data"); return; }
+    const samples = lines.map(line => {
+      const parts = line.split("\t");
+      return {
+        patient_name: parts[0]?.trim() || "",
+        age: parseInt(parts[1]) || null,
+        gestational_weeks: parseInt(parts[2]) || null,
+        panel_code: parts[3]?.trim() || "NIPT",
+        source_institution: parts[4]?.trim() || "",
+        id_card: parts[5]?.trim() || "",
+        external_id: parts[6]?.trim() || "",
+      };
+    });
     try {
-      const samples = validRows.map(r => ({
-        sample_id: r.sampleId || undefined,
-        patient_name: r.patientName,
-        patient_id: r.patientId || undefined,
-        age: r.age,
-        gestational_weeks: r.gestationalWeeks,
-        source_institution: r.sourceInstitution,
-        institution_sample_id: r.institutionSampleId,
-        sample_type_code: r.sampleType,
-        maternal_weight: r.maternalWeight,
-        ivf_status: r.ivfStatus,
-        multiple_gestation: r.multipleGestation,
-        panel: r.panelCode || undefined,
-        collection_date: r.collectionDate.format("YYYY-MM-DD"),
-      }));
       await samplesApi.batchCreate({ samples });
-      message.success(`${samples.length} samples registered`);
-      setBatchOpen(false);
-      setBatchRows([newBatchRow()]);
-      setExcelText("");
+      message.success(`Registered ${samples.length} samples`);
+      setBatchText("");
+      setBatchMode(false);
       fetchData();
-    } catch (err: any) {
-      message.error(err?.response?.data?.detail || "Batch create failed");
-    } finally {
-      setBatchLoading(false);
+    } catch {
+      message.error("Batch registration failed");
     }
   };
 
   const handleDelete = async (id: string) => {
     try {
       await samplesApi.delete(id);
-      message.success("Sample deleted");
+      message.success("Deleted");
       fetchData();
     } catch {
       message.error("Delete failed");
     }
   };
 
-  const updateBatchRow = (idx: number, field: keyof BatchRow, value: any) => {
-    setBatchRows(prev => prev.map((r, i) => i === idx ? { ...r, [field]: value } : r));
+  const toggleColumn = (key: string) => {
+    setColumnConfigs(prev => prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c));
   };
 
-  const addBatchRow = () => setBatchRows(prev => [...prev, newBatchRow()]);
-  const removeBatchRow = (idx: number) => {
-    if (batchRows.length <= 1) return;
-    setBatchRows(prev => prev.filter((_, i) => i !== idx));
-  };
-
-  const handlePasteParse = () => {
-    if (!excelText.trim()) return;
-    const parsed = parseExcelPaste(excelText);
-    setBatchRows(parsed);
-    message.info(`Parsed ${parsed.length} rows`);
-  };
-
-  const columns = [
-    { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 180, ellipsis: true },
-    { title: "Patient Name", dataIndex: "patient_name", key: "patient_name", width: 150 },
-    { title: "Age", dataIndex: "age", key: "age", width: 60 },
-    { title: "Gestational Weeks", dataIndex: "gestational_weeks", key: "gestational_weeks", width: 100 },
-    { title: "Sample Type", dataIndex: "sample_type_code", key: "sample_type_code", width: 140, render: (v: string) => SAMPLE_TYPE_MAP[v] || v || "-" },
-    { title: "Panel", dataIndex: "panel_info", key: "panel_info", width: 100, render: (v: string) => PANEL_MAP[v] || v || "-" },
-    { title: "Source Institution", dataIndex: "source_institution", key: "source_institution", width: 160, ellipsis: true },
-    {
-      title: "Status", dataIndex: "status", key: "status", width: 110,
-      render: (v: string) => <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABELS[v] || v}</Tag>,
-    },
-    { title: "Receipt Date", dataIndex: "receipt_date", key: "receipt_date", width: 120, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : "-" },
-    {
-      title: "Actions", key: "action", width: 80, render: (_: any, r: any) => (
-        <Popconfirm title="Delete this sample?" onConfirm={() => handleDelete(r.id)} okText="Yes" cancelText="No">
-          <Button type="link" danger icon={<DeleteOutlined />} size="small" />
-        </Popconfirm>
-      ),
-    },
-  ];
+  const tableColumns = visibleColumns.map(c => ({
+    title: c.title,
+    dataIndex: c.dataIndex,
+    key: c.key,
+    width: c.width,
+    render: c.render,
+  }));
 
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 16 }}>NIPT Sample Registration</Title>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <Title level={4} style={{ margin: 0 }}>NIPT Sample Registration</Title>
+        <Space>
+          <Popover
+            trigger="click"
+            title="Column Display"
+            content={
+              <div style={{ maxHeight: 300, overflow: "auto" }}>
+                {columnConfigs.map(c => (
+                  <div key={c.key} style={{ marginBottom: 4 }}>
+                    <Checkbox checked={c.visible} onChange={() => toggleColumn(c.key)}>{c.title}</Checkbox>
+                  </div>
+                ))}
+              </div>
+            }
+          >
+            <Button icon={<SettingOutlined />}>Columns</Button>
+          </Popover>
+          <Button icon={<ReloadOutlined />} onClick={fetchData}>Refresh</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setModalOpen(true); }}>
+            Register Sample
+          </Button>
+          <Button icon={<PlusOutlined />} onClick={() => setBatchMode(true)}>Batch Import</Button>
+        </Space>
+      </div>
 
-      {/* Toolbar */}
-      <Space style={{ marginBottom: 16, flexWrap: "wrap" }}>
+      <div style={{ marginBottom: 16, display: "flex", gap: 12 }}>
         <Input.Search
           placeholder="Search sample ID or patient name..."
           allowClear
-          onSearch={v => { setSearch(v); setPage(1); }}
+          onSearch={(v) => { setSearch(v); setPage(1); }}
           style={{ width: 280 }}
-          prefix={<SearchOutlined />}
         />
         <Select
-          allowClear
           placeholder="Status"
-          style={{ width: 140 }}
-          value={statusFilter === ALL_STATUSES ? undefined : statusFilter}
-          onChange={v => { setStatusFilter(v || ALL_STATUSES); setPage(1); }}
-          options={Object.entries(STATUS_LABELS).map(([k, v]) => ({ value: k, label: v }))}
+          allowClear
+          style={{ width: 150 }}
+          value={statusFilter || undefined}
+          onChange={(v) => { setStatusFilter(v || ALL_STATUSES); setPage(1); }}
+          options={[
+            { label: "All", value: ALL_STATUSES },
+            { label: "Registered", value: "REGISTERED" },
+            { label: "Received", value: "RECEIVED" },
+            { label: "In Process", value: "IN_PROCESS" },
+            { label: "Completed", value: "COMPLETED" },
+            { label: "Reported", value: "REPORTED" },
+            { label: "Rejected", value: "REJECTED" },
+          ]}
         />
-        <Button icon={<ReloadOutlined />} onClick={fetchData}>Refresh</Button>
-        <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>Register Sample</Button>
-        <Button icon={<PlusOutlined />} onClick={() => { setBatchRows([newBatchRow()]); setExcelText(""); setBatchOpen(true); }}>Batch Register</Button>
-      </Space>
+      </div>
 
-      {/* Table */}
       <Table
-        dataSource={data}
-        columns={columns}
         rowKey="id"
+        dataSource={data}
+        columns={tableColumns}
         loading={loading}
-        pagination={{ current: page, pageSize, total, onChange: (p, ps) => { setPage(p); setPageSize(ps); }, showSizeChanger: true, showTotal: t => `Total ${t}` }}
-        scroll={{ x: 1200 }}
         size="middle"
+        scroll={{ x: "max-content" }}
+        pagination={{
+          current: page, pageSize, total, showTotal: t => `Total ${t}`,
+          onChange: (p, ps) => { setPage(p); setPageSize(ps); },
+        }}
       />
 
-      {/* Single Create Modal */}
-      <Modal title="Register NIPT Sample" open={createOpen} onOk={handleCreate} onCancel={() => { setCreateOpen(false); form.resetFields(); }} confirmLoading={createLoading} destroyOnClose width={600}>
+      {/* Register Modal */}
+      <Modal
+        title="Register NIPT Sample"
+        open={modalOpen}
+        onOk={handleRegister}
+        onCancel={() => setModalOpen(false)}
+        width={600}
+        destroyOnClose
+      >
         <Form form={form} layout="vertical">
-          <Form.Item name="sampleId" label="Sample ID (auto if empty)">
-            <Input placeholder="NIPT-YYYYMMDD-001" />
+          <Form.Item name="patient_name" label="Patient Name" rules={[{ required: true }]}>
+            <Input placeholder="e.g. 张三" />
           </Form.Item>
-          <Form.Item name="patientName" label="Patient Name" rules={[{ required: true, message: "Required" }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="patientId" label="Patient ID (auto if empty)">
-            <Input />
-          </Form.Item>
-          <Space style={{ display: "flex" }} size="middle">
+          <Space style={{ display: "flex" }} wrap>
             <Form.Item name="age" label="Age">
-              <InputNumber min={0} max={100} style={{ width: 120 }} placeholder="Age" />
+              <InputNumber min={1} max={100} style={{ width: 100 }} />
             </Form.Item>
-            <Form.Item name="gestationalWeeks" label="Gestational Weeks">
-              <InputNumber min={1} max={45} style={{ width: 140 }} placeholder="Weeks" />
-            </Form.Item>
-          </Space>
-          <Space style={{ display: "flex" }} size="middle">
-            <Form.Item name="maternalWeight" label="Maternal Weight (kg)">
-              <InputNumber min={30} max={200} step={0.1} style={{ width: 140 }} placeholder="kg" />
-            </Form.Item>
-            <Form.Item name="ivfStatus" label="IVF" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-            <Form.Item name="multipleGestation" label="Multiple Gestation" valuePropName="checked">
-              <Switch />
+            <Form.Item name="gestational_weeks" label="Gestational Weeks">
+              <InputNumber min={1} max={45} style={{ width: 130 }} />
             </Form.Item>
           </Space>
-          <Form.Item name="sampleType" label="Sample Type" initialValue="PLASMA_CFDNA">
-            <Select allowClear placeholder="Select sample type">
-              <Select.Option value="PLASMA_CFDNA">cfDNA Plasma</Select.Option>
-              <Select.Option value="PERIPHERAL_BLOOD">Peripheral Blood</Select.Option>
-            </Select>
+          <Form.Item name="id_card" label="ID Card">
+            <Input placeholder="ID card number" style={{ width: 250 }} />
           </Form.Item>
-          <Form.Item name="panelCode" label="Test Panel">
-            <Select allowClear placeholder="Select panel (optional)">
-              <Select.Option value="NIPT">NIPT</Select.Option>
-              <Select.Option value="NIPT_PLUS">NIPT-PLUS</Select.Option>
-            </Select>
+          <Form.Item name="external_id" label="External ID">
+            <Input placeholder="External reference number" style={{ width: 250 }} />
           </Form.Item>
-          <Form.Item name="sourceInstitution" label="Source Institution">
-            <Input placeholder="Hospital / Clinic name" />
+          <Form.Item name="panel" label="Panel" initialValue="NIPT" rules={[{ required: true }]}>
+            <Select options={PANEL_OPTIONS} style={{ width: 200 }} />
           </Form.Item>
-          <Form.Item name="institutionSampleId" label="Institution Sample ID">
-            <Input placeholder="External sample ID" />
+          <Form.Item name="sample_type_id" label="Sample Type">
+            <Select
+              style={{ width: 200 }}
+              placeholder="Select sample type"
+              options={[
+                { label: "cfDNA Plasma", value: "" },
+              ]}
+            />
           </Form.Item>
-          <Form.Item name="collectionDate" label="Collection Date">
-            <DatePicker style={{ width: "100%" }} />
+          <Space style={{ display: "flex" }} wrap>
+            <Form.Item name="source" label="Source">
+              <Select
+                options={SOURCE_OPTIONS}
+                style={{ width: 180 }}
+                placeholder="Select source"
+              />
+            </Form.Item>
+            <Form.Item name="source_other" label="Other Source">
+              <Input placeholder="Specify other" style={{ width: 180 }} />
+            </Form.Item>
+          </Space>
+          <Form.Item name="collection_date" label="Collection Date">
+            <DatePicker style={{ width: 200 }} />
           </Form.Item>
         </Form>
       </Modal>
 
-      {/* Batch Create Modal */}
-      <Modal title="Batch Register NIPT Samples" open={batchOpen} onOk={handleBatchCreate} onCancel={() => setBatchOpen(false)} confirmLoading={batchLoading} width={1300} destroyOnClose>
-        <div style={{ marginBottom: 16 }}>
-          <Text strong style={{ display: "block", marginBottom: 4 }}>Paste from Excel</Text>
-          <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
-            Copy cells from Excel (columns: Sample ID, Patient Name, Patient ID, Age, Gestational Weeks, Source Institution, Inst. Sample ID, Sample Type, Panel, Collection Date) and paste below.
+      {/* Batch Import Modal */}
+      <Modal
+        title="Batch Import NIPT Samples"
+        open={batchMode}
+        onOk={handleBatchRegister}
+        onCancel={() => { setBatchMode(false); setBatchText(""); }}
+        width={700}
+      >
+        <div style={{ marginBottom: 8 }}>
+          <Text type="secondary">Paste tab-separated data (one row per sample):</Text>
+          <Text code style={{ display: "block", marginTop: 4, fontSize: 12, whiteSpace: "pre-wrap" }}>
+            {"Name\tAge\tGestWeeks\tPanel\tSource\tID_Card\tExternal_ID\n张三\t28\t12\tNIPT\t泰国BCC\t440123199001011234\tEXT-001"}
           </Text>
-          <Space.Compact style={{ width: "100%" }}>
-            <TextArea
-              value={excelText}
-              onChange={e => setExcelText(e.target.value)}
-              placeholder={"Paste tab-separated data from Excel here...\nExample:\nNIPT-001\tZhang Min\tPID001\t32\t16\tCentral Hospital\tCH-12345\tPLASMA_CFDNA\tNIPT\t2026-05-14"}
-              rows={5}
-              style={{ flex: 1 }}
-            />
-          </Space.Compact>
-          <Button type="dashed" icon={<PlusOutlined />} onClick={handlePasteParse} style={{ marginTop: 8 }} disabled={!excelText.trim()}>
-            Parse & Fill Table
-          </Button>
         </div>
-
-        <div style={{ marginTop: 16 }}>
-          <Text strong style={{ display: "block", marginBottom: 8 }}>Sample Rows ({batchRows.length})</Text>
-          <div style={{ maxHeight: 350, overflowY: "auto", overflowX: "auto", border: "1px solid #d9d9d9", borderRadius: 6 }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13, minWidth: 1300 }}>
-              <thead>
-                <tr style={{ background: "#fafafa", position: "sticky", top: 0, zIndex: 1 }}>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 130 }}>Sample ID</th>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 140 }}>Patient Name *</th>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 110 }}>Patient ID</th>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 60 }}>Age</th>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 80 }}>Gest. Weeks</th>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 140 }}>Source Institution</th>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 130 }}>Inst. Sample ID</th>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 130 }}>Sample Type</th>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 100 }}>Panel</th>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 130 }}>Collection Date</th>
-                  <th style={{ padding: "8px 6px", borderBottom: "2px solid #d9d9d9", width: 50 }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {batchRows.map((row, idx) => (
-                  <tr key={row.key} style={{ borderBottom: "1px solid #f0f0f0" }}>
-                    <td style={{ padding: 4 }}><Input size="small" value={row.sampleId} onChange={e => updateBatchRow(idx, "sampleId", e.target.value)} placeholder="Auto" style={{ width: "100%" }} /></td>
-                    <td style={{ padding: 4 }}><Input size="small" value={row.patientName} onChange={e => updateBatchRow(idx, "patientName", e.target.value)} placeholder="Required" status={batchRows.filter(r => r.patientName.trim()).length === 0 && idx === batchRows.length - 1 ? "error" : undefined} style={{ width: "100%" }} /></td>
-                    <td style={{ padding: 4 }}><Input size="small" value={row.patientId} onChange={e => updateBatchRow(idx, "patientId", e.target.value)} placeholder="Auto" style={{ width: "100%" }} /></td>
-                    <td style={{ padding: 4 }}><InputNumber size="small" value={row.age} onChange={v => updateBatchRow(idx, "age", v)} min={0} max={100} placeholder="Age" style={{ width: "100%" }} /></td>
-                    <td style={{ padding: 4 }}><InputNumber size="small" value={row.gestationalWeeks} onChange={v => updateBatchRow(idx, "gestationalWeeks", v)} min={1} max={45} placeholder="Weeks" style={{ width: "100%" }} /></td>
-                    <td style={{ padding: 4 }}><Input size="small" value={row.sourceInstitution} onChange={e => updateBatchRow(idx, "sourceInstitution", e.target.value)} placeholder="Hospital" style={{ width: "100%" }} /></td>
-                    <td style={{ padding: 4 }}><Input size="small" value={row.institutionSampleId} onChange={e => updateBatchRow(idx, "institutionSampleId", e.target.value)} placeholder="External ID" style={{ width: "100%" }} /></td>
-                    <td style={{ padding: 4 }}>
-                      <Select size="small" value={row.sampleType || undefined} onChange={v => updateBatchRow(idx, "sampleType", v || "PLASMA_CFDNA")} style={{ width: "100%" }}>
-                        <Select.Option value="PLASMA_CFDNA">cfDNA Plasma</Select.Option>
-                        <Select.Option value="PERIPHERAL_BLOOD">Peripheral Blood</Select.Option>
-                      </Select>
-                    </td>
-                    <td style={{ padding: 4 }}>
-                      <Select size="small" value={row.panelCode || undefined} onChange={v => updateBatchRow(idx, "panelCode", v || "")} allowClear style={{ width: "100%" }} placeholder="Panel">
-                        <Select.Option value="NIPT">NIPT</Select.Option>
-                        <Select.Option value="NIPT_PLUS">NIPT-PLUS</Select.Option>
-                      </Select>
-                    </td>
-                    <td style={{ padding: 4 }}><DatePicker size="small" value={row.collectionDate} onChange={v => updateBatchRow(idx, "collectionDate", v || dayjs())} style={{ width: "100%" }} /></td>
-                    <td style={{ padding: 4, textAlign: "center" }}><Button type="link" danger size="small" icon={<MinusCircleOutlined />} onClick={() => removeBatchRow(idx)} disabled={batchRows.length <= 1} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <Button type="dashed" icon={<PlusOutlined />} onClick={addBatchRow} style={{ marginTop: 8 }} block>Add Row</Button>
-        </div>
+        <TextArea
+          rows={10}
+          value={batchText}
+          onChange={e => setBatchText(e.target.value)}
+          placeholder={"张三\t28\t12\tNIPT\t泰国BCC\t440123199001011234\tEXT-001\n..."}
+        />
       </Modal>
     </div>
   );
