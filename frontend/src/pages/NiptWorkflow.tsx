@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Table, Button, Tag, Space, Typography, Modal, Form, Select, Input, InputNumber, DatePicker, message, Popconfirm, Card, Empty, Row, Col, Tabs } from "antd";
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
-import { runsApi, panelsApi, samplesApi } from "../api";
+import { runsApi, samplesApi } from "../api";
 import DashboardLayout from "../components/DashboardLayout";
 import { useTranslation } from "../i18n/useTranslation";
 
@@ -45,13 +45,12 @@ export default function NiptWorkflow() {
   const [form] = Form.useForm();
   const [stepForm] = Form.useForm();
 
-  const [panels, setPanels] = useState<any[]>([]);
   const [samples, setSamples] = useState<any[]>([]);
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await runsApi.list({ panel_code: "NIPT,NIPT_PLUS", page_size: 50, ordering: "-created_at" });
+      const res = await runsApi.list({ panel_code: "NIPT,NIPT_PLUS,NIPT_FULL", page_size: 50, ordering: "-created_at" });
       setBatches((res.data as any).results || res.data || []);
     } catch { message.error("Failed to load batches"); }
     finally { setLoading(false); }
@@ -73,11 +72,6 @@ export default function NiptWorkflow() {
     setActiveStep(STEPS[getStepIndex(batch.status)]?.key || "extraction");
     fetchDetail(batch.id);
   };
-
-  useEffect(() => {
-    panelsApi.list().then(r => setPanels((r.data as any).results || r.data || [])).catch(() => {});
-  }, []);
-
   useEffect(() => {
     if (createOpen) samplesApi.list({ status: "RECEIVED", page_size: 200 }).then(r => setSamples((r.data as any).results || [])).catch(() => {});
   }, [createOpen]);
@@ -86,7 +80,7 @@ export default function NiptWorkflow() {
     try {
       const values = await form.validateFields();
       setCreateLoading(true);
-      const payload: any = { panel: values.panel, samples: values.sample_ids || [], notes: values.batch_number || "" };
+      const payload: any = { panel_code: "NIPT", samples: values.sample_ids || [], notes: values.batch_number || "" };
       if (values.batch_number) payload.notes = "Batch: " + values.batch_number;
       await runsApi.create(payload);
       message.success(t("workflow.batchCreated"));
@@ -319,9 +313,6 @@ export default function NiptWorkflow() {
         <Form form={form} layout="vertical">
           <Form.Item name="batch_number" label="Batch Number" rules={[{ required: true }]}>
             <Input placeholder="e.g. NIPT-20260609-001" />
-          </Form.Item>
-          <Form.Item name="panel" label="Test Panel" rules={[{ required: true }]}>
-            <Select placeholder="Select panel" options={panels.map((p: any) => ({ value: p.id, label: `${p.code} - ${p.name}` }))} />
           </Form.Item>
           <Form.Item name="sample_ids" label="Add Samples">
             <Select mode="multiple" allowClear showSearch placeholder="Select RECEIVED samples"
