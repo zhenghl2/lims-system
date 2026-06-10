@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Popover, Checkbox, Switch, Upload } from "antd";
-import { PlusOutlined, DeleteOutlined, ReloadOutlined, SettingOutlined, UploadOutlined } from "@ant-design/icons";
+import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm{ Switch, } from "antd";
+import { PlusOutlined, DeleteOutlined, ReloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
 
@@ -13,7 +13,7 @@ const STATUS_MAP: Record<string, string> = {
   REJECTED: "red",
 };
 
-const PANEL_OPTIONS = [
+const TEST_OPTIONS = [
   { label: "NIPT Basic", value: "NIPT" },
   { label: "NIPT Basic-All", value: "NIPT_PLUS" },
   { label: "NIPT Plus", value: "NIPT_FULL" },
@@ -25,14 +25,64 @@ const SOURCE_OPTIONS = [
   { label: "Other", value: "" },
 ];
 
-interface ColumnConfig {
-  key: string;
-  title: string;
-  dataIndex: string;
-  visible: boolean;
-  width?: number;
-  render?: (val: any, record: any) => React.ReactNode;
-}
+// All table columns (A-T + analysis fields U-AH)
+const ALL_COLUMNS = [
+  // A: Sample_source
+  { key: "source", title: "Source", dataIndex: "source_institution", width: 100, render: (v: string) => v || "-" },
+  // B: Test_Option
+  { key: "test_option", title: "Test Option", dataIndex: "test_option", width: 100, render: (v: string) => v || "-" },
+  // C: Accessioning_ID (External ID)
+  { key: "external_id", title: "Accessioning ID", dataIndex: "external_id", width: 140, render: (v: string) => <Text code>{v || "-"}</Text> },
+  // D: Collection_Date
+  { key: "collection_date", title: "Collection Date", dataIndex: "collection_date", width: 110, render: (v: string) => v || "-" },
+  // E: Acceptance_Date
+  { key: "acceptance_date", title: "Acceptance Date", dataIndex: "acceptance_date", width: 110, render: (v: string) => v || "-" },
+  // F: Hospital_or_Clinic (use source_institution)
+  { key: "hospital", title: "Hospital/Clinic", dataIndex: "source_institution", width: 130, render: (v: string) => v || "-" },
+  // G: Physician
+  { key: "physician", title: "Physician", dataIndex: "physician", width: 100, render: (v: string) => v || "-" },
+  // H: Patient_ID
+  { key: "patient_id", title: "Patient ID/ID Card", dataIndex: "id_card", width: 160, render: (v: string) => v || "-" },
+  // I: Name
+  { key: "patient_name", title: "Name", dataIndex: "patient_name", width: 100 },
+  // J: DOB
+  { key: "patient_dob", title: "DOB", dataIndex: "patient_dob", width: 100, render: (v: string) => v || "-" },
+  // K: age
+  { key: "age", title: "Age", dataIndex: "age", width: 60 },
+  // L: Gestational_Week
+  { key: "gestational_weeks", title: "Gest. Weeks", dataIndex: "gestational_weeks", width: 80, render: (v: number) => v || "-" },
+  // M: Report_code (泰国编号)
+  { key: "report_code", title: "Report Code", dataIndex: "report_code", width: 120, render: (v: string) => v || "-" },
+  // N: send_report_id
+  { key: "send_report_id", title: "Send Report ID", dataIndex: "send_report_id", width: 120, render: (v: string) => v || "-" },
+  // O: Last_Menstrual_Period
+  { key: "lmp", title: "LMP", dataIndex: "last_menstrual_period", width: 100, render: (v: string) => v || "-" },
+  // P: Single/Twin
+  { key: "twins", title: "Single/Twin", dataIndex: "multiple_gestation", width: 90, render: (v: boolean) => v ? <Tag color="orange">Twin</Tag> : "Single" },
+  // Q: IVF
+  { key: "ivf", title: "IVF", dataIndex: "ivf_status", width: 60, render: (v: boolean) => v ? <Tag color="purple">IVF</Tag> : "-" },
+  // R: Pregnancy_History
+  { key: "pregnancy_history", title: "Pregnancy History", dataIndex: "pregnancy_history", width: 130, render: (v: string) => v || "-" },
+  // S: Previous_Medical_History
+  { key: "diagnosis", title: "Clinical Diagnosis", dataIndex: "clinical_diagnosis", width: 150, render: (v: string) => v || "-" },
+  // T: FedEx_No
+  { key: "fedex", title: "FedEx No.", dataIndex: "fedex_no", width: 120, render: (v: string) => v || "-" },
+  // ---- Analysis fields (U-AH) ----
+  { key: "zscore_21", title: "Zscore 21", dataIndex: "zscore_21", width: 80, render: (v: number) => v?.toFixed(3) || "-" },
+  { key: "zscore_18", title: "Zscore 18", dataIndex: "zscore_18", width: 80, render: (v: number) => v?.toFixed(3) || "-" },
+  { key: "zscore_13", title: "Zscore 13", dataIndex: "zscore_13", width: 80, render: (v: number) => v?.toFixed(3) || "-" },
+  { key: "t21", title: "T21", dataIndex: "t21", width: 70 },
+  { key: "t18", title: "T18", dataIndex: "t18", width: 70 },
+  { key: "t13", title: "T13", dataIndex: "t13", width: 70 },
+  { key: "xo", title: "XO", dataIndex: "xo", width: 60 },
+  { key: "xxx", title: "XXX", dataIndex: "xxx", width: 60 },
+  { key: "xxy", title: "XXY", dataIndex: "xxy", width: 60 },
+  { key: "xyy", title: "XYY", dataIndex: "xyy", width: 60 },
+  { key: "all_chrom", title: "All Chrom", dataIndex: "all_chrom", width: 80 },
+  { key: "fetal_fraction", title: "FF%", dataIndex: "fetal_fraction", width: 60, render: (v: number) => v ? `${v}%` : "-" },
+  { key: "gender", title: "Gender", dataIndex: "gender", width: 70 },
+  { key: "other", title: "Other", dataIndex: "other", width: 120, render: (v: string) => v || "-" },
+];
 
 export default function NiptSamples() {
   const [data, setData] = useState<any[]>([]);
@@ -41,43 +91,24 @@ export default function NiptSamples() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const pageSize = 20;
   const [modalOpen, setModalOpen] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [batchText, setBatchText] = useState("");
-  const [fileModalOpen, setFileModalOpen] = useState(false);
-  const [fileSource, setFileSource] = useState("泰国BCC");
-  const [fileList, setFileList] = useState<any[]>([]);
   const [form] = Form.useForm();
 
-  const [columnConfigs, setColumnConfigs] = useState<ColumnConfig[]>([
-    { key: "sample_id", title: "Sample ID", dataIndex: "sample_id", visible: true, width: 160, render: (v: string) => <Text code>{v}</Text> },
-    { key: "patient_name", title: "Patient Name", dataIndex: "patient_name", visible: true, width: 120 },
-    { key: "id_card", title: "ID Card", dataIndex: "id_card", visible: true, width: 160, render: (v: string) => v || "-" },
-    { key: "age", title: "Age", dataIndex: "age", visible: true, width: 60 },
-    { key: "gestational_weeks", title: "Gest. Weeks", dataIndex: "gestational_weeks", visible: true, width: 80, render: (v: number) => v || "-" },
-    { key: "maternal_weight", title: "Weight(kg)", dataIndex: "maternal_weight", visible: false, width: 80, render: (v: number) => v || "-" },
-    { key: "maternal_bmi", title: "BMI", dataIndex: "maternal_bmi", visible: false, width: 60, render: (v: number) => v?.toFixed(1) || "-" },
-    { key: "ivf_status", title: "IVF", dataIndex: "ivf_status", visible: false, width: 55, render: (v: boolean) => v ? <Tag color="purple">IVF</Tag> : "-" },
-    { key: "multiple_gestation", title: "Twins", dataIndex: "multiple_gestation", visible: false, width: 60, render: (v: boolean) => v ? <Tag color="orange">Twins</Tag> : "-" },
-    { key: "fetal_fraction", title: "FF%", dataIndex: "fetal_fraction", visible: false, width: 60, render: (v: number) => v ? `${v}%` : "-" },
-    { key: "source_institution", title: "Source", dataIndex: "source_institution", visible: true, width: 100, render: (v: string) => v || "-" },
-    { key: "external_id", title: "External ID", dataIndex: "external_id", visible: true, width: 130, render: (v: string) => v || "-" },
-    { key: "clinical_diagnosis", title: "Diagnosis", dataIndex: "clinical_diagnosis", visible: false, width: 150, render: (v: string) => v || "-" },
-    { key: "panel", title: "Panel", dataIndex: "panel", visible: true, width: 110, render: (v: any) => <Tag>{v?.code || "-"}</Tag> },
-    { key: "sample_type", title: "Sample Type", dataIndex: "sample_type", visible: false, width: 130, render: (v: any) => v?.name || "-" },
-    { key: "status", title: "Status", dataIndex: "status", visible: true, width: 100, render: (v: string) => <Tag color={STATUS_MAP[v]}>{v}</Tag> },
-    { key: "receipt_date", title: "Receipt Date", dataIndex: "receipt_date", visible: false, width: 110, render: (v: string) => v || "-" },
-    { key: "actions", title: "Actions", dataIndex: "actions", visible: true, width: 80,
+  const columns = [
+    { key: "sample_id", title: "Sample ID", dataIndex: "sample_id", width: 170, render: (v: string) => <Text code>{v}</Text> },
+    ...ALL_COLUMNS,
+    { key: "status", title: "Status", dataIndex: "status", width: 100, render: (v: string) => <Tag color={STATUS_MAP[v]}>{v}</Tag> },
+    { key: "actions", title: "", width: 50, fixed: "right" as const,
       render: (_: any, record: any) => (
-        <Popconfirm title="Delete this sample?" onConfirm={() => handleDelete(record.id)}>
+        <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
           <Button size="small" danger icon={<DeleteOutlined />} />
         </Popconfirm>
       ),
     },
-  ]);
-
-  const visibleColumns = columnConfigs.filter(c => c.visible);
+  ];
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -88,297 +119,191 @@ export default function NiptSamples() {
       const res = await samplesApi.list(params);
       setData((res.data as any).results || res.data || []);
       setTotal((res.data as any).count || 0);
-    } catch {
-      message.error("Failed to load samples");
-    } finally {
-      setLoading(false);
-    }
-  }, [page, pageSize, search, statusFilter]);
+    } catch { message.error("Failed"); } finally { setLoading(false); }
+  }, [page, search, statusFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  const buildPayload = (values: any) => ({
+    panel_code: values.panel || "NIPT",
+    test_option: values.test_option || "NIPT",
+    source_institution: values.source === "" ? values.source_other : values.source,
+    external_id: values.external_id || "",
+    collection_date: values.collection_date ? dayjs(values.collection_date).format("YYYY-MM-DD") : undefined,
+    acceptance_date: values.acceptance_date ? dayjs(values.acceptance_date).format("YYYY-MM-DD") : undefined,
+    physician: values.physician || "",
+    id_card: values.id_card || "",
+    patient_name: values.patient_name || "",
+    patient_dob: values.patient_dob ? dayjs(values.patient_dob).format("YYYY-MM-DD") : undefined,
+    age: values.age,
+    gestational_weeks: values.gestational_weeks,
+    report_code: values.report_code || "",
+    send_report_id: values.send_report_id || "",
+    last_menstrual_period: values.last_menstrual_period ? dayjs(values.last_menstrual_period).format("YYYY-MM-DD") : undefined,
+    multiple_gestation: values.multiple_gestation || false,
+    ivf_status: values.ivf_status || false,
+    pregnancy_history: values.pregnancy_history || "",
+    clinical_diagnosis: values.clinical_diagnosis || "",
+    fedex_no: values.fedex_no || "",
+  });
 
   const handleRegister = async () => {
     try {
       const values = await form.validateFields();
-      const payload: Record<string, unknown> = {
-        patient_name: values.patient_name,
-        age: values.age,
-        gestational_weeks: values.gestational_weeks,
-        sample_type_id: values.sample_type_id || undefined,
-        panel_code: values.panel,
-        source_institution: values.source === "" ? values.source_other : values.source,
-        id_card: values.id_card || "",
-        external_id: values.external_id || "",
-        maternal_weight: values.maternal_weight || null,
-        maternal_bmi: values.maternal_bmi || null,
-        ivf_status: values.ivf_status || false,
-        multiple_gestation: values.multiple_gestation || false,
-        fetal_fraction: values.fetal_fraction || null,
-        clinical_diagnosis: values.clinical_diagnosis || "",
-        collection_date: values.collection_date ? dayjs(values.collection_date).format("YYYY-MM-DD") : undefined,
-      };
-      await samplesApi.create(payload);
-      message.success("Sample registered");
-      setModalOpen(false);
-      form.resetFields();
-      fetchData();
-    } catch (e: any) {
-      if (e?.errorFields) return;
-      message.error("Failed to register sample");
-    }
+      await samplesApi.create(buildPayload(values));
+      message.success("Registered");
+      setModalOpen(false); form.resetFields(); fetchData();
+    } catch (e: any) { if (e?.errorFields) return; message.error("Failed"); }
   };
 
   const handleBatchRegister = async () => {
     const lines = batchText.trim().split("\n").filter(l => l.trim());
     if (lines.length === 0) { message.warning("No data"); return; }
     const samples = lines.map(line => {
-      const parts = line.split("\t");
+      const p = line.split("\t");
       return {
-        patient_name: parts[0]?.trim() || "",
-        age: parseInt(parts[1]) || null,
-        gestational_weeks: parseInt(parts[2]) || null,
-        panel_code: parts[3]?.trim() || "NIPT",
-        source_institution: parts[4]?.trim() || "",
-        id_card: parts[5]?.trim() || "",
-        external_id: parts[6]?.trim() || "",
-        maternal_weight: parseFloat(parts[7]) || null,
-        ivf_status: parts[8]?.trim() === "Y" || parts[8]?.trim() === "true",
-        multiple_gestation: parts[9]?.trim() === "Y" || parts[9]?.trim() === "true",
-        clinical_diagnosis: parts[10]?.trim() || "",
+        patient_name: p[0]?.trim() || "",
+        age: parseInt(p[1]) || null,
+        gestational_weeks: parseInt(p[2]) || null,
+        panel_code: p[3]?.trim() || "NIPT",
+        source_institution: p[4]?.trim() || "",
+        id_card: p[5]?.trim() || "",
+        external_id: p[6]?.trim() || "",
+        collection_date: p[7]?.trim() || undefined,
+        acceptance_date: p[8]?.trim() || undefined,
+        physician: p[9]?.trim() || "",
+        patient_dob: p[10]?.trim() || undefined,
+        report_code: p[11]?.trim() || "",
+        send_report_id: p[12]?.trim() || "",
+        last_menstrual_period: p[13]?.trim() || undefined,
+        multiple_gestation: p[14]?.trim() === "Y" || p[14]?.trim() === "true",
+        ivf_status: p[15]?.trim() === "Y" || p[15]?.trim() === "true",
+        pregnancy_history: p[16]?.trim() || "",
+        clinical_diagnosis: p[17]?.trim() || "",
+        fedex_no: p[18]?.trim() || "",
+        test_option: p[19]?.trim() || "NIPT",
       };
     });
     try {
       await samplesApi.batchCreate({ samples });
-      message.success(`Registered ${samples.length} samples`);
-      setBatchText("");
-      setBatchMode(false);
-      fetchData();
-    } catch {
-      message.error("Batch registration failed");
-    }
+      message.success(`Registered ${samples.length}`);
+      setBatchText(""); setBatchMode(false); fetchData();
+    } catch { message.error("Failed"); }
   };
 
   const handleDelete = async (id: string) => {
-    try {
-      await samplesApi.delete(id);
-      message.success("Deleted");
-      fetchData();
-    } catch {
-      message.error("Delete failed");
-    }
+    try { await samplesApi.delete(id); message.success("Deleted"); fetchData(); } catch { message.error("Failed"); }
   };
-
-  const toggleColumn = (key: string) => {
-    setColumnConfigs(prev => prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c));
-  };
-
-  const tableColumns = visibleColumns.map(c => ({
-    title: c.title,
-    dataIndex: c.dataIndex,
-    key: c.key,
-    width: c.width,
-    render: c.render,
-  }));
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
         <Title level={4} style={{ margin: 0 }}>NIPT Sample Registration</Title>
         <Space>
-          <Popover
-            trigger="click"
-            title="Column Display"
-            content={
-              <div style={{ maxHeight: 300, overflow: "auto" }}>
-                {columnConfigs.map(c => (
-                  <div key={c.key} style={{ marginBottom: 4 }}>
-                    <Checkbox checked={c.visible} onChange={() => toggleColumn(c.key)}>{c.title}</Checkbox>
-                  </div>
-                ))}
-              </div>
-            }
-          >
-            <Button icon={<SettingOutlined />}>Columns</Button>
-          </Popover>
           <Button icon={<ReloadOutlined />} onClick={fetchData}>Refresh</Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setModalOpen(true); }}>
-            Register Sample
-          </Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setModalOpen(true); }}>Register</Button>
           <Button icon={<PlusOutlined />} onClick={() => setBatchMode(true)}>Batch Import</Button>
-          <Button icon={<UploadOutlined />} onClick={() => { setFileModalOpen(true); setFileList([]); }}>Register from File</Button>
         </Space>
       </div>
 
       <div style={{ marginBottom: 16, display: "flex", gap: 12 }}>
-        <Input.Search
-          placeholder="Search sample ID or patient name..."
-          allowClear
-          onSearch={(v) => { setSearch(v); setPage(1); }}
-          style={{ width: 280 }}
-        />
-        <Select
-          placeholder="Status"
-          allowClear
-          style={{ width: 150 }}
-          value={statusFilter || undefined}
+        <Input.Search placeholder="Search..." allowClear onSearch={(v) => { setSearch(v); setPage(1); }} style={{ width: 280 }} />
+        <Select placeholder="Status" allowClear style={{ width: 150 }} value={statusFilter || undefined}
           onChange={(v) => { setStatusFilter(v || ""); setPage(1); }}
-          options={[
-            { label: "All", value: "" },
-            { label: "Registered", value: "REGISTERED" },
-            { label: "Received", value: "RECEIVED" },
-            { label: "In Process", value: "IN_PROCESS" },
-            { label: "Completed", value: "COMPLETED" },
-            { label: "Reported", value: "REPORTED" },
-            { label: "Rejected", value: "REJECTED" },
-          ]}
-        />
+          options={["", "REGISTERED", "RECEIVED", "IN_PROCESS", "COMPLETED", "REPORTED", "REJECTED"].map(v => ({ label: v || "All", value: v }))} />
       </div>
 
-      <Table
-        rowKey="id"
-        dataSource={data}
-        columns={tableColumns}
-        loading={loading}
-        size="middle"
-        scroll={{ x: "max-content" }}
-        pagination={{
-          current: page, pageSize, total, showTotal: t => `Total ${t}`,
-          onChange: (p, ps) => { setPage(p); setPageSize(ps); },
-        }}
-      />
+      <Table rowKey="id" dataSource={data} columns={columns} loading={loading} size="small"
+        scroll={{ x: 5000 }}
+        pagination={{ current: page, pageSize, total, showTotal: t => `Total ${t}`, onChange: (p) => setPage(p) }} />
 
-      {/* Register Modal */}
-      <Modal
-        title="Register NIPT Sample"
-        open={modalOpen}
-        onOk={handleRegister}
-        onCancel={() => setModalOpen(false)}
-        width={640}
-        destroyOnClose
-      >
-        <Form form={form} layout="vertical">
-          <Form.Item name="patient_name" label="Patient Name" rules={[{ required: true }]}>
-            <Input placeholder="e.g. 张三" />
-          </Form.Item>
+      {/* Register Modal - columns A through T */}
+      <Modal title="Register NIPT Sample" open={modalOpen} onOk={handleRegister} onCancel={() => setModalOpen(false)} width={700} destroyOnClose>
+        <Form form={form} layout="vertical" size="small">
           <Space style={{ display: "flex" }} wrap>
-            <Form.Item name="age" label="Age">
-              <InputNumber min={1} max={100} style={{ width: 90 }} />
+            <Form.Item name="source" label="A. Source">
+              <Select options={SOURCE_OPTIONS} style={{ width: 160 }} placeholder="Select" />
             </Form.Item>
-            <Form.Item name="gestational_weeks" label="Gestational Weeks">
-              <InputNumber min={1} max={45} style={{ width: 120 }} />
+            <Form.Item name="source_other" label="Other">
+              <Input placeholder="Other source" style={{ width: 160 }} />
             </Form.Item>
-            <Form.Item name="maternal_weight" label="Weight (kg)">
-              <InputNumber min={30} max={200} step={0.1} style={{ width: 120 }} />
+            <Form.Item name="test_option" label="B. Test Option" initialValue="NIPT">
+              <Select options={TEST_OPTIONS} style={{ width: 160 }} />
             </Form.Item>
-            <Form.Item name="maternal_bmi" label="BMI">
-              <InputNumber min={10} max={60} step={0.1} style={{ width: 90 }} />
+            <Form.Item name="external_id" label="C. Accessioning ID">
+              <Input style={{ width: 160 }} />
             </Form.Item>
           </Space>
           <Space style={{ display: "flex" }} wrap>
-            <Form.Item name="ivf_status" label="IVF" valuePropName="checked">
+            <Form.Item name="collection_date" label="D. Collection Date">
+              <DatePicker style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="acceptance_date" label="E. Acceptance Date">
+              <DatePicker style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="physician" label="G. Physician">
+              <Input style={{ width: 160 }} />
+            </Form.Item>
+          </Space>
+          <Space style={{ display: "flex" }} wrap>
+            <Form.Item name="id_card" label="H. Patient ID/ID Card">
+              <Input style={{ width: 200 }} />
+            </Form.Item>
+            <Form.Item name="patient_name" label="I. Name" rules={[{ required: true }]}>
+              <Input style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="patient_dob" label="J. DOB">
+              <DatePicker style={{ width: 160 }} />
+            </Form.Item>
+            <Form.Item name="age" label="K. Age">
+              <InputNumber min={1} max={100} style={{ width: 80 }} />
+            </Form.Item>
+          </Space>
+          <Space style={{ display: "flex" }} wrap>
+            <Form.Item name="gestational_weeks" label="L. Gest. Weeks">
+              <InputNumber min={1} max={45} style={{ width: 100 }} />
+            </Form.Item>
+            <Form.Item name="report_code" label="M. Report Code">
+              <Input style={{ width: 140 }} />
+            </Form.Item>
+            <Form.Item name="send_report_id" label="N. Send Report ID">
+              <Input style={{ width: 140 }} />
+            </Form.Item>
+            <Form.Item name="last_menstrual_period" label="O. LMP">
+              <DatePicker style={{ width: 160 }} />
+            </Form.Item>
+          </Space>
+          <Space style={{ display: "flex" }} wrap>
+            <Form.Item name="multiple_gestation" label="P. Single/Twin" valuePropName="checked">
+              <Switch checkedChildren="Twin" unCheckedChildren="Single" />
+            </Form.Item>
+            <Form.Item name="ivf_status" label="Q. IVF" valuePropName="checked">
               <Switch checkedChildren="IVF" unCheckedChildren="Natural" />
             </Form.Item>
-            <Form.Item name="multiple_gestation" label="Twins" valuePropName="checked">
-              <Switch checkedChildren="Twins" unCheckedChildren="Single" />
+            <Form.Item name="pregnancy_history" label="R. Preg. History">
+              <Input placeholder="G/P" style={{ width: 120 }} />
             </Form.Item>
-            <Form.Item name="fetal_fraction" label="FF%">
-              <InputNumber min={0} max={100} step={0.1} style={{ width: 90 }} />
+            <Form.Item name="clinical_diagnosis" label="S. Diagnosis">
+              <Input style={{ width: 200 }} />
             </Form.Item>
-          </Space>
-          <Form.Item name="id_card" label="ID Card">
-            <Input placeholder="ID card number" style={{ width: 250 }} />
-          </Form.Item>
-          <Form.Item name="external_id" label="External ID">
-            <Input placeholder="External reference number" style={{ width: 250 }} />
-          </Form.Item>
-          <Form.Item name="clinical_diagnosis" label="Clinical Diagnosis / History">
-            <Input.TextArea rows={2} placeholder="e.g. Adverse pregnancy history, clinical notes..." style={{ width: 400 }} />
-          </Form.Item>
-          <Form.Item name="panel" label="Panel" initialValue="NIPT" rules={[{ required: true }]}>
-            <Select options={PANEL_OPTIONS} style={{ width: 200 }} />
-          </Form.Item>
-          <Form.Item name="sample_type_id" label="Sample Type">
-            <Select style={{ width: 200 }} placeholder="Select sample type" options={[{ label: "cfDNA Plasma", value: "" }]} />
-          </Form.Item>
-          <Space style={{ display: "flex" }} wrap>
-            <Form.Item name="source" label="Source">
-              <Select options={SOURCE_OPTIONS} style={{ width: 180 }} placeholder="Select source" />
-            </Form.Item>
-            <Form.Item name="source_other" label="Other Source">
-              <Input placeholder="Specify other" style={{ width: 180 }} />
+            <Form.Item name="fedex_no" label="T. FedEx No.">
+              <Input style={{ width: 160 }} />
             </Form.Item>
           </Space>
-          <Form.Item name="collection_date" label="Collection Date">
-            <DatePicker style={{ width: 200 }} />
-          </Form.Item>
         </Form>
       </Modal>
 
-      {/* Batch Import Modal */}
-      <Modal
-        title="Batch Import NIPT Samples"
-        open={batchMode}
-        onOk={handleBatchRegister}
-        onCancel={() => { setBatchMode(false); setBatchText(""); }}
-        width={750}
-      >
+      {/* Batch Import Modal - columns A through T */}
+      <Modal title="Batch Import NIPT Samples" open={batchMode} onOk={handleBatchRegister}
+        onCancel={() => { setBatchMode(false); setBatchText(""); }} width={800}>
         <div style={{ marginBottom: 8 }}>
-          <Text type="secondary">Paste tab-separated data (one row per sample):</Text>
+          <Text type="secondary">Paste tab-separated (A-T columns):</Text>
           <Text code style={{ display: "block", marginTop: 4, fontSize: 11, whiteSpace: "pre-wrap" }}>
-            {"Name\tAge\tGestWeeks\tPanel\tSource\tID_Card\tExtID\tWeight\tIVF(Y/N)\tTwins(Y/N)\tDiagnosis"}
+            {"Name\tAge\tGestWeeks\tPanel\tSource\tIDCard\tExtID\tCollDate\tAcptDate\tPhysician\tDOB\tRptCode\tSendID\tLMP\tTwin(Y/N)\tIVF(Y/N)\tPregHist\tDiagnosis\tFedEx\tTestOpt"}
           </Text>
         </div>
-        <TextArea
-          rows={10}
-          value={batchText}
-          onChange={e => setBatchText(e.target.value)}
-          placeholder={"张三\t28\t12\tNIPT\t泰国BCC\t440123199001011234\tEXT-001\t65.5\tN\tN\tG1P0"}
-        />
-      </Modal>
-
-      {/* Register from File Modal */}
-      <Modal
-        title="Register from File"
-        open={fileModalOpen}
-        onCancel={() => setFileModalOpen(false)}
-        width={600}
-        footer={[
-          <Button key="cancel" onClick={() => setFileModalOpen(false)}>Cancel</Button>,
-          <Button key="submit" type="primary" disabled={fileList.length === 0} onClick={() => {
-            message.info("File import implementation pending");
-            setFileModalOpen(false);
-          }}>Import & Register</Button>,
-        ]}
-      >
-        <Form layout="vertical">
-          <Form.Item label="Source" required>
-            <Select
-              value={fileSource}
-              onChange={setFileSource}
-              options={[
-                { label: "泰国BCC", value: "泰国BCC" },
-                { label: "巴西", value: "巴西" },
-              ]}
-              style={{ width: 200 }}
-            />
-          </Form.Item>
-          <Form.Item label="Select File (Directory)">
-            <Upload
-              fileList={fileList}
-              beforeUpload={(file) => {
-                setFileList([file]);
-                return false;
-              }}
-              onRemove={() => setFileList([])}
-              accept=".xlsx,.xls,.csv"
-              maxCount={1}
-              directory
-            >
-              <Button icon={<UploadOutlined />}>Choose File / Directory</Button>
-            </Upload>
-          </Form.Item>
-          <Text type="secondary">Select the source (泰国BCC or 巴西) and upload the sample file. Supported formats: .xlsx, .csv</Text>
-        </Form>
+        <TextArea rows={12} value={batchText} onChange={e => setBatchText(e.target.value)}
+          placeholder={"张三\t28\t12\tNIPT\t泰国BCC\t440123199001011234\tEXT001\t2026-06-01\t2026-06-03\tDr.Li\t1998-05-15\tRPT001\tSND001\t2026-03-01\tN\tN\tG1P0\tNormal\t1234567890\tNIPT"} />
       </Modal>
     </div>
   );
