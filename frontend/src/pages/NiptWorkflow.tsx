@@ -124,7 +124,6 @@ export default function NiptWorkflow() {
 
   const batchColumns = [
     { title: "Run Number", dataIndex: "run_number", key: "run_number", width: 170, render: (v: string) => <Text code>{v}</Text> },
-    { title: "Panel", dataIndex: "panel_name", key: "panel_name", width: 80, render: (v: string) => v || "-" },
     { title: "Samples", dataIndex: "sample_count", key: "sample_count", width: 70, align: "center" as const },
     { title: "Status", dataIndex: "status", key: "status", width: 110, render: (v: string) => <Tag color={STATUS_COLOR[v]}>{STATUS_MAP_ZH[v] || v}</Tag> },
     { title: "Created", dataIndex: "created_at", key: "created_at", width: 100, render: (v: string) => dayjs(v).format("YYYY-MM-DD") },
