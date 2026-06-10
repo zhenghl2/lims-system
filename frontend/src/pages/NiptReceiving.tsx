@@ -68,7 +68,7 @@ export default function NiptReceiving() {
   const fetchData = useCallback(() => {
     setLoading(true);
     const statusParam = activeTab === "pending" ? "REGISTERED" : "RECEIVED,IN_PROCESS,COMPLETED,REPORTED";
-    samplesApi.list({ status: statusParam, page_size: 100 }).then((res: any) => {
+    samplesApi.list({ status: statusParam, panel: "NIPT,NIPT_PLUS,NIPT_FULL", page_size: 100 }).then((res: any) => {
       setData((res.data as any).results || res.data || []);
     }).catch(() => message.error("Failed to load samples")).finally(() => setLoading(false));
   }, [activeTab]);
