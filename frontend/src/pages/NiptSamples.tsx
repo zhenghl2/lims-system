@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
-import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Popover, Checkbox, Switch } from "antd";
-import { PlusOutlined, DeleteOutlined, ReloadOutlined, SettingOutlined } from "@ant-design/icons";
+import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Popover, Checkbox, Switch, Upload } from "antd";
+import { PlusOutlined, DeleteOutlined, ReloadOutlined, SettingOutlined, UploadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
 
@@ -45,6 +45,9 @@ export default function NiptSamples() {
   const [modalOpen, setModalOpen] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [batchText, setBatchText] = useState("");
+  const [fileModalOpen, setFileModalOpen] = useState(false);
+  const [fileSource, setFileSource] = useState("泰国BCC");
+  const [fileList, setFileList] = useState<any[]>([]);
   const [form] = Form.useForm();
 
   const [columnConfigs, setColumnConfigs] = useState<ColumnConfig[]>([
@@ -202,6 +205,7 @@ export default function NiptSamples() {
             Register Sample
           </Button>
           <Button icon={<PlusOutlined />} onClick={() => setBatchMode(true)}>Batch Import</Button>
+          <Button icon={<UploadOutlined />} onClick={() => { setFileModalOpen(true); setFileList([]); }}>Register from File</Button>
         </Space>
       </div>
 
@@ -330,6 +334,51 @@ export default function NiptSamples() {
           onChange={e => setBatchText(e.target.value)}
           placeholder={"张三\t28\t12\tNIPT\t泰国BCC\t440123199001011234\tEXT-001\t65.5\tN\tN\tG1P0"}
         />
+      </Modal>
+
+      {/* Register from File Modal */}
+      <Modal
+        title="Register from File"
+        open={fileModalOpen}
+        onCancel={() => setFileModalOpen(false)}
+        width={600}
+        footer={[
+          <Button key="cancel" onClick={() => setFileModalOpen(false)}>Cancel</Button>,
+          <Button key="submit" type="primary" disabled={fileList.length === 0} onClick={() => {
+            message.info("File import implementation pending");
+            setFileModalOpen(false);
+          }}>Import & Register</Button>,
+        ]}
+      >
+        <Form layout="vertical">
+          <Form.Item label="Source" required>
+            <Select
+              value={fileSource}
+              onChange={setFileSource}
+              options={[
+                { label: "泰国BCC", value: "泰国BCC" },
+                { label: "巴西", value: "巴西" },
+              ]}
+              style={{ width: 200 }}
+            />
+          </Form.Item>
+          <Form.Item label="Select File (Directory)">
+            <Upload
+              fileList={fileList}
+              beforeUpload={(file) => {
+                setFileList([file]);
+                return false;
+              }}
+              onRemove={() => setFileList([])}
+              accept=".xlsx,.xls,.csv"
+              maxCount={1}
+              directory
+            >
+              <Button icon={<UploadOutlined />}>Choose File / Directory</Button>
+            </Upload>
+          </Form.Item>
+          <Text type="secondary">Select the source (泰国BCC or 巴西) and upload the sample file. Supported formats: .xlsx, .csv</Text>
+        </Form>
       </Modal>
     </div>
   );
