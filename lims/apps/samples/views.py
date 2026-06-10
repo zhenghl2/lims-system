@@ -35,8 +35,10 @@ class SampleViewSet(viewsets.ModelViewSet):
         if panel_code:
             try:
                 from .models import TestPanel
-                panel = TestPanel.objects.get(code=panel_code, is_active=True)
-                qs = qs.filter(panel=panel)
+                codes = [c.strip() for c in panel_code.split(",") if c.strip()]
+                panels = TestPanel.objects.filter(code__in=codes, is_active=True)
+                if panels.exists():
+                    qs = qs.filter(panel__in=panels)
             except Exception:
                 pass
         elif self.action == "list":
