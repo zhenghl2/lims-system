@@ -17,7 +17,7 @@ export default function NiptReports() {
   const fetchReports = async () => {
     setLoading(true);
     try {
-      const res = await reportsApi.list({ page_size: 50 });
+      const res = await reportsApi.list({ panel_code: "NIPT,NIPT_PLUS", page_size: 50 });
       setReports((res.data as any)?.results || res.data || []);
     } catch { /* ignore */ }
     finally { setLoading(false); }

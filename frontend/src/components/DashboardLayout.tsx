@@ -32,8 +32,6 @@ const { Sider, Header, Content, Footer } = Layout;
 
 const { Text } = Typography;
 
-
-
 interface Props {
 
   children: ReactNode;
@@ -41,8 +39,6 @@ interface Props {
   header?: ReactNode;
 
 }
-
-
 
 export default function DashboardLayout({ children, header }: Props) {
 
@@ -56,77 +52,36 @@ export default function DashboardLayout({ children, header }: Props) {
 
   const { token } = antdTheme.useToken();
 
-
-
   // ── Sidebar menu items (i18n) ─────────────────────────────────
-
   const menuItems = useMemo(() => [
-
-    { key: "/",              icon: <DashboardOutlined />,       label: t("nav.dashboard") },
-
+    { key: "/dashboard-nipt", icon: <DashboardOutlined />,     label: t("nav.dashboard") },
     { key: "/samples",       icon: <BarcodeOutlined />,         label: t("nav.samples") },
-
     { key: "/receiving",    icon: <InboxOutlined />,           label: "Receiving" },
-
     { key: "/workflow",      icon: <ExperimentOutlined />,      label: t("nav.workflow") },
-
-    { key: "/reports",       icon: <FileTextOutlined />,        label: t("nav.reports") },
-    {
-      key: "nipt-group",
-      label: "NIPT",
-      type: "group" as const,
-      children: [
-        { key: "/dashboard-nipt", icon: <DashboardOutlined />,     label: "NIPT Dashboard" },
-        { key: "/reports-nipt",   icon: <FileTextOutlined />,      label: "NIPT Reports" },
-      ],
-    },
+    { key: "/reports-nipt",   icon: <FileTextOutlined />,      label: t("nav.reports") },
     {
       key: "quality-group",
-
       label: t("nav.qualityManagement"),
-
       type: "group" as const,
-
       children: [
-
         { key: "/qc",         icon: <SafetyCertificateOutlined />, label: t("nav.qc") },
-
         { key: "/documents",  icon: <BookOutlined />,              label: t("nav.documents") },
-
         { key: "/training",   icon: <TeamOutlined />,              label: t("nav.training") },
-
       ],
-
     },
-
     {
-
       key: "resource-group",
-
       label: t("nav.resourceManagement"),
-
       type: "group" as const,
-
       children: [
-
         { key: "/instruments", icon: <ToolOutlined />,            label: t("nav.instruments") },
-
         { key: "/reagents",    icon: <MedicineBoxOutlined />,     label: t("nav.reagents") },
-
       ],
-
     },
-
     { key: "/bioinformatics", icon: <CloudServerOutlined />,     label: t("nav.bioinformatics") },
-
     { key: "/audit",          icon: <AuditOutlined />,           label: t("nav.auditLog") },
-
     { key: "/notifications",  icon: <BellOutlined />,            label: t("nav.notifications") },
-
   ], [t]);
-
-
-
   const userMenuItems = [
 
     {
@@ -146,8 +101,6 @@ export default function DashboardLayout({ children, header }: Props) {
     { key: "logout", icon: <LogoutOutlined />, label: t("nav.signOut"), danger: true },
 
   ];
-
-
 
   return (
 
@@ -182,13 +135,9 @@ export default function DashboardLayout({ children, header }: Props) {
           <Text strong style={{ fontSize: collapsed ? 18 : 20, color: token.colorPrimary }}>
 
             {collapsed ? "LIMS" : t("app.title")}
-
-
           </Text>
 
         </div>
-
-
 
         {/* Navigation */}
 
@@ -234,8 +183,6 @@ export default function DashboardLayout({ children, header }: Props) {
 
       </Sider>
 
-
-
       {/* ── Right side ─────────────────────────────────────── */}
 
       <Layout>
@@ -278,8 +225,6 @@ export default function DashboardLayout({ children, header }: Props) {
 
           </Space>
 
-
-
           <Space size="middle">
 
             {user && (
@@ -287,8 +232,6 @@ export default function DashboardLayout({ children, header }: Props) {
               <Dropdown menu={{
 
                 items: [
-
-
                   { key: 'en', label: 'ð¬ð§ English' },
 
                   { key: 'zh', label: 'ð¨ð³ 中文' },
@@ -333,8 +276,6 @@ export default function DashboardLayout({ children, header }: Props) {
 
         </Header>
 
-
-
         {/* Content */}
 
         <Content style={{
@@ -352,8 +293,6 @@ export default function DashboardLayout({ children, header }: Props) {
           {children}
 
         </Content>
-
-
 
         {/* Footer */}
 

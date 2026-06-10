@@ -16,7 +16,6 @@ import { useAuthStore } from "../store/auth";
 
 const Login           = lazy(() => import("./Login"));
 
-const Dashboard       = lazy(() => import("./Dashboard"));
 
 const NiptSamples     = lazy(() => import("./NiptSamples"));
 
@@ -25,7 +24,6 @@ const NiptReceiving   = lazy(() => import("./NiptReceiving"));
 const NiptWorkflow    = lazy(() => import("./NiptWorkflow"));
 const NiptDashboard   = lazy(() => import("./NiptDashboard"));
 const NiptReports     = lazy(() => import("./NiptReports"));
-const Reports         = lazy(() => import("./Reports"));
 const Instruments     = lazy(() => import("./Instruments"));
 
 const Reagents        = lazy(() => import("./Reagents"));
@@ -74,6 +72,7 @@ const Protected = ({ children }: { children: React.ReactNode }) => {
 
   return <Suspense fallback={<PageLoading />}>{children}</Suspense>;
 
+
 };
 
 
@@ -94,13 +93,12 @@ export default function AppRouter() {
 
         {/* Protected — fully implemented */}
 
-        <Route path="/"       element={<Protected><Dashboard /></Protected>} />
+        <Route path="/"       element={<Protected><DashboardLayout><NiptDashboard /></DashboardLayout></Protected>} />
 
         <Route path="/samples"   element={<Protected><DashboardLayout><NiptSamples /></DashboardLayout></Protected>} />
 
         <Route path="/receiving" element={<Protected><DashboardLayout><NiptReceiving /></DashboardLayout></Protected>} />
 
-        <Route path="/reports" element={<Protected><Reports /></Protected>} />
 
         <Route path="/instruments" element={<Protected><Instruments /></Protected>} />
 

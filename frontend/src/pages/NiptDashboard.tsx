@@ -10,7 +10,10 @@ export default function NiptDashboard() {
   const [runStats, setRunStats] = useState<any[]>([]);
 
   useEffect(() => {
-    samplesApi.stats().then(r => setStats(r.data || {})).catch(() => {});
+    samplesApi.statsByPanel().then(r => {
+      const all = r.data || {};
+      setStats(all["NIPT"] || all["NIPT_PLUS"] || {});
+    }).catch(() => {});
     runsApi.list({ panel_code: "NIPT,NIPT_PLUS", page_size: 5, ordering: "-created_at" })
       .then(r => setRunStats((r.data as any)?.results || [])).catch(() => {});
   }, []);
