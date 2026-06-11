@@ -39,12 +39,13 @@ class WorkflowProtocolDetailSerializer(WorkflowProtocolSerializer):
 
 class RunSampleSerializer(serializers.ModelSerializer):
     sample_barcode = serializers.CharField(source="sample.sample_id", read_only=True)
+    sample_vg_id = serializers.CharField(source="sample.vg_id", read_only=True, default="")
     sample_patient_id = serializers.CharField(source="sample.patient_id", read_only=True, default="")
 
     class Meta:
         model = RunSample
         fields = [
-            "id", "run", "sample", "sample_barcode", "sample_patient_id",
+            "id", "run", "sample", "sample_barcode", "sample_vg_id", "sample_patient_id",
             "well_position", "plate_number", "index_sequence", "index_combo_id",
             "pool_group", "barcode", "status", "result_summary", "created_at",
         ]
@@ -81,7 +82,8 @@ class SampleRunSerializer(serializers.ModelSerializer):
 
 class SampleRunCreateSerializer(serializers.Serializer):
     """Create a new run and assign samples."""
-    panel = serializers.UUIDField()
+    panel = serializers.UUIDField(required=False)
+    panel_code = serializers.CharField(required=False)
     protocol = serializers.UUIDField(required=False)
     sequencer = serializers.UUIDField(required=False)
     samples = serializers.ListField(child=serializers.UUIDField())

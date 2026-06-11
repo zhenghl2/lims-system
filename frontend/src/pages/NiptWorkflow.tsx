@@ -3,6 +3,7 @@ import { Table, Button, Tag, Space, Typography, Modal, Form, Select, Input, Inpu
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { runsApi, samplesApi } from "../api";
+import NiptExtractionTab from "./NiptExtractionTab";
 import DashboardLayout from "../components/DashboardLayout";
 import { useTranslation } from "../i18n/useTranslation";
 
@@ -46,6 +47,8 @@ export default function NiptWorkflow() {
   const [stepForm] = Form.useForm();
 
   const [samples, setSamples] = useState<any[]>([]);
+  const [sampleSearch, setSampleSearch] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -73,14 +76,18 @@ export default function NiptWorkflow() {
     fetchDetail(batch.id);
   };
   useEffect(() => {
-    if (createOpen) samplesApi.list({ status: "RECEIVED", page_size: 200 }).then(r => setSamples((r.data as any).results || [])).catch(() => {});
+    if (createOpen) samplesApi.list({ status: "IN_PROCESS", page_size: 200 }).then(r => {
+      const list = (r.data as any).results || [];
+      setSamples(list);
+      setSelectedIds(list.map((s: any) => s.id));
+    }).catch(() => {});
   }, [createOpen]);
 
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
       setCreateLoading(true);
-      const payload: any = { panel_code: "NIPT", samples: values.sample_ids || [], notes: values.batch_number || "" };
+      const payload: any = { panel_code: "NIPT", samples: selectedIds, notes: values.batch_number || "" };
       if (values.batch_number) payload.notes = "Batch: " + values.batch_number;
       await runsApi.create(payload);
       message.success(t("workflow.batchCreated"));
@@ -137,25 +144,11 @@ export default function NiptWorkflow() {
     switch (activeStep) {
       case "extraction":
         return (
-          <Row gutter={[16, 16]}>
-            <Col span={6}><Form.Item name="ext_date" label="实验日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_operator" label="实验人员" rules={[{ required: true }]}><Input placeholder="Name" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_kit" label="提取试剂盒" rules={[{ required: true }]}><Select placeholder="Select" options={[
-              { value: "QIAamp_DNA", label: "QIAamp Circulating Nucleic Acid" },
-              { value: "MagMAX", label: "MagMAX Cell-Free DNA" },
-              { value: "TIANamp", label: "TIANamp Micro DNA" },
-            ]} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_kit_lot" label="试剂批次" rules={[{ required: true }]}><Input placeholder="Lot #" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_volume" label="血浆体积 (mL)" rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 4.0" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_elution" label="洗脱体积 (μL)"><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 60" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_conc" label="DNA 浓度 (ng/μL)" rules={[{ required: true }]}><InputNumber min={0} step={0.01} style={{ width: "100%" }} placeholder="e.g. 0.45" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_total" label="DNA 总量 (ng)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 27" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_a260a280" label="A260/A280"><InputNumber min={0} max={3} step={0.01} style={{ width: "100%" }} placeholder="e.g. 1.85" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_a260a230" label="A260/A230"><InputNumber min={0} max={3} step={0.01} style={{ width: "100%" }} placeholder="e.g. 2.1" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_qc" label="质控结果" rules={[{ required: true }]}><Select placeholder="Pass / Fail" options={[{ value: "PASS", label: "✅ 合格" }, { value: "FAIL", label: "❌ 不合格" }]} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="ext_qc_note" label="质控备注"><Input placeholder="如不合格，说明原因" /></Form.Item></Col>
-            <Col span={24}><Form.Item name="ext_notes" label="备注"><Input.TextArea rows={2} placeholder="记录实验观察..." /></Form.Item></Col>
-          </Row>
+          <NiptExtractionTab
+            batch={selectedBatch}
+            samples={batchDetail?.run_samples || batchDetail?.samples || []}
+            onRefresh={() => fetchDetail(selectedBatch.id)}
+          />
         );
       case "library":
         return (
@@ -293,6 +286,7 @@ export default function NiptWorkflow() {
                   <Table rowKey="id" size="small" dataSource={batchDetail.samples}
                     columns={[
                       { title: "Sample ID", dataIndex: "sample_id", width: 160 },
+                      { title: "VG ID", dataIndex: "vg_id", width: 80, render: (v: string) => v || "-" },
                       { title: "Patient Name", dataIndex: "patient_name", width: 130 },
                       { title: "Age", dataIndex: "age", width: 50 },
                       { title: "Sample Type", dataIndex: "sample_type_code", width: 130 },
@@ -308,16 +302,54 @@ export default function NiptWorkflow() {
       </div>
 
       {/* Create Modal */}
-      <Modal title="Create NIPT Batch" open={createOpen} onOk={handleCreate} onCancel={() => setCreateOpen(false)} confirmLoading={createLoading} width={550} destroyOnClose>
+      <Modal title="Create NIPT Batch" open={createOpen} onOk={handleCreate} onCancel={() => { setCreateOpen(false); setSelectedIds([]); }} confirmLoading={createLoading} width={650} destroyOnClose
+        okText={`Create (${selectedIds.length} samples)`}
+        okButtonProps={{ disabled: selectedIds.length === 0 }}
+      >
         <Form form={form} layout="vertical">
           <Form.Item name="batch_number" label="Batch Number" rules={[{ required: true }]}>
             <Input placeholder="e.g. NIPT-20260609-001" />
           </Form.Item>
-          <Form.Item name="sample_ids" label="Add Samples">
-            <Select mode="multiple" allowClear showSearch placeholder="Select RECEIVED samples"
-              filterOption={(input, option) => (option?.label as string || "").toLowerCase().includes(input.toLowerCase())}
-              options={samples.map((s: any) => ({ value: s.id, label: `${s.sample_id} - ${s.patient_name}` }))} />
-          </Form.Item>
+          <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
+            <Text strong>Select Samples</Text>
+            <Tag color="blue" style={{ fontSize: 13, padding: "2px 10px" }}>{samples.length} IN_PROCESS</Tag>
+            <Tag color="green" style={{ fontSize: 13, padding: "2px 10px" }}>{selectedIds.length} selected</Tag>
+            {selectedIds.length !== samples.length && (
+              <Button type="link" size="small" onClick={() => setSelectedIds(samples.map((s: any) => s.id))}>Select all</Button>
+            )}
+            {selectedIds.length > 0 && selectedIds.length === samples.length && (
+              <Button type="link" size="small" onClick={() => setSelectedIds([])}>Deselect all</Button>
+            )}
+            <Input.Search
+              placeholder="Search sample or patient..."
+              allowClear size="small" style={{ width: 220, marginLeft: "auto" }}
+              value={sampleSearch}
+              onChange={e => setSampleSearch(e.target.value)}
+            />
+          </div>
+          <Table
+            rowKey="id" size="small" pagination={false} scroll={{ y: 280 }}
+            dataSource={samples.filter((s: any) => {
+              if (!sampleSearch) return true;
+              const q = sampleSearch.toLowerCase();
+              return (s.sample_id || "").toLowerCase().includes(q) || (s.patient_name || "").toLowerCase().includes(q);
+            })}
+            rowSelection={{
+              selectedRowKeys: selectedIds,
+              onChange: (keys) => setSelectedIds(keys as string[]),
+              preserveSelectedRowKeys: true,
+            }}
+            columns={[
+              { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 180, render: (v: string) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text> },
+              { title: "VG ID", dataIndex: "vg_id", key: "vg_id", width: 90, render: (v: string) => v || "-" },
+              { title: "Patient", dataIndex: "patient_name", key: "patient_name", width: 110 },
+              { title: "Test Option", dataIndex: "test_option", key: "test_option", width: 80, render: (v: string) => {
+                if (v === "NIPT" || v === "Basic") return <Tag color="blue">Basic</Tag>;
+                if (v === "NIPT_PLUS" || v === "Plus" || v === "NIPT_FULL") return <Tag color="purple">Plus</Tag>;
+                return v || "-";
+              }},
+            ]}
+          />
         </Form>
       </Modal>
     </DashboardLayout>
