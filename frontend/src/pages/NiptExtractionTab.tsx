@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography } from "antd";
 import dayjs from "dayjs";
 import api from "../api/client";
@@ -69,7 +69,9 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const [saving, setSaving] = useState(false);
   const [method, setMethod] = useState(batch.extraction_method || "");
   const [manualNotes, setManualNotes] = useState("");
+
   const [region, setRegion] = useState(batch.region || "");
+  const magneticNotesRef = useRef<Record<number, string>>({});
   const edata = useMemo(() => batch.extraction_data || {}, [batch.extraction_data]);
 
   // Load saved data
@@ -88,6 +90,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     });
     setSteps(edata.step_confirmations || {});
     setManualNotes(edata.manual_notes || "");
+
+
     if (batch.extraction_method) setMethod(batch.extraction_method);
     if (batch.region) setRegion(batch.region);
   }, [edata, batch, form]);
@@ -114,6 +118,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
           humidity: vals.humidity,
           step_confirmations: steps,
           manual_notes: manualNotes,
+          magnetic_notes: magneticNotesRef.current,
         },
       };
       await api.post(`/runs/${batch.id}/save_extraction/`, payload);
@@ -133,18 +138,9 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const kits = KITS_BY_REGION[region] || [];
 
   // Sample-to-well assignment
-  const sampleWells = useMemo(() => {
-    const map: Record<string, string> = {};
-    if (edata.well_assignments) {
-      Object.entries(edata.well_assignments as Record<string, string>).forEach(([k, v]) => { map[k] = v; });
-    }
-    return map;
-  }, [edata.well_assignments]);
 
-  const getWellSample = (well: string) => {
-    const sid = sampleWells[well];
-    return sid ? samples.find((s: any) => s.id === sid || s.sample_id === sid) : null;
-  };
+
+
 
   return (
     <div>
@@ -319,54 +315,202 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
         );
       })()}
 
-      {(method === "MAGNETIC_ROD" || method === "AUTOMATED") && (
-        <Card
-          title={`${method === "MAGNETIC_ROD" ? "磁棒法" : "自动化工作站"} Plate (${samples.length} samples)`}
-          size="small"
-          style={{ marginBottom: 16 }}
-        >
-          {method === "MAGNETIC_ROD" && (
-            <div style={{ marginBottom: 8 }}>
-              <Text type="secondary">产物在第 6 和 12 列</Text>
-            </div>
-          )}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(13, 1fr)", gap: 1, fontSize: 11 }}>
-            <div style={{ fontWeight: 600, color: "#8c8c8c", textAlign: "center" }}></div>
-            {COLS_12.map(c => (
-              <div key={c} style={{
-                fontWeight: 600, textAlign: "center", background: "#f0f0f0", padding: "2px 0",
-                ...(method === "MAGNETIC_ROD" && (c === 6 || c === 12) ? { background: "#fff1f0", color: "#cf1322" } : {}),
-              }}>
-                {c}
-              </div>
-            ))}
-            {ROWS_8.map(r => (
-              <>
-                <div key={r} style={{ fontWeight: 600, textAlign: "center", background: "#f0f0f0", padding: "4px 0" }}>{r}</div>
-                {COLS_12.map(c => {
-                  const wl = `${r}${c}`;
-                  const sample = getWellSample(wl);
-                  const isProduct = method === "MAGNETIC_ROD" && (c === 6 || c === 12);
-                  const colBg = isProduct ? "#fff1f0" : "#fff";
-                  return (
-                    <div key={wl} style={{
-                      border: "1px solid #d9d9d9", padding: "2px", minHeight: 36,
-                      background: sample ? "#f6ffed" : colBg, textAlign: "center",
-                      overflow: "hidden",
+      {method === "MAGNETIC_ROD" && (() => {
+        const SAMPLES_PER_PLATE = 16;
+        const totalPlates = Math.ceil(samples.length / SAMPLES_PER_PLATE);
+        const getLabel = (idx: number) => {
+          const s = samples[idx];
+          return s ? (s.sample_vg_id || s.sample_barcode || s.vg_id || s.sample_id || "-") : "-";
+        };
+        return (
+          <>
+            {Array.from({ length: totalPlates }, (_, plateIdx) => {
+              const base = plateIdx * SAMPLES_PER_PLATE;
+              const plateSamples = samples.slice(base, base + SAMPLES_PER_PLATE);
+              const plateNo = `P${plateIdx + 1}`;
+              return (
+                <Card
+                  key={plateIdx}
+                  title={`${plateNo} 磁棒法 Plate ${plateIdx + 1} / ${totalPlates} (${plateSamples.length} samples)`}
+                  size="small"
+                  style={{ marginBottom: 8 }}
+                  bodyStyle={{ padding: "4px 8px" }}
+                  extra={
+                    <Input.TextArea
+                      placeholder={`${plateNo} 备注`}
+                      defaultValue={magneticNotesRef.current[plateIdx] || ""}
+                      onChange={e => { magneticNotesRef.current[plateIdx] = e.target.value; }}
+                      autoSize={{ minRows: 1, maxRows: 2 }}
+                      style={{ width: 240, fontSize: 11 }}
+                      allowClear
+                    />
+                  }
+                >
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+                    <colgroup>
+                      <col style={{ width: "3%" }} />
+                      {COLS_12.map(c => (
+                        <col key={c} style={{ width: c === 6 || c === 12 ? "10%" : "7.5%" }} />
+                      ))}
+                    </colgroup>
+                    <thead>
+                      <tr style={{ background: "#e8e8e8" }}>
+                        <th style={{ border: "1px solid #bbb", padding: "2px 4px", fontSize: 11 }}></th>
+                        {COLS_12.map(c => (
+                          <th key={c} style={{
+                            border: "1px solid #bbb", padding: "2px 4px", textAlign: "center",
+                            fontSize: 11, fontWeight: 700,
+                            background: (c === 6 || c === 12) ? "#fff1f0" : "#e8e8e8",
+                            color: (c === 6 || c === 12) ? "#cf1322" : "#333",
+                          }}>
+                            {c}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ROWS_8.map((r, rowIdx) => {
+                        const bg = rowIdx % 2 === 0 ? "#fff" : "#f5f5f5";
+                        const col1Idx = base + rowIdx;
+                        const col7Idx = base + 8 + rowIdx;
+                        const s1 = col1Idx < samples.length ? getLabel(col1Idx) : "";
+                        const s7 = col7Idx < samples.length ? getLabel(col7Idx) : "";
+                        return (
+                          <tr key={r} style={{ background: bg }}>
+                            <td style={{
+                              border: "1px solid #d9d9d9", padding: "3px 4px",
+                              textAlign: "center", fontWeight: 600, color: "#595959", fontSize: 11,
+                            }}>{r}</td>
+                            {COLS_12.map(c => {
+                              const isProductCol = c === 6 || c === 12;
+                              let cellContent: any = null;
+                              let cellBg = bg;
+                              if (isProductCol) {
+                                cellContent = <span style={{ color: "#cf1322", fontWeight: 600 }}>产物</span>;
+                                cellBg = "#fff1f0";
+                              } else if (c === 1 && s1) {
+                                cellContent = <span style={{ color: "#52c41a", fontWeight: 500 }}>{s1}</span>;
+                                cellBg = "#f6ffed";
+                              } else if (c === 7 && s7) {
+                                cellContent = <span style={{ color: "#52c41a", fontWeight: 500 }}>{s7}</span>;
+                                cellBg = "#f6ffed";
+                              }
+                              return (
+                                <td key={c} style={{
+                                  border: "1px solid #d9d9d9", padding: "2px 3px",
+                                  textAlign: "center", fontSize: 10,
+                                  background: cellBg,
+                                  minHeight: 28, verticalAlign: "middle",
+                                }}>
+                                  {cellContent}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </Card>
+              );
+            })}
+          </>
+        );
+      })()}
+
+      {method === "AUTOMATED" && (() => {
+        const totalCells = 96; // 8 rows × 12 cols
+        const getLabel = (idx: number) => {
+          const s = samples[idx];
+          return s ? (s.sample_vg_id || s.sample_barcode || s.vg_id || s.sample_id || "-") : "-";
+        };
+        // Build column-major index: [col][row] → sample index
+        // For <96 samples: fill center-out (6,7,5,8,4,9,3,10,2,11,1,12)
+        // For exactly 96: standard left-to-right
+        const ROWS = 8;
+        const isFull = samples.length >= totalCells;
+        const colOrder = isFull
+          ? COLS_12 // 1,2,3,...,12
+          : [6, 7, 5, 8, 4, 9, 3, 10, 2, 11, 1, 12];
+        // Build lookup: well "A1" → sample index (0-based)
+        const cellMap: Record<string, number> = {};
+        let sampleIdx = 0;
+        for (const col of colOrder) {
+          for (let row = 0; row < ROWS; row++) {
+            const r = ROWS_8[row];
+            const wl = `${r}${col}`;
+            cellMap[wl] = sampleIdx;
+            sampleIdx++;
+          }
+        }
+        return (
+          <Card
+            title={`自动化工作站 (${samples.length} samples，共 ${totalCells} 孔)`}
+            size="small"
+            style={{ marginBottom: 8 }}
+            bodyStyle={{ padding: "4px 8px" }}
+          >
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
+              <colgroup>
+                <col style={{ width: "3%" }} />
+                {COLS_12.map(c => (
+                  <col key={c} style={{ width: "8.08%" }} />
+                ))}
+              </colgroup>
+              <thead>
+                <tr style={{ background: "#e8e8e8" }}>
+                  <th style={{ border: "1px solid #bbb", padding: "2px 4px", fontSize: 11 }}></th>
+                  {COLS_12.map(c => (
+                    <th key={c} style={{
+                      border: "1px solid #bbb", padding: "2px 4px", textAlign: "center",
+                      fontSize: 11, fontWeight: 700,
                     }}>
-                      {sample ? (
-                        <div style={{ fontSize: 9, color: "#52c41a" }}>{sample.sample_id?.slice(-6)}</div>
-                      ) : isProduct ? (
-                        <div style={{ fontSize: 9, color: "#cf1322" }}>产物</div>
-                      ) : null}
-                    </div>
+                      {c}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {ROWS_8.map((r, rowIdx) => {
+                  const bg = rowIdx % 2 === 0 ? "#fff" : "#f5f5f5";
+                  return (
+                    <tr key={r} style={{ background: bg }}>
+                      <td style={{
+                        border: "1px solid #d9d9d9", padding: "3px 4px",
+                        textAlign: "center", fontWeight: 600, color: "#595959", fontSize: 11,
+                      }}>{r}</td>
+                      {COLS_12.map(c => {
+                        const wl = `${r}${c}`;
+                        const idx = cellMap[wl];
+                        const label = idx !== undefined && idx < samples.length ? getLabel(idx) : "";
+                        return (
+                          <td key={c} style={{
+                            border: "1px solid #d9d9d9", padding: "2px 3px",
+                            textAlign: "center", fontSize: 10,
+                            background: label ? "#f6ffed" : bg,
+                            minHeight: 28, verticalAlign: "middle",
+                          }}>
+                            {label ? (
+                              <span style={{ color: "#52c41a", fontWeight: 500 }}>{label}</span>
+                            ) : null}
+                          </td>
+                        );
+                      })}
+                    </tr>
                   );
                 })}
-              </>
-            ))}
-          </div>
-        </Card>
-      )}
+              </tbody>
+            </table>
+            <div style={{ textAlign: "center", padding: "4px 0" }}>
+              <Text type="secondary" style={{ fontSize: 11 }}>
+                {isFull
+                  ? "96 孔满板，从左到右从上到下依次填充"
+                  : `从中间向两边填充（${colOrder.slice(0, 4).join("→")}→...），每列从上到下`}
+              </Text>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* Actions & Signatures */}
       <Space>
