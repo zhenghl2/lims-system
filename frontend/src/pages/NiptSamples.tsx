@@ -123,6 +123,18 @@ export default function NiptSamples() {
         : (v || "-");
   }
 
+  // Patch acceptance_date for inline editing
+  const acceptDateCol = columns.find((c: any) => c.key === "acceptance_date");
+  if (acceptDateCol) {
+    // @ts-ignore
+    acceptDateCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <DatePicker size="small" defaultValue={v ? dayjs(v) : dayjs()} autoFocus
+            onChange={(d: any) => { if (d) saveCell(record.id, "acceptance_date", d.format("YYYY-MM-DD")); }}
+            style={{ width: 110 }} format="YYYY-MM-DD" />
+        : (v || <Text type="secondary">-</Text>);
+  }
+
   const toggleCol = (key: string) => {
     setColConfig(prev => prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c));
   };

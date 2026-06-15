@@ -328,15 +328,19 @@ class SampleViewSet(viewsets.ModelViewSet):
                     "ordering_physician": data.get("ordering_physician", ""),
                     "ordering_facility": data.get("ordering_facility", ""),
                     "collection_date": data.get("collection_date"),
+                    "acceptance_date": data.get("acceptance_date"),
                     "multiple_gestation": data.get("multiple_gestation", False),
                     "ivf_status": data.get("ivf_status", False),
                     "clinical_diagnosis": data.get("clinical_diagnosis", ""),
                     "panel_code": panel_code,
                 }
 
-                # Default collection_date to today if missing
-                if not sample_data["collection_date"]:
-                    sample_data["collection_date"] = date.today().strftime("%Y-%m-%d")
+                # Default dates to today if missing
+                today_str = date.today().strftime("%Y-%m-%d")
+                if not sample_data.get("collection_date"):
+                    sample_data["collection_date"] = today_str
+                if not sample_data.get("acceptance_date"):
+                    sample_data["acceptance_date"] = today_str
 
                 serializer = SampleReceiveSerializer(
                     data=sample_data, context={"request": request}

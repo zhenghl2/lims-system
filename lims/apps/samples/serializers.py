@@ -122,9 +122,11 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
             "ordering_physician", "ordering_facility",
             "collection_date", "collection_time", "receipt_temp", "consent_given",
             "receipt_date", "receipt_time",
+            "acceptance_date",
         ]
         extra_kwargs = {
             "collection_date": {"required": False},
+            "acceptance_date": {"required": False, "allow_null": True},
             "collection_time": {"required": False, "allow_null": True},
             "receipt_date": {"required": False},
             "receipt_time": {"required": False},
