@@ -237,7 +237,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   // ── Print library plate ──
   const handlePrint = () => {
     const style = document.createElement("style");
-    style.textContent = "@media print { body * { visibility: hidden; } #library-plate-print-area, #library-plate-print-area * { visibility: visible; } #library-plate-print-area { position: absolute; left: 0; top: 0; width: 100%; } .no-print-break { break-inside: avoid; } }";
+    style.textContent = "@media print { .no-print { display: none !important; } .no-print-break { break-inside: avoid; } }";
     document.head.appendChild(style);
     window.print();
     document.head.removeChild(style);
@@ -299,7 +299,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     // selectedValue is the catalog number (e.g. "ZD101-02")
     return (
       <Row gutter={12} style={{ marginBottom: 8 }}>
-        <Col span={7}>
+        <Col span={9}>
           <Form.Item name={name} label={label} rules={[{ required: true }]} style={{ marginBottom: 0 }}>
             <Select options={kitOptions} placeholder={`选择${label}`} showSearch optionFilterProp="label" />
           </Form.Item>
@@ -309,7 +309,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
             <Input value={selectedValue || ""} readOnly disabled style={{ color: "#1677ff", fontWeight: 600, background: "#fafafa", cursor: "default" }} />
           </Form.Item>
         </Col>
-        <Col span={4}>
+        <Col span={3}>
           <Form.Item name={lotName} label="批次" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
             <Input placeholder="批次号" />
           </Form.Item>
@@ -360,7 +360,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   return (
     <div>
       {/* Method & Region */}
-      <Row gutter={16} style={{ marginBottom: 16 }}>
+      <Row gutter={16} style={{ marginBottom: 16 }} className="no-print">
         <Col span={8}>
           <Form.Item label="建库方式" required>
             <Select options={LIBRARY_METHODS} value={method} onChange={setMethod} placeholder="选择建库方式" />
@@ -372,7 +372,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
           </Form.Item>
         </Col>
         <Col span={8} style={{ display: "flex", alignItems: "center", paddingTop: 6 }}>
-          <span style={{ fontSize: 12, color: "#888" }}>
+          <span style={{ fontSize: 12, color: "#888" }} className="no-print">
             填充规则：{getExtractionLabel()}
           </span>
         </Col>
@@ -439,7 +439,6 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
       </Form>
 
       {/* ── 96-Well Library Plate ── */}
-      <div id="library-plate-print-area">
       <Card
         size="small"
         className="no-print-break"
@@ -512,7 +511,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
       </Card>
 
       {/* Save */}
-      <div style={{ textAlign: "right", marginBottom: 16 }}>
+      <div style={{ textAlign: "right", marginBottom: 16 }} className="no-print">
         <Button type="primary" onClick={save} loading={saving}>保存文库构建记录</Button>
       </div>
 
