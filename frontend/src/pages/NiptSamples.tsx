@@ -37,7 +37,7 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "patient_dob", title: "DOB", dataIndex: "patient_dob", visible: true, width: 100, render: (v: string) => v || "-" },
   { key: "age", title: "Age", dataIndex: "age", visible: true, width: 60 },
   { key: "gestational_weeks", title: "Gest. Weeks", dataIndex: "gestational_weeks", visible: true, width: 80, render: (v: number) => v || "-" },
-  { key: "report_code", title: "Report Code", dataIndex: "report_code", visible: true, width: 120, render: (v: string) => v || "-" },
+  { key: "report_code", title: "Report Code", dataIndex: "vg_id", visible: true, width: 120, render: (v: string) => v || "-" },
   { key: "send_report_id", title: "Send Report ID", dataIndex: "send_report_id", visible: true, width: 120, render: (v: string) => v || "-" },
   { key: "lmp", title: "LMP", dataIndex: "last_menstrual_period", visible: true, width: 100, render: (v: string) => v || "-" },
   { key: "twins", title: "Twin", dataIndex: "multiple_gestation", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="orange">Twin</Tag> : "-" },
@@ -140,7 +140,7 @@ export default function NiptSamples() {
     patient_dob: values.patient_dob ? dayjs(values.patient_dob).format("YYYY-MM-DD") : undefined,
     age: values.age,
     gestational_weeks: values.gestational_weeks,
-    report_code: values.report_code || "",
+    report_code: values.vg_id || "",
     send_report_id: values.send_report_id || "",
     last_menstrual_period: values.last_menstrual_period ? dayjs(values.last_menstrual_period).format("YYYY-MM-DD") : undefined,
     multiple_gestation: values.multiple_gestation || false,
@@ -281,7 +281,7 @@ export default function NiptSamples() {
           </Space>
           <Space style={{ display: "flex" }} wrap>
             <Form.Item name="collection_date" label="D. Collection Date"><DatePicker style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="acceptance_date" label="E. Acceptance Date"><DatePicker style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="acceptance_date" label="E. Acceptance Date" initialValue={dayjs()}><DatePicker style={{ width: 160 }} /></Form.Item>
             <Form.Item name="physician" label="G. Physician"><Input style={{ width: 160 }} /></Form.Item>
           </Space>
           <Space style={{ display: "flex" }} wrap>
@@ -293,7 +293,7 @@ export default function NiptSamples() {
           </Space>
           <Space style={{ display: "flex" }} wrap>
             <Form.Item name="gestational_weeks" label="L. Gest. Weeks"><InputNumber min={1} max={45} style={{ width: 100 }} /></Form.Item>
-            <Form.Item name="report_code" label="M. Report Code"><Input style={{ width: 140 }} /></Form.Item>
+            <Form.Item name="report_code" label="M. Report Code"><Input style={{ width: 140 }} disabled placeholder="= VG ID" /></Form.Item>
             <Form.Item name="send_report_id" label="N. Send Report ID"><Input style={{ width: 140 }} /></Form.Item>
             <Form.Item name="last_menstrual_period" label="O. LMP"><DatePicker style={{ width: 160 }} /></Form.Item>
           </Space>
