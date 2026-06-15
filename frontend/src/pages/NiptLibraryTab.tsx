@@ -485,9 +485,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
           </table>
         </div>
       </Card>
-      </div>
-
-
+      
       {/* Step Confirmations */}
       <Card title="步骤确认" size="small" style={{ marginBottom: 16 }}>
         <Space wrap>
