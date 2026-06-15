@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber } from "antd";
 import dayjs from "dayjs";
 import api from "../api/client";
+import NiptSignerModal from "./NiptSignerModal";
 
 // ── Library prep methods ──
 const LIBRARY_METHODS = [
@@ -92,6 +93,13 @@ interface PlateCell {
   index: string;
 }
 
+function getSignStatus(edata: any, role: "operator" | "reviewer") {
+  const key = role === "operator" ? "operator_signature" : "reviewer_signature";
+  const sig = edata?.[key];
+  if (!sig || typeof sig !== "object" || !sig.username) return { signed: false, name: "", time: "" };
+  return { signed: true, name: sig.username, time: sig.signed_at || "" };
+}
+
 interface Props {
   batch: any;
   samples: any[];
@@ -102,9 +110,13 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   const [form] = Form.useForm();
   const [steps, setSteps] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
+  const [opModal, setOpModal] = useState(false);
+  const [rvModal, setRvModal] = useState(false);
   const [method, setMethod] = useState(batch.library_method || "MULTI_CHANNEL");
   const [region, setRegion] = useState(batch.region || "");
   const edata = useMemo(() => batch.library_data || {}, [batch.library_data]);
+  const { signed: opSigned, name: opSigner } = getSignStatus(edata, "operator");
+  const { signed: rvSigned, name: rvSigner } = getSignStatus(edata, "reviewer");
 
   // ── Plate state: 8×12 cells, each with {vgId, index} ──
   const [plate, setPlate] = useState<PlateCell[][]>([]);
@@ -419,10 +431,21 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
         </Space>
       </Card>
 
+      {/* Signature */}
+      <Card title="电子签名" size="small" style={{ marginBottom: 16 }}>
+        <Space>
+          {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>操作人: {opSigner} ✓</Button> : <Button onClick={()=>setOpModal(true)}>操作人签名</Button>}
+          {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>复核人: {rvSigner} ✓</Button> : <Button onClick={()=>setRvModal(true)}>复核人签名</Button>}
+        </Space>
+      </Card>
+
       {/* Save */}
       <div style={{ textAlign: "right", marginBottom: 16 }}>
         <Button type="primary" onClick={save} loading={saving}>保存文库构建记录</Button>
       </div>
+
+      <NiptSignerModal open={opModal} role="operator" roleLabel="操作人" batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/library/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
+      <NiptSignerModal open={rvModal} role="reviewer" roleLabel="复核人" batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/library/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
     </div>
   );
 }

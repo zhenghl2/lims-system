@@ -377,6 +377,51 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         return Response(current)
 
+    @action(detail=True, methods=["post"], url_path="save_library")
+    def save_library(self, request, pk=None):
+        """Save NIPT library prep data."""
+        run = self.get_object()
+        library_data = request.data.get("library_data", {})
+        method = request.data.get("library_method", "")
+
+        if method:
+            run.library_method = method
+
+        current = run.library_data or {}
+        current.update(library_data)
+        run.library_data = current
+        run.save(update_fields=["library_data", "library_method", "updated_at"])
+
+        return Response({
+            "library_method": run.library_method,
+            "library_data": run.library_data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="library/sign")
+    def sign_library(self, request, pk=None):
+        """Record electronic signature for library prep step."""
+        run = self.get_object()
+        role = request.data.get("role", "")
+        signer_name = request.data.get("signer", "").strip()
+        password = request.data.get("password", "").strip()
+
+        if role not in ["operator", "reviewer"]:
+            return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
+        if not password or password != "123456":
+            return Response({"error": "密码错误"}, status=400)
+
+        from django.utils import timezone
+        timestamp = timezone.now().isoformat()
+        sig_data = {"username": signer_name, "signed_at": timestamp}
+
+        current = run.library_data or {}
+        key = "operator_signature" if role == "operator" else "reviewer_signature"
+        current[key] = sig_data
+        run.library_data = current
+        run.save(update_fields=["library_data", "updated_at"])
+
+        return Response(current)
+
     @action(detail=False, methods=["get"])
     def stats(self, request):
         """Run statistics."""

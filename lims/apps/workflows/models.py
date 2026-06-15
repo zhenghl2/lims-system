@@ -71,6 +71,14 @@ class SampleRun(models.Model):
         ],
     )
     extraction_data = models.JSONField(default=dict, blank=True)
+    library_method = models.CharField(max_length=20, blank=True, default="",
+        choices=[
+            ("SINGLE_CHANNEL", "单枪建库"),
+            ("MULTI_CHANNEL", "排枪建库"),
+            ("AUTOMATED", "自动化移液工作站建库"),
+        ],
+    )
+    library_data = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
