@@ -237,7 +237,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   // ── Print library plate ──
   const handlePrint = () => {
     const style = document.createElement("style");
-    style.textContent = "@media print { body > *:not(#lib-print-area) { display: none !important; } #lib-print-area { padding: 16px; } .no-print { display: none !important; } .no-print-break { break-inside: avoid; } }";
+    style.textContent = "@media print { body { visibility: hidden; } #lib-print-area, #lib-print-area * { visibility: visible; } #lib-print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 16px; } .no-print { display: none !important; } .no-print-break { break-inside: avoid; } }";
     document.head.appendChild(style);
     window.print();
     document.head.removeChild(style);

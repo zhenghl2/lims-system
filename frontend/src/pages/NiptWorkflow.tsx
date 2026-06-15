@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { Table, Button, Tag, Space, Typography, Modal, Form, Select, Input, InputNumber, DatePicker, message, Popconfirm, Card, Empty, Row, Col, Tabs } from "antd";
-import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { runsApi, samplesApi } from "../api";
 import NiptExtractionTab from "./NiptExtractionTab";
@@ -42,6 +42,7 @@ export default function NiptWorkflow() {
   const [loading, setLoading] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
   const [batchDetail, setBatchDetail] = useState<any>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [activeStep, setActiveStep] = useState("extraction");
 
@@ -208,14 +209,28 @@ export default function NiptWorkflow() {
     <DashboardLayout>
       <div style={{ display: "flex", gap: 24, height: "calc(100vh - 160px)" }}>
         {/* Left: Batch List */}
-        <Card title={<Title level={5} style={{ margin: 0 }}>NIPT Batches</Title>}
-          extra={<Space><Button icon={<ReloadOutlined />} onClick={fetchBatches} /><Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setCreateOpen(true); }}>New Batch</Button></Space>}
-          style={{ width: 480, overflow: "auto" }} bodyStyle={{ padding: 0 }}>
-          <Table rowKey="id" columns={batchColumns} dataSource={batches} loading={loading}
-            pagination={{ pageSize: 20, showTotal: t => `Total ${t}` }} size="small"
-            onRow={(r) => ({ onClick: () => selectBatch(r), style: { cursor: "pointer", background: selectedBatch?.id === r.id ? "#e6f7ff" : undefined } })}
-          />
-        </Card>
+        <div style={{ width: sidebarCollapsed ? 50 : 480, flexShrink: 0, transition: "width 0.25s", overflow: "hidden" }}>
+          {sidebarCollapsed ? (
+            <Button type="text" icon={<MenuFoldOutlined />} onClick={() => setSidebarCollapsed(false)}
+              style={{ padding: 4, marginTop: 8 }} title="展开批次列表" />
+          ) : (
+            <Card title={<Title level={5} style={{ margin: 0 }}>NIPT Batches</Title>}
+              extra={
+                <Space>
+                  <Button icon={<ReloadOutlined />} onClick={fetchBatches} />
+                  <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setCreateOpen(true); }}>New Batch</Button>
+                  <Button type="text" icon={<MenuUnfoldOutlined />} onClick={() => setSidebarCollapsed(true)}
+                    style={{ padding: 4 }} title="折叠批次列表" />
+                </Space>
+              }
+              style={{ width: 480, overflow: "auto" }} bodyStyle={{ padding: 0 }}>
+              <Table rowKey="id" columns={batchColumns} dataSource={batches} loading={loading}
+                pagination={{ pageSize: 20, showTotal: t => `Total ${t}` }} size="small"
+                onRow={(r) => ({ onClick: () => selectBatch(r), style: { cursor: "pointer", background: selectedBatch?.id === r.id ? "#e6f7ff" : undefined } })}
+              />
+            </Card>
+          )}
+        </div>
 
         {/* Right: Batch Detail */}
         <Card style={{ flex: 1, overflow: "auto" }} bodyStyle={{ padding: 24 }}>
