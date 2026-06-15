@@ -68,6 +68,7 @@ class SampleRunSerializer(serializers.ModelSerializer):
             "planned_date", "start_date", "end_date",
             "operator", "operator_name", "notes",
             "sample_count", "created_at", "updated_at",
+            "extraction_method", "extraction_data", "region",
         ]
         read_only_fields = ["created_at", "updated_at"]
 
