@@ -119,11 +119,12 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     const extMethod = batch.extraction_method || "MANUAL";
 
     if (extMethod === "AUTOMATED") {
-      // Automated: center-out fill, same as extraction table
-      // colOrder: 6,7,5,8,4,9,3,10,2,11,1,12 (0-based: 5,6,4,7,3,8,2,9,1,10,0,11)
-      const colOrder = [5, 6, 4, 7, 3, 8, 2, 9, 1, 10, 0, 11];
+      // Automated: center-aligned, same as extraction table
+      // Calculate needed columns, center them, fill left-to-right top-to-bottom
+      const numCols = Math.min(Math.ceil(samples.length / 8), COL_COUNT);
+      const startCol = Math.floor((COL_COUNT - numCols) / 2);
       let idx = 0;
-      for (const c of colOrder) {
+      for (let c = startCol; c < startCol + numCols; c++) {
         for (let r = 0; r < 8; r++) {
           if (idx < samples.length) {
             p[r][c] = { vgId: getVgId(samples[idx]), index: "" };

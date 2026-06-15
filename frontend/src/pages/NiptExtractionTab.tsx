@@ -388,10 +388,11 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
         const totalCells = 96;
         const ROWS = 8;
         const isFull = samples.length >= totalCells;
-        const colOrder = isFull ? COLS_12 : [6,7,5,8,4,9,3,10,2,11,1,12];
+        const numCols = Math.min(Math.ceil(samples.length / ROWS), 12);
+        const startCol = isFull ? 1 : Math.floor((12 - numCols) / 2) + 1;
         const cellMap: Record<string, number> = {};
         let sampleIdx = 0;
-        for (const col of colOrder) { for (let row=0;row<ROWS;row++) { cellMap[`${ROWS_8[row]}${col}`]=sampleIdx; sampleIdx++; } }
+        for (let c = startCol; c < startCol + numCols; c++) { for (let row=0;row<ROWS;row++) { cellMap[`${ROWS_8[row]}${c}`]=sampleIdx; sampleIdx++; } }
         return (
           <Card title={`自动化工作站 (${samples.length} samples，共 ${totalCells} 孔)`} size="small" style={{marginBottom:8}} bodyStyle={{padding:"4px 8px"}}
             extra={<Input.TextArea placeholder="自动化工作站备注" defaultValue={magneticNotesRef.current["auto"]||""} onChange={e=>{magneticNotesRef.current["auto"]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:260,fontSize:11}} allowClear />}
@@ -414,7 +415,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                 })}
               </tbody>
             </table>
-            <div style={{textAlign:"center",padding:"4px 0"}}><Text type="secondary" style={{fontSize:11}}>{isFull?"96 孔满板，从左到右从上到下依次填充":`从中间向两边填充（${colOrder.slice(0,4).join("→")}→...），每列从上到下`}</Text></div>
+            <div style={{textAlign:"center",padding:"4px 0"}}><Text type="secondary" style={{fontSize:11}}>{isFull?"96 孔满板，从左到右从上到下依次填充":`居中 ${numCols} 列（${startCol}-${startCol+numCols-1}），从左到右从上到下`}</Text></div>
           </Card>
         );
       })()}
