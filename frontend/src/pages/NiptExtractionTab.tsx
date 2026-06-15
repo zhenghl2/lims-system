@@ -433,8 +433,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
         {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>操作人: {opSigner} ✓</Button> : <Button onClick={()=>setOpModal(true)}>操作人签名</Button>}
         {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>复核人: {rvSigner} ✓</Button> : <Button onClick={()=>setRvModal(true)}>复核人签名</Button>}
       </Space>
-      <NiptSignerModal open={opModal} role="operator" roleLabel="操作人" batchId={batch.id} currentSigner={opSigner||null} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
-      <NiptSignerModal open={rvModal} role="reviewer" roleLabel="复核人" batchId={batch.id} currentSigner={rvSigner||null} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
+      <NiptSignerModal open={opModal} role="operator" roleLabel="操作人" batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/extraction/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
+      <NiptSignerModal open={rvModal} role="reviewer" roleLabel="复核人" batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/extraction/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
     </div>
   );
 }
