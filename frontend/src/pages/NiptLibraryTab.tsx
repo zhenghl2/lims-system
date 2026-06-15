@@ -275,25 +275,35 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   const ReagentRow = ({ name, label, kitOptions, lotName, expiryName }: {
     name: string; label: string; kitOptions: ReagentKit[];
     lotName: string; expiryName: string;
-  }) => (
-    <Row gutter={12} style={{ marginBottom: 8 }}>
-      <Col span={8}>
-        <Form.Item name={name} label={label} rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-          <Select options={kitOptions} placeholder={`选择${label}`} showSearch optionFilterProp="label" />
-        </Form.Item>
-      </Col>
-      <Col span={6}>
-        <Form.Item name={lotName} label="批次" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-          <Input placeholder="批次号" />
-        </Form.Item>
-      </Col>
-      <Col span={6}>
-        <Form.Item name={expiryName} label="有效期" style={{ marginBottom: 0 }}>
-          <DatePicker picker="month" placeholder="YYYY-MM" style={{ width: "100%" }} format="YYYY-MM" />
-        </Form.Item>
-      </Col>
-    </Row>
-  );
+  }) => {
+    const form = Form.useFormInstance();
+    const selectedValue = Form.useWatch(name, form);
+    // selectedValue is the catalog number (e.g. "ZD101-02")
+    return (
+      <Row gutter={12} style={{ marginBottom: 8 }}>
+        <Col span={7}>
+          <Form.Item name={name} label={label} rules={[{ required: true }]} style={{ marginBottom: 0 }}>
+            <Select options={kitOptions} placeholder={`选择${label}`} showSearch optionFilterProp="label" />
+          </Form.Item>
+        </Col>
+        <Col span={2}>
+          <Form.Item label="货号" style={{ marginBottom: 0 }}>
+            <Input value={selectedValue || ""} readOnly disabled style={{ color: "#1677ff", fontWeight: 600, background: "#fafafa", cursor: "default" }} />
+          </Form.Item>
+        </Col>
+        <Col span={4}>
+          <Form.Item name={lotName} label="批次" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
+            <Input placeholder="批次号" />
+          </Form.Item>
+        </Col>
+        <Col span={5}>
+          <Form.Item name={expiryName} label="有效期" style={{ marginBottom: 0 }}>
+            <DatePicker picker="month" placeholder="YYYY-MM" style={{ width: "100%" }} format="YYYY-MM" />
+          </Form.Item>
+        </Col>
+      </Row>
+    );
+  };
 
   // ── 96-well plate table styles ──
   const thStyle: React.CSSProperties = {
