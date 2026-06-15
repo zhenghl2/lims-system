@@ -299,12 +299,12 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     // selectedValue is the catalog number (e.g. "ZD101-02")
     return (
       <Row gutter={12} style={{ marginBottom: 8 }}>
-        <Col span={9}>
+        <Col span={11}>
           <Form.Item name={name} label={label} rules={[{ required: true }]} style={{ marginBottom: 0 }}>
             <Select options={kitOptions} placeholder={`选择${label}`} showSearch optionFilterProp="label" />
           </Form.Item>
         </Col>
-        <Col span={2}>
+        <Col span={3}>
           <Form.Item label="货号" style={{ marginBottom: 0 }}>
             <Input value={selectedValue || ""} readOnly disabled style={{ color: "#1677ff", fontWeight: 600, background: "#fafafa", cursor: "default" }} />
           </Form.Item>
