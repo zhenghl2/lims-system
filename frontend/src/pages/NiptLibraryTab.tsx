@@ -112,6 +112,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   const [saving, setSaving] = useState(false);
   const [opModal, setOpModal] = useState(false);
   const [rvModal, setRvModal] = useState(false);
+  const [positiveControl, setPositiveControl] = useState("");
+  const [negativeControl, setNegativeControl] = useState("");
   const [method, setMethod] = useState(batch.library_method || "MULTI_CHANNEL");
   const [region, setRegion] = useState(batch.region || "");
   const edata = useMemo(() => batch.library_data || {}, [batch.library_data]);
@@ -200,6 +202,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     setSteps(edata.step_confirmations || {});
     if (batch.library_method) setMethod(batch.library_method);
     if (batch.region) setRegion(batch.region);
+    setPositiveControl(edata.positive_control || "");
+    setNegativeControl(edata.negative_control || "");
   }, [edata, batch, form]);
 
   const toggleStep = (key: string) => setSteps(prev => ({ ...prev, [key]: !prev[key] }));
@@ -248,6 +252,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
           humidity: vals.humidity,
           step_confirmations: steps,
           library_plate: plateData,
+          positive_control: positiveControl,
+          negative_control: negativeControl,
         },
       };
       await api.post(`/runs/${batch.id}/save_library/`, payload);
@@ -383,6 +389,34 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
             </tbody>
           </table>
         </div>
+      </Card>
+
+      {/* QC Controls */}
+      <Card size="small" title="质控品" style={{ marginBottom: 16 }}>
+        <Row gutter={16}>
+          <Col span={12}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>阳性质控品</span>
+              <Input
+                placeholder="批次号/编号"
+                value={positiveControl}
+                onChange={e => setPositiveControl(e.target.value)}
+                style={{ flex: 1 }}
+              />
+            </div>
+          </Col>
+          <Col span={12}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>阴性质控品</span>
+              <Input
+                placeholder="批次号/编号"
+                value={negativeControl}
+                onChange={e => setNegativeControl(e.target.value)}
+                style={{ flex: 1 }}
+              />
+            </div>
+          </Col>
+        </Row>
       </Card>
 
       <Form form={form} layout="vertical">
