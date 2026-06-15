@@ -237,7 +237,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   // ── Print library plate ──
   const handlePrint = () => {
     const style = document.createElement("style");
-    style.textContent = "@media print { .no-print { display: none !important; } .no-print-break { break-inside: avoid; } }";
+    style.textContent = "@media print { body > *:not(#lib-print-area) { display: none !important; } #lib-print-area { padding: 16px; } .no-print { display: none !important; } .no-print-break { break-inside: avoid; } }";
     document.head.appendChild(style);
     window.print();
     document.head.removeChild(style);
@@ -299,12 +299,12 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     // selectedValue is the catalog number (e.g. "ZD101-02")
     return (
       <Row gutter={12} style={{ marginBottom: 8 }}>
-        <Col span={11}>
+        <Col span={9}>
           <Form.Item name={name} label={label} rules={[{ required: true }]} style={{ marginBottom: 0 }}>
             <Select options={kitOptions} placeholder={`选择${label}`} showSearch optionFilterProp="label" />
           </Form.Item>
         </Col>
-        <Col span={3}>
+        <Col span={2}>
           <Form.Item label="货号" style={{ marginBottom: 0 }}>
             <Input value={selectedValue || ""} readOnly disabled style={{ color: "#1677ff", fontWeight: 600, background: "#fafafa", cursor: "default" }} />
           </Form.Item>
@@ -358,7 +358,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   };
 
   return (
-    <div>
+    <div id="lib-print-area">
       {/* Method & Region */}
       <Row gutter={16} style={{ marginBottom: 16 }} className="no-print">
         <Col span={8}>
