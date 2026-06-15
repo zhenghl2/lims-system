@@ -236,11 +236,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
 
   // ── Print library plate ──
   const handlePrint = () => {
-    const style = document.createElement("style");
-    style.textContent = "@media print { body { visibility: hidden; } #lib-print-area, #lib-print-area * { visibility: visible; } #lib-print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 16px; } .no-print { display: none !important; } .no-print-break { break-inside: avoid; } }";
-    document.head.appendChild(style);
     window.print();
-    document.head.removeChild(style);
   };
 
   const save = async () => {
@@ -360,7 +356,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   return (
     <div id="lib-print-area">
       {/* Method & Region */}
-      <Row gutter={16} style={{ marginBottom: 16 }} className="no-print">
+      <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
           <Form.Item label="建库方式" required>
             <Select options={LIBRARY_METHODS} value={method} onChange={setMethod} placeholder="选择建库方式" />
@@ -372,7 +368,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
           </Form.Item>
         </Col>
         <Col span={8} style={{ display: "flex", alignItems: "center", paddingTop: 6 }}>
-          <span style={{ fontSize: 12, color: "#888" }} className="no-print">
+          <span style={{ fontSize: 12, color: "#888" }}>
             填充规则：{getExtractionLabel()}
           </span>
         </Col>
@@ -509,7 +505,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
       </Card>
 
       {/* Save */}
-      <div style={{ textAlign: "right", marginBottom: 16 }} className="no-print">
+      <div style={{ textAlign: "right", marginBottom: 16 }}>
         <Button type="primary" onClick={save} loading={saving}>保存文库构建记录</Button>
       </div>
 
