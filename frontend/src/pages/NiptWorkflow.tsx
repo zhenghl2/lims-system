@@ -6,6 +6,7 @@ import { runsApi, samplesApi } from "../api";
 import NiptExtractionTab from "./NiptExtractionTab";
 import NiptLibraryTab from "./NiptLibraryTab";
 import NiptPoolingTab from "./NiptPoolingTab";
+import NiptSequencingTab from "./NiptSequencingTab";
 import DashboardLayout from "../components/DashboardLayout";
 import { useTranslation } from "../i18n/useTranslation";
 
@@ -171,28 +172,10 @@ export default function NiptWorkflow() {
         );
       case "sequencing":
         return (
-          <Row gutter={[16, 16]}>
-            <Col span={6}><Form.Item name="seq_date" label="测序日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_operator" label="操作人员"><Input placeholder="Name" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_instrument" label="测序仪型号" rules={[{ required: true }]}><Select placeholder="Select" options={[
-              { value: "MGISEQ2000", label: "MGISEQ-2000" },
-              { value: "NextSeq550", label: "NextSeq 550" },
-              { value: "NovaSeq6000", label: "NovaSeq 6000" },
-            ]} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_chip" label="芯片/Flow Cell"><Select placeholder="Select" options={[
-              { value: "FCL", label: "FCL" }, { value: "FCS", label: "FCS" },
-              { value: "S1", label: "S1" }, { value: "S2", label: "S2" },
-            ]} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_conc" label="上样浓度 (pM)" rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 12" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_read_type" label="Read 类型"><Select placeholder="Select" options={[{ value: "SE75", label: "SE75" }, { value: "PE150", label: "PE150" }]} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_target_reads" label="目标数据量 (M reads)" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 25" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_actual_reads" label="实际数据量 (M reads)"><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 25.3" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_q30" label="Q30 (%)"><InputNumber min={0} max={100} step={0.1} style={{ width: "100%" }} placeholder="e.g. 92.5" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_error_rate" label="错误率 (%)"><InputNumber min={0} max={100} step={0.01} style={{ width: "100%" }} placeholder="e.g. 0.15" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_qc" label="质控结果" rules={[{ required: true }]}><Select placeholder="Pass / Fail" options={[{ value: "PASS", label: "✅ 合格" }, { value: "FAIL", label: "❌ 不合格" }]} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_qc_note" label="质控备注"><Input placeholder="如不合格，说明原因" /></Form.Item></Col>
-            <Col span={24}><Form.Item name="seq_notes" label="备注"><Input.TextArea rows={2} placeholder="记录测序观察..." /></Form.Item></Col>
-          </Row>
+          <NiptSequencingTab
+            batch={selectedBatch}
+            onRefresh={() => fetchDetail(selectedBatch.id)}
+          />
         );
       case "bioinformatics":
         return (

@@ -390,9 +390,14 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
         const isFull = samples.length >= totalCells;
         const numCols = Math.min(Math.ceil(samples.length / ROWS), 12);
         const startCol = isFull ? 1 : Math.floor((12 - numCols) / 2) + 1;
+        // Sort sample indices by VG ID ascending for left-to-right top-to-bottom filling
+        const sortedIndices = samples
+          .map((s: any, i: number) => ({ i, id: (s.sample_vg_id || s.sample_barcode || '').toString() }))
+          .sort((a: any, b: any) => a.id.localeCompare(b.id, undefined, { numeric: true }))
+          .map((x: any) => x.i);
         const cellMap: Record<string, number> = {};
-        let sampleIdx = 0;
-        for (let c = startCol; c < startCol + numCols; c++) { for (let row=0;row<ROWS;row++) { cellMap[`${ROWS_8[row]}${c}`]=sampleIdx; sampleIdx++; } }
+        let sortedPos = 0;
+        for (let c = startCol; c < startCol + numCols; c++) { for (let row=0;row<ROWS;row++) { cellMap[`${ROWS_8[row]}${c}`]=sortedIndices[sortedPos]; sortedPos++; } }
         return (
           <Card title={`自动化工作站 (${samples.length} samples，共 ${totalCells} 孔)`} size="small" style={{marginBottom:8}} bodyStyle={{padding:"4px 8px"}}
             extra={<Input.TextArea placeholder="自动化工作站备注" defaultValue={magneticNotesRef.current["auto"]||""} onChange={e=>{magneticNotesRef.current["auto"]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:260,fontSize:11}} allowClear />}

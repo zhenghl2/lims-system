@@ -38,13 +38,15 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
   const pdata = useMemo(() => batch.pooling_data || {}, [batch.pooling_data]);
   const libraryPlate = useMemo(() => batch.library_data?.library_plate || [], [batch.library_data]);
 
-  // Extract samples from library plate (non-empty cells)
+  // Extract samples from library plate in column-major order (matching library tab fill order)
   const plateSamples = useMemo(() => {
     const list: { vgId: string; index: string }[] = [];
-    if (Array.isArray(libraryPlate)) {
-      for (const row of libraryPlate) {
-        if (!Array.isArray(row)) continue;
-        for (const cell of row) {
+    if (Array.isArray(libraryPlate) && libraryPlate.length > 0) {
+      const rows = libraryPlate.length;
+      const cols = Array.isArray(libraryPlate[0]) ? libraryPlate[0].length : 12;
+      for (let c = 0; c < cols; c++) {
+        for (let r = 0; r < rows; r++) {
+          const cell = libraryPlate[r]?.[c];
           if (cell && cell.vgId && cell.vgId !== "-") {
             list.push({ vgId: cell.vgId, index: cell.index || "" });
           }
@@ -54,11 +56,13 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
     return list;
   }, [libraryPlate]);
 
-  // Build sample rows with saved data or defaults
+  // Build sample rows with saved data or defaults (matched by vgId, not position)
   const buildRows = (): SampleRow[] => {
     const savedSamples = pdata.samples || [];
+    const savedByVgId: Record<string, any> = {};
+    for (const s of savedSamples) { savedByVgId[s.vgId] = s; }
     return plateSamples.map((ps, i) => {
-      const saved = savedSamples[i] || {};
+      const saved = savedByVgId[ps.vgId] || {};
       const conc = saved.concentration ?? null;
       const ev = saved.elutionVolume ?? DEFAULT_ELUTION_VOL;
       const y = conc ? conc * ev : 0;

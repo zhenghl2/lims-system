@@ -137,11 +137,17 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
       // Calculate needed columns, center them, fill left-to-right top-to-bottom
       const numCols = Math.min(Math.ceil(samples.length / 8), COL_COUNT);
       const startCol = Math.floor((COL_COUNT - numCols) / 2);
+      // Sort samples by VG ID ascending for correct left-to-right filling
+      const sortedSamples = [...samples].sort((a: any, b: any) => {
+        const aId = (getVgId(a) || '').toString();
+        const bId = (getVgId(b) || '').toString();
+        return aId.localeCompare(bId, undefined, { numeric: true });
+      });
       let idx = 0;
       for (let c = startCol; c < startCol + numCols; c++) {
         for (let r = 0; r < 8; r++) {
-          if (idx < samples.length) {
-            p[r][c] = { vgId: getVgId(samples[idx]), index: "" };
+          if (idx < sortedSamples.length) {
+            p[r][c] = { vgId: getVgId(sortedSamples[idx]), index: "" };
             idx++;
           }
         }

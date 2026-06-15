@@ -6,22 +6,142 @@ import datetime
 import re
 
 
+def _extract_thai_pdf_text_fallback(file_path):
+    """Fallback: extract data from Thai NIPT PDF using text extraction.
+    Used when form fields are not available (flat PDF, XFA, etc.).
+    Returns dict or None."""
+    from PyPDF2 import PdfReader
+    import re
+    
+    try:
+        reader = PdfReader(file_path)
+    except Exception:
+        return None
+    
+    # Extract all text from all pages
+    full_text = ""
+    for page in reader.pages:
+        try:
+            t = page.extract_text()
+            if t:
+                full_text += t + "\n"
+        except Exception:
+            pass
+    
+    if not full_text.strip():
+        return None
+    
+    lines = [l.strip() for l in full_text.split("\n") if l.strip()]
+    
+    info = {}
+    
+    # Try to identify key fields by pattern matching common in Thai NIPT forms
+    # Pattern 1: Accessioning ID (usually alphanumeric, looks like a sample ID)
+    # Pattern 2: Patient name (usually after "Name" or "Patient" label)
+    # Pattern 3: DOB / Age
+    # Pattern 4: Test option checkboxes
+    
+    # Look for test option indicators
+    for line in lines:
+        lower = line.lower()
+        if 'basic all' in lower or 'basicall' in lower.replace(' ', ''):
+            info['test_option'] = 'Basic All'
+        elif 'nipt plus' in lower or 'plus' in lower and 'basic' not in lower:
+            if not info.get('test_option'):
+                info['test_option'] = 'Plus'
+        elif 'basic' in lower and 'all' not in lower:
+            if not info.get('test_option'):
+                info['test_option'] = 'Basic'
+    
+    # Try to extract patient name (look for common patterns)
+    name_patterns = [
+        r'(?:Name|Patient|Name-Surname)\s*[:\-]?\s*([A-Za-z\s]+?)(?:\s{2,}|$)',
+        r'(?:Name|Patient|Name-Surname)\s*([A-Za-z\s\.]+)',
+    ]
+    for pat in name_patterns:
+        m = re.search(pat, full_text, re.IGNORECASE)
+        if m and len(m.group(1).strip()) > 1:
+            info['patient_name'] = m.group(1).strip()
+            break
+    
+    # Extract age
+    age_m = re.search(r'(?:Age|อายุ)\s*[:\-]?\s*(\d{1,3})', full_text, re.IGNORECASE)
+    if age_m:
+        info['age'] = int(age_m.group(1))
+    
+    # Extract hospital
+    hosp_m = re.search(r'(?:Hospital|Clinic|Site)\s*[:\-]?\s*(.+?)(?:\s{2,}|$)', full_text, re.IGNORECASE)
+    if hosp_m:
+        info['ordering_facility'] = hosp_m.group(1).strip()
+    
+    # Extract ID (external_id / patient ID) 
+    id_m = re.search(r'(?:ID|HN|MRN|PID)\s*[:\-]?\s*(\S+)', full_text, re.IGNORECASE)
+    if id_m:
+        info['external_id'] = id_m.group(1).strip()
+    
+    # Gestational weeks
+    gw_m = re.search(r'(?:GA|Gestation|Weeks|Wk)\s*[:\-]?\s*(\d+[+]?\d*)', full_text, re.IGNORECASE)
+    if gw_m:
+        gw_raw = gw_m.group(1)
+        info['gestational_weeks_raw'] = gw_raw
+        gw_num = re.match(r'(\d+)', gw_raw)
+        if gw_num:
+            info['gestational_weeks'] = int(gw_num.group(1))
+    
+    # Collection date
+    date_m = re.search(r'(?:Collection|Draw|Date)\s*[:\-]?\s*(\d{1,2}[/\-]\w{3}[/\-]\d{2,4})', full_text, re.IGNORECASE)
+    if date_m:
+        info['collection_date_raw'] = date_m.group(1).strip()
+    
+    # Only return if we found at least patient_name or external_id
+    if info.get('patient_name') or info.get('external_id'):
+        info['source_institution'] = '泰国'
+        info['clinical_diagnosis'] = '否'
+        return info
+    
+    return None
+
+
+
 def extract_thai_pdf(file_path, source="泰国"):
     """Extract form fields from a Thai NIPT PDF registration form.
     Returns a dict of Sample fields or None on failure."""
 
-    with open(file_path, 'rb') as fh:
-        reader = PdfReader(fh)
+    reader = PdfReader(file_path)
 
     # Get all form fields
+    # Strategy 1: Try AcroForm fields (get_fields)
     try:
         fields = reader.get_fields(tree=None, retval=None)
     except Exception as e:
-        print(f"  [WARN] Cannot read form fields from {file_path}: {e}")
-        return None
-
+        print(f"  [DEBUG] get_fields failed: {e}")
+        fields = None
+    
+    # Strategy 2: Try get_form_text_fields (newer API)
     if not fields:
-        print(f"  [WARN] No form fields found in {file_path}")
+        try:
+            fields = reader.get_form_text_fields()
+            if fields:
+                print(f"  [DEBUG] Got {len(fields)} fields via get_form_text_fields")
+        except Exception as e:
+            print(f"  [DEBUG] get_form_text_fields failed: {e}")
+    
+    # Normalize fields format: get_form_text_fields returns {name: str},
+    # while get_fields returns {name: {'/V': str, ...}}. Unify to the latter.
+    if fields:
+        first_val = next(iter(fields.values()), None)
+        if isinstance(first_val, str):
+            print(f"  [DEBUG] Normalizing get_form_text_fields output ({len(fields)} fields)")
+            fields = {k: {'/V': v} for k, v in fields.items()}
+    
+    # Strategy 3: Text-based fallback extraction
+    if not fields:
+        print(f"  [DEBUG] No form fields, trying text extraction fallback...")
+        fallback_result = _extract_thai_pdf_text_fallback(file_path)
+        if fallback_result:
+            print(f"  [DEBUG] Text fallback succeeded")
+            return fallback_result
+        print(f"  [WARN] No form fields found and text fallback failed for {file_path}")
         return None
 
     info = {}
@@ -100,17 +220,13 @@ def extract_thai_pdf(file_path, source="泰国"):
             except ValueError:
                 pass
 
-    # Single/Twin: Check Box2
-    # Check Box2 checked = Single (单胎), unchecked = not specified
-    # Most patients are single, so default to False
+    # Single/Twin: Check Box2 checked = Single (单胎), unchecked = 双胎twins
     check2_val = (fields.get('Check Box2', {}).get('/V') or '')
-    info['multiple_gestation'] = (check2_val == '/Yes')
+    info['multiple_gestation'] = not (check2_val == '/Yes')  # Checked = Single
 
-    # IVF: Check Box0
-    # Check Box0 checked = 否NO (natural, not IVF)
-    # Most patients are not IVF, default to False
+    # IVF: Check Box0 checked = 否NO (natural, NOT IVF)
     check0_val = (fields.get('Check Box0', {}).get('/V') or '')
-    info['ivf_status'] = (check0_val == '/Yes')
+    info['ivf_status'] = not (check0_val == '/Yes')  # Checked = NOT IVF
 
     # Medical history: Check Box7/8/9/10
     history_parts = []

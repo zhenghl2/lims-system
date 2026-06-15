@@ -460,6 +460,36 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         return Response(current)
 
+    @action(detail=True, methods=["post"], url_path="save_sequencing")
+    def save_sequencing(self, request, pk=None):
+        run = self.get_object()
+        sequencing_data = request.data.get("sequencing_data", {})
+        current = run.sequencing_data or {}
+        current.update(sequencing_data)
+        run.sequencing_data = current
+        run.save(update_fields=["sequencing_data", "updated_at"])
+        return Response({"sequencing_data": run.sequencing_data})
+
+    @action(detail=True, methods=["post"], url_path="sequencing/sign")
+    def sign_sequencing(self, request, pk=None):
+        run = self.get_object()
+        role = request.data.get("role", "")
+        signer_name = request.data.get("signer", "").strip()
+        password = request.data.get("password", "").strip()
+        if role not in ["operator", "reviewer"]:
+            return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
+        if not password or password != "123456":
+            return Response({"error": "密码错误"}, status=400)
+        from django.utils import timezone
+        timestamp = timezone.now().isoformat()
+        sig_data = {"username": signer_name, "signed_at": timestamp}
+        current = run.sequencing_data or {}
+        key = "operator_signature" if role == "operator" else "reviewer_signature"
+        current[key] = sig_data
+        run.sequencing_data = current
+        run.save(update_fields=["sequencing_data", "updated_at"])
+        return Response(current)
+
     @action(detail=False, methods=["get"])
     def stats(self, request):
         """Run statistics."""
