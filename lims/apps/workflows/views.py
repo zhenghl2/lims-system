@@ -422,6 +422,44 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         return Response(current)
 
+    @action(detail=True, methods=["post"], url_path="save_pooling")
+    def save_pooling(self, request, pk=None):
+        """Save NIPT library quantification & pooling data."""
+        run = self.get_object()
+        pooling_data = request.data.get("pooling_data", {})
+
+        current = run.pooling_data or {}
+        current.update(pooling_data)
+        run.pooling_data = current
+        run.save(update_fields=["pooling_data", "updated_at"])
+
+        return Response({"pooling_data": run.pooling_data})
+
+    @action(detail=True, methods=["post"], url_path="pooling/sign")
+    def sign_pooling(self, request, pk=None):
+        """Record electronic signature for pooling step."""
+        run = self.get_object()
+        role = request.data.get("role", "")
+        signer_name = request.data.get("signer", "").strip()
+        password = request.data.get("password", "").strip()
+
+        if role not in ["operator", "reviewer"]:
+            return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
+        if not password or password != "123456":
+            return Response({"error": "密码错误"}, status=400)
+
+        from django.utils import timezone
+        timestamp = timezone.now().isoformat()
+        sig_data = {"username": signer_name, "signed_at": timestamp}
+
+        current = run.pooling_data or {}
+        key = "operator_signature" if role == "operator" else "reviewer_signature"
+        current[key] = sig_data
+        run.pooling_data = current
+        run.save(update_fields=["pooling_data", "updated_at"])
+
+        return Response(current)
+
     @action(detail=False, methods=["get"])
     def stats(self, request):
         """Run statistics."""

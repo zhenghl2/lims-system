@@ -5,31 +5,33 @@ import dayjs from "dayjs";
 import { runsApi, samplesApi } from "../api";
 import NiptExtractionTab from "./NiptExtractionTab";
 import NiptLibraryTab from "./NiptLibraryTab";
+import NiptPoolingTab from "./NiptPoolingTab";
 import DashboardLayout from "../components/DashboardLayout";
 import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
 
 const STATUS_COLOR: Record<string, string> = {
-  PLANNED: "default", LIBRARY_PREP: "blue", SEQUENCING: "purple",
+  PLANNED: "default", LIBRARY_PREP: "blue", LIBRARY_POOLING: "geekblue", SEQUENCING: "purple",
   ANALYZING: "orange", QC_REVIEW: "cyan", COMPLETED: "green", FAILED: "red",
 };
 
 
 const STATUS_MAP_ZH: Record<string, string> = {
-  PLANNED: "已计划", LIBRARY_PREP: "文库构建", SEQUENCING: "上机测序",
+  PLANNED: "已计划", LIBRARY_PREP: "文库构建", LIBRARY_POOLING: "文库定量及Pooling", SEQUENCING: "上机测序",
   ANALYZING: "生物信息分析", QC_REVIEW: "质控审核", COMPLETED: "已完成", FAILED: "失败",
 };
 
 const STEPS = [
   { key: "extraction", title: "① 核酸提取", status: "PLANNED" },
   { key: "library", title: "② 文库构建", status: "LIBRARY_PREP" },
-  { key: "sequencing", title: "③ 上机测序", status: "SEQUENCING" },
-  { key: "bioinformatics", title: "④ 生物信息分析", status: "ANALYZING" },
+  { key: "pooling", title: "③ 文库定量及Pooling", status: "LIBRARY_POOLING" },
+  { key: "sequencing", title: "④ 上机测序", status: "SEQUENCING" },
+  { key: "bioinformatics", title: "⑤ 生物信息分析", status: "ANALYZING" },
 ];
 
 function getStepIndex(status: string): number {
-  const map: Record<string, number> = { PLANNED: 0, LIBRARY_PREP: 1, SEQUENCING: 2, ANALYZING: 3, QC_REVIEW: 4, COMPLETED: 5 };
+  const map: Record<string, number> = { PLANNED: 0, LIBRARY_PREP: 1, LIBRARY_POOLING: 2, SEQUENCING: 3, ANALYZING: 4, QC_REVIEW: 5, COMPLETED: 6 };
   return map[status] ?? 0;
 }
 
@@ -157,6 +159,13 @@ export default function NiptWorkflow() {
           <NiptLibraryTab
             batch={selectedBatch}
             samples={batchDetail?.run_samples || batchDetail?.samples || []}
+            onRefresh={() => fetchDetail(selectedBatch.id)}
+          />
+        );
+      case "pooling":
+        return (
+          <NiptPoolingTab
+            batch={selectedBatch}
             onRefresh={() => fetchDetail(selectedBatch.id)}
           />
         );

@@ -41,6 +41,7 @@ class SampleRun(models.Model):
         choices=[
             ("PLANNED", "Planned"),
             ("LIBRARY_PREP", "Library Prep"),
+            ("LIBRARY_POOLING", "Library Pooling"),
             ("SEQUENCING", "Sequencing"),
             ("ANALYZING", "Analyzing"),
             ("QC_REVIEW", "QC Review"),
@@ -79,6 +80,7 @@ class SampleRun(models.Model):
         ],
     )
     library_data = models.JSONField(default=dict, blank=True)
+    pooling_data = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
