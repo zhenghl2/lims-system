@@ -131,33 +131,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
           }
         }
       }
-    } else if (extMethod === "MAGNETIC_ROD") {
-      // Magnetic rod: fill by plate, whole columns at a time
-      // Plate N col1 → lib col(N*2), Plate N col7 → lib col(N*2+1)
-      const perPlate = 16;
-      const numPlates = Math.ceil(samples.length / perPlate);
-      let libCol = 0;
-      for (let plateNum = 0; plateNum < numPlates; plateNum++) {
-        const base = plateNum * perPlate;
-        // Col 1 from this plate → lib col
-        if (libCol < COL_COUNT) {
-          for (let r = 0; r < 8; r++) {
-            const si = base + r;
-            if (si < samples.length) p[r][libCol] = { vgId: getVgId(samples[si]), index: "" };
-          }
-          libCol++;
-        }
-        // Col 7 from this plate → lib col
-        if (libCol < COL_COUNT) {
-          for (let r = 0; r < 8; r++) {
-            const si = base + 8 + r;
-            if (si < samples.length) p[r][libCol] = { vgId: getVgId(samples[si]), index: "" };
-          }
-          libCol++;
-        }
-      }
     } else {
-      // MANUAL: sequential fill top→bottom then right (column-major)
+      // MANUAL / MAGNETIC_ROD: sequential fill top→bottom then right (column-major)
       const maxSamples = Math.min(samples.length, 96);
       for (let i = 0; i < maxSamples; i++) {
         const col = Math.floor(i / 8);
@@ -325,7 +300,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   const getExtractionLabel = (): string => {
     const m = batch.extraction_method || "MANUAL";
     if (m === "MANUAL") return "手动提取 → 顺序填充（列优先）";
-    if (m === "MAGNETIC_ROD") return "磁棒法提取 → Plate 整列填充";
+    if (m === "MAGNETIC_ROD") return "磁棒法提取 → 顺序填充（列优先）";
     return "自动化工作站提取 → 直接复制";
   };
 
