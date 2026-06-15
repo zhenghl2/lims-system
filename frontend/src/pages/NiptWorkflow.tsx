@@ -67,6 +67,7 @@ export default function NiptWorkflow() {
     try {
       const res = await runsApi.detail(id);
       setBatchDetail(res.data);
+      setSelectedBatch((prev: any) => prev?.id === id ? { ...prev, ...res.data } : prev);
     } catch { message.error("Failed to load batch detail"); }
     finally { setDetailLoading(false); }
   }, []);
