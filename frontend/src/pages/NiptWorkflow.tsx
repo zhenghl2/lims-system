@@ -4,6 +4,7 @@ import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined } from
 import dayjs from "dayjs";
 import { runsApi, samplesApi } from "../api";
 import NiptExtractionTab from "./NiptExtractionTab";
+import NiptLibraryTab from "./NiptLibraryTab";
 import DashboardLayout from "../components/DashboardLayout";
 import { useTranslation } from "../i18n/useTranslation";
 
@@ -152,25 +153,11 @@ export default function NiptWorkflow() {
         );
       case "library":
         return (
-          <Row gutter={[16, 16]}>
-            <Col span={6}><Form.Item name="lib_date" label="实验日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_operator" label="实验人员" rules={[{ required: true }]}><Input placeholder="Name" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_kit" label="文库试剂盒" rules={[{ required: true }]}><Select placeholder="Select" options={[
-              { value: "KAPA_HyperPrep", label: "KAPA HyperPrep Kit" },
-              { value: "NEBNext_UltraII", label: "NEBNext Ultra II" },
-              { value: "MGI_Easy", label: "MGI Easy Prep" },
-            ]} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_kit_lot" label="试剂批次" rules={[{ required: true }]}><Input placeholder="Lot #" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_input" label="Input DNA (ng)" rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 10" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_conc" label="文库浓度 (ng/μL)"><InputNumber min={0} step={0.01} style={{ width: "100%" }} placeholder="e.g. 25" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_molar" label="摩尔浓度 (nM)"><InputNumber min={0} step={0.01} style={{ width: "100%" }} placeholder="e.g. 8.5" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_size" label="片段大小 (bp)"><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 310" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_pcr" label="PCR 循环数"><InputNumber min={0} max={20} style={{ width: "100%" }} placeholder="e.g. 8" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_index" label="Index 编号"><Input placeholder="e.g. N701+S501" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_qc" label="质控结果" rules={[{ required: true }]}><Select placeholder="Pass / Fail" options={[{ value: "PASS", label: "✅ 合格" }, { value: "FAIL", label: "❌ 不合格" }]} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="lib_qc_note" label="质控备注"><Input placeholder="如不合格，说明原因" /></Form.Item></Col>
-            <Col span={24}><Form.Item name="lib_notes" label="备注"><Input.TextArea rows={2} placeholder="记录文库构建观察..." /></Form.Item></Col>
-          </Row>
+          <NiptLibraryTab
+            batch={selectedBatch}
+            samples={batchDetail?.run_samples || batchDetail?.samples || []}
+            onRefresh={() => fetchDetail(selectedBatch.id)}
+          />
         );
       case "sequencing":
         return (

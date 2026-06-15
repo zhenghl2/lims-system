@@ -29,6 +29,7 @@ class SampleSerializer(serializers.ModelSerializer):
         fields = [
             "id", "sample_id", "additional_barcodes", "sample_type", "sample_type_id",
             "patient_id", "patient_name", "patient_dob", "patient_sex",
+            "vg_id",
             "ordering_physician", "ordering_facility",
             "age", "source_institution", "institution_sample_id",
             "hpv_sample_type", "test_item",
@@ -102,20 +103,21 @@ class SampleListSerializer(serializers.ModelSerializer):
 class SampleReceiveSerializer(serializers.ModelSerializer):
     """Serializer for sample receipt (create + auto-barcode)."""
     sample_type_id = serializers.UUIDField(write_only=True, required=False)
+    sample_type_code = serializers.CharField(write_only=True, required=False)
     panel_id = serializers.UUIDField(write_only=True, required=False)
     panel_code = serializers.CharField(write_only=True, required=False)
 
     class Meta:
         model = Sample
         fields = [
-            "sample_type_id", "panel_id", "panel_code", "patient_id", "patient_name", "patient_dob",
-            "patient_sex", "age", "gestational_weeks",
-            "id_card", "external_id",
-            "maternal_weight", "maternal_bmi", "ivf_status", "multiple_gestation", "fetal_fraction", "clinical_diagnosis",
-            "id_card", "external_id",
-            "maternal_weight", "maternal_bmi", "ivf_status", "multiple_gestation", "fetal_fraction", "clinical_diagnosis", "source_institution", "institution_sample_id",
-            "hpv_sample_type", "test_item",
-                   "hpv_sample_type", "test_item",
+            "sample_type_id", "sample_type_code", "panel_id", "panel_code",
+            "patient_id", "patient_name", "patient_dob", "patient_sex",
+            "vg_id",
+            "age", "gestational_weeks", "test_option",
+            "id_card", "external_id", "vg_id",
+            "maternal_weight", "maternal_bmi", "ivf_status", "multiple_gestation",
+            "fetal_fraction", "clinical_diagnosis",
+            "source_institution", "institution_sample_id",
             "hpv_sample_type", "test_item",
             "ordering_physician", "ordering_facility",
             "collection_date", "collection_time", "receipt_temp", "consent_given",
@@ -148,9 +150,9 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
         panel_id = validated_data.pop("panel_id", None)
         panel_code = validated_data.pop("panel_code", None)
         # Resolve panel_code to panel_id
+        from .models import TestPanel
         if panel_code and not panel_id:
             try:
-                from .models import TestPanel
                 panel_obj = TestPanel.objects.get(code=panel_code, is_active=True)
                 panel_id = panel_obj.id
             except Exception:
@@ -189,9 +191,21 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
         # Auto-assign default sample type if not provided
         if not sample_type_id:
             from .models import SampleType
-            default_st = SampleType.objects.first()
-            if default_st:
-                sample_type_id = default_st.id
+            # Resolve sample_type_code if provided (popped from validated_data)
+            st_code = validated_data.pop("sample_type_code", None) if "sample_type_code" in validated_data else None
+            if st_code:
+                try:
+                    default_st = SampleType.objects.get(code=st_code, is_active=True)
+                    sample_type_id = default_st.id
+                except SampleType.DoesNotExist:
+                    pass
+            # Fallback to BLOOD, then first available
+            if not sample_type_id:
+                default_st = SampleType.objects.filter(code="BLOOD", is_active=True).first()
+                if not default_st:
+                    default_st = SampleType.objects.filter(is_active=True).first()
+                if default_st:
+                    sample_type_id = default_st.id
         # Create sample with sample_type_id passed directly to the FK
         if panel_id:
             validated_data["panel_id"] = panel_id

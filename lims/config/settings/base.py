@@ -66,6 +66,7 @@ LOCAL_APPS = [
     "lims.apps.cases",
     "lims.apps.hpv",
     "lims.apps.wechat",
+    "lims.apps.plasma_separation",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

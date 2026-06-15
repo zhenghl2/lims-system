@@ -1,5 +1,5 @@
-import { useEffect, useState, useCallback } from "react";
-import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Switch, Upload, Popover, Checkbox } from "antd";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Switch, Popover, Checkbox } from "antd";
 import { PlusOutlined, DeleteOutlined, ReloadOutlined, UploadOutlined, SettingOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
@@ -20,7 +20,7 @@ const TEST_OPTIONS = [
 ];
 
 const SOURCE_OPTIONS = [
-  { label: "泰国BCC", value: "泰国BCC" },
+  { label: "泰国", value: "泰国" },
   { label: "巴西", value: "巴西" },
   { label: "Other", value: "" },
 ];
@@ -73,16 +73,31 @@ export default function NiptSamples() {
   const [batchMode, setBatchMode] = useState(false);
   const [batchText, setBatchText] = useState("");
   const [fileModalOpen, setFileModalOpen] = useState(false);
-  const [fileSource, setFileSource] = useState("Thai BKK");
+  const [fileSource, setFileSource] = useState("泰国");
   const [fileList, setFileList] = useState<any[]>([]);
+  const [fileMsg, setFileMsg] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [resultModalOpen, setResultModalOpen] = useState(false);
+  const [importResult, setImportResult] = useState<any>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [colConfig, setColConfig] = useState(ALL_COLUMNS.map(c => ({...c})));
   const [form] = Form.useForm();
 
   const visibleCols = colConfig.filter(c => c.visible);
   const columns = [
     { key: "sample_id", title: "Sample ID", dataIndex: "sample_id", visible: true, width: 170, render: (v: string) => <Text code>{v}</Text> },
+    { key: "vg_id", title: "VG ID", dataIndex: "vg_id", visible: true, width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
     ...visibleCols,
-    { key: "status", title: "Status", dataIndex: "status", visible: true, width: 100, render: (v: string) => <Tag color={STATUS_MAP[v]}>{v}</Tag> },
+    { key: "status", title: "Status", dataIndex: "status", visible: true, width: 150, fixed: "right" as const, render: (v: string, r: any) => {
+      const reason = r.rejection_reason || "";
+      return (
+        <span>
+          <Tag color={STATUS_MAP[v] || "default"}>{v}</Tag>
+          {v === "REJECTED" && reason ? <Tag color="red" style={{ fontSize: 10, maxWidth: 120 }} title={reason}>{reason.replace("血浆分离不合格: ", "")}</Tag> : null}
+        </span>
+      );
+    } },
     { key: "actions", title: "", width: 50, fixed: "right" as const,
       render: (_: any, record: any) => (
         <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
@@ -111,10 +126,12 @@ export default function NiptSamples() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const buildPayload = (values: any) => ({
+    sample_type_code: "BLOOD",
     panel_code: values.panel || "NIPT",
     test_option: values.test_option || "NIPT",
     source_institution: values.source === "" ? values.source_other : values.source,
     external_id: values.external_id || "",
+    vg_id: values.vg_id || "",
     collection_date: values.collection_date ? dayjs(values.collection_date).format("YYYY-MM-DD") : undefined,
     acceptance_date: values.acceptance_date ? dayjs(values.acceptance_date).format("YYYY-MM-DD") : undefined,
     physician: values.physician || "",
@@ -132,6 +149,58 @@ export default function NiptSamples() {
     clinical_diagnosis: values.clinical_diagnosis || "",
     fedex_no: values.fedex_no || "",
   });
+
+  const handleFileImport = async () => {
+    if (fileList.length === 0) return;
+    setImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append("source", fileSource);
+      fileList.forEach((f: File) => formData.append("files", f));
+      const result = await samplesApi.registerFromPdf(formData);
+      setImportResult(result.data);
+      setResultModalOpen(true);
+      setFileModalOpen(false);
+      setFileList([]);
+      setFileMsg("");
+      message.success(`Imported ${result.data.created_count} samples`);
+      // Trigger Excel download if provided
+      if (result.data.excel_b64) {
+        try {
+          const byteChars = atob(result.data.excel_b64);
+          const byteNums = new Array(byteChars.length);
+          for (let i = 0; i < byteChars.length; i++) byteNums[i] = byteChars.charCodeAt(i);
+          const blob = new Blob([new Uint8Array(byteNums)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = fileSource === '巴西' ? 'baxi_NIPPT.xlsx' : 'taiguoNIPT.xlsx';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+        } catch (dlErr) {
+          console.error('Excel download failed:', dlErr);
+        }
+      }
+    } catch (err: any) {
+      const detail = err?.response?.data || {};
+      // If some samples were created despite errors, show success first
+      if (detail.created_count > 0) {
+        message.success(`Imported ${detail.created_count} samples`);
+        if (detail.skipped_duplicates > 0) {
+          message.warning(`${detail.skipped_duplicates} duplicates skipped`);
+        }
+      } else if (detail.skipped_duplicates > 0) {
+        message.warning(`No new samples: ${detail.skipped_duplicates} duplicates skipped, ${detail.error_count || 0} errors`);
+      } else {
+        const errMsg = typeof detail?.error === 'object' ? JSON.stringify(detail.error) : (String(detail?.error || detail?.detail || "Import failed"));
+        message.error(errMsg);
+      }
+    } finally {
+      setImporting(false);
+    }
+  };
 
   const handleRegister = async () => {
     try {
@@ -216,6 +285,7 @@ export default function NiptSamples() {
             <Form.Item name="physician" label="G. Physician"><Input style={{ width: 160 }} /></Form.Item>
           </Space>
           <Space style={{ display: "flex" }} wrap>
+            <Form.Item name="vg_id" label="VG ID"><Input style={{ width: 160 }} /></Form.Item>
             <Form.Item name="id_card" label="H. Patient ID"><Input style={{ width: 200 }} /></Form.Item>
             <Form.Item name="patient_name" label="I. Name" rules={[{ required: true }]}><Input style={{ width: 160 }} /></Form.Item>
             <Form.Item name="patient_dob" label="J. DOB"><DatePicker style={{ width: 160 }} /></Form.Item>
@@ -247,32 +317,162 @@ export default function NiptSamples() {
           </Text>
         </div>
         <TextArea rows={12} value={batchText} onChange={e => setBatchText(e.target.value)}
-          placeholder={"Zhang Li\t28\t12\tNIPT\tThai BKK\t440101199801012345\tBCC-2026001\t2026-06-01\t2026-06-03\tDr.Somchai\t1998-05-15\tRPT-BCC-001\tSND001\t2026-03-01\tN\tN\tG1P0\tNormal\tFX1234567890\tNIPT"} />
+          placeholder={"Zhang Li\t28\t12\tNIPT\t泰国\t440101199801012345\tBCC-2026001\t2026-06-01\t2026-06-03\tDr.Somchai\t1998-05-15\tRPT-BCC-001\tSND001\t2026-03-01\tN\tN\tG1P0\tNormal\tFX1234567890\tNIPT"} />
       </Modal>
 
       {/* Register from File Modal */}
-      <Modal title="Register from File" open={fileModalOpen} onCancel={() => setFileModalOpen(false)} width={600}
+      <Modal title="Register from File" open={fileModalOpen} onCancel={() => { setFileModalOpen(false); setFileList([]); }} width={600}
         footer={[
-          <Button key="cancel" onClick={() => setFileModalOpen(false)}>Cancel</Button>,
-          <Button key="submit" type="primary" disabled={fileList.length === 0} onClick={() => {
-            message.info("File import implementation pending");
-            setFileModalOpen(false);
-          }}>Import & Register</Button>,
+          <Button key="cancel" onClick={() => { setFileModalOpen(false); setFileList([]); }}>Cancel</Button>,
+          <Button key="submit" type="primary" loading={importing} disabled={fileList.length === 0} onClick={handleFileImport}>
+            Import & Register
+          </Button>,
         ]}>
         <Form layout="vertical">
           <Form.Item label="Source" required>
             <Select value={fileSource} onChange={setFileSource}
-              options={[{ label: "Thai BKK", value: "Thai BKK" }, { label: "Brazil", value: "Brazil" }]}
+              options={[{ label: "泰国", value: "泰国" }, { label: "巴西", value: "巴西" }]}
               style={{ width: 200 }} />
           </Form.Item>
-          <Form.Item label="Select File">
-            <Upload fileList={fileList} beforeUpload={f => { setFileList([f]); return false; }}
-              onRemove={() => setFileList([])} accept=".xlsx,.csv" maxCount={1}>
-              <Button icon={<UploadOutlined />}>Choose File</Button>
-            </Upload>
+          <Form.Item label={fileSource === "泰国" ? "Select PDF Folder" : "Select File"}>
+            {fileSource === "泰国" ? (
+              <>
+                <input
+                  type="file"
+                  ref={folderInputRef}
+                  style={{ display: "none" }}
+                  {...{ webkitdirectory: "", directory: "" } as any}
+                  multiple
+                  accept=".pdf"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    const pdfs = files.filter(f => f.name.toLowerCase().endsWith(".pdf"));
+                    if (pdfs.length === 0) {
+                      message.warning("No PDF files found in the selected folder");
+                    } else {
+                      setFileList(pdfs);
+                      setFileMsg(`Selected ${pdfs.length} PDF file(s) from folder`);
+                    }
+                  }}
+                />
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: "none" }}
+                  multiple
+                  accept=".pdf"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    const pdfs = files.filter(f => f.name.toLowerCase().endsWith(".pdf"));
+                    if (pdfs.length === 0) {
+                      message.warning("No PDF files selected");
+                    } else {
+                      setFileList(pdfs);
+                      setFileMsg(`Selected ${pdfs.length} PDF file(s)`);
+                    }
+                  }}
+                />
+                <Button icon={<UploadOutlined />} onClick={() => folderInputRef.current?.click()}>
+                  Choose Folder
+                </Button>
+                <Button icon={<UploadOutlined />} style={{ marginLeft: 8 }} onClick={() => fileInputRef.current?.click()}>
+                  Choose Files
+                </Button>
+                {fileMsg && <Text type="secondary" style={{ marginLeft: 12 }}>{fileMsg}</Text>}
+              </>
+            ) : (
+              <>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  style={{ display: "none" }}
+                  multiple
+                  accept=".docx"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    const docxs = files.filter(f => f.name.toLowerCase().endsWith(".docx"));
+                    if (docxs.length === 0) {
+                      message.warning("No .docx files selected");
+                    } else {
+                      setFileList(docxs);
+                      setFileMsg("Selected " + docxs.length + " docx file(s)");
+                    }
+                  }}
+                />
+                <input
+                  type="file"
+                  ref={folderInputRef}
+                  style={{ display: "none" }}
+                  {...{ webkitdirectory: "", directory: "" } as any}
+                  multiple
+                  accept=".docx"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    const docxs = files.filter(f => f.name.toLowerCase().endsWith(".docx") && !f.name.startsWith("~$"));
+                    if (docxs.length === 0) {
+                      message.warning("No .docx files found in folder");
+                    } else {
+                      setFileList(docxs);
+                      setFileMsg("Selected " + docxs.length + " docx file(s) from folder");
+                    }
+                  }}
+                />
+                <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>
+                  Choose Files
+                </Button>
+                <Button icon={<UploadOutlined />} style={{ marginLeft: 8 }} onClick={() => folderInputRef.current?.click()}>
+                  Choose Folder
+                </Button>
+                {fileMsg && <Text type="secondary" style={{ marginLeft: 12 }}>{fileMsg}</Text>}
+              </>
+            )}
           </Form.Item>
-          <Text type="secondary">Select the source (Thai BKK or Brazil) and upload the sample file.</Text>
+          <Text type="secondary">
+            {fileSource === "泰国"
+              ? "Select a folder containing Thai NIPT registration PDF forms."
+              : "Select a folder or individual .docx files from Brazil NIPPT registrations."}
+          </Text>
         </Form>
+      </Modal>
+
+      {/* Import Result Modal */}
+      <Modal
+        title="Import Results"
+        open={resultModalOpen}
+        onCancel={() => setResultModalOpen(false)}
+        footer={[
+          <Button key="ok" type="primary" onClick={() => { setResultModalOpen(false); fetchData(); }}>
+            Done
+          </Button>,
+        ]}
+        width={550}
+      >
+        {importResult && (
+          <div>
+            <p><Text strong>Created:</Text> <Tag color="green">{importResult.created_count}</Tag> samples</p>
+            {importResult.skipped_duplicates > 0 && (
+              <p><Text strong>Skipped (duplicates):</Text> <Tag color="orange">{importResult.skipped_duplicates}</Tag></p>
+            )}
+            {importResult.error_count > 0 && (
+              <p><Text strong>Errors:</Text> <Tag color="red">{importResult.error_count}</Tag></p>
+            )}
+            {importResult.excel_path && (
+              <p><Text strong>Excel export:</Text> <Text code>{importResult.excel_path.split("/").pop()}</Text></p>
+            )}
+            {importResult.created?.length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                <Text strong>Created samples:</Text>
+                <div style={{ maxHeight: 200, overflow: "auto", marginTop: 4 }}>
+                  {importResult.created.map((s: any, i: number) => (
+                    <div key={i} style={{ fontSize: 12, padding: "2px 0" }}>
+                      <Tag>{s.sample_id}</Tag> {s.patient_name} | {s.panel_info || "-"}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
     </div>
   );

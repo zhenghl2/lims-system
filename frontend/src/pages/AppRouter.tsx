@@ -20,6 +20,7 @@ const Login           = lazy(() => import("./Login"));
 const NiptSamples     = lazy(() => import("./NiptSamples"));
 
 const NiptReceiving   = lazy(() => import("./NiptReceiving"));
+const NiptPlasmaSep   = lazy(() => import("./NiptPlasmaSeparation"));
 
 const NiptWorkflow    = lazy(() => import("./NiptWorkflow"));
 const NiptDashboard   = lazy(() => import("./NiptDashboard"));
@@ -98,6 +99,7 @@ export default function AppRouter() {
         <Route path="/samples"   element={<Protected><DashboardLayout><NiptSamples /></DashboardLayout></Protected>} />
 
         <Route path="/receiving" element={<Protected><DashboardLayout><NiptReceiving /></DashboardLayout></Protected>} />
+        <Route path="/plasma-separation" element={<Protected><DashboardLayout><NiptPlasmaSep /></DashboardLayout></Protected>} />
 
 
         <Route path="/instruments" element={<Protected><Instruments /></Protected>} />

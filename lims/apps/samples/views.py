@@ -1,4 +1,5 @@
 """Sample management views."""
+import os
 from datetime import date
 from django.utils import timezone
 from django.db import transaction
@@ -57,7 +58,7 @@ class SampleViewSet(viewsets.ModelViewSet):
                 else:
                     qs = qs.filter(status=status_param)
             else:
-                qs = qs.exclude(status__in=["REJECTED", "ARCHIVED", "DISPOSED"])
+                qs = qs.exclude(status__in=["ARCHIVED", "DISPOSED"])
         if self.request.user.site_id:
             qs = qs.filter(site=self.request.user.site)
         # Date range filters
@@ -182,8 +183,9 @@ class SampleViewSet(viewsets.ModelViewSet):
         for panel in panels:
             samples = qs.filter(panel=panel)
             aggregations = samples.aggregate(
+                registered=Count("pk", filter=Q(status="REGISTERED")),
                 received=Count("pk", filter=Q(status="RECEIVED")),
-                accepted=Count("pk", filter=Q(status="ACCEPTED")),
+                pre_processing=Count("pk", filter=Q(status="PRE_PROCESSING")),
                 in_process=Count("pk", filter=Q(status="IN_PROCESS")),
                 completed=Count("pk", filter=Q(status="COMPLETED")),
                 rejected=Count("pk", filter=Q(status="REJECTED")),
@@ -232,6 +234,177 @@ class SampleViewSet(viewsets.ModelViewSet):
         sample.is_deleted = True
         sample.save(update_fields=["is_deleted", "updated_at"])
         return Response({"detail": "Sample deleted."}, status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=False, methods=["post"], url_path="register-from-pdf",
+            parser_classes=[MultiPartParser, FormParser])
+    @transaction.atomic
+    def register_from_pdf(self, request):
+        """Register samples from uploaded Thai NIPT PDF files.
+
+        POST /api/v1/samples/register-from-pdf/
+        Body: multipart/form-data
+          - source: string (e.g. "泰国")
+          - files: one or more PDF files
+        """
+        source = request.data.get("source", "泰国")
+        uploaded_files = request.FILES.getlist("files")
+
+        if not uploaded_files:
+            return Response(
+                {"error": "No PDF files provided"}, status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Create temp directory
+        import tempfile, shutil
+        tmpdir = tempfile.mkdtemp(prefix="nipt_pdf_")
+        try:
+            # Save uploaded files
+            pdf_paths = []
+            for f in uploaded_files:
+                fpath = os.path.join(tmpdir, f.name)
+                with open(fpath, "wb") as dest:
+                    for chunk in f.chunks():
+                        dest.write(chunk)
+                pdf_paths.append(fpath)
+
+            # Extract data from each PDF (or DOCX for Brazil)
+            from .pdf_extract import extract_thai_pdf, generate_excel
+            from .docx_extract import extract_brazil_docx, generate_excel_brazil
+            is_brazil = source == "巴西"
+            extracted = []
+            for fpath in pdf_paths:
+                if is_brazil:
+                    info = extract_brazil_docx(fpath, source=source)
+                else:
+                    info = extract_thai_pdf(fpath, source=source)
+                if info:
+                    info["test_option"] = info.get("test_option", "")
+                    extracted.append(info)
+
+            if not extracted:
+                return Response(
+                    {"error": "No valid data extracted from any PDF file"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # Create samples
+            created = []
+            errors = []
+            skip = 0
+
+            for i, data in enumerate(extracted):
+                # Map test_option to panel_code
+                test_opt = data.get("test_option", "")
+                panel_code = None
+                if is_brazil:
+                    panel_code = "NIPT"  # Brazil uses NIPT panel (Basic/Plus), not NIPPT subsystem
+                elif test_opt == "Basic":
+                    panel_code = "NIPT"
+                elif test_opt == "Basic All":
+                    panel_code = "NIPT_FULL"
+                elif test_opt == "Plus":
+                    panel_code = "NIPT_PLUS"
+
+                # Skip duplicates by external_id
+                external_id = data.get("external_id")
+                if external_id:
+                    existing = Sample.objects.filter(
+                        external_id=external_id, is_deleted=False
+                    ).first()
+                    if existing:
+                        skip += 1
+                        continue
+
+                # Build sample data
+                sample_data = {
+                    "source_institution": data.get("source_institution", source),
+                    "test_option": test_opt,
+                    "external_id": data.get("external_id", ""),
+                    "patient_name": data.get("patient_name", ""),
+                    "patient_dob": data.get("patient_dob"),
+                    "age": data.get("age"),
+                    "gestational_weeks": data.get("gestational_weeks"),
+                    "id_card": data.get("id_card", ""),
+                    "ordering_physician": data.get("ordering_physician", ""),
+                    "ordering_facility": data.get("ordering_facility", ""),
+                    "collection_date": data.get("collection_date"),
+                    "multiple_gestation": data.get("multiple_gestation", False),
+                    "ivf_status": data.get("ivf_status", False),
+                    "clinical_diagnosis": data.get("clinical_diagnosis", ""),
+                    "panel_code": panel_code,
+                }
+
+                # Default collection_date to today if missing
+                if not sample_data["collection_date"]:
+                    sample_data["collection_date"] = date.today().strftime("%Y-%m-%d")
+
+                serializer = SampleReceiveSerializer(
+                    data=sample_data, context={"request": request}
+                )
+                if serializer.is_valid():
+                    try:
+                        with transaction.atomic():
+                            sample = serializer.save()
+                            SampleMovement.objects.create(
+                                sample=sample,
+                                to_location="RECEIVING",
+                                reason="RECEIPT",
+                                performed_by=request.user,
+                            )
+                        created.append(SampleListSerializer(sample).data)
+                    except Exception as save_err:
+                        errors.append({
+                            "row": i,
+                            "patient_name": data.get("patient_name", ""),
+                            "errors": str(save_err),
+                        })
+                else:
+                    errors.append({
+                        "row": i,
+                        "patient_name": data.get("patient_name", ""),
+                        "errors": serializer.errors,
+                    })
+
+            # Generate Excel export (non-critical)
+            excel_path = None
+            try:
+                if extracted:
+                    excel_dir = "/opt/lims/exports"
+                    os.makedirs(excel_dir, exist_ok=True)
+                    if is_brazil:
+                        excel_path = os.path.join(excel_dir, "baxi_NIPPT.xlsx")
+                        generate_excel_brazil(extracted, excel_path)
+                    else:
+                        excel_path = os.path.join(excel_dir, "taiguoNIPT.xlsx")
+                        generate_excel(extracted, excel_path)
+            except Exception as e:
+                print(f"Excel generation failed (non-critical): {e}")
+
+            # Encode Excel as base64 for download
+            excel_b64 = None
+            if excel_path and os.path.exists(excel_path):
+                import base64 as _b64
+                with open(excel_path, "rb") as _ef:
+                    excel_b64 = _b64.b64encode(_ef.read()).decode()
+
+            return Response(
+                {
+                    "created_count": len(created),
+                    "error_count": len(errors),
+                    "skipped_duplicates": skip,
+                    "total_extracted": len(extracted),
+                    "created": created,
+                    "errors": errors,
+                    "excel_path": excel_path,
+                    "excel_b64": excel_b64,
+                },
+                status=status.HTTP_201_CREATED if created else status.HTTP_400_BAD_REQUEST,
+            )
+
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 class SampleTypeViewSet(viewsets.ReadOnlyModelViewSet):
     """List sample types."""
     permission_classes = [IsAuthenticated]

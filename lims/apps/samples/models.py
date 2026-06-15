@@ -68,6 +68,7 @@ class Sample(models.Model):
     gestational_weeks = models.PositiveSmallIntegerField(null=True, blank=True)
     id_card = models.CharField(max_length=50, blank=True, default="")
     external_id = models.CharField(max_length=100, blank=True, default="")
+    vg_id = models.CharField(max_length=50, blank=True, default="", db_index=True, help_text="VG internal lab ID")
     maternal_weight = models.FloatField(null=True, blank=True, help_text="Maternal weight in kg")
     maternal_bmi = models.FloatField(null=True, blank=True, help_text="Maternal BMI")
     ivf_status = models.BooleanField(default=False, help_text="IVF conception")
@@ -133,6 +134,7 @@ class Sample(models.Model):
         choices=[
             ("REGISTERED", "Registered"),
             ("RECEIVED", "Received"),
+            ("PRE_PROCESSING", "Pre-Processing"),
             ("REJECTED", "Rejected"),
             ("IN_PROCESS", "In Process"),
             ("TESTING", "Testing"),

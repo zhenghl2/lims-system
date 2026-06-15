@@ -79,9 +79,23 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         count = SampleRun.objects.filter(run_number__startswith=prefix).count() + 1
         run_number = f"{prefix}-{count:04d}"
 
+        # Resolve panel_code to panel_id if provided
+        panel_id = data.get("panel")
+        if not panel_id:
+            panel_code = data.get("panel_code")
+            if panel_code:
+                try:
+                    from lims.apps.samples.models import TestPanel
+                    panel_obj = TestPanel.objects.get(code=panel_code, is_active=True)
+                    panel_id = panel_obj.id
+                except Exception:
+                    pass
+        if not panel_id:
+            return Response({"error": "panel or panel_code is required"}, status=400)
+
         run = SampleRun.objects.create(
             run_number=run_number,
-            panel_id=data["panel"],
+            panel_id=panel_id,
             protocol_id=data.get("protocol"),
             sequencer_id=data.get("sequencer"),
             planned_date=data.get("planned_date"),
@@ -312,6 +326,56 @@ class SampleRunViewSet(viewsets.ModelViewSet):
             Sample.objects.filter(id__in=sample_ids).update(status="REJECTED")
 
         return Response({"status": new_status, "run_number": run.run_number})
+
+    @action(detail=True, methods=["post"])
+    def save_extraction(self, request, pk=None):
+        """Save NIPT extraction data."""
+        run = self.get_object()
+        extraction_data = request.data.get("extraction_data", {})
+        method = request.data.get("extraction_method", "")
+        region = request.data.get("region", "")
+
+        if method:
+            run.extraction_method = method
+        if region:
+            run.region = region
+
+        # Merge extraction data
+        current = run.extraction_data or {}
+        current.update(extraction_data)
+        run.extraction_data = current
+        run.save(update_fields=["extraction_data", "extraction_method", "region", "updated_at"])
+
+        return Response({
+            "extraction_method": run.extraction_method,
+            "region": run.region,
+            "extraction_data": run.extraction_data,
+        })
+
+    @action(detail=True, methods=["post"], url_path="extraction/sign")
+    def sign_extraction(self, request, pk=None):
+        """Record electronic signature for extraction step."""
+        run = self.get_object()
+        role = request.data.get("role", "")
+        signer_name = request.data.get("signer", "").strip()
+        password = request.data.get("password", "").strip()
+
+        if role not in ["operator", "reviewer"]:
+            return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
+        if not password or password != "123456":
+            return Response({"error": "密码错误"}, status=400)
+
+        from django.utils import timezone
+        timestamp = timezone.now().isoformat()
+        sig_data = {"username": signer_name, "signed_at": timestamp}
+
+        current = run.extraction_data or {}
+        key = "operator_signature" if role == "operator" else "reviewer_signature"
+        current[key] = sig_data
+        run.extraction_data = current
+        run.save(update_fields=["extraction_data", "updated_at"])
+
+        return Response(current)
 
     @action(detail=False, methods=["get"])
     def stats(self, request):

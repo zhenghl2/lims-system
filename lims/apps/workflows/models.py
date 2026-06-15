@@ -56,6 +56,21 @@ class SampleRun(models.Model):
     site = models.ForeignKey("organizations.Site", on_delete=models.PROTECT, related_name="runs")
     barcode = models.CharField(max_length=50, blank=True, db_index=True)  # Run-level barcode / batch ID
     notes = models.TextField(blank=True)
+    extraction_method = models.CharField(
+        max_length=20, blank=True, default="",
+        choices=[
+            ("MANUAL", "Manual (手动提取)"),
+            ("MAGNETIC_ROD", "Magnetic Rod (磁棒法)"),
+            ("AUTOMATED", "Automated Workstation (自动化移液工作站)"),
+        ],
+    )
+    region = models.CharField(max_length=20, blank=True, default="",
+        choices=[
+            ("THAILAND", "泰国"), ("XIAMEN", "厦门"),
+            ("HONGKONG", "香港"), ("BRAZIL", "巴西"),
+        ],
+    )
+    extraction_data = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

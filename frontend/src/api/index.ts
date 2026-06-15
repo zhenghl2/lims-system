@@ -54,6 +54,8 @@ export const samplesApi = {
   stats: () => api.get<SampleStats>("/samples/stats/"),
   batchCreate: (data: { samples: Record<string, unknown>[] }) =>
     api.post("/samples/batch_create/", data),
+  registerFromPdf: (formData: FormData) =>
+    api.post("/samples/register-from-pdf/", formData),
 };
 
 // ── Runs ──────────────────────────────────────────────────────
