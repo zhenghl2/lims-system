@@ -83,6 +83,7 @@ export default function NiptSamples() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [colConfig, setColConfig] = useState(ALL_COLUMNS.map(c => ({...c})));
   const [form] = Form.useForm();
+  const [editingKey, setEditingKey] = useState<string>("");
 
   const visibleCols = colConfig.filter(c => c.visible);
   const columns = [
@@ -98,6 +99,8 @@ export default function NiptSamples() {
         </span>
       );
     } },
+
+
     { key: "actions", title: "", width: 50, fixed: "right" as const,
       render: (_: any, record: any) => (
         <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
@@ -106,6 +109,19 @@ export default function NiptSamples() {
       ),
     },
   ];
+
+  // Patch send_report_id for inline editing (double-click row to edit)
+  const sendReportCol = columns.find((c: any) => c.key === "send_report_id");
+  if (sendReportCol) {
+    // @ts-ignore — override render with record-aware inline editor
+    sendReportCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "send_report_id", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "send_report_id", e.target.value)}
+            style={{ width: 100 }} />
+        : (v || "-");
+  }
 
   const toggleCol = (key: string) => {
     setColConfig(prev => prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c));
@@ -234,6 +250,13 @@ export default function NiptSamples() {
     } catch { message.error("Failed"); }
   };
 
+  const saveCell = async (id: string, field: string, value: string) => {
+    if (!id || !value) return;
+    setEditingKey("");
+    setData(prev => prev.map(item => item.id === id ? { ...item, [field]: value } : item));
+    try { await samplesApi.update(id, { [field]: value }); } catch { message.error("Save failed"); }
+  };
+
   const handleDelete = async (id: string) => {
     try { await samplesApi.delete(id); message.success("Deleted"); fetchData(); } catch { message.error("Failed"); }
   };
@@ -266,7 +289,7 @@ export default function NiptSamples() {
           onChange={(v) => { setStatusFilter(v || ""); setPage(1); }}
           options={["", "REGISTERED", "RECEIVED", "IN_PROCESS", "COMPLETED", "REPORTED", "REJECTED"].map(v => ({ label: v || "All", value: v }))} />
       </div>
-      <Table rowKey="id" dataSource={data} columns={columns} loading={loading} size="small"
+      <Table rowKey="id" dataSource={data} columns={columns} loading={loading} size="small" onRow={(record) => ({ onDoubleClick: () => { if (record.id) setEditingKey(record.id); } })}
         scroll={{ x: 4500 }}
         pagination={{ current: page, pageSize, total, showTotal: t => `Total ${t}`, onChange: (p) => setPage(p) }} />
 
