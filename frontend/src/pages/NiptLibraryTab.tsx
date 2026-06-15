@@ -234,6 +234,15 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     });
   };
 
+  // ── Print library plate ──
+  const handlePrint = () => {
+    const style = document.createElement("style");
+    style.textContent = "@media print { body * { visibility: hidden; } #library-plate-print-area, #library-plate-print-area * { visibility: visible; } #library-plate-print-area { position: absolute; left: 0; top: 0; width: 100%; } .no-print-break { break-inside: avoid; } }";
+    document.head.appendChild(style);
+    window.print();
+    document.head.removeChild(style);
+  };
+
   const save = async () => {
     try {
       const vals = await form.validateFields();
@@ -369,53 +378,6 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
         </Col>
       </Row>
 
-      {/* ── 96-Well Library Plate ── */}
-      <Card
-        size="small"
-        title={`建库样本排布 — 96孔板（${samples.length} samples）`}
-        style={{ marginBottom: 16 }}
-      >
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", fontSize: 12 }}>
-            <thead>
-              <tr>
-                <th style={rowLabelStyle}></th>
-                {Array.from({ length: COL_COUNT }, (_, i) => i + 1).map(c => (
-                  <th key={c} style={thStyle}>{c}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {ROW_LABELS.map((label, row) => (
-                <tr key={row}>
-                  <td style={rowLabelStyle}>{label}</td>
-                  {Array.from({ length: COL_COUNT }, (_, col) => {
-                    const cell = plate[row]?.[col] || { vgId: "", index: "" };
-                    const bg = getCellBg(cell.vgId);
-                    return (
-                      <td key={col} style={{ ...cellStyle, background: bg }}>
-                        <div style={{ display: "flex", alignItems: "stretch", minHeight: 30 }}>
-                          <input
-                            type="text"
-                            value={cell.index}
-                            onChange={e => updateIndex(row, col, e.target.value)}
-                            style={inputStyle}
-                            placeholder="ix"
-                          />
-                          <div style={{ ...vgIdStyle, flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            {cell.vgId || ""}
-                          </div>
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
-
       {/* QC Controls */}
       <Card size="small" title="质控品" style={{ marginBottom: 16 }}>
         <Row gutter={16}>
@@ -475,6 +437,57 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
           <Col span={6}><Form.Item name="humidity" label="环境湿度 (%)"><InputNumber min={0} max={100} style={{ width: "100%" }} /></Form.Item></Col>
         </Row>
       </Form>
+
+      {/* ── 96-Well Library Plate ── */}
+      <div id="library-plate-print-area">
+      <Card
+        size="small"
+        className="no-print-break"
+        title={<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}><span>建库样本排布 — 96孔板（{samples.length} samples）</span><Button size="small" onClick={handlePrint} >打印</Button></div>}
+        style={{ marginBottom: 16 }}
+      >
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th style={rowLabelStyle}></th>
+                {Array.from({ length: COL_COUNT }, (_, i) => i + 1).map(c => (
+                  <th key={c} style={thStyle}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ROW_LABELS.map((label, row) => (
+                <tr key={row}>
+                  <td style={rowLabelStyle}>{label}</td>
+                  {Array.from({ length: COL_COUNT }, (_, col) => {
+                    const cell = plate[row]?.[col] || { vgId: "", index: "" };
+                    const bg = getCellBg(cell.vgId);
+                    return (
+                      <td key={col} style={{ ...cellStyle, background: bg }}>
+                        <div style={{ display: "flex", alignItems: "stretch", minHeight: 30 }}>
+                          <input
+                            type="text"
+                            value={cell.index}
+                            onChange={e => updateIndex(row, col, e.target.value)}
+                            style={inputStyle}
+                            placeholder="ix"
+                          />
+                          <div style={{ ...vgIdStyle, flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                            {cell.vgId || ""}
+                          </div>
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+      </div>
+
 
       {/* Step Confirmations */}
       <Card title="步骤确认" size="small" style={{ marginBottom: 16 }}>
