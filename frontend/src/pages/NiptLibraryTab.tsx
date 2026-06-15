@@ -216,11 +216,20 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   const kits = KITS_BY_REGION[region] || KITS_BY_REGION.XIAMEN;
 
   // ── Update index for a specific cell ──
+  // Row 0 is the top row (A); entering a number there auto-fills the column
   const updateIndex = (row: number, col: number, value: string) => {
     setPlate(prev => {
       const next = prev.map(r => [...r]);
       next[row] = [...next[row]];
       next[row][col] = { ...next[row][col], index: value };
+      // Auto-fill: if editing row 0 with a pure number, increment down the column
+      if (row === 0 && /^\d+$/.test(value.trim())) {
+        const base = parseInt(value, 10);
+        for (let r = 1; r < 8; r++) {
+          next[r] = [...next[r]];
+          next[r][col] = { ...next[r][col], index: String(base + r) };
+        }
+      }
       return next;
     });
   };
@@ -319,13 +328,13 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   };
   const inputStyle: React.CSSProperties = {
     width: 50, border: "none", borderRadius: 0, textAlign: "center",
-    padding: "2px 4px", fontSize: 11, background: "transparent",
+    padding: "2px 4px", fontSize: 11, background: "#fffbe6",
     borderRight: "1px solid #e0e0e0",
   };
   const vgIdStyle: React.CSSProperties = {
     fontSize: 11, padding: "2px 4px", textAlign: "center",
     whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-    maxWidth: 80,
+    maxWidth: 80, background: "#fafafa",
   };
 
   const getCellBg = (vgId: string) => vgId && vgId !== "-"
