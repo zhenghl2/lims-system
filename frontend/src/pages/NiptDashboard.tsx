@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Row, Col, Card, Statistic, Typography, Table, Tag, Space, Empty } from "antd";
-import { ExperimentOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, FileDoneOutlined, SyncOutlined } from "@ant-design/icons";
+import { ExperimentOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, FileDoneOutlined, FilterOutlined, BuildOutlined, MergeCellsOutlined, CloudUploadOutlined, BarChartOutlined } from "@ant-design/icons";
 import { samplesApi, runsApi } from "../api";
 
 const { Title, Text } = Typography;
@@ -36,11 +36,11 @@ export default function NiptDashboard() {
   const statCards = [
     { title: "Total", value: s.total || 0, icon: <ExperimentOutlined />, color: "#1677ff" },
     { title: "Received", value: s.received || 0, icon: <InboxOutlined />, color: "#faad14" },
-    { title: "核酸提取", value: s.extraction || 0, icon: <SyncOutlined spin />, color: "#13c2c2" },
-    { title: "文库构建", value: s.library_prep || 0, icon: <SyncOutlined spin />, color: "#1677ff" },
-    { title: "Pooling", value: s.pooling || 0, icon: <SyncOutlined spin />, color: "#2f54eb" },
-    { title: "上机测序", value: s.sequencing || 0, icon: <SyncOutlined spin />, color: "#722ed1" },
-    { title: "生信分析", value: s.bioinformatics || 0, icon: <SyncOutlined spin />, color: "#eb2f96" },
+    { title: "核酸提取", value: s.extraction || 0, icon: <FilterOutlined />, color: "#13c2c2" },
+    { title: "文库构建", value: s.library_prep || 0, icon: <BuildOutlined />, color: "#1677ff" },
+    { title: "Pooling", value: s.pooling || 0, icon: <MergeCellsOutlined />, color: "#2f54eb" },
+    { title: "上机测序", value: s.sequencing || 0, icon: <CloudUploadOutlined />, color: "#722ed1" },
+    { title: "生信分析", value: s.bioinformatics || 0, icon: <BarChartOutlined />, color: "#eb2f96" },
     { title: "Completed", value: s.completed || 0, icon: <CheckCircleOutlined />, color: "#52c41a" },
     { title: "Reported", value: s.reported || 0, icon: <FileDoneOutlined />, color: "#13c2c2" },
     { title: "Rejected", value: s.rejected || 0, icon: <CloseCircleOutlined />, color: "#ff4d4f" },
