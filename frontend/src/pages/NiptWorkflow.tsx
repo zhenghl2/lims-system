@@ -209,7 +209,7 @@ export default function NiptWorkflow() {
     <DashboardLayout>
       <div style={{ display: "flex", gap: 24, height: "calc(100vh - 160px)" }}>
         {/* Left: Batch List */}
-        <div style={{ width: sidebarCollapsed ? 50 : 480, flexShrink: 0, transition: "width 0.25s", overflow: "hidden" }}>
+        <div id="nipt-batch-panel" style={{ width: sidebarCollapsed ? 50 : 480, flexShrink: 0, transition: "width 0.25s", overflow: "hidden" }}>
           {sidebarCollapsed ? (
             <Button type="text" icon={<MenuFoldOutlined />} onClick={() => setSidebarCollapsed(false)}
               style={{ padding: 4, marginTop: 8 }} title="展开批次列表" />

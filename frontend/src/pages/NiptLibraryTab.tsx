@@ -242,7 +242,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     style.textContent = "@media print {"
       + " * { overflow: visible !important; }"
       + " html, body, #root, .ant-layout, .ant-layout-content { height: auto !important; max-height: none !important; }"
-      + " .ant-layout-sider, .ant-layout-sider * { display: none !important; }"
+      + " .ant-layout-sider, .ant-layout-sider *, #nipt-batch-panel, #nipt-batch-panel * { display: none !important; }"
       + " }";
     document.head.appendChild(style);
     window.print();
