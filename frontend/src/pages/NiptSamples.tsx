@@ -9,8 +9,18 @@ const { TextArea } = Input;
 
 const STATUS_MAP: Record<string, string> = {
   REGISTERED: "default", RECEIVING: "processing", RECEIVED: "blue",
-  IN_PROCESS: "orange", COMPLETED: "green", REPORTED: "purple",
+  IN_PROCESS: "orange",
+  EXTRACTION: "cyan", LIBRARY_PREP: "blue", POOLING: "geekblue",
+  SEQUENCING: "purple", BIOINFORMATICS: "magenta",
+  COMPLETED: "green", REPORTED: "purple",
   REJECTED: "red",
+};
+
+const STATUS_LABEL: Record<string, string> = {
+  REGISTERED: "Registered", RECEIVED: "Received", IN_PROCESS: "In Process",
+  EXTRACTION: "核酸提取", LIBRARY_PREP: "文库构建", POOLING: "文库定量及Pooling",
+  SEQUENCING: "上机测序", BIOINFORMATICS: "生物信息分析",
+  COMPLETED: "Completed", REJECTED: "Rejected",
 };
 
 const TEST_OPTIONS = [
@@ -94,7 +104,7 @@ export default function NiptSamples() {
       const reason = r.rejection_reason || "";
       return (
         <span>
-          <Tag color={STATUS_MAP[v] || "default"}>{v}</Tag>
+          <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABEL[v] || v}</Tag>
           {v === "REJECTED" && reason ? <Tag color="red" style={{ fontSize: 10, maxWidth: 120 }} title={reason}>{reason.replace("血浆分离不合格: ", "")}</Tag> : null}
         </span>
       );

@@ -122,7 +122,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
                 rs.save(update_fields=["well_position", "index_sequence", "pool_group", "barcode"])
             run_samples.append(rs)
             # Update sample status to IN_PROCESS
-            Sample.objects.filter(id=sid).update(status="IN_PROCESS")
+            Sample.objects.filter(id=sid).update(status="EXTRACTION")
 
         # Create workflow steps per sample from protocol or defaults
         # Resolve protocol: find active protocol for this panel, or auto-create default
@@ -255,12 +255,24 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         from lims.apps.samples.models import Sample
         from django.utils import timezone
 
+        # Sync sample status to match run step (for granular tracking)
+        STEP_TO_SAMPLE_STATUS = {
+            "PLANNED": "EXTRACTION",
+            "LIBRARY_PREP": "LIBRARY_PREP",
+            "LIBRARY_POOLING": "POOLING",
+            "SEQUENCING": "SEQUENCING",
+            "ANALYZING": "BIOINFORMATICS",
+            "QC_REVIEW": "BIOINFORMATICS",
+            "COMPLETED": "COMPLETED",
+        }
+        sample_status = STEP_TO_SAMPLE_STATUS.get(new_status)
+        if sample_status:
+            sample_ids = run.run_samples.values_list("sample_id", flat=True)
+            Sample.objects.filter(id__in=sample_ids).update(status=sample_status)
+
         if new_status == "COMPLETED":
             run.end_date = timezone.now()
             run.save(update_fields=["end_date"])
-
-            sample_ids = run.run_samples.values_list("sample_id", flat=True)
-            Sample.objects.filter(id__in=sample_ids).update(status="COMPLETED")
 
             # Auto-create draft reports for each sample in the run
             from lims.apps.reports.models import ReportTemplate, Report
