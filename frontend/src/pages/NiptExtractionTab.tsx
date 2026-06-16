@@ -251,6 +251,14 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     const s = samples[idx];
     return s?.sample_multiple_gestation === true;
   };
+  const testOptionTag = (idx: number): string => {
+    const s = samples[idx];
+    const t = s?.sample_test_option || "";
+    if (t === "Basic") return "Ⓑ";
+    if (t === "Basic All" || t === "NIPT_FULL") return "Ⓐ";
+    if (t === "Plus" || t === "NIPT_PLUS") return "Ⓟ";
+    return "";
+  };
 
   return (
     <div>
@@ -416,7 +424,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                     <td style={{border:"1px solid #d9d9d9",padding:"3px 4px",textAlign:"center",fontWeight:600,color:"#595959",fontSize:11}}>{r}</td>
                     {COLS_12.map(c=>{
                       const wl=`${r}${c}`; const idx=cellMap[wl];
-                      const label=idx!==undefined&&idx<samples.length?(isTwin(idx)?getLabel(idx)+"👶👶":getLabel(idx)):"";
+                      const label=idx!==undefined&&idx<samples.length?(getLabel(idx)+testOptionTag(idx)+(isTwin(idx)?"👶👶":"")):"";
                       if(!label) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:bg,minHeight:28,verticalAlign:"middle"}}></td>;
                       return <SampleCell key={c} label={label} sampleIdx={idx} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle"}} />;
                     })}
