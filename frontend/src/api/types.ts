@@ -216,6 +216,11 @@ export interface PanelStats {
   received: number;
   accepted: number;
   in_process: number;
+  extraction: number;
+  library_prep: number;
+  pooling: number;
+  sequencing: number;
+  bioinformatics: number;
   completed: number;
   reported: number;
   rejected: number;

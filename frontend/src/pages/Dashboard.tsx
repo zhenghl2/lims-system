@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { Card, Row, Col, Statistic, Spin, Alert } from "antd";
 import {
   InboxOutlined, CheckCircleOutlined, CloseCircleOutlined,
-  FileTextOutlined, ExperimentOutlined, LoadingOutlined,
+  FileTextOutlined, ExperimentOutlined,
 } from "@ant-design/icons";
 import { samplesApi } from "../api";
 import type { PanelStats } from "../api/types";
@@ -10,18 +10,24 @@ import DashboardLayout from "../components/DashboardLayout";
 
 const STATUS_COLORS: Record<string, string> = {
   received: "#1677ff",
-  accepted: "#52c41a",
-  in_process: "#faad14",
-  completed: "#13c2c2",
-  reported: "#722ed1",
+  extraction: "#13c2c2",
+  library_prep: "#1677ff",
+  pooling: "#2f54eb",
+  sequencing: "#722ed1",
+  bioinformatics: "#eb2f96",
+  completed: "#52c41a",
+  reported: "#13c2c2",
   rejected: "#ff4d4f",
 };
 
 const STATUS_ICONS: Record<string, React.ReactNode> = {
   received: <InboxOutlined />,
-  accepted: <CheckCircleOutlined />,
-  in_process: <LoadingOutlined />,
-  completed: <ExperimentOutlined />,
+  extraction: <ExperimentOutlined />,
+  library_prep: <ExperimentOutlined />,
+  pooling: <ExperimentOutlined />,
+  sequencing: <ExperimentOutlined />,
+  bioinformatics: <ExperimentOutlined />,
+  completed: <CheckCircleOutlined />,
   reported: <FileTextOutlined />,
   rejected: <CloseCircleOutlined />,
 };
@@ -38,6 +44,11 @@ function mergeNixtPanels(panels: PanelStats[]): PanelStats[] {
     received: nipt.received + plus.received,
     accepted: nipt.accepted + plus.accepted,
     in_process: nipt.in_process + plus.in_process,
+    extraction: nipt.extraction + plus.extraction,
+    library_prep: nipt.library_prep + plus.library_prep,
+    pooling: nipt.pooling + plus.pooling,
+    sequencing: nipt.sequencing + plus.sequencing,
+    bioinformatics: nipt.bioinformatics + plus.bioinformatics,
     completed: nipt.completed + plus.completed,
     reported: nipt.reported + plus.reported,
     rejected: nipt.rejected + plus.rejected,
@@ -88,7 +99,7 @@ export default function Dashboard() {
     );
   }
 
-  const STAT_KEYS = ["received", "in_process", "completed", "reported"] as const;
+  const STAT_KEYS = ["received", "extraction", "library_prep", "pooling", "sequencing", "bioinformatics", "completed", "reported"] as const;
 
   return (
     <DashboardLayout header="Dashboard">
@@ -105,9 +116,9 @@ export default function Dashboard() {
             >
               <Row gutter={[8, 12]}>
                 {STAT_KEYS.map(key => (
-                  <Col key={key} span={12}>
+                  <Col key={key} span={6}>
                     <Statistic
-                      title={key.replace("_", " ")}
+                      title={key === "library_prep" ? "文库构建" : key === "pooling" ? "Pooling" : key === "sequencing" ? "上机测序" : key === "bioinformatics" ? "生信分析" : key === "extraction" ? "核酸提取" : key.replace("_", " ")}
                       value={p[key]}
                       prefix={STATUS_ICONS[key]}
                       valueStyle={{ color: STATUS_COLORS[key], fontSize: 22 }}

@@ -17,11 +17,14 @@ export default function NiptDashboard() {
       setStats({
         total: Number(nipt.total || 0) + Number(niptPlus.total || 0),
         received: Number(nipt.received || 0) + Number(niptPlus.received || 0),
-        in_process: Number(nipt.in_process || 0) + Number(niptPlus.in_process || 0),
+        extraction: Number(nipt.extraction || 0) + Number(niptPlus.extraction || 0),
+        library_prep: Number(nipt.library_prep || 0) + Number(niptPlus.library_prep || 0),
+        pooling: Number(nipt.pooling || 0) + Number(niptPlus.pooling || 0),
+        sequencing: Number(nipt.sequencing || 0) + Number(niptPlus.sequencing || 0),
+        bioinformatics: Number(nipt.bioinformatics || 0) + Number(niptPlus.bioinformatics || 0),
         completed: Number(nipt.completed || 0) + Number(niptPlus.completed || 0),
         reported: Number(nipt.reported || 0) + Number(niptPlus.reported || 0),
         rejected: Number(nipt.rejected || 0) + Number(niptPlus.rejected || 0),
-        pending: Number(nipt.total || 0) + Number(niptPlus.total || 0),
       });
     }).catch(() => {});
     runsApi.list({ panel_code: "NIPT,NIPT_PLUS", page_size: 5, ordering: "-created_at" })
@@ -33,7 +36,11 @@ export default function NiptDashboard() {
   const statCards = [
     { title: "Total", value: s.total || 0, icon: <ExperimentOutlined />, color: "#1677ff" },
     { title: "Received", value: s.received || 0, icon: <InboxOutlined />, color: "#faad14" },
-    { title: "In Process", value: s.in_process || 0, icon: <SyncOutlined spin />, color: "#722ed1" },
+    { title: "核酸提取", value: s.extraction || 0, icon: <SyncOutlined spin />, color: "#13c2c2" },
+    { title: "文库构建", value: s.library_prep || 0, icon: <SyncOutlined spin />, color: "#1677ff" },
+    { title: "Pooling", value: s.pooling || 0, icon: <SyncOutlined spin />, color: "#2f54eb" },
+    { title: "上机测序", value: s.sequencing || 0, icon: <SyncOutlined spin />, color: "#722ed1" },
+    { title: "生信分析", value: s.bioinformatics || 0, icon: <SyncOutlined spin />, color: "#eb2f96" },
     { title: "Completed", value: s.completed || 0, icon: <CheckCircleOutlined />, color: "#52c41a" },
     { title: "Reported", value: s.reported || 0, icon: <FileDoneOutlined />, color: "#13c2c2" },
     { title: "Rejected", value: s.rejected || 0, icon: <CloseCircleOutlined />, color: "#ff4d4f" },
@@ -50,7 +57,7 @@ export default function NiptDashboard() {
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         {statCards.map((c, i) => (
-          <Col span={4} key={i}>
+          <Col span={4} key={i} style={{ minWidth: 140 }}>
             <Card size="small" hoverable>
               <Statistic title={c.title} value={c.value} prefix={c.icon} valueStyle={{ color: c.color }} />
             </Card>
