@@ -249,22 +249,28 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   };
   const getSampleBadge = (idx: number) => {
     const s = samples[idx];
-    if (!s) return { text: "" };
+    if (!s) return { text: "", bg: undefined as string | undefined };
     const isTwin = s?.sample_multiple_gestation === true;
-    const testOpt = s?.sample_test_option || "";
-    if (isTwin) {
-      return { text: "Twin", color: "#fa8c16", bg: "#fff7e6" };
-    }
+    const testOpt = (s?.sample_test_option || "").trim();
+    // Test option → background color
     if (testOpt === "Plus" || testOpt === "NIPT_PLUS") {
-      return { text: "Plus", color: "#1677ff", bg: "#e6f4ff" };
+      return { text: isTwin ? "👶👶" : "", bg: "#e6f4ff" };
     }
     if (testOpt === "Basic All" || testOpt === "NIPT_FULL") {
-      return { text: "All", color: "#52c41a", bg: "#f6ffed" };
+      return { text: isTwin ? "👶👶" : "", bg: "#f6ffed" };
     }
     if (testOpt === "Basic") {
-      return { text: "Basic", color: "#722ed1", bg: "#f9f0ff" };
+      return { text: isTwin ? "👶👶" : "", bg: "#f9f0ff" };
     }
-    return { text: "" };
+    if (isTwin) {
+      return { text: "👶👶", bg: undefined };
+    }
+    return { text: "", bg: undefined };
+  };
+  const getCellBg = (idx?: number) => {
+    if (idx === undefined) return "#fafafa";
+    const badge = getSampleBadge(idx);
+    return badge.bg || (samples[idx]?.sample_vg_id ? "#e8f5e9" : "#fafafa");
   };
 
   return (
@@ -432,8 +438,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                     {COLS_12.map(c=>{
                       const wl=`${r}${c}`; const idx=cellMap[wl];
                       const label=idx!==undefined&&idx<samples.length?((getSampleBadge(idx)?getSampleBadge(idx).text+" ":"" )+getLabel(idx)):"";
-                      if(!label) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:bg,minHeight:28,verticalAlign:"middle"}}></td>;
-                      return <SampleCell key={c} label={label} sampleIdx={idx} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle"}} />;
+                      if(!label) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:getCellBg(idx),minHeight:28,verticalAlign:"middle"}}></td>;
+                      return <SampleCell key={c} label={label} sampleIdx={idx} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle",background:getCellBg(idx)}} />;
                     })}
                   </tr>);
                 })}
