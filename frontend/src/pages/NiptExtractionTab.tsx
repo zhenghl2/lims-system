@@ -79,7 +79,7 @@ function SampleCell({ label, sampleIdx, results, onChange, cellStyle }: {
     return <td style={cellStyle}></td>;
   }
 
-  const bg = status === "fail" ? "#fff1f0" : "#f6ffed";
+  const bg = cellStyle?.background || (status === "fail" ? "#fff1f0" : "#f6ffed");
   const color = status === "fail" ? "#cf1322" : "#52c41a";
 
   const popContent = (
