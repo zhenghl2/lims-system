@@ -264,7 +264,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const getCellBg = (idx?: number) => {
     if (idx === undefined) return "#fafafa";
     const badge = getSampleBadge(idx);
-    return badge.bg || (samples[idx]?.sample_vg_id ? "#e8f5e9" : "#fafafa");
+    return badge.bg || (samples[idx] ? "#e8f5e9" : "#fafafa");
   };
 
   return (
