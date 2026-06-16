@@ -263,7 +263,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
       return { text: isTwin ? "👶👶" : "", bg: "#f9f0ff" };
     }
     if (isTwin) {
-      return { text: "👶👶", bg: undefined };
+      return { text: "👶👶", bg: "#fff7e6" };
     }
     return { text: "", bg: undefined };
   };
