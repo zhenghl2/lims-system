@@ -41,11 +41,14 @@ class RunSampleSerializer(serializers.ModelSerializer):
     sample_barcode = serializers.CharField(source="sample.sample_id", read_only=True)
     sample_vg_id = serializers.CharField(source="sample.vg_id", read_only=True, default="")
     sample_patient_id = serializers.CharField(source="sample.patient_id", read_only=True, default="")
+    sample_multiple_gestation = serializers.BooleanField(source="sample.multiple_gestation", read_only=True, default=False)
+    sample_gestational_weeks = serializers.IntegerField(source="sample.gestational_weeks", read_only=True, default=None)
 
     class Meta:
         model = RunSample
         fields = [
             "id", "run", "sample", "sample_barcode", "sample_vg_id", "sample_patient_id",
+            "sample_multiple_gestation", "sample_gestational_weeks",
             "well_position", "plate_number", "index_sequence", "index_combo_id",
             "pool_group", "barcode", "status", "result_summary", "created_at",
         ]
