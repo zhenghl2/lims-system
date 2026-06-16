@@ -83,10 +83,12 @@ export default function NiptDashboard() {
         <Col span={12}>
           <Card title="Quick Guide" size="small">
             <Space direction="vertical" size="small">
-              <Text>1. Register samples in <Text strong>Sample Registration</Text></Text>
-              <Text>2. Receive samples in <Text strong>Sample Receiving</Text></Text>
-              <Text>3. Create batches and run workflow in <Text strong>Workflow</Text></Text>
-              <Text>4. NGS-NIPT: 核酸提取 → 文库构建 → 上机测序 → 生物信息分析</Text>
+              <Text>1. Register samples in <Text strong>Sample Registration</Text>（样本登记）</Text>
+              <Text>2. Receive samples in <Text strong>Receiving</Text>（样本签收）</Text>
+              <Text>3. Create batch and start workflow in <Text strong>Lab Workflow</Text>（实验流程）</Text>
+              <Text>4. NIPT 5-step workflow:</Text>
+              <Text style={{ paddingLeft: 16 }}>① 核酸提取 → ② 文库构建 → ③ 文库定量及Pooling → ④ 上机测序 → ⑤ 生物信息分析</Text>
+              <Text>5. View reports in <Text strong>Reports</Text>（报告）</Text>
             </Space>
           </Card>
         </Col>
