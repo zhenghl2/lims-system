@@ -252,18 +252,12 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     if (!s) return { text: "", bg: undefined as string | undefined };
     const isTwin = s?.sample_multiple_gestation === true;
     const testOpt = (s?.sample_test_option || "").trim();
-    // Test option → background color
+    // Only Plus gets a colored background; twin uses emoji
     if (testOpt === "Plus" || testOpt === "NIPT_PLUS") {
       return { text: isTwin ? "👶👶" : "", bg: "#e6f4ff" };
     }
-    if (testOpt === "Basic All" || testOpt === "NIPT_FULL") {
-      return { text: isTwin ? "👶👶" : "", bg: "#f6ffed" };
-    }
-    if (testOpt === "Basic") {
-      return { text: isTwin ? "👶👶" : "", bg: "#f9f0ff" };
-    }
     if (isTwin) {
-      return { text: "👶👶", bg: "#fff7e6" };
+      return { text: "👶👶", bg: undefined };
     }
     return { text: "", bg: undefined };
   };
