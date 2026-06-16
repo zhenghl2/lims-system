@@ -247,17 +247,24 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     const s = samples[idx];
     return s ? (s.sample_vg_id || s.sample_barcode || s.vg_id || s.sample_id || "-") : "-";
   };
-  const isTwin = (idx: number) => {
+  const getSampleBadge = (idx: number) => {
     const s = samples[idx];
-    return s?.sample_multiple_gestation === true;
-  };
-  const testOptionTag = (idx: number): string => {
-    const s = samples[idx];
-    const t = s?.sample_test_option || "";
-    if (t === "Basic") return "Ⓑ";
-    if (t === "Basic All" || t === "NIPT_FULL") return "Ⓐ";
-    if (t === "Plus" || t === "NIPT_PLUS") return "Ⓟ";
-    return "";
+    if (!s) return { text: "" };
+    const isTwin = s?.sample_multiple_gestation === true;
+    const testOpt = s?.sample_test_option || "";
+    if (isTwin) {
+      return { text: "Twin", color: "#fa8c16", bg: "#fff7e6" };
+    }
+    if (testOpt === "Plus" || testOpt === "NIPT_PLUS") {
+      return { text: "Plus", color: "#1677ff", bg: "#e6f4ff" };
+    }
+    if (testOpt === "Basic All" || testOpt === "NIPT_FULL") {
+      return { text: "All", color: "#52c41a", bg: "#f6ffed" };
+    }
+    if (testOpt === "Basic") {
+      return { text: "Basic", color: "#722ed1", bg: "#f9f0ff" };
+    }
+    return { text: "" };
   };
 
   return (
@@ -373,8 +380,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                       {ROWS_8.map((r,rowIdx)=>{
                         const bg = rowIdx%2===0?"#fff":"#f5f5f5";
                         const col1Idx=base+rowIdx, col7Idx=base+8+rowIdx;
-                        const s1=col1Idx<samples.length?(isTwin(col1Idx)?getLabel(col1Idx)+"👶👶":getLabel(col1Idx)):"";
-                        const s7=col7Idx<samples.length?(isTwin(col7Idx)?getLabel(col7Idx)+"👶👶":getLabel(col7Idx)):"";
+                        const s1=col1Idx<samples.length?((getSampleBadge(col1Idx)?getSampleBadge(col1Idx)!.text+" ":"" )+getLabel(col1Idx)):"";
+                        const s7=col7Idx<samples.length?((getSampleBadge(col7Idx)?getSampleBadge(col7Idx)!.text+" ":"" )+getLabel(col7Idx)):"";
                         return (<tr key={r} style={{background:bg}}>
                           <td style={{border:"1px solid #d9d9d9",padding:"3px 4px",textAlign:"center",fontWeight:600,color:"#595959",fontSize:11}}>{r}</td>
                           {COLS_12.map(c=>{
@@ -424,7 +431,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                     <td style={{border:"1px solid #d9d9d9",padding:"3px 4px",textAlign:"center",fontWeight:600,color:"#595959",fontSize:11}}>{r}</td>
                     {COLS_12.map(c=>{
                       const wl=`${r}${c}`; const idx=cellMap[wl];
-                      const label=idx!==undefined&&idx<samples.length?(getLabel(idx)+testOptionTag(idx)+(isTwin(idx)?"👶👶":"")):"";
+                      const label=idx!==undefined&&idx<samples.length?((getSampleBadge(idx)?getSampleBadge(idx).text+" ":"" )+getLabel(idx)):"";
                       if(!label) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:bg,minHeight:28,verticalAlign:"middle"}}></td>;
                       return <SampleCell key={c} label={label} sampleIdx={idx} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle"}} />;
                     })}
