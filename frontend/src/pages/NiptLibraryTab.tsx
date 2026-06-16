@@ -236,11 +236,14 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
 
   // ── Print library plate ──
   const handlePrint = () => {
-    // Temporarily unset height/overflow on all scrollable ancestors so the full
-    // page content renders for print instead of just the visible viewport.
+    // Print only the library construction content — hide sidebar and batch panel
     const style = document.createElement("style");
     style.id = "print-fix";
-    style.textContent = "@media print { * { overflow: visible !important; } html, body, #root, .ant-layout, .ant-layout-content { height: auto !important; max-height: none !important; } }";
+    style.textContent = "@media print {"
+      + " * { overflow: visible !important; }"
+      + " html, body, #root, .ant-layout, .ant-layout-content { height: auto !important; max-height: none !important; }"
+      + " .ant-layout-sider, .ant-layout-sider * { display: none !important; }"
+      + " }";
     document.head.appendChild(style);
     window.print();
     setTimeout(() => { const s = document.getElementById("print-fix"); if (s) s.remove(); }, 100);
