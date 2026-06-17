@@ -44,21 +44,55 @@ class ReportViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def review(self, request, pk=None):
+        """Review bioinformatics results — requires reviewer name + password."""
         report = self.get_object()
+        reviewer_name = request.data.get("reviewer_name", "").strip()
+        password = request.data.get("password", "").strip()
+
+        if not reviewer_name or not password:
+            return Response({"error": "请选择审核人员并输入密码"}, status=400)
+
+        # Find the reviewer user by first_name
+        from lims.apps.users.models import User
+        reviewer = User.objects.filter(first_name=reviewer_name, is_active=True).first()
+        if not reviewer:
+            return Response({"error": f"未找到审核人员: {reviewer_name}"}, status=400)
+        if not reviewer.check_password(password):
+            return Response({"error": "密码错误"}, status=400)
+
         report.status = "REVIEWED"
-        report.reviewed_by = request.user
+        report.reviewed_by = reviewer
         report.reviewed_at = timezone.now()
         report.save(update_fields=["status", "reviewed_by", "reviewed_at"])
-        return Response({"status": "REVIEWED"})
+        return Response(ReportListSerializer(report).data)
 
     @action(detail=True, methods=["post"])
     def verify(self, request, pk=None):
+        """Verify report — requires verifier name + password. Sets RELEASED."""
         report = self.get_object()
-        report.status = "VERIFIED"
-        report.verified_by = request.user
+        verifier_name = request.data.get("verifier_name", "").strip()
+        password = request.data.get("password", "").strip()
+
+        if not verifier_name or not password:
+            return Response({"error": "请选择验证人员并输入密码"}, status=400)
+
+        from lims.apps.users.models import User
+        verifier = User.objects.filter(first_name=verifier_name, is_active=True).first()
+        if not verifier:
+            return Response({"error": f"未找到验证人员: {verifier_name}"}, status=400)
+        if not verifier.check_password(password):
+            return Response({"error": "密码错误"}, status=400)
+
+        report.status = "RELEASED"
+        report.verified_by = verifier
         report.verified_at = timezone.now()
-        report.save(update_fields=["status", "verified_by", "verified_at"])
-        return Response({"status": "VERIFIED"})
+        report.released_at = timezone.now()
+        report.save(update_fields=["status", "verified_by", "verified_at", "released_at", "updated_at"])
+
+        # Mark sample as REPORTED
+        report.sample.status = "REPORTED"
+        report.sample.save(update_fields=["status", "updated_at"])
+        return Response(ReportListSerializer(report).data)
 
     @action(detail=True, methods=["post"])
     def sign(self, request, pk=None):

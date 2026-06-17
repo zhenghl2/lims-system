@@ -22,7 +22,7 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
       pcr_instrument: pdata.pcr_instrument || "YSFH-EI-024-07",
       kit_type: pdata.kit_type || undefined,
       reagent_lot: pdata.reagent_lot || "",
-      reagent_expiry: pdata.reagent_expiry || "",
+      reagent_expiry: pdata.reagent_expiry ? dayjs(pdata.reagent_expiry) : undefined,
       pcr_program: pdata.pcr_program || "",
     });
     setSteps(pdata.step_confirmations || {});
@@ -50,7 +50,7 @@ export default function PcrTab({ batch, onRefresh }: { batch: any; onRefresh: ()
         pcr_instrument: vals.pcr_instrument,
         kit_type: vals.kit_type,
         reagent_lot: vals.reagent_lot,
-        reagent_expiry: vals.reagent_expiry,
+        reagent_expiry: vals.reagent_expiry?.format("YYYY-MM") || "",
         pcr_program: vals.pcr_program,
         negative_control: { count: 1 },
         positive_control: { count: 1 },

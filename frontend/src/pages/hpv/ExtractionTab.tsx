@@ -21,7 +21,7 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
       extraction_instrument: edata.extraction_instrument || "YSFH-EI-056",
       kit_type: edata.kit_type || undefined,
       reagent_lot: edata.reagent_lot || "",
-      reagent_expiry: edata.reagent_expiry || "",
+      reagent_expiry: edata.reagent_expiry ? dayjs(edata.reagent_expiry) : undefined,
     });
     setSteps(edata.step_confirmations || {});
   }, [edata, form]);
@@ -48,7 +48,7 @@ export default function ExtractionTab({ batch, wells, onRefresh }: { batch: any;
         extraction_instrument: vals.extraction_instrument,
         kit_type: vals.kit_type,
         reagent_lot: vals.reagent_lot,
-        reagent_expiry: vals.reagent_expiry,
+        reagent_expiry: vals.reagent_expiry?.format("YYYY-MM") || "",
         step_confirmations: steps,
       });
       message.success("核酸提取记录已保存");

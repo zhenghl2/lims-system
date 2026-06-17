@@ -502,6 +502,19 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         run.save(update_fields=["sequencing_data", "updated_at"])
         return Response(current)
 
+    @action(detail=True, methods=["post"], url_path="save_bioinformatics")
+    def save_bioinformatics(self, request, pk=None):
+        """Save NIPT bioinformatics analysis results."""
+        run = self.get_object()
+        bio_data = request.data.get("bioinformatics_data", {})
+
+        current = run.bioinformatics_data or {}
+        current.update(bio_data)
+        run.bioinformatics_data = current
+        run.save(update_fields=["bioinformatics_data", "updated_at"])
+
+        return Response({"bioinformatics_data": run.bioinformatics_data})
+
     @action(detail=False, methods=["get"])
     def stats(self, request):
         """Run statistics."""

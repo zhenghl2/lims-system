@@ -101,8 +101,8 @@ export const reportsApi = {
   list: (params?: Record<string, unknown>) =>
     api.get<Pageable<Report>>("/reports/", { params }),
   get: (id: string) => api.get<Report>(`/reports/${id}/`),
-  review: (id: string) => api.post(`/reports/${id}/review/`),
-  verify: (id: string) => api.post(`/reports/${id}/verify/`),
+  review: (id: string, data?: Record<string, unknown>) => api.post(`/reports/${id}/review/`, data),
+  verify: (id: string, data?: Record<string, unknown>) => api.post(`/reports/${id}/verify/`, data),
   sign: (id: string, password: string) =>
     api.post(`/reports/${id}/sign/`, { password }),
   release: (id: string) => api.post(`/reports/${id}/release/`),

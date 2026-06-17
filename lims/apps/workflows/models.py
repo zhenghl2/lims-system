@@ -82,6 +82,7 @@ class SampleRun(models.Model):
     library_data = models.JSONField(default=dict, blank=True)
     pooling_data = models.JSONField(default=dict, blank=True)
     sequencing_data = models.JSONField(default=dict, blank=True)
+    bioinformatics_data = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

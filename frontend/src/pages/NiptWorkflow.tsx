@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { Table, Button, Tag, Space, Typography, Modal, Form, Select, Input, InputNumber, DatePicker, message, Popconfirm, Card, Empty, Row, Col, Tabs } from "antd";
+import { Table, Button, Tag, Space, Typography, Modal, Form, Input, message, Popconfirm, Card, Empty, Tabs } from "antd";
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { runsApi, samplesApi } from "../api";
@@ -7,6 +7,7 @@ import NiptExtractionTab from "./NiptExtractionTab";
 import NiptLibraryTab from "./NiptLibraryTab";
 import NiptPoolingTab from "./NiptPoolingTab";
 import NiptSequencingTab from "./NiptSequencingTab";
+import NiptBioinformaticsTab from "./NiptBioinformaticsTab";
 import DashboardLayout from "../components/DashboardLayout";
 import { useTranslation } from "../i18n/useTranslation";
 
@@ -130,7 +131,7 @@ export default function NiptWorkflow() {
   };
 
   const nextStatus = selectedBatch ? (() => {
-    const order = ["PLANNED", "LIBRARY_PREP", "SEQUENCING", "ANALYZING", "QC_REVIEW", "COMPLETED"];
+    const order = ["PLANNED", "LIBRARY_PREP", "LIBRARY_POOLING", "SEQUENCING", "ANALYZING", "QC_REVIEW", "COMPLETED"];
     const idx = order.indexOf(selectedBatch.status);
     return idx >= 0 && idx < order.length - 1 ? order[idx + 1] : null;
   })() : null;
@@ -180,27 +181,11 @@ export default function NiptWorkflow() {
         );
       case "bioinformatics":
         return (
-          <Row gutter={[16, 16]}>
-            <Col span={6}><Form.Item name="bio_date" label="分析日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_operator" label="分析人员" rules={[{ required: true }]}><Input placeholder="Name" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_software" label="分析软件/版本" rules={[{ required: true }]}><Input placeholder="e.g. WisecondorX v1.2" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_genome" label="参考基因组"><Select placeholder="Select" options={[{ value: "hg19", label: "hg19 (GRCh37)" }, { value: "hg38", label: "hg38 (GRCh38)" }]} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_mapped" label="Unique Mapped (%)"><InputNumber min={0} max={100} step={0.1} style={{ width: "100%" }} placeholder="e.g. 85.2" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_gc" label="GC 含量 (%)"><InputNumber min={0} max={100} step={0.1} style={{ width: "100%" }} placeholder="e.g. 42.1" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_dup" label="Duplication (%)"><InputNumber min={0} max={100} step={0.1} style={{ width: "100%" }} placeholder="e.g. 3.5" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_data" label="有效数据量 (Mb)"><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 15.2" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_ff" label="FF 胎儿分数 (%)"><InputNumber min={0} max={100} step={0.01} style={{ width: "100%" }} placeholder="e.g. 10.5" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_z13" label="Chr13 Z-score"><InputNumber step={0.01} style={{ width: "100%" }} placeholder="e.g. 0.85" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_z18" label="Chr18 Z-score"><InputNumber step={0.01} style={{ width: "100%" }} placeholder="e.g. 1.23" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_z21" label="Chr21 Z-score"><InputNumber step={0.01} style={{ width: "100%" }} placeholder="e.g. -0.42" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_qc" label="质控结果" rules={[{ required: true }]}><Select placeholder="Pass / Fail" options={[{ value: "PASS", label: "✅ 合格" }, { value: "FAIL", label: "❌ 不合格" }]} /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_qc_note" label="质控备注"><Input placeholder="如不合格，说明原因" /></Form.Item></Col>
-            <Col span={6}><Form.Item name="bio_conclusion" label="分析结论"><Select placeholder="Select" options={[
-              { value: "LOW_RISK", label: "低风险" }, { value: "HIGH_RISK", label: "高风险" },
-              { value: "NO_CALL", label: "无法判定" },
-            ]} /></Form.Item></Col>
-            <Col span={24}><Form.Item name="bio_notes" label="备注"><Input.TextArea rows={2} placeholder="记录生信分析观察..." /></Form.Item></Col>
-          </Row>
+          <NiptBioinformaticsTab
+            batch={selectedBatch}
+            samples={batchDetail?.run_samples || batchDetail?.samples || []}
+            onRefresh={() => fetchDetail(selectedBatch.id)}
+          />
         );
       default:
         return <Empty description="Select a step" />;

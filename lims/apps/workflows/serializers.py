@@ -41,15 +41,23 @@ class RunSampleSerializer(serializers.ModelSerializer):
     sample_barcode = serializers.CharField(source="sample.sample_id", read_only=True)
     sample_vg_id = serializers.CharField(source="sample.vg_id", read_only=True, default="")
     sample_patient_id = serializers.CharField(source="sample.patient_id", read_only=True, default="")
+    sample_patient_name = serializers.CharField(source="sample.patient_name", read_only=True, default="")
     sample_multiple_gestation = serializers.BooleanField(source="sample.multiple_gestation", read_only=True, default=False)
     sample_gestational_weeks = serializers.IntegerField(source="sample.gestational_weeks", read_only=True, default=None)
     sample_test_option = serializers.CharField(source="sample.test_option", read_only=True, default="")
+    sample_source = serializers.CharField(source="sample.source_institution", read_only=True, default="")
+    sample_ivf = serializers.BooleanField(source="sample.ivf_status", read_only=True, default=False)
+    sample_pregnancy_history = serializers.CharField(source="sample.pregnancy_history", read_only=True, default="")
+    sample_diagnosis = serializers.CharField(source="sample.clinical_diagnosis", read_only=True, default="")
+    sample_fetal_fraction = serializers.FloatField(source="sample.fetal_fraction", read_only=True, default=None)
 
     class Meta:
         model = RunSample
         fields = [
             "id", "run", "sample", "sample_barcode", "sample_vg_id", "sample_patient_id",
-            "sample_multiple_gestation", "sample_gestational_weeks", "sample_test_option",
+            "sample_patient_name", "sample_multiple_gestation", "sample_gestational_weeks",
+            "sample_test_option", "sample_source", "sample_ivf", "sample_pregnancy_history",
+            "sample_diagnosis", "sample_fetal_fraction",
             "well_position", "plate_number", "index_sequence", "index_combo_id",
             "pool_group", "barcode", "status", "result_summary", "created_at",
         ]
@@ -74,7 +82,7 @@ class SampleRunSerializer(serializers.ModelSerializer):
             "sample_count", "created_at", "updated_at",
             "extraction_method", "extraction_data", "region",
             "library_method", "library_data",
-            "pooling_data", "sequencing_data",
+            "pooling_data", "sequencing_data", "bioinformatics_data",
         ]
         read_only_fields = ["created_at", "updated_at"]
 

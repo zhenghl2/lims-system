@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Switch, Popover, Checkbox } from "antd";
-import { PlusOutlined, DeleteOutlined, ReloadOutlined, UploadOutlined, SettingOutlined } from "@ant-design/icons";
+import { PlusOutlined, DeleteOutlined, ReloadOutlined, UploadOutlined, SettingOutlined, DownloadOutlined } from "@ant-design/icons";
+import { Upload } from "antd";
+import * as XLSX from "xlsx";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
 
@@ -82,6 +84,7 @@ export default function NiptSamples() {
   const [modalOpen, setModalOpen] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [batchText, setBatchText] = useState("");
+  const [batchUploadMode, setBatchUploadMode] = useState<"paste" | "upload">("paste");
   const [fileModalOpen, setFileModalOpen] = useState(false);
   const [fileSource, setFileSource] = useState("泰国");
   const [fileList, setFileList] = useState<any[]>([]);
@@ -249,20 +252,46 @@ export default function NiptSamples() {
     } catch (e: any) { if (e?.errorFields) return; message.error("Failed"); }
   };
 
+  // Parse one CSV line handling quotes
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = [];
+    let current = "", inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (inQuotes) {
+        if (ch === '"') { inQuotes = false; }
+        else { current += ch; }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        result.push(current); current = "";
+      } else {
+        current += ch;
+      }
+    }
+    result.push(current);
+    return result;
+  };
+
   const handleBatchRegister = async () => {
     const lines = batchText.trim().split("\n").filter(l => l.trim());
     if (lines.length === 0) { message.warning("No data"); return; }
     const samples = lines.map(line => {
-      const p = line.split("\t");
+      const p = parseCSVLine(line);
+      const getNum = (i: number) => { const v = p[i]?.trim(); return v ? parseInt(v) || null : null; };
+      const getBool = (i: number) => { const v = p[i]?.trim().toUpperCase(); return v === "Y" || v === "YES" || v === "TRUE"; };
       return {
-        patient_name: p[0]?.trim() || "", age: parseInt(p[1]) || null, gestational_weeks: parseInt(p[2]) || null,
-        panel_code: p[3]?.trim() || "NIPT", source_institution: p[4]?.trim() || "", id_card: p[5]?.trim() || "",
-        external_id: p[6]?.trim() || "", collection_date: p[7]?.trim() || undefined, acceptance_date: p[8]?.trim() || undefined,
-        physician: p[9]?.trim() || "", patient_dob: p[10]?.trim() || undefined, report_code: p[11]?.trim() || "",
-        send_report_id: p[12]?.trim() || "", last_menstrual_period: p[13]?.trim() || undefined,
-        multiple_gestation: p[14]?.trim() === "Y", ivf_status: p[15]?.trim() === "Y",
-        pregnancy_history: p[16]?.trim() || "", clinical_diagnosis: p[17]?.trim() || "",
-        fedex_no: p[18]?.trim() || "", test_option: p[19]?.trim() || "NIPT",
+        patient_name: p[0]?.trim() || "", age: getNum(1), gestational_weeks: getNum(2),
+        panel_code: p[3]?.trim() || undefined, source_institution: p[4]?.trim() || undefined,
+        id_card: p[5]?.trim() || undefined, external_id: p[6]?.trim() || undefined,
+        collection_date: p[7]?.trim() || undefined, acceptance_date: p[8]?.trim() || undefined,
+        physician: p[9]?.trim() || undefined, patient_dob: p[10]?.trim() || undefined,
+        report_code: p[11]?.trim() || undefined, send_report_id: p[12]?.trim() || undefined,
+        last_menstrual_period: p[13]?.trim() || undefined,
+        multiple_gestation: getBool(14), ivf_status: getBool(15),
+        pregnancy_history: p[16]?.trim() || undefined,
+        clinical_diagnosis: p[17]?.trim() || undefined,
+        fedex_no: p[18]?.trim() || undefined, test_option: p[19]?.trim() || undefined,
       };
     });
     try {
@@ -270,6 +299,59 @@ export default function NiptSamples() {
       message.success(`Registered ${samples.length}`);
       setBatchText(""); setBatchMode(false); fetchData();
     } catch { message.error("Failed"); }
+  };
+
+  // Download CSV template
+  const handleDownloadTemplate = () => {
+    const headers = [
+      "Name", "Age", "GestWeeks", "Panel", "Source", "IDCard", "ExtID",
+      "CollDate", "AcptDate", "Physician", "DOB", "RptCode", "SendID", "LMP",
+      "Twin(Y/N)", "IVF(Y/N)", "PregHist", "Diagnosis", "FedEx", "TestOpt",
+    ];
+    const example = [
+      "Zhang Li", "28", "12", "NIPT", "Bangkok Hospital", "440101199801012345",
+      "BCC-2026001", "2026-06-01", "2026-06-03", "Dr.Somchai", "1998-05-15",
+      "RPT-BCC-001", "SND001", "2026-03-01", "N", "N", "G1P0", "Normal",
+      "FX1234567890", "NIPT",
+    ];
+    // Generate CSV content
+    const csvContent = [headers, example]
+      .map(row => row.map(cell => cell.includes(",") ? `"${cell}"` : cell).join(","))
+      .join("\n");
+    // Trigger download
+    const blob = new Blob(["\uFEFF" + csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "NIPT_Batch_Import_Template.csv";
+    a.click(); URL.revokeObjectURL(url);
+  };
+
+  // Handle Excel/CSV file upload
+  const handleUploadExcel = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        const workbook = XLSX.read(data, { type: "array" });
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+        if (rows.length < 2) { message.warning("Excel file must have header + at least one data row"); return; }
+        // Convert rows to CSV text in textarea
+        const csvLines = rows.slice(1).map(row => {
+          return row.map((cell: any) => {
+            const s = String(cell ?? "").trim();
+            return s.includes(",") ? `"${s}"` : s;
+          }).join(",");
+        }).join("\n");
+        setBatchText(csvLines);
+        setBatchUploadMode("paste");
+        message.success(`Parsed ${csvLines.split("\n").length} rows from Excel`);
+      } catch {
+        message.error("Failed to parse Excel file. Make sure it's .xlsx or .csv format.");
+      }
+    };
+    reader.readAsArrayBuffer(file);
+    return false; // prevent auto-upload
   };
 
   const saveCell = async (id: string, field: string, value: string) => {
@@ -353,16 +435,49 @@ export default function NiptSamples() {
       </Modal>
 
       {/* Batch Import Modal */}
-      <Modal title="Batch Import NIPT Samples" open={batchMode} onOk={handleBatchRegister}
-        onCancel={() => { setBatchMode(false); setBatchText(""); }} width={800}>
+      <Modal title="Batch Import NIPT Samples" open={batchMode}
+        onOk={batchUploadMode === "paste" ? handleBatchRegister : undefined}
+        onCancel={() => { setBatchMode(false); setBatchText(""); setBatchUploadMode("paste"); }}
+        width={850}
+        footer={[
+          <Button key="cancel" onClick={() => { setBatchMode(false); setBatchText(""); setBatchUploadMode("paste"); }}>
+            Cancel
+          </Button>,
+          batchUploadMode === "paste" ? (
+            <Button key="submit" type="primary" onClick={handleBatchRegister}>
+              Import ({batchText.trim().split("\n").filter(l => l.trim()).length} rows)
+            </Button>
+          ) : null,
+        ]}
+      >
+        <Space style={{ marginBottom: 12 }}>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={handleDownloadTemplate}
+          >
+            Download Excel Template
+          </Button>
+          <Upload
+            accept=".xlsx,.xls,.csv"
+            showUploadList={false}
+            beforeUpload={handleUploadExcel}
+          >
+            <Button icon={<UploadOutlined />}>Upload Excel / CSV</Button>
+          </Upload>
+        </Space>
+
         <div style={{ marginBottom: 8 }}>
-          <Text type="secondary">Paste tab-separated (A-T columns):</Text>
+          <Text type="secondary">
+            Paste CSV (comma-separated). 20 columns: Name,Age,GestWeeks,Panel,Source,IDCard,ExtID,CollDate,AcptDate,Physician,DOB,RptCode,SendID,LMP,Twin(Y/N),IVF(Y/N),PregHist,Diagnosis,FedEx,TestOpt
+          </Text>
           <Text code style={{ display: "block", marginTop: 4, fontSize: 11, whiteSpace: "pre-wrap" }}>
-            {"Name\tAge\tGestWeeks\tPanel\tSource\tIDCard\tExtID\tCollDate\tAcptDate\tPhysician\tDOB\tRptCode\tSendID\tLMP\tTwin(Y/N)\tIVF(Y/N)\tPregHist\tDiagnosis\tFedEx\tTestOpt"}
+            Name,Age,GestWeeks,Panel,Source,IDCard,ExtID,CollDate,AcptDate,Physician,DOB,RptCode,SendID,LMP,Twin(Y/N),IVF(Y/N),PregHist,Diagnosis,FedEx,TestOpt
           </Text>
         </div>
         <TextArea rows={12} value={batchText} onChange={e => setBatchText(e.target.value)}
-          placeholder={"Zhang Li\t28\t12\tNIPT\t泰国\t440101199801012345\tBCC-2026001\t2026-06-01\t2026-06-03\tDr.Somchai\t1998-05-15\tRPT-BCC-001\tSND001\t2026-03-01\tN\tN\tG1P0\tNormal\tFX1234567890\tNIPT"} />
+          placeholder={`Zhang Li,28,12,NIPT,Bangkok Hospital,440101199801012345,BCC-2026001,2026-06-01,2026-06-03,Dr.Somchai,1998-05-15,RPT-BCC-001,SND001,2026-03-01,N,N,G1P0,Normal,FX1234567890,NIPT`}
+          style={{ fontFamily: "monospace", fontSize: 12 }}
+        />
       </Modal>
 
       {/* Register from File Modal */}
