@@ -6,9 +6,39 @@ import NiptSignerModal from "./NiptSignerModal";
 
 const { Text } = Typography;
 
+// ── Sample badge helper (matches NiptExtractionTab color scheme) ──
+function getSampleBadge(s: any): { text: string; bg?: string } {
+  if (!s) return { text: "" };
+  const isTwin = s?.sample_multiple_gestation === true;
+  const testOpt = (s?.sample_test_option || "").trim().toLowerCase();
+  const twinMark = isTwin ? "👶👶 " : "";
+  if (testOpt === "plus" || testOpt === "nipt_plus")
+    return { text: twinMark, bg: "#e6f4ff" };
+  if (testOpt === "basic_all" || testOpt === "basic all" || testOpt === "nipt_full")
+    return { text: twinMark, bg: "#e8d5f5" };
+  if (testOpt === "basic" || testOpt === "nipt")
+    return { text: twinMark, bg: "#f6ffed" };
+  if (isTwin)
+    return { text: "👶👶 ", bg: undefined };
+  return { text: "", bg: "#e8f5e9" };
+}
+
 const DEFAULT_ELUTION_VOL = 30;
 const DEFAULT_POOLING_AMOUNT = 143;
 const YIELD_THRESHOLD = 60;
+
+// Compute pooling amount based on test option and twin status
+function calcPoolingAmount(baseAmount: number, testOpt: string, isTwin: boolean): number {
+  const opt = testOpt.toLowerCase();
+  if (opt === "plus" || opt === "nipt_plus") {
+    return Math.round(baseAmount * 2.5 * 100) / 100;
+  }
+  // basic, basic_all, or no test option → default to basic
+  if (isTwin) {
+    return Math.round(baseAmount * 2 * 100) / 100;
+  }
+  return baseAmount;
+}
 
 interface Props {
   batch: any;
@@ -19,6 +49,9 @@ interface SampleRow {
   idx: number;
   vgId: string;
   index: string;
+  badge: { text: string; bg?: string };
+  testOpt: string;
+  isTwin: boolean;
   concentration: number | null;
   elutionVolume: number;
   yield: number;
@@ -38,9 +71,16 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
   const pdata = useMemo(() => batch.pooling_data || {}, [batch.pooling_data]);
   const libraryPlate = useMemo(() => batch.library_data?.library_plate || [], [batch.library_data]);
 
-  // Extract samples from library plate in column-major order (matching library tab fill order)
+  // Extract samples from library plate in column-major order, with metadata from run_samples
   const plateSamples = useMemo(() => {
-    const list: { vgId: string; index: string }[] = [];
+    const list: { vgId: string; index: string; badge: { text: string; bg?: string }; testOpt: string; isTwin: boolean }[] = [];
+    // Build lookup map from run_samples by vgId for badge info
+    const runSamples = batch.run_samples || [];
+    const sampleByVgId: Record<string, any> = {};
+    for (const rs of runSamples) {
+      const id = rs.sample_vg_id || rs.sample_barcode || rs.vg_id || rs.sample_id || "";
+      if (id) sampleByVgId[id] = rs;
+    }
     if (Array.isArray(libraryPlate) && libraryPlate.length > 0) {
       const rows = libraryPlate.length;
       const cols = Array.isArray(libraryPlate[0]) ? libraryPlate[0].length : 12;
@@ -48,16 +88,26 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
         for (let r = 0; r < rows; r++) {
           const cell = libraryPlate[r]?.[c];
           if (cell && cell.vgId && cell.vgId !== "-") {
-            list.push({ vgId: cell.vgId, index: cell.index || "" });
+            const sampleMeta = sampleByVgId[cell.vgId];
+            const isTwin = sampleMeta?.sample_multiple_gestation === true;
+            const testOpt = (sampleMeta?.sample_test_option || "").trim().toLowerCase();
+            list.push({
+              vgId: cell.vgId,
+              index: cell.index || "",
+              badge: getSampleBadge(sampleMeta),
+              testOpt,
+              isTwin,
+            });
           }
         }
       }
     }
     return list;
-  }, [libraryPlate]);
+  }, [libraryPlate, batch.run_samples]);
 
   // Build sample rows with saved data or defaults (matched by vgId, not position)
-  const buildRows = (): SampleRow[] => {
+  const buildRows = (baseAmount?: number): SampleRow[] => {
+    const b = baseAmount ?? poolingBase;
     const savedSamples = pdata.samples || [];
     const savedByVgId: Record<string, any> = {};
     for (const s of savedSamples) { savedByVgId[s.vgId] = s; }
@@ -66,12 +116,16 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
       const conc = saved.concentration ?? null;
       const ev = saved.elutionVolume ?? DEFAULT_ELUTION_VOL;
       const y = conc ? conc * ev : 0;
-      const pa = saved.poolingAmount ?? DEFAULT_POOLING_AMOUNT;
+      const defaultPA = calcPoolingAmount(b, ps.testOpt, ps.isTwin);
+      const pa = saved.poolingAmount ?? defaultPA;
       const pv = conc && conc > 0 ? pa / conc : 0;
       return {
         idx: i + 1,
         vgId: ps.vgId,
         index: ps.index,
+        badge: ps.badge,
+        testOpt: ps.testOpt,
+        isTwin: ps.isTwin,
         concentration: conc,
         elutionVolume: ev,
         yield: y,
@@ -84,12 +138,22 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
 
   const [rows, setRows] = useState<SampleRow[]>([]);
   const [saving, setSaving] = useState(false);
+  const [poolingBase, setPoolingBase] = useState(pdata.poolingBase ?? DEFAULT_POOLING_AMOUNT);
   const printRef = useRef<HTMLDivElement>(null);
 
   // Load/sync rows
   useEffect(() => {
     setRows(buildRows());
   }, [batch.id, plateSamples.length]);
+
+  // Recalculate pooling amounts when base input changes
+  useEffect(() => {
+    setRows(prev => prev.map(r => {
+      const defaultPA = calcPoolingAmount(poolingBase, r.testOpt, r.isTwin);
+      const pv = r.concentration && r.concentration > 0 ? defaultPA / r.concentration : 0;
+      return { ...r, poolingAmount: defaultPA, poolingVolume: pv };
+    }));
+  }, [poolingBase]);
 
   const updateCell = (rowIdx: number, field: string, value: number | null) => {
     setRows(prev => {
@@ -142,6 +206,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
       }));
       await api.post(`/runs/${batch.id}/save_pooling/`, {
         pooling_data: {
+          poolingBase,
           samples,
           totals: {
             totalMass: totals.totalMass,
@@ -186,7 +251,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
   const [rvModal, setRvModal] = useState(false);
 
   const th = { border: "1px solid #bbb", padding: "6px 8px", textAlign: "center" as const, fontWeight: 700, background: "#d5e8d4", fontSize: 12 };
-  const td = { border: "1px solid #d9d9d9", padding: "4px 6px", textAlign: "center" as const, fontSize: 12 };
+  const td = { border: "1px solid #d9d9d9", padding: "4px 6px", textAlign: "center" as const, fontSize: 12, background: "#e8f5e9" };
 
   if (plateSamples.length === 0) {
     return (
@@ -203,7 +268,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
         <div>
           <Space>
             <span style={{ fontSize: 12, color: "#666" }}>
-              样本数: {plateSamples.length} | 投入量/样本: {DEFAULT_POOLING_AMOUNT} ng | 淘汰阈值: &lt;{YIELD_THRESHOLD} ng
+              样本数: {plateSamples.length} | 淘汰阈值: &lt;{YIELD_THRESHOLD} ng
             </span>
           </Space>
         </div>
@@ -211,6 +276,15 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
           <Button icon={<PrinterOutlined />} onClick={print}>打印</Button>
           <Button type="primary" onClick={save} loading={saving}>保存</Button>
         </Space>
+      </div>
+
+      {/* Color legend */}
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12, fontSize: 12, color: "#666" }}>
+        <span>图例：</span>
+        <span style={{ background: "#e6f4ff", padding: "2px 8px", borderRadius: 3, border: "1px solid #91caff" }}>浅蓝 = Plus</span>
+        <span style={{ background: "#f6ffed", padding: "2px 8px", borderRadius: 3, border: "1px solid #b7eb8f" }}>浅绿 = Basic</span>
+        <span style={{ background: "#e8d5f5", padding: "2px 8px", borderRadius: 3, border: "1px solid #c9a2e0" }}>浅紫 = Basic All</span>
+        <span>👶👶 = Twin（双胎标记）</span>
       </div>
 
       {/* Signatures */}
@@ -223,6 +297,20 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
           style={rvSigned ? { background: "#f6ffed", borderColor: "#b7eb8f", color: "#52c41a" } : {}}>
           {rvSigned ? `✓ 复核人: ${rvSigner}` : "复核人签名"}
         </Button>
+      </div>
+
+      {/* Pooling base input */}
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, fontSize: 12 }}>
+        <span style={{ color: "#666" }}>Pooling 投入量 (ng):</span>
+        <InputNumber
+          size="small"
+          min={1}
+          step={1}
+          value={poolingBase}
+          onChange={v => v !== null && setPoolingBase(v)}
+          style={{ width: 80 }}
+        />
+        <span style={{ color: "#999" }}>双胎 ×2，Plus ×2.5</span>
       </div>
 
       {/* Printable table */}
@@ -250,7 +338,9 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
               <tr key={i} className={r.eliminated ? "eliminated" : ""}
                 style={{ background: r.eliminated ? "#fffbe6" : i % 2 === 0 ? "#fff" : "#fafafa" }}>
                 <td style={td}>{r.idx}</td>
-                <td style={td}>{r.vgId}</td>
+                <td style={{ ...td, background: r.badge.bg || "#e8f5e9", fontWeight: r.badge.bg && r.badge.bg !== "#e8f5e9" ? 600 : 400 }}>
+                  {r.badge.text ? r.badge.text + " " : ""}{r.vgId}
+                </td>
                 <td style={td}>{r.index}</td>
                 <td style={td}>
                   <InputNumber size="small" min={0} step={0.01} value={r.concentration}

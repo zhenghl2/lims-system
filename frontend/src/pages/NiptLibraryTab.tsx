@@ -132,17 +132,26 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
 
     const extMethod = batch.extraction_method || "MANUAL";
 
+    // Filter out samples that failed during extraction
+    const extractionResults = batch.extraction_data?.sample_results || {};
+    const validSamples = samples.filter((_s: any, idx: number) => {
+      const result = extractionResults[String(idx)];
+      return !result || result.status !== "fail";
+    });
+
+    if (validSamples.length === 0) return p;
+
+    // Sort by VG ID ascending (uniform across all methods)
+    const sortedSamples = [...validSamples].sort((a: any, b: any) => {
+      const aId = (getVgId(a) || '').toString();
+      const bId = (getVgId(b) || '').toString();
+      return aId.localeCompare(bId, undefined, { numeric: true });
+    });
+
     if (extMethod === "AUTOMATED") {
       // Automated: center-aligned, same as extraction table
-      // Calculate needed columns, center them, fill left-to-right top-to-bottom
-      const numCols = Math.min(Math.ceil(samples.length / 8), COL_COUNT);
+      const numCols = Math.min(Math.ceil(sortedSamples.length / 8), COL_COUNT);
       const startCol = Math.floor((COL_COUNT - numCols) / 2);
-      // Sort samples by VG ID ascending for correct left-to-right filling
-      const sortedSamples = [...samples].sort((a: any, b: any) => {
-        const aId = (getVgId(a) || '').toString();
-        const bId = (getVgId(b) || '').toString();
-        return aId.localeCompare(bId, undefined, { numeric: true });
-      });
       let idx = 0;
       for (let c = startCol; c < startCol + numCols; c++) {
         for (let r = 0; r < 8; r++) {
@@ -153,16 +162,25 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
         }
       }
     } else {
-      // MANUAL / MAGNETIC_ROD: sequential fill top→bottom then right (column-major)
-      const maxSamples = Math.min(samples.length, 96);
-      for (let i = 0; i < maxSamples; i++) {
-        const col = Math.floor(i / 8);
-        const row = i % 8;
-        p[row][col] = { vgId: getVgId(samples[i]), index: "" };
+      // MANUAL / MAGNETIC_ROD: centered columns, odd-numbered start, top→bottom left→right
+      const numCols = Math.min(Math.ceil(sortedSamples.length / 8), COL_COUNT);
+      let startCol = Math.floor((COL_COUNT - numCols) / 2);
+      // Ensure start column is odd-numbered (1-indexed: col 1,3,5,7,9,11 → 0-indexed: 0,2,4,6,8,10)
+      if (startCol % 2 === 1) {
+        startCol -= 1;
+      }
+      let idx = 0;
+      for (let c = startCol; c < startCol + numCols; c++) {
+        for (let r = 0; r < 8; r++) {
+          if (idx < sortedSamples.length) {
+            p[r][c] = { vgId: getVgId(sortedSamples[idx]), index: "" };
+            idx++;
+          }
+        }
       }
     }
     return p;
-  }, [samples, batch.extraction_method]);
+  }, [samples, batch.extraction_method, batch.extraction_data]);
 
   // ── Load saved plate indices ──
   useEffect(() => {
@@ -348,9 +366,16 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
 
   const getExtractionLabel = (): string => {
     const m = batch.extraction_method || "MANUAL";
-    if (m === "MANUAL") return "手动提取 → 顺序填充（列优先）";
-    if (m === "MAGNETIC_ROD") return "磁棒法提取 → 顺序填充（列优先）";
-    return "自动化工作站提取 → 直接复制";
+    const totalSamples = samples?.length || 0;
+    const failedCount = Object.values(batch.extraction_data?.sample_results || {}).filter((r: any) => r?.status === "fail").length;
+    const validCount = totalSamples - failedCount;
+    const numCols = Math.min(Math.ceil(validCount / 8), COL_COUNT);
+    let startCol = Math.floor((COL_COUNT - numCols) / 2);
+    if (m !== "AUTOMATED" && startCol % 2 === 1) startCol -= 1;
+    const colRange = `${startCol + 1}-${startCol + numCols}`;
+    if (m === "MANUAL") return `手动提取 → 居中${numCols}列(${colRange})，奇数列开头，${validCount}/${totalSamples}样本`;
+    if (m === "MAGNETIC_ROD") return `磁棒法提取 → 居中${numCols}列(${colRange})，奇数列开头，${validCount}/${totalSamples}样本`;
+    return `自动化工作站提取 → 居中${numCols}列，${validCount}/${totalSamples}样本`;
   };
 
   return (
@@ -514,3 +539,4 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     </div>
   );
 }
+

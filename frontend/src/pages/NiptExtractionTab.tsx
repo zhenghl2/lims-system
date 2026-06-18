@@ -251,13 +251,19 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     const s = samples[idx];
     if (!s) return { text: "", bg: undefined as string | undefined };
     const isTwin = s?.sample_multiple_gestation === true;
-    const testOpt = (s?.sample_test_option || "").trim();
-    // Only Plus gets a colored background; twin uses emoji
-    if (testOpt === "Plus" || testOpt === "NIPT_PLUS") {
-      return { text: isTwin ? "👶👶" : "", bg: "#e6f4ff" };
+    const testOpt = (s?.sample_test_option || "").trim().toLowerCase();
+    const twinMark = isTwin ? "👶👶 " : "";
+    if (testOpt === "plus" || testOpt === "nipt_plus") {
+      return { text: twinMark, bg: "#e6f4ff" };
+    }
+    if (testOpt === "basic_all" || testOpt === "basic all" || testOpt === "nipt_full") {
+      return { text: twinMark, bg: "#e8d5f5" };
+    }
+    if (testOpt === "basic" || testOpt === "nipt") {
+      return { text: twinMark, bg: "#f6ffed" };
     }
     if (isTwin) {
-      return { text: "👶👶", bg: undefined };
+      return { text: "👶👶 ", bg: undefined };
     }
     return { text: "", bg: undefined };
   };
@@ -314,6 +320,15 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
           })}
         </Space>
       </Card>
+
+      {/* Color legend for test option and twin markers */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12, fontSize: 12, color: "#666" }}>
+        <span>图例：</span>
+        <span style={{ background: "#e6f4ff", padding: "2px 8px", borderRadius: 3, border: "1px solid #91caff" }}>浅蓝 = Plus</span>
+        <span style={{ background: "#f6ffed", padding: "2px 8px", borderRadius: 3, border: "1px solid #b7eb8f" }}>浅绿 = Basic</span>
+        <span style={{ background: "#e8d5f5", padding: "2px 8px", borderRadius: 3, border: "1px solid #c9a2e0" }}>浅紫 = Basic All</span>
+        <span>👶👶 = Twin（双胎标记）</span>
+      </div>
 
       {/* ═══ MANUAL ═══ */}
       {method === "MANUAL" && (() => {
