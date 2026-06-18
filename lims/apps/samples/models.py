@@ -100,7 +100,7 @@ class Sample(models.Model):
 
     patient_sex = models.CharField(max_length=1, blank=True, choices=[("M", "Male"), ("F", "Female")])
     age = models.PositiveSmallIntegerField(null=True, blank=True, help_text="Age in years")
-    source_institution = models.CharField(max_length=200, blank=True, help_text="Source institution")
+    sample_source = models.CharField(max_length=200, blank=True, help_text="Sample source institution")
     institution_sample_id = models.CharField(max_length=100, blank=True, help_text="Institution sample ID")
     hpv_sample_type = models.CharField(
         max_length=20, blank=True,

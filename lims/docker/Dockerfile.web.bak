@@ -15,12 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY lims/requirements.txt .
 RUN pip install -r requirements.txt
 
-# LibreOffice for DOCX->PDF conversion
-RUN apt-get update && apt-get install -y --no-install-recommends libreoffice-writer && rm -rf /var/lib/apt/lists/*
-
 COPY . .
 
 RUN mkdir -p logs media staticfiles
 
 CMD ["gunicorn", "lims.config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "2", "--timeout", "120"]
-

@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import {
   Table, Card, Typography, Tag, Button, Modal, Select, Input,
-  Space, message, Descriptions
+  Space, message, Descriptions, Dropdown
 } from "antd";
-import { ReloadOutlined, CheckCircleOutlined, SafetyCertificateOutlined } from "@ant-design/icons";
+import { ReloadOutlined, CheckCircleOutlined, SafetyCertificateOutlined, DownloadOutlined, FileWordOutlined, FilePdfOutlined } from "@ant-design/icons";
 import { reportsApi } from "../api";
 
 const { Title, Text } = Typography;
@@ -51,6 +51,23 @@ export default function NiptReports() {
 
   useEffect(() => { fetchReports(); }, []);
 
+  const handleDownload = (reportId: string, format?: string) => {
+    const fmt = format || "docx";
+    reportsApi.download(reportId, { type: fmt }).then((res: any) => {
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      const d = res.headers?.["content-disposition"] || "";
+      const m = d.match(/filename="?(.+?)"?$/);
+      const ext = fmt === "pdf" ? ".pdf" : ".docx";
+      a.download = m ? m[1] : "report" + ext;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    }).catch(() => message.error("Download failed"));
+  };
+
   const handleReview = async () => {
     if (!reviewer) { message.warning("请选择审核人员"); return; }
     if (!password) { message.warning("请输入密码"); return; }
@@ -60,10 +77,11 @@ export default function NiptReports() {
         reviewer_name: reviewer,
         password,
       });
-      message.success(`已复核 — ${reviewer}`);
+      message.success({ content: `已复核 - ${reviewer}`, duration: 5 });
       setReviewModal({ open: false, reportId: "" });
       setReviewer(""); setPassword("");
       fetchReports();
+      setTimeout(() => handleDownload(reviewModal.reportId), 500);
     } catch (e: any) {
       message.error(e?.response?.data?.error || "复核失败");
     } finally { setSubmitting(false); }
@@ -107,6 +125,27 @@ export default function NiptReports() {
     { title: "VG ID", dataIndex: "sample_vg_id", width: 85, fixed: "left" as const,
       render: (v: string) => v || "—" },
     { title: "Name", dataIndex: "patient_name", width: 110, ellipsis: true },
+    { title: "Sample Source",dataIndex: "sample_source", width: 110, ellipsis: true, render: (v: any) => v || "—" },
+    { title: "Test Option", dataIndex: "test_option", width: 85, render: (v: any) => { if (!v) return "—"; const colors: Record<string, string> = { "basic": "blue", "plus": "purple", "basic_all": "green" }; const key = (v || "").toLowerCase().replace(/ /g, "_"); return <Tag color={colors[key] || "default"} style={{ fontSize: 10 }}>{v}</Tag>; } },
+    { title: "Accessioning ID", dataIndex: "external_id", width: 100, ellipsis: true, render: (v: any) => v || "—" },
+    { title: "Collection Date", dataIndex: "collection_date", width: 90, render: (v: any) => v || "—" },
+    { title: "Acceptance Date", dataIndex: "acceptance_date", width: 90, render: (v: any) => v || "—" },
+    { title: "Physician", dataIndex: "physician", width: 100, ellipsis: true, render: (v: any) => v || "—" },
+    { title: "Patient ID", dataIndex: "id_card", width: 130, ellipsis: true, render: (v: any) => v || "—" },
+    { title: "DOB", dataIndex: "patient_dob", width: 85, render: (v: any) => v || "—" },
+    { title: "LMP", dataIndex: "last_menstrual_period", width: 90, render: (v: any) => v || "—" },
+    { title: "Hospital/Clinic", dataIndex: "ordering_facility", width: 130, ellipsis: true, render: (v: any) => v || "—" },
+    { title: "Gest. Weeks", dataIndex: "gestational_weeks", width: 75, align: "center" as const, render: (v: any) => v != null ? `${v}w` : "—" },
+    { title: "Report Code", dataIndex: "report_code", width: 100, ellipsis: true, render: (v: any) => v || "—" },
+    { title: "Send Report ID", dataIndex: "send_report_id", width: 90, ellipsis: true, render: (v: any) => v || "—" },
+    { title: "Age", dataIndex: "age", width: 50, align: "center" as const, render: (v: any) => v != null ? String(v) : "—" },
+    { title: "Twin", dataIndex: "multiple_gestation", width: 50, align: "center" as const, render: (v: any) => v ? "👶👶" : "—" },
+    { title: "IVF", dataIndex: "ivf_status", width: 50, align: "center" as const, render: (v: any) => v ? <Tag color="orange" style={{ fontSize: 10 }}>IVF</Tag> : "—" },
+    { title: "Preg. History", dataIndex: "pregnancy_history", width: 100, ellipsis: true, render: (v: any) => v || "—" },
+    { title: "Diagnosis", dataIndex: "clinical_diagnosis", width: 120, ellipsis: true, render: (v: any) => v || "—" },
+    makeBioCol("All Chrom", "all_chrom", 80),
+    makeBioCol("Plus Result", "plus_result", 90),
+    makeBioCol("Plus HighRisk", "plus_highrisk_items", 110),
     makeBioCol("raw-reads", "raw_reads", 90, (v: any) => v != null ? (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : String(v)) : "—"),
     makeBioCol("uniq-reads", "uniq_reads", 90, formatNum),
     makeBioCol("GC (%)", "gc", 70, formatFloat),
@@ -122,9 +161,27 @@ export default function NiptReports() {
     makeBioCol("XXX", "xxx", 60),
     makeBioCol("XXY", "xxy", 60),
     makeBioCol("XYY", "xyy", 60),
-    makeBioCol("All", "all_chrom", 70),
     makeBioCol("FF (%)", "ff_percent", 65, formatFloat),
     makeBioCol("Sex", "sex", 55),
+    {
+      title: "", key: "download", width: 60, align: "center" as const,
+      render: (_: any, r: any) => {
+        if (r.pdf_file_path) {
+          const items = [
+            { key: 'docx', icon: <FileWordOutlined />, label: 'Word' },
+            { key: 'pdf', icon: <FilePdfOutlined />, label: 'PDF' },
+          ];
+          return (
+            <Dropdown menu={{
+              items: items.map(it => ({ ...it, onClick: () => handleDownload(r.id, it.key) })),
+            }} trigger={['click']}>
+              <Button size="small" type="link" icon={<DownloadOutlined />} />
+            </Dropdown>
+          );
+        }
+        return null;
+      },
+    },
     {
       title: "Reviewed By", key: "review", width: 160,
       render: (_: any, r: any) => {
@@ -224,7 +281,7 @@ export default function NiptReports() {
         columns={columns}
         loading={loading}
         size="small"
-        scroll={{ x: 2200 }}
+        scroll={{ x: 5100 }}
         pagination={{ pageSize: 30, showTotal: t => `Total ${t}` }}
         bordered
         components={{

@@ -4,7 +4,7 @@ import os
 import datetime
 
 
-def extract_brazil_docx(file_path, source="巴西"):
+def extract_brazil_docx(file_path, source="巴西万基"):
     def _safe_get(lst, idx, default=""):
         """Safely get list element, returning default if out of bounds."""
         try:
@@ -119,7 +119,7 @@ def extract_brazil_docx(file_path, source="巴西"):
 
     # ── Map to Sample fields ──
     info = {
-        'source_institution': '巴西万基',
+        'sample_source': '巴西万基',
         'test_option': test_option,
         'external_id': client_code,
         'collection_date_raw': collection_date_raw,
@@ -258,7 +258,7 @@ def _parse_int(val):
         return None
 
 
-def extract_docxs_from_directory(directory, source="巴西"):
+def extract_docxs_from_directory(directory, source="巴西万基"):
     """Extract all .docx files in a directory."""
     results = []
     for root, dirs, files in os.walk(directory):

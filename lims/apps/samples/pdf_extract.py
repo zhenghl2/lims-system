@@ -95,7 +95,7 @@ def _extract_thai_pdf_text_fallback(file_path):
     
     # Only return if we found at least patient_name or external_id
     if info.get('patient_name') or info.get('external_id'):
-        info['source_institution'] = '泰国'
+        info['sample_source'] = 'BCC'
         info['clinical_diagnosis'] = '否'
         return info
     
@@ -103,7 +103,7 @@ def _extract_thai_pdf_text_fallback(file_path):
 
 
 
-def extract_thai_pdf(file_path, source="泰国"):
+def extract_thai_pdf(file_path, source="BCC"):
     """Extract form fields from a Thai NIPT PDF registration form.
     Returns a dict of Sample fields or None on failure."""
 
@@ -193,7 +193,7 @@ def extract_thai_pdf(file_path, source="泰国"):
         info['test_option'] = test_option
 
     # Source institution
-    info['source_institution'] = source
+    info['sample_source'] = source
 
     # Hospital
     hospital = (fields.get('Text Field12', {}).get('/V', '') or '').strip()
@@ -246,7 +246,7 @@ def extract_thai_pdf(file_path, source="泰国"):
     return info
 
 
-def extract_pdfs_from_directory(directory, source="泰国"):
+def extract_pdfs_from_directory(directory, source="BCC"):
     """Extract all PDFs in a directory and return list of sample dicts."""
     results = []
     for root, dirs, files in os.walk(directory):
@@ -272,7 +272,7 @@ def generate_excel(samples, output_path):
     rows = []
     for s in samples:
         # Format values like the original
-        source = s.get('source_institution', '')
+        source = s.get('sample_source', '')
         # Map boolean values
         twin = s.get('multiple_gestation', False)
         twin_str = "双胎twins" if twin else "单胎Single"

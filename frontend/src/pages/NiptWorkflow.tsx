@@ -267,7 +267,7 @@ export default function NiptWorkflow() {
                     columns={[
                       { title: "Sample ID", dataIndex: "sample_id", width: 160 },
                       { title: "VG ID", dataIndex: "vg_id", width: 80, render: (v: string) => v || "-" },
-                      { title: "Patient Name", dataIndex: "patient_name", width: 130 },
+                      { title: "Name", dataIndex: "patient_name", width: 130 },
                       { title: "Age", dataIndex: "age", width: 50 },
                       { title: "Sample Type", dataIndex: "sample_type_code", width: 130 },
                       { title: "Status", dataIndex: "status", width: 100, render: (v: string) => <Tag>{v}</Tag> },

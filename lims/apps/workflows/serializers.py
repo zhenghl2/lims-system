@@ -45,7 +45,7 @@ class RunSampleSerializer(serializers.ModelSerializer):
     sample_multiple_gestation = serializers.BooleanField(source="sample.multiple_gestation", read_only=True, default=False)
     sample_gestational_weeks = serializers.IntegerField(source="sample.gestational_weeks", read_only=True, default=None)
     sample_test_option = serializers.CharField(source="sample.test_option", read_only=True, default="")
-    sample_source = serializers.CharField(source="sample.source_institution", read_only=True, default="")
+    sample_source = serializers.CharField(source="sample.sample_source", read_only=True, default="")
     sample_ivf = serializers.BooleanField(source="sample.ivf_status", read_only=True, default=False)
     sample_pregnancy_history = serializers.CharField(source="sample.pregnancy_history", read_only=True, default="")
     sample_diagnosis = serializers.CharField(source="sample.clinical_diagnosis", read_only=True, default="")

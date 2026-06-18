@@ -107,8 +107,8 @@ export const reportsApi = {
     api.post(`/reports/${id}/sign/`, { password }),
   release: (id: string) => api.post(`/reports/${id}/release/`),
   generate: (id: string) => api.post<Report>(`/reports/${id}/generate/`),
-  download: (id: string) =>
-    api.get(`/reports/${id}/download/`, { responseType: "blob" }),
+  download: (id: string, params?: Record<string, string>) =>
+    api.get(`/reports/${id}/download/`, { responseType: "blob", params }),
   delete: (id: string) => api.delete(`/reports/${id}/`),
 };
 

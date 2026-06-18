@@ -150,7 +150,7 @@ export default function HpvSamples() {
       render: (s: string) => SEX_MAP[s] || s || "-",
     },
     { title: "Age", dataIndex: "age", key: "age", width: 60 },
-    { title: "Source Institution", dataIndex: "source_institution", key: "source_institution", width: 160, ellipsis: true },
+    { title: "Source Institution", dataIndex: "sample_source", key: "sample_source", width: 160, ellipsis: true },
     { title: "Institution Sample ID", dataIndex: "institution_sample_id", key: "institution_sample_id", width: 160, ellipsis: true },
     {
       title: "Sample Type", dataIndex: "hpv_sample_type", key: "hpv_sample_type", width: 130,
@@ -201,7 +201,7 @@ export default function HpvSamples() {
         sample_id: values.sample_id || undefined,
         patient_sex: values.patient_sex || undefined,
         age: values.age ?? undefined,
-        source_institution: values.source_institution || undefined,
+        sample_source: values.sample_source || undefined,
         institution_sample_id: values.institution_sample_id || undefined,
         hpv_sample_type: values.hpv_sample_type || undefined,
         test_item: values.test_item || undefined,
@@ -251,7 +251,7 @@ export default function HpvSamples() {
       collection_date: r.collectionDate.format("YYYY-MM-DD"),
       patient_sex: r.patientSex || undefined,
       age: r.age ?? undefined,
-      source_institution: r.sourceInstitution.trim() || undefined,
+      sample_source: r.sourceInstitution.trim() || undefined,
       institution_sample_id: r.institutionSampleId.trim() || undefined,
       hpv_sample_type: r.hpvSampleType || undefined,
       test_item: r.testItem || undefined,
@@ -395,7 +395,7 @@ export default function HpvSamples() {
           <Form.Item name="age" label="Age">
             <InputNumber min={0} max={150} style={{ width: "100%" }} placeholder="Age in years" />
           </Form.Item>
-          <Form.Item name="source_institution" label="Source Institution">
+          <Form.Item name="sample_source" label="Source Institution">
             <Input placeholder="Hospital / Clinic name" />
           </Form.Item>
           <Form.Item name="institution_sample_id" label="Institution Sample ID">

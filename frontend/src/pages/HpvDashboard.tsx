@@ -88,7 +88,7 @@ export default function HpvDashboard() {
     { title: "Patient Name", dataIndex: "patient_name", key: "patient_name", width: 150 },
     { title: "Sex", dataIndex: "patient_sex", key: "patient_sex", width: 60, render: (v: string) => SEX_MAP[v] || v || "-" },
     { title: "Age", dataIndex: "age", key: "age", width: 60 },
-    { title: "Source Institution", dataIndex: "source_institution", key: "source_institution", width: 160, ellipsis: true },
+    { title: "Source Institution", dataIndex: "sample_source", key: "sample_source", width: 160, ellipsis: true },
     {
       title: "Receiver", dataIndex: "received_by_name", key: "received_by_name", width: 100,
       render: (v: string) => v || "-",
@@ -209,7 +209,7 @@ export default function HpvDashboard() {
                 <Descriptions.Item label="Patient ID">{selectedSample.patient_id || "-"}</Descriptions.Item>
                 <Descriptions.Item label="Sex">{SEX_MAP[selectedSample.patient_sex] || selectedSample.patient_sex || "-"}</Descriptions.Item>
                 <Descriptions.Item label="Age">{selectedSample.age ?? "-"}</Descriptions.Item>
-                <Descriptions.Item label="Source Institution">{selectedSample.source_institution || "-"}</Descriptions.Item>
+                <Descriptions.Item label="Source Institution">{selectedSample.sample_source || "-"}</Descriptions.Item>
                 <Descriptions.Item label="Institution Sample ID">{selectedSample.institution_sample_id || "-"}</Descriptions.Item>
                 <Descriptions.Item label="Collection Date">{selectedSample.collection_date?.slice(0, 10) || "-"}</Descriptions.Item>
                 <Descriptions.Item label="Receiver">

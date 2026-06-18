@@ -32,13 +32,25 @@ const TEST_OPTIONS = [
 ];
 
 const SOURCE_OPTIONS = [
-  { label: "泰国", value: "泰国" },
-  { label: "巴西", value: "巴西" },
-  { label: "Other", value: "" },
+  { label: "BCC (泰国)", value: "BCC" },
+  { label: "巴西万基", value: "巴西万基" },
+  { label: "韩国", value: "韩国" },
+  { label: "澳洲经销商", value: "澳洲经销商" },
+  { label: "西班牙代理", value: "西班牙代理" },
+  { label: "澳洲", value: "澳洲" },
+  { label: "西班牙巴塞罗那经销商", value: "西班牙巴塞罗那经销商" },
+  { label: "CYJ印度", value: "CYJ印度" },
+  { label: "CYJ澳洲", value: "CYJ澳洲" },
+  { label: "YLH西班牙bygens", value: "YLH西班牙bygens" },
+  { label: "YLH西班牙LABGENETICS", value: "YLH西班牙LABGENETICS" },
+  { label: "CYJ澳洲经销商", value: "CYJ澳洲经销商" },
+  { label: "CYJ秘鲁", value: "CYJ秘鲁" },
+  { label: "CYJ美国", value: "CYJ美国" },
+  { label: "Other (custom)", value: "" },
 ];
 
 const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;visible:boolean;render?:(v:any)=>React.ReactNode}> = [
-  { key: "source", title: "Source", dataIndex: "source_institution", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "source", title: "Sample Source",dataIndex: "sample_source", visible: true, width: 100, render: (v: string) => v || "-" },
   { key: "test_option", title: "Test Option", dataIndex: "test_option", visible: true, width: 100, render: (v: string) => v || "-" },
   { key: "external_id", title: "Accessioning ID", dataIndex: "external_id", visible: true, width: 140, render: (v: string) => <Text code>{v || "-"}</Text> },
   { key: "collection_date", title: "Collection Date", dataIndex: "collection_date", visible: true, width: 110, render: (v: string) => v || "-" },
@@ -51,7 +63,8 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "gestational_weeks", title: "Gest. Weeks", dataIndex: "gestational_weeks", visible: true, width: 80, render: (v: number) => v || "-" },
   { key: "report_code", title: "Report Code", dataIndex: "vg_id", visible: true, width: 120, render: (v: string) => v || "-" },
   { key: "send_report_id", title: "Send Report ID", dataIndex: "send_report_id", visible: true, width: 120, render: (v: string) => v || "-" },
-  { key: "lmp", title: "LMP", dataIndex: "last_menstrual_period", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "lmp", title: "Last Menstrual Period", dataIndex: "last_menstrual_period", visible: true, width: 130, render: (v: string) => v || "-" },
+  { key: "hospital", title: "Hospital/Clinic", dataIndex: "ordering_facility", visible: true, width: 130, render: (v: string) => v || "-" },
   { key: "twins", title: "Twin", dataIndex: "multiple_gestation", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="orange">Twin</Tag> : "-" },
   { key: "ivf", title: "IVF", dataIndex: "ivf_status", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="purple">IVF</Tag> : "-" },
   { key: "pregnancy_history", title: "Preg. History", dataIndex: "pregnancy_history", visible: true, width: 100, render: (v: string) => v || "-" },
@@ -67,7 +80,7 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "xxx", title: "XXX", dataIndex: "xxx", visible: true, width: 55 },
   { key: "xxy", title: "XXY", dataIndex: "xxy", visible: true, width: 55 },
   { key: "xyy", title: "XYY", dataIndex: "xyy", visible: true, width: 55 },
-  { key: "all_chrom", title: "All", dataIndex: "all_chrom", visible: true, width: 55 },
+  { key: "all_chrom", title: "All Chrom", dataIndex: "all_chrom", visible: true, width: 55 },
   { key: "fetal_fraction", title: "FF%", dataIndex: "fetal_fraction", visible: true, width: 55, render: (v: number) => v ? `${v}%` : "-" },
   { key: "gender", title: "Sex", dataIndex: "gender", visible: true, width: 55 },
   { key: "other", title: "Other", dataIndex: "other", visible: true, width: 100, render: (v: string) => v || "-" },
@@ -170,7 +183,7 @@ export default function NiptSamples() {
     sample_type_code: "BLOOD",
     panel_code: values.panel || "NIPT",
     test_option: values.test_option || "NIPT",
-    source_institution: values.source === "" ? values.source_other : values.source,
+    sample_source: values.source === "" ? values.source_other : values.source,
     external_id: values.external_id || "",
     vg_id: values.vg_id || "",
     collection_date: values.collection_date ? dayjs(values.collection_date).format("YYYY-MM-DD") : undefined,
@@ -184,6 +197,7 @@ export default function NiptSamples() {
     report_code: values.vg_id || "",
     send_report_id: values.send_report_id || "",
     last_menstrual_period: values.last_menstrual_period ? dayjs(values.last_menstrual_period).format("YYYY-MM-DD") : undefined,
+    ordering_facility: values.ordering_facility || "",
     multiple_gestation: values.multiple_gestation || false,
     ivf_status: values.ivf_status || false,
     pregnancy_history: values.pregnancy_history || "",
@@ -282,12 +296,13 @@ export default function NiptSamples() {
       const getBool = (i: number) => { const v = p[i]?.trim().toUpperCase(); return v === "Y" || v === "YES" || v === "TRUE"; };
       return {
         patient_name: p[0]?.trim() || "", age: getNum(1), gestational_weeks: getNum(2),
-        panel_code: p[3]?.trim() || undefined, source_institution: p[4]?.trim() || undefined,
+        panel_code: p[3]?.trim() || undefined, sample_source: p[4]?.trim() || undefined,
         id_card: p[5]?.trim() || undefined, external_id: p[6]?.trim() || undefined,
         collection_date: p[7]?.trim() || undefined, acceptance_date: p[8]?.trim() || undefined,
         physician: p[9]?.trim() || undefined, patient_dob: p[10]?.trim() || undefined,
         report_code: p[11]?.trim() || undefined, send_report_id: p[12]?.trim() || undefined,
         last_menstrual_period: p[13]?.trim() || undefined,
+        ordering_facility: p[14]?.trim() || undefined,
         multiple_gestation: getBool(14), ivf_status: getBool(15),
         pregnancy_history: p[16]?.trim() || undefined,
         clinical_diagnosis: p[17]?.trim() || undefined,
@@ -305,7 +320,7 @@ export default function NiptSamples() {
   const handleDownloadTemplate = () => {
     const headers = [
       "Name", "Age", "GestWeeks", "Panel", "Source", "IDCard", "ExtID",
-      "CollDate", "AcptDate", "Physician", "DOB", "RptCode", "SendID", "LMP",
+      "CollDate", "AcptDate", "Physician", "DOB", "RptCode", "SendID", "LMP", "Hospital",
       "Twin(Y/N)", "IVF(Y/N)", "PregHist", "Diagnosis", "FedEx", "TestOpt",
     ];
     const example = [
@@ -391,7 +406,7 @@ export default function NiptSamples() {
         <Input.Search placeholder="Search..." allowClear onSearch={(v) => { setSearch(v); setPage(1); }} style={{ width: 280 }} />
         <Select placeholder="Status" allowClear style={{ width: 150 }} value={statusFilter || undefined}
           onChange={(v) => { setStatusFilter(v || ""); setPage(1); }}
-          options={["", "REGISTERED", "RECEIVED", "IN_PROCESS", "COMPLETED", "REPORTED", "REJECTED"].map(v => ({ label: v || "All", value: v }))} />
+          options={["", "REGISTERED", "RECEIVED", "IN_PROCESS", "COMPLETED", "REPORTED", "REJECTED"].map(v => ({ label: v || "All Chrom", value: v }))} />
       </div>
       <Table rowKey="id" dataSource={data} columns={columns} loading={loading} size="small" onRow={(record) => ({ onDoubleClick: () => { if (record.id) setEditingKey(record.id); } })}
         scroll={{ x: 4500 }}
@@ -423,6 +438,7 @@ export default function NiptSamples() {
             <Form.Item name="report_code" label="M. Report Code"><Input style={{ width: 140 }} disabled placeholder="= VG ID" /></Form.Item>
             <Form.Item name="send_report_id" label="N. Send Report ID"><Input style={{ width: 140 }} /></Form.Item>
             <Form.Item name="last_menstrual_period" label="O. LMP"><DatePicker style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="ordering_facility" label="P. Hospital/Clinic"><Input style={{ width: 160 }} placeholder="e.g. Bangkok Hospital" /></Form.Item>
           </Space>
           <Space style={{ display: "flex" }} wrap>
             <Form.Item name="multiple_gestation" label="P. Twin" valuePropName="checked"><Switch /></Form.Item>
@@ -468,14 +484,14 @@ export default function NiptSamples() {
 
         <div style={{ marginBottom: 8 }}>
           <Text type="secondary">
-            Paste CSV (comma-separated). 20 columns: Name,Age,GestWeeks,Panel,Source,IDCard,ExtID,CollDate,AcptDate,Physician,DOB,RptCode,SendID,LMP,Twin(Y/N),IVF(Y/N),PregHist,Diagnosis,FedEx,TestOpt
+            Paste CSV (comma-separated). 21 columns: Name,Age,GestWeeks,Panel,Source,IDCard,ExtID,CollDate,AcptDate,Physician,DOB,RptCode,SendID,LMP,Hospital,Twin(Y/N),IVF(Y/N),PregHist,Diagnosis,FedEx,TestOpt
           </Text>
           <Text code style={{ display: "block", marginTop: 4, fontSize: 11, whiteSpace: "pre-wrap" }}>
-            Name,Age,GestWeeks,Panel,Source,IDCard,ExtID,CollDate,AcptDate,Physician,DOB,RptCode,SendID,LMP,Twin(Y/N),IVF(Y/N),PregHist,Diagnosis,FedEx,TestOpt
+            Name,Age,GestWeeks,Panel,Source,IDCard,ExtID,CollDate,AcptDate,Physician,DOB,RptCode,SendID,LMP,Hospital,Twin(Y/N),IVF(Y/N),PregHist,Diagnosis,FedEx,TestOpt
           </Text>
         </div>
         <TextArea rows={12} value={batchText} onChange={e => setBatchText(e.target.value)}
-          placeholder={`Zhang Li,28,12,NIPT,Bangkok Hospital,440101199801012345,BCC-2026001,2026-06-01,2026-06-03,Dr.Somchai,1998-05-15,RPT-BCC-001,SND001,2026-03-01,N,N,G1P0,Normal,FX1234567890,NIPT`}
+          placeholder={`Zhang Li,28,12,NIPT,Bangkok Hospital,440101199801012345,BCC-2026001,2026-06-01,2026-06-03,Dr.Somchai,1998-05-15,RPT-BCC-001,SND001,2026-03-01,Bangkok Hospital,N,N,G1P0,Normal,FX1234567890,NIPT`}
           style={{ fontFamily: "monospace", fontSize: 12 }}
         />
       </Modal>

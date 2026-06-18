@@ -64,6 +64,16 @@ class ReportViewSet(viewsets.ModelViewSet):
         report.reviewed_by = reviewer
         report.reviewed_at = timezone.now()
         report.save(update_fields=["status", "reviewed_by", "reviewed_at"])
+
+        # Generate report DOCX after review
+        try:
+            from .report_generator import generate_report, generate_gender_report
+            generate_report(report)
+            generate_gender_report(report)
+        except Exception as e:
+            import logging
+            logging.getLogger("lims.reports").warning(f"Report generation skipped: {e}")
+
         return Response(ReportListSerializer(report).data)
 
     @action(detail=True, methods=["post"])
@@ -159,10 +169,30 @@ class ReportViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
-        """Download report content as JSON."""
+        """Download generated report. Use ?format=pdf for PDF, default DOCX."""
+        import os, subprocess
+        from django.http import FileResponse
+        from django.conf import settings
         report = self.get_object()
+        fmt = request.query_params.get("type", "docx").lower()
+        if report.pdf_file_path:
+            docx_path = os.path.join(settings.MEDIA_ROOT, report.pdf_file_path)
+            if fmt == "pdf":
+                pdf_path = docx_path.replace('.docx', '.pdf')
+                if os.path.exists(pdf_path):
+                    filename = os.path.basename(pdf_path)
+                    response = FileResponse(open(pdf_path, 'rb'), content_type='application/pdf')
+                    response['Content-Disposition'] = f'inline; filename="{filename}"'
+                    return response
+                return Response({"error": "PDF conversion failed"}, status=500)
+            # Default: DOCX
+            if os.path.exists(docx_path):
+                filename = os.path.basename(docx_path)
+                response = FileResponse(open(docx_path, 'rb'), content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                response['Content-Disposition'] = f'attachment; filename="{filename}"'
+                return response
         if not report.content:
-            return Response({"error": "Report content not generated yet. Use POST /generate/ first."}, status=400)
+            return Response({"error": "Report not generated yet. Review the report first."}, status=400)
         response = Response(report.content)
         response["Content-Disposition"] = f'attachment; filename="{report.report_number}.json"'
         return response

@@ -46,6 +46,8 @@ interface BioData {
   xxy?: string;
   xyy?: string;
   all_chrom?: string;
+  plus_result?: string;
+  plus_highrisk_items?: string;
   ff_percent?: number;
   sex?: string;
 }
@@ -235,7 +237,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       render: (v: string) => v || "—",
     },
     {
-      title: "Source", dataIndex: "sample_source", key: "source",
+      title: "Sample Source",dataIndex: "sample_source", key: "source",
       width: 90, ellipsis: true,
       render: (v: string) => v || "—",
     },
@@ -424,12 +426,32 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "All", key: "all_chrom", width: 100,
+      title: "All Chrom", key: "all_chrom", width: 120,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.all_chrom}
           onChange={v => updateCell(record.id, "all_chrom", v)}
-          type="select" options={CHROM_RESULT_OPTIONS} placeholder="All"
+          type="combo" options={RESULT_OPTIONS} placeholder="All Chrom ..."
+        />
+      ),
+    },
+    {
+      title: "Plus Result", key: "plus_result", width: 120,
+      render: (_: any, record: RunSample) => (
+        <EditableCell
+          value={bioData[record.id]?.plus_result}
+          onChange={v => updateCell(record.id, "plus_result", v)}
+          type="combo" options={RESULT_OPTIONS} placeholder="Plus Result ..."
+        />
+      ),
+    },
+    {
+      title: "Plus HighRisk", key: "plus_highrisk_items", width: 140,
+      render: (_: any, record: RunSample) => (
+        <EditableCell
+          value={bioData[record.id]?.plus_highrisk_items}
+          onChange={v => updateCell(record.id, "plus_highrisk_items", v)}
+          type="combo" options={RESULT_OPTIONS} placeholder="Plus HighRisk ..."
         />
       ),
     },

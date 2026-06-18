@@ -209,14 +209,14 @@ export default function NiptReceiving() {
 
   const pendingColumns = [
     { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 180 },
-    { title: "Patient Name", dataIndex: "patient_name", key: "patient_name", width: 120 },
+    { title: "Name", dataIndex: "patient_name", key: "patient_name", width: 120 },
     { title: "VG ID", dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
     { title: "Age", dataIndex: "age", key: "age", width: 60 },
     { title: "Gest. Weeks", dataIndex: "gestational_weeks", key: "gestational_weeks", width: 80 },
     { title: "Sample Type", dataIndex: "sample_type_code", key: "sample_type_code", width: 100, render: (v: string) => SAMPLE_TYPE_MAP[v] || v || "-" },
     { title: "Test Option", dataIndex: "test_option", key: "test_option", width: 80, render: (v: string) => TEST_OPTION_MAP[v] || v || "-" },
     { title: "Collection Date", dataIndex: "collection_date", key: "collection_date", width: 120, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : "-" },
-    { title: "Source Institution", dataIndex: "source_institution", key: "source_institution", width: 160, ellipsis: true },
+    { title: "Sample Source",dataIndex: "sample_source", key: "sample_source", width: 160, ellipsis: true },
     {
       title: "Status", dataIndex: "status", key: "status", width: 100,
       render: (v: string) => <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABELS[v] || v}</Tag>,
@@ -240,7 +240,7 @@ export default function NiptReceiving() {
 
   const receivedColumns = [
     { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 180 },
-    { title: "Patient Name", dataIndex: "patient_name", key: "patient_name", width: 120 },
+    { title: "Name", dataIndex: "patient_name", key: "patient_name", width: 120 },
     { title: "VG ID", dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
     { title: "Age", dataIndex: "age", key: "age", width: 60 },
     { title: "Gest. Weeks", dataIndex: "gestational_weeks", key: "gestational_weeks", width: 80 },
