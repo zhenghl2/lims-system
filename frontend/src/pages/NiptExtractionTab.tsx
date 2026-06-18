@@ -3,6 +3,9 @@ import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Spac
 import dayjs from "dayjs";
 import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
+import { getSampleBadge, getCellBg } from "../utils/badge";
+import { getSignStatus } from "../utils/sign";
+import { ROWS_8, COLS_12, REGIONS, STEPS, EXTRACTION_KITS } from "../utils/constants";
 
 const EXTRACTION_METHODS = [
   { value: "MANUAL", label: "Manual (手动提取)" },
@@ -10,46 +13,16 @@ const EXTRACTION_METHODS = [
   { value: "AUTOMATED", label: "Automated Workstation (自动化工作站)" },
 ];
 
-const REGIONS = [
-  { value: "THAILAND", label: "泰国" },
-  { value: "XIAMEN", label: "厦门" },
-  { value: "HONGKONG", label: "香港" },
-  { value: "BRAZIL", label: "巴西" },
-];
+// REGIONS imported from ../utils/constants
 
-const KITS_BY_REGION: Record<string, { value: string; label: string }[]> = {
-  THAILAND: [
-    { value: "ZEC601-T96", label: "MagPure Circulating DNA TL Kit (1.2ml, 48ch) - ZEC601-T96" },
-    { value: "ZEC601", label: "MagPure Circulating DNA Kit (0.4ml) - ZEC601" },
-  ],
-  XIAMEN: [
-    { value: "MD5432-TL-06C", label: "磁珠法游离DNA提取试剂盒 - MD5432-TL-06C" },
-    { value: "12919w-480", label: "磁珠法游离DNA提取试剂盒 - 12919w-480" },
-  ],
-  HONGKONG: [
-    { value: "MD5432-RB", label: "磁珠法游离DNA提取试剂盒 (圆底) - MD5432-TL-06C" },
-    { value: "MD5432-CB", label: "磁珠法游离DNA提取试剂盒 (锥底) - MD5432-TL-06C" },
-  ],
-  BRAZIL: [{ value: "TBD", label: "待定" }],
-};
+// KITS_BY_REGION → use EXTRACTION_KITS from ../utils/constants
 
-const STEPS = [
-  { key: "uv_prep", label: "设备准备（紫外 30min）" },
-  { key: "reagent_prep", label: "试剂准备（混匀、离心）" },
-  { key: "sample_prep", label: "样本准备" },
-  { key: "on_machine", label: "上机" },
-  { key: "cleanup", label: "实验结束（清洁台面、紫外 30min）" },
-];
+// STEPS imported from ../utils/constants
 
-const ROWS_8 = ["A", "B", "C", "D", "E", "F", "G", "H"];
-const COLS_12 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+// ROWS_8 imported from ../utils/constants
+// COLS_12 imported from ../utils/constants
 
-function getSignStatus(edata: any, role: "operator" | "reviewer") {
-  const key = role === "operator" ? "operator_signature" : "reviewer_signature";
-  const sig = edata?.[key];
-  if (!sig || typeof sig !== "object" || !sig.username) return { signed: false, name: "", time: "" };
-  return { signed: true, name: sig.username, time: sig.signed_at || "" };
-}
+// getSignStatus imported from ../utils/sign
 
 interface Props {
   batch: any;
@@ -213,7 +186,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const { signed: rvSigned, name: rvSigner } = getSignStatus(edata, "reviewer");
   const [opModal, setOpModal] = useState(false);
   const [rvModal, setRvModal] = useState(false);
-  const kits = KITS_BY_REGION[region] || [];
+  const kits = EXTRACTION_KITS[region] || [];
 
   // ── Failed samples list ──
   const failedSamples = useMemo(() => {
@@ -245,33 +218,13 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   // ── Helpers ──
   const getLabel = (idx: number) => {
     const s = samples[idx];
-    return s ? (s.sample_vg_id || s.sample_barcode || s.vg_id || s.sample_id || "-") : "-";
+    if (!s) return "-";
+    const badge = getSampleBadgeLocal(idx);
+    const vgId = s.sample_vg_id || s.sample_barcode || s.vg_id || s.sample_id || "-";
+    return badge.text ? badge.text + vgId : vgId;
   };
-  const getSampleBadge = (idx: number) => {
-    const s = samples[idx];
-    if (!s) return { text: "", bg: undefined as string | undefined };
-    const isTwin = s?.sample_multiple_gestation === true;
-    const testOpt = (s?.sample_test_option || "").trim().toLowerCase();
-    const twinMark = isTwin ? "👶👶 " : "";
-    if (testOpt === "plus" || testOpt === "nipt_plus") {
-      return { text: twinMark, bg: "#e6f4ff" };
-    }
-    if (testOpt === "basic_all" || testOpt === "basic all" || testOpt === "nipt_full") {
-      return { text: twinMark, bg: "#e8d5f5" };
-    }
-    if (testOpt === "basic" || testOpt === "nipt") {
-      return { text: twinMark, bg: "#f6ffed" };
-    }
-    if (isTwin) {
-      return { text: "👶👶 ", bg: undefined };
-    }
-    return { text: "", bg: undefined };
-  };
-  const getCellBg = (idx?: number) => {
-    if (idx === undefined) return "#fafafa";
-    const badge = getSampleBadge(idx);
-    return badge.bg || (samples[idx] ? "#e8f5e9" : "#fafafa");
-  };
+  const getSampleBadgeLocal = (idx: number) => getSampleBadge(samples[idx]);
+  const getCellBgLocal = (idx?: number) => getCellBg(idx, samples);
 
   return (
     <div>
@@ -395,8 +348,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                       {ROWS_8.map((r,rowIdx)=>{
                         const bg = rowIdx%2===0?"#fff":"#f5f5f5";
                         const col1Idx=base+rowIdx, col7Idx=base+8+rowIdx;
-                        const s1=col1Idx<samples.length?((getSampleBadge(col1Idx)?getSampleBadge(col1Idx)!.text+" ":"" )+getLabel(col1Idx)):"";
-                        const s7=col7Idx<samples.length?((getSampleBadge(col7Idx)?getSampleBadge(col7Idx)!.text+" ":"" )+getLabel(col7Idx)):"";
+                        const s1=col1Idx<samples.length?(getLabel(col1Idx)):"";
+                        const s7=col7Idx<samples.length?(getLabel(col7Idx)):"";
                         return (<tr key={r} style={{background:bg}}>
                           <td style={{border:"1px solid #d9d9d9",padding:"3px 4px",textAlign:"center",fontWeight:600,color:"#595959",fontSize:11}}>{r}</td>
                           {COLS_12.map(c=>{
@@ -446,9 +399,9 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                     <td style={{border:"1px solid #d9d9d9",padding:"3px 4px",textAlign:"center",fontWeight:600,color:"#595959",fontSize:11}}>{r}</td>
                     {COLS_12.map(c=>{
                       const wl=`${r}${c}`; const idx=cellMap[wl];
-                      const label=idx!==undefined&&idx<samples.length?((getSampleBadge(idx)?getSampleBadge(idx).text+" ":"" )+getLabel(idx)):"";
-                      if(!label) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:getCellBg(idx),minHeight:28,verticalAlign:"middle"}}></td>;
-                      return <SampleCell key={c} label={label} sampleIdx={idx} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle",background:getCellBg(idx)}} />;
+                      const label=idx!==undefined&&idx<samples.length?(getLabel(idx)):"";
+                      if(!label) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:getCellBgLocal(idx),minHeight:28,verticalAlign:"middle"}}></td>;
+                      return <SampleCell key={c} label={label} sampleIdx={idx} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle",background:getCellBgLocal(idx)}} />;
                     })}
                   </tr>);
                 })}

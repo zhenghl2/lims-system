@@ -3,6 +3,8 @@ import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Spac
 import dayjs from "dayjs";
 import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
+import { getSignStatus } from "../utils/sign";
+import { ROW_LABELS, COL_COUNT, REGIONS, STEPS, getVgId } from "../utils/constants";
 
 // ── Library prep methods ──
 const LIBRARY_METHODS = [
@@ -11,12 +13,7 @@ const LIBRARY_METHODS = [
   { value: "AUTOMATED", label: "自动化移液工作站建库" },
 ];
 
-const REGIONS = [
-  { value: "THAILAND", label: "泰国" },
-  { value: "XIAMEN", label: "厦门" },
-  { value: "HONGKONG", label: "香港" },
-  { value: "BRAZIL", label: "巴西" },
-];
+// REGIONS imported from ../utils/constants
 
 const EQUIPMENT_OPTIONS = [
   { value: "PCR_ABI_9700", label: "PCR仪 - ABI 9700" },
@@ -72,33 +69,19 @@ const KITS_BY_REGION: Record<string, RegionKits> = {
   },
 };
 
-const STEPS = [
-  { key: "uv_prep", label: "设备准备（紫外 30min）" },
-  { key: "reagent_prep", label: "试剂准备（混匀、离心）" },
-  { key: "sample_prep", label: "样本准备" },
-  { key: "on_machine", label: "上机" },
-  { key: "cleanup", label: "实验结束（清洁台面、紫外 30min）" },
-];
+// STEPS imported from ../utils/constants
 
-const ROW_LABELS = ["A", "B", "C", "D", "E", "F", "G", "H"];
-const COL_COUNT = 12;
+// ROW_LABELS imported from ../utils/constants
+// COL_COUNT imported from ../utils/constants
 
-// ── Get VG ID from sample ──
-function getVgId(s: any): string {
-  return s?.sample_vg_id || s?.vg_id || s?.sample_id || s?.sample_barcode || "-";
-}
+// getVgId imported from ../utils/constants
 
 interface PlateCell {
   vgId: string;
   index: string;
 }
 
-function getSignStatus(edata: any, role: "operator" | "reviewer") {
-  const key = role === "operator" ? "operator_signature" : "reviewer_signature";
-  const sig = edata?.[key];
-  if (!sig || typeof sig !== "object" || !sig.username) return { signed: false, name: "", time: "" };
-  return { signed: true, name: sig.username, time: sig.signed_at || "" };
-}
+// getSignStatus imported from ../utils/sign
 
 interface Props {
   batch: any;
@@ -477,7 +460,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
               </tr>
             </thead>
             <tbody>
-              {ROW_LABELS.map((label, row) => (
+              {ROW_LABELS.map((label: string, row: number) => (
                 <tr key={row}>
                   <td style={rowLabelStyle}>{label}</td>
                   {Array.from({ length: COL_COUNT }, (_, col) => {
@@ -510,7 +493,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
       {/* Step Confirmations */}
       <Card title="步骤确认" size="small" style={{ marginBottom: 16 }}>
         <Space wrap>
-          {STEPS.map(step => {
+          {STEPS.map((step: { key: string; label: string }) => {
             const manualHide = method === "SINGLE_CHANNEL" && (step.key === "uv_prep" || step.key === "on_machine");
             return (
               <Checkbox key={step.key} checked={!!steps[step.key]} onChange={() => toggleStep(step.key)} style={manualHide ? { opacity: 0.4 } : undefined}>

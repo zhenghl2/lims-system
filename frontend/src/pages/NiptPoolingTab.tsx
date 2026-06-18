@@ -3,42 +3,18 @@ import { Button, Card, InputNumber, message, Space, Typography, Tag } from "antd
 import { PrinterOutlined } from "@ant-design/icons";
 import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
+import { getSampleBadge, calcPoolingAmount } from "../utils/badge";
+import { getSignStatus } from "../utils/sign";
 
 const { Text } = Typography;
 
-// ── Sample badge helper (matches NiptExtractionTab color scheme) ──
-function getSampleBadge(s: any): { text: string; bg?: string } {
-  if (!s) return { text: "" };
-  const isTwin = s?.sample_multiple_gestation === true;
-  const testOpt = (s?.sample_test_option || "").trim().toLowerCase();
-  const twinMark = isTwin ? "👶👶 " : "";
-  if (testOpt === "plus" || testOpt === "nipt_plus")
-    return { text: twinMark, bg: "#e6f4ff" };
-  if (testOpt === "basic_all" || testOpt === "basic all" || testOpt === "nipt_full")
-    return { text: twinMark, bg: "#e8d5f5" };
-  if (testOpt === "basic" || testOpt === "nipt")
-    return { text: twinMark, bg: "#f6ffed" };
-  if (isTwin)
-    return { text: "👶👶 ", bg: undefined };
-  return { text: "", bg: "#e8f5e9" };
-}
+// getSampleBadge imported from ../utils/badge
 
 const DEFAULT_ELUTION_VOL = 30;
 const DEFAULT_POOLING_AMOUNT = 143;
 const YIELD_THRESHOLD = 60;
 
-// Compute pooling amount based on test option and twin status
-function calcPoolingAmount(baseAmount: number, testOpt: string, isTwin: boolean): number {
-  const opt = testOpt.toLowerCase();
-  if (opt === "plus" || opt === "nipt_plus") {
-    return Math.round(baseAmount * 2.5 * 100) / 100;
-  }
-  // basic, basic_all, or no test option → default to basic
-  if (isTwin) {
-    return Math.round(baseAmount * 2 * 100) / 100;
-  }
-  return baseAmount;
-}
+// calcPoolingAmount imported from ../utils/badge
 
 interface Props {
   batch: any;
@@ -60,12 +36,7 @@ interface SampleRow {
   eliminated: boolean;
 }
 
-function getSignStatus(edata: any, role: "operator" | "reviewer") {
-  const key = role === "operator" ? "operator_signature" : "reviewer_signature";
-  const sig = edata?.[key];
-  if (!sig || typeof sig !== "object" || !sig.username) return { signed: false, name: "", time: "" };
-  return { signed: true, name: sig.username, time: sig.signed_at || "" };
-}
+// getSignStatus imported from ../utils/sign
 
 export default function NiptPoolingTab({ batch, onRefresh }: Props) {
   const pdata = useMemo(() => batch.pooling_data || {}, [batch.pooling_data]);
