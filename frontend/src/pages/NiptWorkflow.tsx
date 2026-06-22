@@ -292,7 +292,7 @@ export default function NiptWorkflow() {
           </Form.Item>
           <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
             <Text strong>Select Samples</Text>
-            <Tag color="blue" style={{ fontSize: 13, padding: "2px 10px" }}>{samples.length} IN_PROCESS</Tag>
+            <Tag color="blue" style={{ fontSize: 13, padding: "2px 10px" }}>{samples.length} 待处理</Tag>
             <Tag color="green" style={{ fontSize: 13, padding: "2px 10px" }}>{selectedIds.length} selected</Tag>
             {selectedIds.length !== samples.length && (
               <Button type="link" size="small" onClick={() => setSelectedIds(samples.map((s: any) => s.id))}>Select all</Button>

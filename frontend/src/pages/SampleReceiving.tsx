@@ -15,13 +15,13 @@ const { Text, Title } = Typography;
 
 const STATUS_COLORS: Record<string, string> = {
   REGISTERED: "default", RECEIVING: "processing", IN_PROCESS: "orange",
-  TESTING: "purple", ANALYZING: "geekblue", COMPLETED: "green",
-  REPORTED: "cyan", REJECTED: "red",
+  PLASMA_SEPARATED: "lime", TESTING: "purple", ANALYZING: "geekblue",
+  COMPLETED: "green", REPORTED: "cyan", REJECTED: "red",
 };
 const STATUS_LABELS: Record<string, string> = {
   REGISTERED: "已登记", RECEIVING: "接收中", IN_PROCESS: "处理中",
-  TESTING: "检测中", ANALYZING: "分析中", COMPLETED: "已完成",
-  REPORTED: "已报告", REJECTED: "已拒收",
+  PLASMA_SEPARATED: "血浆已分离", TESTING: "检测中", ANALYZING: "分析中",
+  COMPLETED: "已完成", REPORTED: "已报告", REJECTED: "已拒收",
 };
 
 const REJECTION_REASONS: Record<string, string> = {

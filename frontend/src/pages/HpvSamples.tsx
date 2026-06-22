@@ -9,7 +9,7 @@ const { TextArea } = Input;
 
 const STATUS_MAP: Record<string, string> = {
   REGISTERED: "default", RECEIVING: "processing", RECEIVED: "blue",
-  IN_PROCESS: "orange", COMPLETED: "green", REPORTED: "purple",
+  IN_PROCESS: "orange", PLASMA_SEPARATED: "lime", COMPLETED: "green", REPORTED: "purple",
   REJECTED: "red",
 };
 

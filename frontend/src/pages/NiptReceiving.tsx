@@ -10,12 +10,13 @@ const { TextArea } = Input;
 
 const STATUS_MAP: Record<string, string> = {
   REGISTERED: "default", RECEIVED: "blue",
-  IN_PROCESS: "orange", COMPLETED: "green",
+  IN_PROCESS: "orange", PLASMA_SEPARATED: "lime", COMPLETED: "green",
 };
 
 const STATUS_LABELS: Record<string, string> = {
   REGISTERED: "Registered", RECEIVED: "Received",
-  IN_PROCESS: "In Process", COMPLETED: "Completed", REPORTED: "Reported",
+  IN_PROCESS: "In Process", PLASMA_SEPARATED: "血浆已分离",
+  COMPLETED: "Completed", REPORTED: "Reported",
   REJECTED: "Rejected",
 };
 
@@ -79,7 +80,7 @@ export default function NiptReceiving() {
 
   const fetchData = useCallback(() => {
     setLoading(true);
-    const statusParam = activeTab === "pending" ? "REGISTERED" : "RECEIVED,IN_PROCESS,COMPLETED,REPORTED";
+    const statusParam = activeTab === "pending" ? "REGISTERED" : "RECEIVED,IN_PROCESS,PLASMA_SEPARATED,COMPLETED,REPORTED";
     samplesApi.list({ status: statusParam, panel: "NIPT,NIPT_PLUS,NIPT_FULL", page_size: 100 }).then((res: any) => {
       setData((res.data as any).results || res.data || []);
     }).catch(() => message.error("Failed to load samples")).finally(() => setLoading(false));
