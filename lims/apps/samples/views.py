@@ -322,7 +322,7 @@ class SampleViewSet(viewsets.ModelViewSet):
 
                 # Build sample data
                 sample_data = {
-                    "sample_source": data.get("sample_source", source),
+                    "sample_source": data.get("sample_source") or ("BCC" if not is_brazil else source),
                     "test_option": test_opt,
                     "external_id": data.get("external_id", ""),
                     "patient_name": data.get("patient_name", ""),
