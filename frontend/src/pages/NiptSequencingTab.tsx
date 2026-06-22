@@ -144,20 +144,25 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
     // Extract batch number from notes (format: "Batch: XXXXX")
     const batchNotes = batch.notes || "";
     const batchNum = batchNotes.replace(/^Batch:\s*/i, "").trim();
+    // Report Code prefix: chipXXXX → RXXXX.date
+    const today = dayjs().format("YYYY.MM.DD");
+    const reportPrefix = batchNum.replace(/^chip/i, "R");
     return poolSamples.map((ps: any, i: number) => {
       const indexStr = ps.index || "";
       const num = parseIndexNum(indexStr);
       const lookup = INDEX_LOOKUP[num] || { i7: "", i5: "" };
+      const idxPadded = String(ps.index || "").padStart(3, "0");
+      const vgId = ps.vgId || "";
       return {
         key: i,
         idx: i + 1,
-        vgId: ps.vgId || "",
+        vgId,
         index: indexStr,
         i7: lookup.i7,
         i5: lookup.i5,
         batchNumber: batchNum,
-        uploadId: "",
-        reportCode: "",
+        uploadId: `${batchNum}_${idxPadded}_${vgId}`,
+        reportCode: `${reportPrefix}.${today}.${idxPadded}.${vgId}`,
       };
     });
   }, [poolSamples]);
