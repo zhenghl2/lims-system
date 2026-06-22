@@ -192,8 +192,8 @@ def extract_thai_pdf(file_path, source="BCC"):
     if test_option:
         info['test_option'] = test_option
 
-    # Source institution
-    info['sample_source'] = source
+    # Source institution (Thai PDFs always from BCC)
+    info['sample_source'] = 'BCC' if source == '泰国' else source
 
     # Hospital
     hospital = (fields.get('Text Field12', {}).get('/V', '') or '').strip()

@@ -55,7 +55,7 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "external_id", title: "Accessioning ID", dataIndex: "external_id", visible: true, width: 140, render: (v: string) => <Text code>{v || "-"}</Text> },
   { key: "collection_date", title: "Collection Date", dataIndex: "collection_date", visible: true, width: 110, render: (v: string) => v || "-" },
   { key: "acceptance_date", title: "Acceptance Date", dataIndex: "acceptance_date", visible: true, width: 110, render: (v: string) => v || "-" },
-  { key: "physician", title: "Physician", dataIndex: "physician", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "physician", title: "Physician", dataIndex: "physician", visible: true, width: 100, render: (v: string, r: any) => r?.ordering_physician || v || "-" },
   { key: "patient_id", title: "Patient ID", dataIndex: "id_card", visible: true, width: 160, render: (v: string) => v || "-" },
   { key: "patient_name", title: "Name", dataIndex: "patient_name", visible: true, width: 100 },
   { key: "patient_dob", title: "DOB", dataIndex: "patient_dob", visible: true, width: 100, render: (v: string) => v || "-" },
