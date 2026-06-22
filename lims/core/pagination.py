@@ -1,14 +1,16 @@
 """Custom pagination classes for LIMS API."""
-from rest_framework.pagination import LimitOffsetPagination
+from rest_framework.pagination import PageNumberPagination
 
 
-class StandardResultsSetPagination(LimitOffsetPagination):
-    """Standard pagination with limit and offset."""
-    default_limit = 50
-    max_limit = 200
+class StandardResultsSetPagination(PageNumberPagination):
+    """Standard pagination with page number."""
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 500
 
 
-class CursorPagination(LimitOffsetPagination):
+class CursorPagination(PageNumberPagination):
     """Cursor pagination for audit logs (large datasets)."""
-    default_limit = 100
-    max_limit = 500
+    page_size = 100
+    page_size_query_param = 'page_size'
+    max_page_size = 500

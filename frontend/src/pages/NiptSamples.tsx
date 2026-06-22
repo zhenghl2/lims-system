@@ -96,7 +96,7 @@ export default function NiptSamples() {
   const [acceptanceDateFilter, setAcceptanceDateFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [page, setPage] = useState(1);
-  const pageSize = 20;
+  const [pageSize, setPageSize] = useState(20);
   const [modalOpen, setModalOpen] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [batchText, setBatchText] = useState("");
@@ -181,7 +181,7 @@ export default function NiptSamples() {
       setData((res.data as any).results || res.data || []);
       setTotal((res.data as any).count || 0);
     } catch { message.error("Failed"); } finally { setLoading(false); }
-  }, [page, search, statusFilter, vgIdFilter, acceptanceDateFilter, sourceFilter]);
+  }, [page, pageSize, search, statusFilter, vgIdFilter, acceptanceDateFilter, sourceFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -417,11 +417,11 @@ export default function NiptSamples() {
           options={["BCC", "巴西万基", "韩国", "CYJ印度", "CYJ澳洲", "澳洲经销商", "西班牙代理", "澳洲", "西班牙巴塞罗那经销商", "YLH西班牙bygens", "YLH西班牙LABGENETICS", "CYJ澳洲经销商", "CYJ秘鲁", "CYJ美国"].map(v => ({ label: v, value: v }))} />
         <Select placeholder="Status" allowClear style={{ width: 150 }} value={statusFilter || undefined}
           onChange={(v) => { setStatusFilter(v || ""); setPage(1); }}
-          options={["", "REGISTERED", "RECEIVED", "IN_PROCESS", "COMPLETED", "REPORTED", "REJECTED"].map(v => ({ label: v || "All Statuses", value: v }))} />
+          options={["", "REGISTERED", "RECEIVED", "IN_PROCESS", "EXTRACTION", "LIBRARY_PREP", "POOLING", "SEQUENCING", "BIOINFORMATICS", "COMPLETED", "REPORTED", "REJECTED"].map(v => ({ label: v || "All Statuses", value: v }))} />
       </div>
       <Table rowKey="id" dataSource={data} columns={columns} loading={loading} size="small" onRow={(record) => ({ onDoubleClick: () => { if (record.id) setEditingKey(record.id); } })}
         scroll={{ x: 4500 }}
-        pagination={{ current: page, pageSize, total, showTotal: t => `Total ${t}`, onChange: (p) => setPage(p) }} />
+        pagination={{ current: page, pageSize, total, showTotal: t => `Total ${t}`, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], onChange: (p, ps) => { setPage(p); if (ps !== pageSize) setPageSize(ps); } }} />
 
       {/* Register Modal */}
       <Modal title="Register NIPT Sample" open={modalOpen} onOk={handleRegister} onCancel={() => setModalOpen(false)} width={700} destroyOnClose>
