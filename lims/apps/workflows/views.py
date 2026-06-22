@@ -139,8 +139,8 @@ class SampleRunViewSet(viewsets.ModelViewSet):
                     {"step_id": "data_analysis", "step_name": "Data Analysis", "step_order": 4, "required": True},
                     {"step_id": "qc_review", "step_name": "QC Review", "step_order": 5, "required": True},
                 ]
-                # HPV uses PCR instead of library prep + sequencing
-                if panel.code == "NIPPT":
+                # NIPT panels (NIPT, NIPT_PLUS, NIPT_FULL, NIPPT) use the full 11-step workflow
+                if panel.code in ("NIPPT", "NIPT", "NIPT_PLUS", "NIPT_FULL"):
                     default_steps = [
                         {"step_id": "sample_receiving", "step_name": "Sample Receiving", "step_order": 1, "required": True},
                         {"step_id": "plasma_separation", "step_name": "Plasma Separation", "step_order": 2, "required": True},
@@ -374,7 +374,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password or password != "123456":
+        if not password or not request.user.check_password(password):
             return Response({"error": "密码错误"}, status=400)
 
         from django.utils import timezone
@@ -419,7 +419,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password or password != "123456":
+        if not password or not request.user.check_password(password):
             return Response({"error": "密码错误"}, status=400)
 
         from django.utils import timezone
@@ -457,7 +457,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password or password != "123456":
+        if not password or not request.user.check_password(password):
             return Response({"error": "密码错误"}, status=400)
 
         from django.utils import timezone
@@ -490,7 +490,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         password = request.data.get("password", "").strip()
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password or password != "123456":
+        if not password or not request.user.check_password(password):
             return Response({"error": "密码错误"}, status=400)
         from django.utils import timezone
         timestamp = timezone.now().isoformat()

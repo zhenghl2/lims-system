@@ -10,7 +10,7 @@ const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 const STATUS_MAP: Record<string, string> = {
-  REGISTERED: "default", RECEIVING: "processing", RECEIVED: "blue",
+  REGISTERED: "default", RECEIVING: "blue", RECEIVED: "blue",
   IN_PROCESS: "orange",
   EXTRACTION: "cyan", LIBRARY_PREP: "blue", POOLING: "geekblue",
   SEQUENCING: "purple", BIOINFORMATICS: "magenta",
@@ -303,10 +303,10 @@ export default function NiptSamples() {
         report_code: p[11]?.trim() || undefined, send_report_id: p[12]?.trim() || undefined,
         last_menstrual_period: p[13]?.trim() || undefined,
         ordering_facility: p[14]?.trim() || undefined,
-        multiple_gestation: getBool(14), ivf_status: getBool(15),
-        pregnancy_history: p[16]?.trim() || undefined,
-        clinical_diagnosis: p[17]?.trim() || undefined,
-        fedex_no: p[18]?.trim() || undefined, test_option: p[19]?.trim() || undefined,
+        multiple_gestation: getBool(15), ivf_status: getBool(16),
+        pregnancy_history: p[17]?.trim() || undefined,
+        clinical_diagnosis: p[18]?.trim() || undefined,
+        fedex_no: p[19]?.trim() || undefined, test_option: p[20]?.trim() || undefined,
       };
     });
     try {
@@ -406,7 +406,7 @@ export default function NiptSamples() {
         <Input.Search placeholder="Search..." allowClear onSearch={(v) => { setSearch(v); setPage(1); }} style={{ width: 280 }} />
         <Select placeholder="Status" allowClear style={{ width: 150 }} value={statusFilter || undefined}
           onChange={(v) => { setStatusFilter(v || ""); setPage(1); }}
-          options={["", "REGISTERED", "RECEIVED", "IN_PROCESS", "COMPLETED", "REPORTED", "REJECTED"].map(v => ({ label: v || "All Chrom", value: v }))} />
+          options={["", "REGISTERED", "RECEIVED", "IN_PROCESS", "COMPLETED", "REPORTED", "REJECTED"].map(v => ({ label: v || "All Statuses", value: v }))} />
       </div>
       <Table rowKey="id" dataSource={data} columns={columns} loading={loading} size="small" onRow={(record) => ({ onDoubleClick: () => { if (record.id) setEditingKey(record.id); } })}
         scroll={{ x: 4500 }}

@@ -410,6 +410,15 @@ class SampleViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_201_CREATED if created else status.HTTP_400_BAD_REQUEST,
             )
 
+        except Exception as e:
+            import traceback
+            import logging
+            logger = logging.getLogger("lims.samples")
+            logger.error(f"register_from_pdf failed: {e}\n{traceback.format_exc()}")
+            return Response(
+                {"error": f"处理失败: {str(e)}", "detail": traceback.format_exc()[-500:]},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 

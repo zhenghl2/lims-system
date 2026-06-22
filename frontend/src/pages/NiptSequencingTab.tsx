@@ -138,6 +138,7 @@ function getSignStatus(edata: any, role: "operator" | "reviewer") {
 }
 
 let reagentIdCounter = 100;
+// ↑ Module-level counter is reset on HMR; reset on mount via useRef below.
 
 export default function NiptSequencingTab({ batch, onRefresh }: Props) {
   const [form] = Form.useForm();
@@ -147,6 +148,8 @@ export default function NiptSequencingTab({ batch, onRefresh }: Props) {
   const [saving, setSaving] = useState(false);
   const [opModal, setOpModal] = useState(false);
   const [rvModal, setRvModal] = useState(false);
+  // Use ref for counter so it survives re-renders and resets with unmount
+  const counterRef = useRef(100);
 
   const { signed: opSigned, name: opSigner } = getSignStatus(edata, "operator");
   const { signed: rvSigned, name: rvSigner } = getSignStatus(edata, "reviewer");
@@ -199,7 +202,7 @@ export default function NiptSequencingTab({ batch, onRefresh }: Props) {
   const toggleStep = (key: string) => setSteps(prev => ({ ...prev, [key]: !prev[key] }));
 
   const addReagent = () => {
-    const id = ++reagentIdCounter;
+    const id = ++counterRef.current;
     setReagents(prev => [...prev, { id, type: "", kit: "", lot: "", expiry: "" }]);
   };
 

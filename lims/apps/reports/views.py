@@ -108,9 +108,7 @@ class ReportViewSet(viewsets.ModelViewSet):
     def sign(self, request, pk=None):
         report = self.get_object()
         password = request.data.get("password", "")
-        if not password:
-            return Response({"error": "Password required"}, status=400)
-        if password != "123456":
+        if not password or not request.user.check_password(password):
             return Response({"error": "密码错误"}, status=400)
         report.status = "SIGNED"
         report.signed_by = request.user

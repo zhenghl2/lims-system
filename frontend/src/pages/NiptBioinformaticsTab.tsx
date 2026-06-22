@@ -74,7 +74,7 @@ const CHROM_RESULT_OPTIONS = [
 ];
 
 const SEX_OPTIONS = [
-  { value: " Female", label: "女" },
+  { value: "Female", label: "女" },
   { value: "Male", label: "男" },
   { value: "N/A", label: "无法判定" },
 ];
@@ -181,20 +181,13 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
   const [saving, setSaving] = useState(false);
   const initialized = useRef(false);
 
-  // Load existing bioinformatics data from batch
-  useEffect(() => {
-    if (batch?.bioinformatics_data && !initialized.current) {
-      setBioData(batch.bioinformatics_data || {});
-      initialized.current = true;
-    }
-  }, [batch?.id]); // reset when batch changes
-
-  // Also reload when batch data changes from refresh
+  // Load existing bioinformatics data from batch (only on batch change)
   useEffect(() => {
     if (batch?.bioinformatics_data) {
       setBioData(batch.bioinformatics_data);
+      initialized.current = true;
     }
-  }, [batch?.bioinformatics_data]);
+  }, [batch?.id]);
 
   const updateCell = useCallback((runSampleId: string, field: string, value: any) => {
     setBioData(prev => ({

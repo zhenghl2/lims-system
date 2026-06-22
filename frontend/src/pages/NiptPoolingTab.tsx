@@ -77,8 +77,9 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
   }, [libraryPlate, batch.run_samples]);
 
   // Build sample rows with saved data or defaults (matched by vgId, not position)
-  const buildRows = (baseAmount?: number): SampleRow[] => {
-    const b = baseAmount ?? poolingBase;
+  const buildRows = (): SampleRow[] => {
+    // Use ref to always get latest poolingBase without creating a dependency
+    const base = poolingBaseRef.current;
     const savedSamples = pdata.samples || [];
     const savedByVgId: Record<string, any> = {};
     for (const s of savedSamples) { savedByVgId[s.vgId] = s; }
@@ -87,7 +88,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
       const conc = saved.concentration ?? null;
       const ev = saved.elutionVolume ?? DEFAULT_ELUTION_VOL;
       const y = conc ? conc * ev : 0;
-      const defaultPA = calcPoolingAmount(b, ps.testOpt, ps.isTwin);
+      const defaultPA = calcPoolingAmount(base, ps.testOpt, ps.isTwin);
       const pa = saved.poolingAmount ?? defaultPA;
       const pv = conc && conc > 0 ? pa / conc : 0;
       return {
@@ -111,6 +112,9 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
   const [saving, setSaving] = useState(false);
   const [poolingBase, setPoolingBase] = useState(pdata.poolingBase ?? DEFAULT_POOLING_AMOUNT);
   const printRef = useRef<HTMLDivElement>(null);
+  // Ref to capture latest poolingBase for buildRows without stale closure
+  const poolingBaseRef = useRef(poolingBase);
+  poolingBaseRef.current = poolingBase;
 
   // Load/sync rows
   useEffect(() => {

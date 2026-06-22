@@ -99,6 +99,11 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   const [negativeControl, setNegativeControl] = useState("");
   const [method, setMethod] = useState(batch.library_method || "MULTI_CHANNEL");
   const [region, setRegion] = useState(batch.region || "");
+
+  // Sync region when batch is updated (e.g. after extraction tab saves a different region)
+  useEffect(() => {
+    if (batch.region) setRegion(batch.region);
+  }, [batch.region]);
   const edata = useMemo(() => batch.library_data || {}, [batch.library_data]);
   const { signed: opSigned, name: opSigner } = getSignStatus(edata, "operator");
   const { signed: rvSigned, name: rvSigner } = getSignStatus(edata, "reviewer");
