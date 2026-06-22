@@ -141,6 +141,9 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
   }, [batch.pooling_data]);
 
   const indexRows: IndexRow[] = useMemo(() => {
+    // Extract batch number from notes (format: "Batch: XXXXX")
+    const batchNotes = batch.notes || "";
+    const batchNum = batchNotes.replace(/^Batch:\s*/i, "").trim();
     return poolSamples.map((ps: any, i: number) => {
       const indexStr = ps.index || "";
       const num = parseIndexNum(indexStr);
@@ -152,7 +155,7 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
         index: indexStr,
         i7: lookup.i7,
         i5: lookup.i5,
-        batchNumber: "",
+        batchNumber: batchNum,
         uploadId: "",
         reportCode: "",
       };
