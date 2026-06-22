@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography, Table } from "antd";
-import { PlusOutlined, DeleteOutlined } from "@ant-design/icons";
+import { PlusOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
@@ -229,6 +229,20 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
   const thStyle:React.CSSProperties={border:"1px solid #bbb",padding:"6px 8px",textAlign:"center",fontWeight:700,background:"#d5e8d4",fontSize:12};
   const tdStyle:React.CSSProperties={border:"1px solid #d9d9d9",padding:0,minHeight:32};
 
+  const handleDownloadCsv = () => {
+    // Header: Sample_ID (renamed from upload_ID), Index1_i7, Index2_i5, Mismatch
+    const header = "Sample_ID,Index1_i7,Index2_i5,Mismatch";
+    const rows = indexRows.map(r => `${r.uploadId},${r.i7},${r.i5},`);
+    const csv = "\uFEFF" + header + "\n" + rows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `SampleSheet_${batch.notes?.replace(/^Batch:\s*/i, "").trim() || "export"}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div>
       {/* Platform */}
@@ -256,7 +270,8 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
 
       {/* ── Sample Index Table ── */}
       {indexRows.length > 0 && (
-        <Card size="small" title={`样本 Index 信息 (${indexRows.length} samples)`} style={{marginBottom:12}}>
+        <Card size="small" title={`样本 Index 信息 (${indexRows.length} samples)`} style={{marginBottom:12}}
+          extra={<Button size="small" icon={<DownloadOutlined />} onClick={handleDownloadCsv}>下载 CSV</Button>}>
           <Table rowKey="key" size="small" pagination={false} dataSource={indexRows} columns={indexColumns}
             scroll={{x:800}}
             locale={{emptyText:"暂无样本数据 — 请先在文库定量及Pooling步骤中填写index"}}/>
