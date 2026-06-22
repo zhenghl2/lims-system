@@ -8,7 +8,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser
-from django_filters.rest_framework import DjangoFilterBackend
+from django_filters.rest_framework import DjangoFilterBackend, FilterSet, CharFilter
 from rest_framework.filters import SearchFilter, OrderingFilter
 from .models import Sample, SamplePhoto, SampleType, TestPanel, SampleMovement
 from lims.apps.organizations.models import Receiver
@@ -19,11 +19,20 @@ from .serializers import (
 )
 from rest_framework import status
 from lims.core.permissions import IsSiteScoped
+class SampleFilter(FilterSet):
+    vg_id = CharFilter(lookup_expr="icontains")
+
+    class Meta:
+        model = Sample
+        fields = ["sample_type", "receipt_date", "hpv_sample_type", "test_item",
+                   "patient_sex", "sample_source", "acceptance_date", "vg_id"]
+
+
 class SampleViewSet(viewsets.ModelViewSet):
     """CRUD + actions for samples."""
     permission_classes = [IsAuthenticated, IsSiteScoped]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["sample_type", "receipt_date", "hpv_sample_type", "test_item", "patient_sex", "sample_source", "acceptance_date"]
+    filterset_class = SampleFilter
     # receipt_date range handled in get_queryset via custom filter
     search_fields = ["sample_id", "patient_id", "patient_name", "vg_id", "external_id", "id_card", "ordering_physician", "ordering_facility", "sample_source"]
     ordering_fields = ["receipt_date", "created_at", "sample_id"]
