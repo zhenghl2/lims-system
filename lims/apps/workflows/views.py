@@ -1,5 +1,5 @@
 """Workflow views."""
-from django.db import transaction
+from django.db import transaction, models
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -374,7 +374,18 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password or not request.user.check_password(password):
+        if not password:
+            return Response({"error": "密码错误"}, status=400)
+
+        # Find the selected signer (by first_name or username) and verify password
+        try:
+            signer_user = User.objects.get(
+                models.Q(first_name=signer_name) | models.Q(username=signer_name),
+                is_active=True,
+            )
+        except User.DoesNotExist:
+            return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
+        if not signer_user.check_password(password):
             return Response({"error": "密码错误"}, status=400)
 
         from django.utils import timezone
@@ -419,7 +430,18 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password or not request.user.check_password(password):
+        if not password:
+            return Response({"error": "密码错误"}, status=400)
+
+        # Find the selected signer (by first_name or username) and verify password
+        try:
+            signer_user = User.objects.get(
+                models.Q(first_name=signer_name) | models.Q(username=signer_name),
+                is_active=True,
+            )
+        except User.DoesNotExist:
+            return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
+        if not signer_user.check_password(password):
             return Response({"error": "密码错误"}, status=400)
 
         from django.utils import timezone
@@ -457,7 +479,18 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password or not request.user.check_password(password):
+        if not password:
+            return Response({"error": "密码错误"}, status=400)
+
+        # Find the selected signer (by first_name or username) and verify password
+        try:
+            signer_user = User.objects.get(
+                models.Q(first_name=signer_name) | models.Q(username=signer_name),
+                is_active=True,
+            )
+        except User.DoesNotExist:
+            return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
+        if not signer_user.check_password(password):
             return Response({"error": "密码错误"}, status=400)
 
         from django.utils import timezone
@@ -490,7 +523,18 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         password = request.data.get("password", "").strip()
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password or not request.user.check_password(password):
+        if not password:
+            return Response({"error": "密码错误"}, status=400)
+
+        # Find the selected signer (by first_name or username) and verify password
+        try:
+            signer_user = User.objects.get(
+                models.Q(first_name=signer_name) | models.Q(username=signer_name),
+                is_active=True,
+            )
+        except User.DoesNotExist:
+            return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
+        if not signer_user.check_password(password):
             return Response({"error": "密码错误"}, status=400)
         from django.utils import timezone
         timestamp = timezone.now().isoformat()

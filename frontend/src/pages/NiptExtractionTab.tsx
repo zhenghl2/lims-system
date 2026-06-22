@@ -310,11 +310,11 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                   return (
                     <tr key={`r${row}`} style={{ background: bg }}>
                       <td style={TD_NUM}>{c0+1}</td>
-                      <SampleCell label={l0} sampleIdx={c0} results={sampleResults} onChange={setSampleResult} cellStyle={TD_SAMPLE} />
+                      <SampleCell label={l0} sampleIdx={c0} results={sampleResults} onChange={setSampleResult} cellStyle={{...TD_SAMPLE, background: getCellBgLocal(c0)}} />
                       <td style={TD_NUM}>{c1+1}</td>
-                      <SampleCell label={l1} sampleIdx={c1} results={sampleResults} onChange={setSampleResult} cellStyle={TD_SAMPLE} />
+                      <SampleCell label={l1} sampleIdx={c1} results={sampleResults} onChange={setSampleResult} cellStyle={{...TD_SAMPLE, background: getCellBgLocal(c1)}} />
                       <td style={TD_NUM}>{c2+1}</td>
-                      <SampleCell label={l2} sampleIdx={c2} results={sampleResults} onChange={setSampleResult} cellStyle={TD_SAMPLE} />
+                      <SampleCell label={l2} sampleIdx={c2} results={sampleResults} onChange={setSampleResult} cellStyle={{...TD_SAMPLE, background: getCellBgLocal(c2)}} />
                     </tr>
                   );
                 })}
