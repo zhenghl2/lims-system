@@ -526,7 +526,25 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         current.update(sequencing_data)
         run.sequencing_data = current
         run.save(update_fields=["sequencing_data", "updated_at"])
-        return Response({"sequencing_data": run.sequencing_data})
+
+        # Sync report_code / upload_id to Sample records from index_samples
+        index_samples = sequencing_data.get("index_samples", [])
+        updated = 0
+        for item in index_samples:
+            vg_id = item.get("vgId", "")
+            report_code = item.get("reportCode", "")
+            if vg_id and report_code:
+                from lims.apps.samples.models import Sample
+                cnt = Sample.objects.filter(
+                    vg_id=vg_id, is_deleted=False,
+                    panel__code__in=["NIPT", "NIPT_PLUS", "NIPT_FULL"],
+                ).update(report_code=report_code)
+                updated += cnt
+
+        return Response({
+            "sequencing_data": run.sequencing_data,
+            "samples_updated": updated,
+        })
 
     @action(detail=True, methods=["post"], url_path="sequencing/sign")
     def sign_sequencing(self, request, pk=None):

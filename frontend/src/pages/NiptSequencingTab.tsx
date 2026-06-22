@@ -205,6 +205,7 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
         temperature:vals.temperature,
         humidity:vals.humidity,
         step_confirmations:steps,
+        index_samples: indexRows.map(r => ({ vgId: r.vgId, uploadId: r.uploadId, reportCode: r.reportCode })),
       };
       await api.post(`/runs/${batch.id}/save_sequencing/`,{sequencing_data:seqData});
       message.success("上机测序记录已保存");
