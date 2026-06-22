@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber } from "antd";
 import { PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
@@ -136,9 +136,6 @@ function getSignStatus(edata: any, role: "operator" | "reviewer") {
   if (!sig || typeof sig !== "object" || !sig.username) return { signed: false, name: "", time: "" };
   return { signed: true, name: sig.username, time: sig.signed_at || "" };
 }
-
-let reagentIdCounter = 100;
-// ↑ Module-level counter is reset on HMR; reset on mount via useRef below.
 
 export default function NiptSequencingTab({ batch, onRefresh }: Props) {
   const [form] = Form.useForm();
