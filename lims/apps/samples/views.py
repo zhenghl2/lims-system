@@ -23,9 +23,9 @@ class SampleViewSet(viewsets.ModelViewSet):
     """CRUD + actions for samples."""
     permission_classes = [IsAuthenticated, IsSiteScoped]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
-    filterset_fields = ["sample_type", "receipt_date", "hpv_sample_type", "test_item", "patient_sex", "sample_source"]
+    filterset_fields = ["sample_type", "receipt_date", "hpv_sample_type", "test_item", "patient_sex", "sample_source", "acceptance_date"]
     # receipt_date range handled in get_queryset via custom filter
-    search_fields = ["sample_id", "patient_id", "patient_name"]
+    search_fields = ["sample_id", "patient_id", "patient_name", "vg_id", "external_id", "id_card", "ordering_physician", "ordering_facility", "sample_source"]
     ordering_fields = ["receipt_date", "created_at", "sample_id"]
     def get_queryset(self):
         qs = Sample.objects.filter(is_deleted=False)
