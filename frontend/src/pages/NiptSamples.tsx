@@ -427,7 +427,7 @@ export default function NiptSamples() {
           options={["", ...Object.keys(STATUS_LABEL)].map(v => ({ label: v || "All Statuses", value: v }))} />
       </div>
       <Table rowKey="id" dataSource={data} columns={columns} loading={loading} size="small" onRow={(record) => ({ onDoubleClick: () => { if (record.id) setEditingKey(record.id); } })}
-        scroll={{ x: 4500 }}
+        scroll={{ x: 4500, y: "calc(100vh - 280px)" }}
         pagination={{ current: page, pageSize, total, showTotal: t => `Total ${t}`, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], onChange: (p, ps) => { setPage(p); if (ps !== pageSize) { setPageSize(ps); localStorage.setItem('nipt_samples_pageSize', String(ps)); } } }} />
 
       {/* Register Modal */}
