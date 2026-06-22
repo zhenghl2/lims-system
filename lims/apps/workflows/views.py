@@ -9,6 +9,7 @@ from rest_framework.filters import SearchFilter, OrderingFilter
 from datetime import date
 from .models import WorkflowProtocol, SampleRun, RunSample, WorkflowStep
 from lims.apps.users.models import User
+from lims.apps.plasma_separation.views import NIPT_SIGNERS, NIPT_SIGNER_PASSWORD
 from .serializers import (
     WorkflowProtocolSerializer, RunSampleSerializer,
     SampleRunSerializer, SampleRunCreateSerializer, SampleRunDetailSerializer,
@@ -377,16 +378,20 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         if not password:
             return Response({"error": "密码错误"}, status=400)
 
-        # Find the selected signer (by first_name or username) and verify password
-        try:
-            signer_user = User.objects.get(
-                models.Q(first_name=signer_name) | models.Q(username=signer_name),
-                is_active=True,
-            )
-        except User.DoesNotExist:
-            return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
-        if not signer_user.check_password(password):
-            return Response({"error": "密码错误"}, status=400)
+        # Validate signer name against NIPT signers or Django users
+        if signer_name in NIPT_SIGNERS:
+            if password != NIPT_SIGNER_PASSWORD:
+                return Response({"error": "密码错误"}, status=400)
+        else:
+            try:
+                signer_user = User.objects.get(
+                    models.Q(first_name=signer_name) | models.Q(username=signer_name),
+                    is_active=True,
+                )
+                if not signer_user.check_password(password):
+                    return Response({"error": "密码错误"}, status=400)
+            except User.DoesNotExist:
+                return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
 
         from django.utils import timezone
         timestamp = timezone.now().isoformat()
@@ -433,16 +438,20 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         if not password:
             return Response({"error": "密码错误"}, status=400)
 
-        # Find the selected signer (by first_name or username) and verify password
-        try:
-            signer_user = User.objects.get(
-                models.Q(first_name=signer_name) | models.Q(username=signer_name),
-                is_active=True,
-            )
-        except User.DoesNotExist:
-            return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
-        if not signer_user.check_password(password):
-            return Response({"error": "密码错误"}, status=400)
+        # Validate signer name against NIPT signers or Django users
+        if signer_name in NIPT_SIGNERS:
+            if password != NIPT_SIGNER_PASSWORD:
+                return Response({"error": "密码错误"}, status=400)
+        else:
+            try:
+                signer_user = User.objects.get(
+                    models.Q(first_name=signer_name) | models.Q(username=signer_name),
+                    is_active=True,
+                )
+                if not signer_user.check_password(password):
+                    return Response({"error": "密码错误"}, status=400)
+            except User.DoesNotExist:
+                return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
 
         from django.utils import timezone
         timestamp = timezone.now().isoformat()
@@ -482,16 +491,20 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         if not password:
             return Response({"error": "密码错误"}, status=400)
 
-        # Find the selected signer (by first_name or username) and verify password
-        try:
-            signer_user = User.objects.get(
-                models.Q(first_name=signer_name) | models.Q(username=signer_name),
-                is_active=True,
-            )
-        except User.DoesNotExist:
-            return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
-        if not signer_user.check_password(password):
-            return Response({"error": "密码错误"}, status=400)
+        # Validate signer name against NIPT signers or Django users
+        if signer_name in NIPT_SIGNERS:
+            if password != NIPT_SIGNER_PASSWORD:
+                return Response({"error": "密码错误"}, status=400)
+        else:
+            try:
+                signer_user = User.objects.get(
+                    models.Q(first_name=signer_name) | models.Q(username=signer_name),
+                    is_active=True,
+                )
+                if not signer_user.check_password(password):
+                    return Response({"error": "密码错误"}, status=400)
+            except User.DoesNotExist:
+                return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
 
         from django.utils import timezone
         timestamp = timezone.now().isoformat()
@@ -526,16 +539,20 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         if not password:
             return Response({"error": "密码错误"}, status=400)
 
-        # Find the selected signer (by first_name or username) and verify password
-        try:
-            signer_user = User.objects.get(
-                models.Q(first_name=signer_name) | models.Q(username=signer_name),
-                is_active=True,
-            )
-        except User.DoesNotExist:
-            return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
-        if not signer_user.check_password(password):
-            return Response({"error": "密码错误"}, status=400)
+        # Validate signer name against NIPT signers or Django users
+        if signer_name in NIPT_SIGNERS:
+            if password != NIPT_SIGNER_PASSWORD:
+                return Response({"error": "密码错误"}, status=400)
+        else:
+            try:
+                signer_user = User.objects.get(
+                    models.Q(first_name=signer_name) | models.Q(username=signer_name),
+                    is_active=True,
+                )
+                if not signer_user.check_password(password):
+                    return Response({"error": "密码错误"}, status=400)
+            except User.DoesNotExist:
+                return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
         from django.utils import timezone
         timestamp = timezone.now().isoformat()
         sig_data = {"username": signer_name, "signed_at": timestamp}
