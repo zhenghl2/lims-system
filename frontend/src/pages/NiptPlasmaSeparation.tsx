@@ -417,8 +417,16 @@ export default function NiptPlasmaSeparation() {
                   }),
                 }}
                 columns={[
-                  { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 130, render: (v: string) => <Text code>{v}</Text> },
-                  { title: "Patient", dataIndex: "patient_name", key: "patient_name", width: 100 },
+                  { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 150, render: (v: string) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text> },
+                  { title: "VG ID", dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
+                  { title: "Test Option", dataIndex: "test_option", key: "test_option", width: 90,
+                    render: (v: string) => {
+                      if (!v) return <Text type="secondary">-</Text>;
+                      const colors: Record<string, string> = { "Basic": "blue", "Plus": "purple", "Basic All": "green" };
+                      return <Tag color={colors[v] || "default"} style={{ fontSize: 11 }}>{v}</Tag>;
+                    },
+                  },
+                  { title: "Patient", dataIndex: "patient_name", key: "patient_name", width: 110 },
                   {
                     title: "QC", dataIndex: "qc_result", key: "qc_result", width: 100,
                     render: (v: string) => <Tag color={QC_RESULT_MAP[v]?.color}>{QC_RESULT_MAP[v]?.label || v}</Tag>,

@@ -14,12 +14,14 @@ class PlasmaSeparationPhotoSerializer(serializers.ModelSerializer):
 class PlasmaSeparationSampleSerializer(serializers.ModelSerializer):
     sample_id = serializers.CharField(source="sample.sample_id", read_only=True)
     patient_name = serializers.CharField(source="sample.patient_name", read_only=True)
+    vg_id = serializers.CharField(source="sample.vg_id", read_only=True, default="")
+    test_option = serializers.CharField(source="sample.test_option", read_only=True, default="")
     panel_name = serializers.SerializerMethodField()
 
     class Meta:
         model = PlasmaSeparationSample
         fields = [
-            "id", "sample", "sample_id", "patient_name", "panel_name",
+            "id", "sample", "sample_id", "vg_id", "test_option", "patient_name", "panel_name",
             "qc_result", "qc_reason", "notes",
         ]
         read_only_fields = ["id"]
