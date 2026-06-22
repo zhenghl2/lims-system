@@ -99,7 +99,10 @@ export default function NiptSamples() {
   const [acceptanceDateFilter, setAcceptanceDateFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(20);
+  const [pageSize, setPageSize] = useState(() => {
+    const saved = localStorage.getItem('nipt_samples_pageSize');
+    return saved ? parseInt(saved) : 20;
+  });
   const [modalOpen, setModalOpen] = useState(false);
   const [batchMode, setBatchMode] = useState(false);
   const [batchText, setBatchText] = useState("");
@@ -424,7 +427,7 @@ export default function NiptSamples() {
       </div>
       <Table rowKey="id" dataSource={data} columns={columns} loading={loading} size="small" onRow={(record) => ({ onDoubleClick: () => { if (record.id) setEditingKey(record.id); } })}
         scroll={{ x: 4500 }}
-        pagination={{ current: page, pageSize, total, showTotal: t => `Total ${t}`, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], onChange: (p, ps) => { setPage(p); if (ps !== pageSize) setPageSize(ps); } }} />
+        pagination={{ current: page, pageSize, total, showTotal: t => `Total ${t}`, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], onChange: (p, ps) => { setPage(p); if (ps !== pageSize) { setPageSize(ps); localStorage.setItem('nipt_samples_pageSize', String(ps)); } } }} />
 
       {/* Register Modal */}
       <Modal title="Register NIPT Sample" open={modalOpen} onOk={handleRegister} onCancel={() => setModalOpen(false)} width={700} destroyOnClose>
