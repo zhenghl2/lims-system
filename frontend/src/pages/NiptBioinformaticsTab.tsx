@@ -230,6 +230,11 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       render: (v: string) => v || "—",
     },
     {
+      title: "Report Code", dataIndex: "sample_report_code", key: "report_code",
+      width: 160, ellipsis: true,
+      render: (v: string) => v ? <Text code style={{fontSize:11}}>{v}</Text> : "—",
+    },
+    {
       title: "Sample Source",dataIndex: "sample_source", key: "source",
       width: 90, ellipsis: true,
       render: (v: string) => v || "—",
