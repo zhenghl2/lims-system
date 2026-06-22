@@ -16,12 +16,15 @@ export default function NiptDashboard() {
       const niptPlus = panels.find(p => p.panel_code === "NIPT_PLUS") || {};
       setStats({
         total: Number(nipt.total || 0) + Number(niptPlus.total || 0),
+        receiving: Number(nipt.receiving || 0) + Number(niptPlus.receiving || 0),
         received: Number(nipt.received || 0) + Number(niptPlus.received || 0),
         extraction: Number(nipt.extraction || 0) + Number(niptPlus.extraction || 0),
         library_prep: Number(nipt.library_prep || 0) + Number(niptPlus.library_prep || 0),
         pooling: Number(nipt.pooling || 0) + Number(niptPlus.pooling || 0),
         sequencing: Number(nipt.sequencing || 0) + Number(niptPlus.sequencing || 0),
         bioinformatics: Number(nipt.bioinformatics || 0) + Number(niptPlus.bioinformatics || 0),
+        testing: Number(nipt.testing || 0) + Number(niptPlus.testing || 0),
+        analyzing: Number(nipt.analyzing || 0) + Number(niptPlus.analyzing || 0),
         completed: Number(nipt.completed || 0) + Number(niptPlus.completed || 0),
         reported: Number(nipt.reported || 0) + Number(niptPlus.reported || 0),
         rejected: Number(nipt.rejected || 0) + Number(niptPlus.rejected || 0),

@@ -11,17 +11,20 @@ const { TextArea } = Input;
 
 const STATUS_MAP: Record<string, string> = {
   REGISTERED: "default", RECEIVING: "blue", RECEIVED: "blue",
-  IN_PROCESS: "orange",
+  IN_PROCESS: "orange", ACCEPTED: "blue",
   EXTRACTION: "cyan", LIBRARY_PREP: "blue", POOLING: "geekblue",
   SEQUENCING: "purple", BIOINFORMATICS: "magenta",
+  TESTING: "orange", ANALYZING: "orange",
   COMPLETED: "green", REPORTED: "purple",
   REJECTED: "red",
 };
 
 const STATUS_LABEL: Record<string, string> = {
-  REGISTERED: "Registered", RECEIVED: "Received", IN_PROCESS: "In Process",
+  REGISTERED: "Registered", RECEIVING: "Receiving", RECEIVED: "Received",
+  IN_PROCESS: "In Process", ACCEPTED: "Accepted",
   EXTRACTION: "核酸提取", LIBRARY_PREP: "文库构建", POOLING: "文库定量及Pooling",
   SEQUENCING: "上机测序", BIOINFORMATICS: "生物信息分析",
+  TESTING: "Testing", ANALYZING: "Analyzing",
   COMPLETED: "Completed", REJECTED: "Rejected",
 };
 
@@ -417,7 +420,7 @@ export default function NiptSamples() {
           options={["BCC", "巴西万基", "韩国", "CYJ印度", "CYJ澳洲", "澳洲经销商", "西班牙代理", "澳洲", "西班牙巴塞罗那经销商", "YLH西班牙bygens", "YLH西班牙LABGENETICS", "CYJ澳洲经销商", "CYJ秘鲁", "CYJ美国"].map(v => ({ label: v, value: v }))} />
         <Select placeholder="Status" allowClear style={{ width: 150 }} value={statusFilter || undefined}
           onChange={(v) => { setStatusFilter(v || ""); setPage(1); }}
-          options={["", "REGISTERED", "RECEIVED", "IN_PROCESS", "EXTRACTION", "LIBRARY_PREP", "POOLING", "SEQUENCING", "BIOINFORMATICS", "COMPLETED", "REPORTED", "REJECTED"].map(v => ({ label: v || "All Statuses", value: v }))} />
+          options={["", ...Object.keys(STATUS_LABEL)].map(v => ({ label: v || "All Statuses", value: v }))} />
       </div>
       <Table rowKey="id" dataSource={data} columns={columns} loading={loading} size="small" onRow={(record) => ({ onDoubleClick: () => { if (record.id) setEditingKey(record.id); } })}
         scroll={{ x: 4500 }}

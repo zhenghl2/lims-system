@@ -133,7 +133,9 @@ class Sample(models.Model):
         default="REGISTERED",
         choices=[
             ("REGISTERED", "Registered"),
+            ("RECEIVING", "Receiving"),
             ("RECEIVED", "Received"),
+            ("ACCEPTED", "Accepted"),
             ("PRE_PROCESSING", "Pre-Processing"),
             ("REJECTED", "Rejected"),
             ("IN_PROCESS", "In Process"),

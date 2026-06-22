@@ -193,7 +193,9 @@ class SampleViewSet(viewsets.ModelViewSet):
             samples = qs.filter(panel=panel)
             aggregations = samples.aggregate(
                 registered=Count("pk", filter=Q(status="REGISTERED")),
+                receiving=Count("pk", filter=Q(status="RECEIVING")),
                 received=Count("pk", filter=Q(status="RECEIVED")),
+                accepted=Count("pk", filter=Q(status="ACCEPTED")),
                 pre_processing=Count("pk", filter=Q(status="PRE_PROCESSING")),
                 in_process=Count("pk", filter=Q(status="IN_PROCESS")),
                 extraction=Count("pk", filter=Q(status="EXTRACTION")),
@@ -201,8 +203,13 @@ class SampleViewSet(viewsets.ModelViewSet):
                 pooling=Count("pk", filter=Q(status="POOLING")),
                 sequencing=Count("pk", filter=Q(status="SEQUENCING")),
                 bioinformatics=Count("pk", filter=Q(status="BIOINFORMATICS")),
+                testing=Count("pk", filter=Q(status="TESTING")),
+                analyzing=Count("pk", filter=Q(status="ANALYZING")),
                 completed=Count("pk", filter=Q(status="COMPLETED")),
                 rejected=Count("pk", filter=Q(status="REJECTED")),
+                reported=Count("pk", filter=Q(status="REPORTED")),
+                archived=Count("pk", filter=Q(status="ARCHIVED")),
+                disposed=Count("pk", filter=Q(status="DISPOSED")),
                 total=Count("pk"),
             )
             # Actual report count per panel (from reports table)
