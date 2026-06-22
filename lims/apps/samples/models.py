@@ -139,6 +139,7 @@ class Sample(models.Model):
             ("PRE_PROCESSING", "Pre-Processing"),
             ("REJECTED", "Rejected"),
             ("IN_PROCESS", "In Process"),
+            ("PLASMA_SEPARATED", "血浆已分离"),
             ("EXTRACTION", "NIPT — 核酸提取"),
             ("LIBRARY_PREP", "NIPT — 文库构建"),
             ("POOLING", "NIPT — 文库定量及Pooling"),

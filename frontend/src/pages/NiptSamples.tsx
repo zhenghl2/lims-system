@@ -11,7 +11,7 @@ const { TextArea } = Input;
 
 const STATUS_MAP: Record<string, string> = {
   REGISTERED: "default", RECEIVING: "blue", RECEIVED: "blue",
-  IN_PROCESS: "orange", ACCEPTED: "blue",
+  IN_PROCESS: "orange", ACCEPTED: "blue", PLASMA_SEPARATED: "lime",
   EXTRACTION: "cyan", LIBRARY_PREP: "blue", POOLING: "geekblue",
   SEQUENCING: "purple", BIOINFORMATICS: "magenta",
   TESTING: "orange", ANALYZING: "orange",
@@ -22,6 +22,7 @@ const STATUS_MAP: Record<string, string> = {
 const STATUS_LABEL: Record<string, string> = {
   REGISTERED: "Registered", RECEIVING: "Receiving", RECEIVED: "Received",
   IN_PROCESS: "In Process", ACCEPTED: "Accepted",
+  PLASMA_SEPARATED: "血浆已分离",
   EXTRACTION: "核酸提取", LIBRARY_PREP: "文库构建", POOLING: "文库定量及Pooling",
   SEQUENCING: "上机测序", BIOINFORMATICS: "生物信息分析",
   TESTING: "Testing", ANALYZING: "Analyzing",

@@ -173,7 +173,7 @@ class PlasmaSeparationBatchViewSet(viewsets.ModelViewSet):
         # Process each sample
         for ps in batch.batch_samples.select_related("sample").all():
             if ps.qc_result == "PASS":
-                Sample.objects.filter(id=ps.sample_id).update(status="IN_PROCESS")
+                Sample.objects.filter(id=ps.sample_id).update(status="PLASMA_SEPARATED")
             elif ps.qc_result == "FAIL":
                 reason_display = dict(QC_REASON_CHOICES).get(ps.qc_reason, ps.qc_reason)
                 Sample.objects.filter(id=ps.sample_id).update(

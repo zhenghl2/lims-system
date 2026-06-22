@@ -83,7 +83,7 @@ export default function NiptWorkflow() {
     fetchDetail(batch.id);
   };
   useEffect(() => {
-    if (createOpen) samplesApi.list({ status: "IN_PROCESS", page_size: 200 }).then(r => {
+    if (createOpen) samplesApi.list({ status: "IN_PROCESS,PLASMA_SEPARATED", page_size: 200 }).then(r => {
       const list = (r.data as any).results || [];
       setSamples(list);
       setSelectedIds(list.map((s: any) => s.id));
