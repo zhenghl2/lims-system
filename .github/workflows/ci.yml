@@ -41,6 +41,4 @@ jobs:
       - name: Run tests
         env:
           DJANGO_SETTINGS_MODULE: lims.config.settings.ci
-        run: |
-          cd lims
-          python manage.py test tests/ --verbosity=2
+        run: python manage.py test lims.tests --verbosity=2
