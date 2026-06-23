@@ -3,7 +3,7 @@ import {
   Table, Card, Typography, Tag, Button, Modal, Select, Input,
   Space, message, Descriptions, Dropdown
 } from "antd";
-import { ReloadOutlined, CheckCircleOutlined, SafetyCertificateOutlined, DownloadOutlined, FileWordOutlined, FilePdfOutlined } from "@ant-design/icons";
+import { ReloadOutlined, CheckCircleOutlined, SafetyCertificateOutlined, DownloadOutlined, FileWordOutlined } from "@ant-design/icons";
 import { reportsApi } from "../api";
 
 const { Title, Text } = Typography;
@@ -169,7 +169,6 @@ export default function NiptReports() {
         if (r.pdf_file_path) {
           const items = [
             { key: 'docx', icon: <FileWordOutlined />, label: 'Word' },
-            { key: 'pdf', icon: <FilePdfOutlined />, label: 'PDF' },
           ];
           return (
             <Dropdown menu={{
