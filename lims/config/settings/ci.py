@@ -1,4 +1,4 @@
-"""CI/CD test settings - PostgreSQL via GHA service"""
+"""CI/CD test settings - PostgreSQL full apps"""
 from .base import *  # noqa: F403
 
 DEBUG = False
@@ -13,15 +13,6 @@ DATABASES = {
         'PORT': '5432',
     }
 }
-
-EXCLUDE = [
-    'lims.apps.cases',
-    'lims.apps.hpv',
-    'lims.apps.wechat',
-    'lims.apps.notifications',
-    'lims.apps.lims_api',
-]
-INSTALLED_APPS = [app for app in INSTALLED_APPS if app not in EXCLUDE]
 
 CACHES = {'default': {'BACKEND': 'django.core.cache.backends.locmem.LocMemCache'}}
 CELERY_TASK_ALWAYS_EAGER = True
