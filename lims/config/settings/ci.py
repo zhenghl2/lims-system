@@ -1,21 +1,18 @@
-"""CI/CD test settings."""
+"""CI/CD test settings — uses SQLite for speed and simplicity."""
 from .base import *  # noqa: F403
 
 DEBUG = False
 SECRET_KEY = "ci-test-key-not-for-production-use-only"
 
+# SQLite — no external database needed
 DATABASES = {
     "default": {
-        "ENGINE": "django.db.backends.postgresql",
-        "NAME": "lims_test",
-        "USER": "lims",
-        "PASSWORD": "test_password",
-        "HOST": "localhost",
-        "PORT": "5432",
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": ":memory:",
     }
 }
 
-# Use in-memory cache, don't need real Redis for tests
+# Use in-memory cache
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
@@ -25,7 +22,7 @@ CACHES = {
 # Skip Celery in tests
 CELERY_TASK_ALWAYS_EAGER = True
 
-# Disable S3 storage in tests
+# Disable S3 storage
 DEFAULT_FILE_STORAGE = "django.core.files.storage.FileSystemStorage"
 MEDIA_ROOT = "/tmp/lims-test-media"
 
