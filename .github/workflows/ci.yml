@@ -25,11 +25,6 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-
     steps:
       - uses: actions/checkout@v4
 
@@ -46,9 +41,6 @@ jobs:
       - name: Run tests
         env:
           DJANGO_SETTINGS_MODULE: lims.config.settings.ci
-          DATABASE_URL: postgresql://lims:test_password@localhost:5432/lims_test
-          REDIS_URL: redis://localhost:6379/0
-          DJANGO_SECRET_KEY: ci-test-key-not-for-production
         run: |
           cd lims
           python manage.py test tests/ --verbosity=2
