@@ -110,11 +110,12 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const [region, setRegion] = useState(batch.region || "");
   const magneticNotesRef = useRef<Record<string, string>>({});
   const edata = useMemo(() => batch.extraction_data || {}, [batch.extraction_data]);
+  const defaultsFetchedRef = useRef(false);
 
   // sampleResults: keyed by sample index → { status, note }
   const [sampleResults, setSampleResults] = useState<Record<string, { status: string; note: string }>>({});
 
-  // Load saved data
+  // Load saved data + pre-fill from last batch
   useEffect(() => {
     form.setFieldsValue({
       extraction_date: edata.extraction_date ? dayjs(edata.extraction_date) : dayjs(),
@@ -133,6 +134,22 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     setSampleResults(edata.sample_results || {});
     if (batch.extraction_method) setMethod(batch.extraction_method);
     if (batch.region) setRegion(batch.region);
+
+    // 🆕 Pre-fill reagent & equipment from last batch for new batches
+    if (batch.id && !edata.kit_type && !edata.reagent_lot && !defaultsFetchedRef.current) {
+      defaultsFetchedRef.current = true;
+      api.get("/runs/last_batch_defaults/?panel=NIPT").then((res: any) => {
+        const ext = res?.extraction;
+        if (ext) {
+          form.setFieldsValue({
+            equipment: ext.equipment || "",
+            kit_type: ext.kit_type || undefined,
+            reagent_lot: ext.reagent_lot || "",
+            reagent_expiry: ext.reagent_expiry ? dayjs(ext.reagent_expiry) : undefined,
+          });
+        }
+      }).catch(() => {});
+    }
   }, [edata, batch, form]);
 
   const toggleStep = (key: string) => setSteps(prev => ({ ...prev, [key]: !prev[key] }));

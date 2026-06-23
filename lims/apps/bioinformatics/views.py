@@ -1,5 +1,7 @@
 """Bioinformatics views."""
 from django.utils import timezone
+import hmac, hashlib
+from django.conf import settings
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -70,10 +72,14 @@ class AnalysisJobViewSet(viewsets.ModelViewSet):
         serializer = PipelineWebhookSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        # Verify webhook signature
-        # signature = request.headers.get("X-Webhook-Signature")
-        # if not verify_webhook_signature(signature, request.body):
-        #     return Response({"error": "Invalid signature"}, status=401)
+        # Verify webhook signature with HMAC-SHA256
+        signature = request.headers.get("X-Webhook-Signature", "")
+        expected = hmac.new(
+            settings.LIMS_API_KEY.encode() if hasattr(settings, "LIMS_API_KEY") else settings.SECRET_KEY.encode(),
+            request.body, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(signature, expected):
+            return Response({"error": "Invalid signature"}, status=401)
 
         try:
             job = AnalysisJob.objects.get(id=serializer.validated_data["job_id"])

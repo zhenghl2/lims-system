@@ -1,0 +1,54 @@
+name: LIMS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: lims_test
+          POSTGRES_USER: lims
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r lims/requirements.txt
+          pip install pytest pytest-django
+
+      - name: Run tests
+        env:
+          DJANGO_SETTINGS_MODULE: lims.config.settings.ci
+          DATABASE_URL: postgresql://lims:test_password@localhost:5432/lims_test
+          REDIS_URL: redis://localhost:6379/0
+          DJANGO_SECRET_KEY: ci-test-key-not-for-production
+        run: |
+          cd lims
+          python manage.py test tests/ --verbosity=2

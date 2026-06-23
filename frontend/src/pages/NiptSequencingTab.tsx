@@ -123,6 +123,7 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
   const [opModal,setOpModal]=useState(false);
   const [rvModal,setRvModal]=useState(false);
   const counterRef=useRef(100);
+  const defaultsFetchedRef=useRef(false);
   const {signed:opSigned,name:opSigner}=getSignStatus(edata,"operator");
   const {signed:rvSigned,name:rvSigner}=getSignStatus(edata,"reviewer");
 
@@ -181,6 +182,24 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
     });
     setSteps(edata.step_confirmations||{});
     if(edata.platform)setPlatform(edata.platform);
+
+    // 🆕 Pre-fill reagent & equipment from last batch for new batches
+    if(batch.id&&!edata.platform&&!(edata.equipment||[]).length&&!defaultsFetchedRef.current){
+      defaultsFetchedRef.current=true;
+      api.get("/runs/last_batch_defaults/?panel=NIPT").then((res:any)=>{
+        const seq=res?.sequencing;
+        if(seq){
+          if(seq.platform)setPlatform(seq.platform);
+          form.setFieldsValue({
+            equipment:seq.equipment||[],
+            chip:seq.chip||undefined,
+          });
+          if(seq.reagents&&Array.isArray(seq.reagents)&&seq.reagents.length>0){
+            setReagents(seq.reagents.map((r:any,i:number)=>({id:i+1,type:r.type||"",kit:r.kit||"",lot:r.lot||"",expiry:r.expiry||""})));
+          }
+        }
+      }).catch(()=>{});
+    }
   },[edata,form]);
 
   const toggleStep=(key:string)=>setSteps(prev=>({...prev,[key]:!prev[key]}));

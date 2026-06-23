@@ -594,6 +594,51 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         return Response({"bioinformatics_data": run.bioinformatics_data})
 
+    @action(detail=False, methods=["get"], url_path="last_batch_defaults")
+    def last_batch_defaults(self, request):
+        """Return reagent & equipment defaults from the most recent batch."""
+        panel_code = request.query_params.get("panel", "")
+        qs = self.get_queryset().order_by("-created_at")
+        if panel_code:
+            qs = qs.filter(panel__code=panel_code)
+
+        last_run = qs.first()
+        if not last_run:
+            return Response({})
+
+        def safe_get(data, key, default=""):
+            return (data or {}).get(key, default)
+
+        return Response({
+            "extraction": {
+                "equipment": safe_get(last_run.extraction_data, "equipment"),
+                "kit_type": safe_get(last_run.extraction_data, "kit_type"),
+                "reagent_lot": safe_get(last_run.extraction_data, "reagent_lot"),
+                "reagent_expiry": safe_get(last_run.extraction_data, "reagent_expiry"),
+            },
+            "library": {
+                "equipment": safe_get(last_run.library_data, "equipment", []),
+                "lib_kit": safe_get(last_run.library_data, "lib_kit"),
+                "lib_kit_lot": safe_get(last_run.library_data, "lib_kit_lot"),
+                "lib_kit_expiry": safe_get(last_run.library_data, "lib_kit_expiry"),
+                "index_kit": safe_get(last_run.library_data, "index_kit"),
+                "index_kit_lot": safe_get(last_run.library_data, "index_kit_lot"),
+                "index_kit_expiry": safe_get(last_run.library_data, "index_kit_expiry"),
+                "quant_kit": safe_get(last_run.library_data, "quant_kit"),
+                "quant_kit_lot": safe_get(last_run.library_data, "quant_kit_lot"),
+                "quant_kit_expiry": safe_get(last_run.library_data, "quant_kit_expiry"),
+                "bead_kit": safe_get(last_run.library_data, "bead_kit"),
+                "bead_kit_lot": safe_get(last_run.library_data, "bead_kit_lot"),
+                "bead_kit_expiry": safe_get(last_run.library_data, "bead_kit_expiry"),
+            },
+            "sequencing": {
+                "platform": safe_get(last_run.sequencing_data, "platform"),
+                "equipment": safe_get(last_run.sequencing_data, "equipment", []),
+                "chip": safe_get(last_run.sequencing_data, "chip"),
+                "reagents": safe_get(last_run.sequencing_data, "reagents", []),
+            },
+        })
+
     @action(detail=False, methods=["get"])
     def stats(self, request):
         """Run statistics."""

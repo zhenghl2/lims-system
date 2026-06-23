@@ -174,19 +174,6 @@ export const usersApi = {
     api.get("/users/", { params }),
 };
 
-// ── Orders ────────────────────────────────────────────────────
-export const ordersApi = {
-  list: (params?: Record<string, unknown>) =>
-    api.get("/orders/", { params }) as any,
-  get: (id: string) => api.get(`/orders/${id}/`) as any,
-  create: (data: Record<string, unknown>) =>
-    api.post("/orders/", data) as any,
-  submit: (id: string) => api.post(`/orders/${id}/submit/`) as any,
-  complete: (id: string) => api.post(`/orders/${id}/complete/`) as any,
-  cancel: (id: string) => api.post(`/orders/${id}/cancel/`) as any,
-  delete: (id: string) => api.delete(`/orders/${id}/`) as any,
-};
-
 // ── Cases (NIPPT) ─────────────────────────────────────────────
 export const casesApi = {
   list: (params?: Record<string, unknown>) =>

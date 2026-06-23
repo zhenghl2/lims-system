@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber } from "antd";
 import dayjs from "dayjs";
 import api from "../api/client";
@@ -105,6 +105,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     if (batch.region) setRegion(batch.region);
   }, [batch.region]);
   const edata = useMemo(() => batch.library_data || {}, [batch.library_data]);
+  const defaultsFetchedRef = useRef(false);
   const { signed: opSigned, name: opSigner } = getSignStatus(edata, "operator");
   const { signed: rvSigned, name: rvSigner } = getSignStatus(edata, "reviewer");
 
@@ -187,7 +188,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     }
   }, [buildPlate, edata.library_plate]);
 
-  // Load saved form data
+  // Load saved form data + pre-fill from last batch
   useEffect(() => {
     form.setFieldsValue({
       lib_date: edata.lib_date ? dayjs(edata.lib_date) : dayjs(),
@@ -216,6 +217,31 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     if (batch.region) setRegion(batch.region);
     setPositiveControl(edata.positive_control || "");
     setNegativeControl(edata.negative_control || "");
+
+    // 🆕 Pre-fill reagent & equipment from last batch for new batches
+    if (batch.id && !edata.lib_kit && !(edata.equipment || []).length && !defaultsFetchedRef.current) {
+      defaultsFetchedRef.current = true;
+      api.get("/runs/last_batch_defaults/?panel=NIPT").then((res: any) => {
+        const lib = res?.library;
+        if (lib) {
+          form.setFieldsValue({
+            equipment: lib.equipment || [],
+            lib_kit: lib.lib_kit || undefined,
+            lib_kit_lot: lib.lib_kit_lot || "",
+            lib_kit_expiry: lib.lib_kit_expiry ? dayjs(lib.lib_kit_expiry) : undefined,
+            index_kit: lib.index_kit || undefined,
+            index_kit_lot: lib.index_kit_lot || "",
+            index_kit_expiry: lib.index_kit_expiry ? dayjs(lib.index_kit_expiry) : undefined,
+            quant_kit: lib.quant_kit || undefined,
+            quant_kit_lot: lib.quant_kit_lot || "",
+            quant_kit_expiry: lib.quant_kit_expiry ? dayjs(lib.quant_kit_expiry) : undefined,
+            bead_kit: lib.bead_kit || undefined,
+            bead_kit_lot: lib.bead_kit_lot || "",
+            bead_kit_expiry: lib.bead_kit_expiry ? dayjs(lib.bead_kit_expiry) : undefined,
+          });
+        }
+      }).catch(() => {});
+    }
   }, [edata, batch, form]);
 
   const toggleStep = (key: string) => setSteps(prev => ({ ...prev, [key]: !prev[key] }));

@@ -17,7 +17,6 @@ from .serializers import (
     SampleSerializer, SampleListSerializer, SampleReceiveSerializer,
     SampleRejectSerializer, SampleMovementSerializer, SampleTypeSerializer, TestPanelSerializer,
 )
-from rest_framework import status
 from lims.core.permissions import IsSiteScoped
 class SampleFilter(FilterSet):
     vg_id = CharFilter(lookup_expr="icontains")
