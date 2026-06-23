@@ -18,7 +18,6 @@ EXCLUDE = [
     'lims.apps.cases',
     'lims.apps.hpv',
     'lims.apps.wechat',
-    'lims.apps.plasma_separation',
     'lims.apps.notifications',
     'lims.apps.lims_api',
 ]
