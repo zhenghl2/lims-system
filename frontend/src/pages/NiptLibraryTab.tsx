@@ -218,6 +218,29 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     setPositiveControl(edata.positive_control || "");
     setNegativeControl(edata.negative_control || "");
 
+    // 🆕 Pre-fill reagent & equipment from last batch for new batches
+    if (batch.id && !edata.lib_kit && !(edata.equipment || []).length && !defaultsFetchedRef.current) {
+      defaultsFetchedRef.current = true;
+      api.get("/runs/last_batch_defaults/?panel=NIPT").then((res: any) => {
+        const lib = res?.library;
+        if (lib) {
+          form.setFieldsValue({
+            equipment: lib.equipment || [],
+            lib_kit: lib.lib_kit || undefined,
+            lib_kit_lot: lib.lib_kit_lot || "",
+            lib_kit_expiry: lib.lib_kit_expiry ? dayjs(lib.lib_kit_expiry) : undefined,
+            index_kit: lib.index_kit || undefined,
+            index_kit_lot: lib.index_kit_lot || "",
+            index_kit_expiry: lib.index_kit_expiry ? dayjs(lib.index_kit_expiry) : undefined,
+            quant_kit: lib.quant_kit || undefined,
+            quant_kit_lot: lib.quant_kit_lot || "",
+            quant_kit_expiry: lib.quant_kit_expiry ? dayjs(lib.quant_kit_expiry) : undefined,
+            bead_kit: lib.bead_kit || undefined,
+            bead_kit_lot: lib.bead_kit_lot || "",
+            bead_kit_expiry: lib.bead_kit_expiry ? dayjs(lib.bead_kit_expiry) : undefined,
+          });
+        }
+      }).catch(() => {});
     }
   }, [edata, batch, form]);
 
