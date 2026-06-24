@@ -222,7 +222,7 @@ export default function NiptPlasmaSeparation() {
         await api.patch(`/plasma-separation/${selectedBatch.id}/samples/${s.sample}/qc/`,
           { qc_result: "PASS", qc_reason: "", notes: qcNote });
         ok++;
-      } catch {}
+      } catch (e: any) { /* skip failed */ }
     }
     message.success(`${ok}/${targets.length} marked Pass`);
     setSelectedSampleKeys([]);
