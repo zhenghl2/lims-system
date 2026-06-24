@@ -107,6 +107,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
   }, [batch.region]);
   const edata = useMemo(() => batch.library_data || {}, [batch.library_data]);
   const defaultsFetchedRef = useRef(false);
+  // Reset prefetch flag when batch changes
+  useEffect(() => { defaultsFetchedRef.current = false; }, [batch.id]);
   const { signed: opSigned, name: opSigner } = getSignStatus(edata, "operator");
   const { signed: rvSigned, name: rvSigner } = getSignStatus(edata, "reviewer");
 
