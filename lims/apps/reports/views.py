@@ -21,6 +21,10 @@ class ReportTemplateViewSet(viewsets.ModelViewSet):
         qs = ReportTemplate.objects.all()
         if self.request.user.site_id:
             qs = qs.filter(site=self.request.user.site)
+        panel_code = self.request.query_params.get("panel_code")
+        if panel_code:
+            codes = [c.strip() for c in panel_code.split(",") if c.strip()]
+            qs = qs.filter(sample__panel__code__in=codes)
         return qs.filter(is_active=True)
 
 
@@ -35,6 +39,10 @@ class ReportViewSet(viewsets.ModelViewSet):
         qs = Report.objects.all()
         if self.request.user.site_id:
             qs = qs.filter(site=self.request.user.site)
+        panel_code = self.request.query_params.get("panel_code")
+        if panel_code:
+            codes = [c.strip() for c in panel_code.split(",") if c.strip()]
+            qs = qs.filter(sample__panel__code__in=codes)
         return qs
 
     def get_serializer_class(self):
