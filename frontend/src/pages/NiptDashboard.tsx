@@ -14,9 +14,10 @@ export default function NiptDashboard() {
       const panels = (r.data || []) as Array<Record<string, number|string>>;
       const nipt = panels.find(p => p.panel_code === "NIPT") || {};
       const niptPlus = panels.find(p => p.panel_code === "NIPT_PLUS") || {};
+      const niptFull = panels.find(p => p.panel_code === "NIPT_FULL") || {};
       setStats({
-        total: Number(nipt.total || 0) + Number(niptPlus.total || 0),
-        registered: Number(nipt.registered || 0) + Number(niptPlus.registered || 0),
+        total: Number(nipt.total || 0) + Number(niptPlus.total || 0) + Number(niptFull.total || 0),
+        registered: Number(nipt.registered || 0) + Number(niptPlus.registered || 0) + Number(niptFull.registered || 0),
         receiving: Number(nipt.receiving || 0) + Number(niptPlus.receiving || 0),
         received: Number(nipt.received || 0) + Number(niptPlus.received || 0),
         plasma_separated: Number(nipt.plasma_separated || 0) + Number(niptPlus.plasma_separated || 0),
@@ -32,7 +33,7 @@ export default function NiptDashboard() {
         rejected: Number(nipt.rejected || 0) + Number(niptPlus.rejected || 0),
       });
     }).catch(() => {});
-    runsApi.list({ panel_code: "NIPT,NIPT_PLUS", page_size: 5, ordering: "-created_at" })
+    runsApi.list({ panel_code: "NIPT,NIPT_PLUS,NIPT_FULL", page_size: 5, ordering: "-created_at" })
       .then(r => setRunStats((r.data as any)?.results || [])).catch(() => {});
   }, []);
 

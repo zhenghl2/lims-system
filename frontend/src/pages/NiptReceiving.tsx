@@ -112,6 +112,8 @@ export default function NiptReceiving() {
     }
   };
 
+  const manualEditsRef = useRef<Set<number>>(new Set());
+
   const handleBatchReceive = async () => {
     if (selectedRowKeys.length === 0) { message.warning("Select samples to receive"); return; }
     // Build VG list from selected samples
@@ -121,6 +123,7 @@ export default function NiptReceiving() {
       vg_id: s.vg_id || (i === 0 ? "WJ" : ""),
     }));
     setBatchVgList(list);
+    manualEditsRef.current.clear();
     setBatchVgModal(true);
   };
 
@@ -331,7 +334,24 @@ export default function NiptReceiving() {
                   autoFocus={i === 0}
                   placeholder="VG ID"
                   onChange={e => {
-                    const next = batchVgList.map((item, idx) => idx === i ? { ...item, vg_id: e.target.value } : item);
+                    const val = e.target.value;
+                    const next = batchVgList.map((item, idx) => {
+                      if (idx === i) return { ...item, vg_id: val };
+                      // Real-time auto-increment from first row
+                      if (i === 0 && val && idx > 0) {
+                        const m = val.match(/^(.*?)(\d+)$/);
+                        if (m) {
+                          const base = m[1], startNum = parseInt(m[2]);
+                          const expected = base + (startNum + idx);
+                          // Only overwrite if empty or matches auto-increment pattern (not user-edited)
+                          if (!manualEditsRef.current.has(idx)) {
+                            return { ...item, vg_id: expected };
+                          }
+                        }
+                      }
+                      return item;
+                    });
+                    if (i > 0) manualEditsRef.current.add(i);
                     setBatchVgList(next);
                   }}
                 />
