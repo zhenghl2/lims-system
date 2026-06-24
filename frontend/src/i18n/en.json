@@ -812,7 +812,8 @@
       "sampleRegistration": "Sample Registration",
       "receiving": "Receiving",
       "labWorkflow": "Lab Workflow",
-      "reports": "Reports"
+      "reports": "Reports",
+      "draft": "Draft"
     },
     "samples": {
       "title": "NIPT Sample Registration",
@@ -900,7 +901,8 @@
       "importRegister": "Import & Register",
       "chooseFolder": "Choose Folder",
       "chooseFiles": "Choose Files",
-      "none": "None"
+      "none": "None",
+      "registrationTime": "Registration Time"
     },
     "receiving": {
       "title": "NIPT Sample Receiving",
@@ -1069,7 +1071,11 @@
       "stepReagentPrep": "Reagent Prep (mix, centrifuge)",
       "stepSamplePrep": "Sample Preparation",
       "stepOnMachine": "Load on Machine",
-      "stepCleanup": "Cleanup (clean bench, UV 30min)"
+      "stepCleanup": "Cleanup (clean bench, UV 30min)",
+      "samplePositions": "positions",
+      "magneticNotes": "Notes",
+      "wells": "wells",
+      "automatedTitle": "Automated Workstation"
     },
     "library": {
       "method": "Library Method",
@@ -1236,8 +1242,8 @@
       "reviewer": "Reviewer",
       "verifier": "Verifier",
       "password": "Password",
-      "selectReviewer": "Select reviewer",
-      "selectVerifier": "Select verifier",
+      "selectReviewer": "Please select reviewer",
+      "selectVerifier": "Please select verifier",
       "enterPassword": "Enter password to confirm",
       "confirmReview": "Confirm Review",
       "confirmVerify": "Confirm & Release",
@@ -1248,7 +1254,19 @@
       "verifyGuide": "② Verification (Verified By)",
       "pendingReview": "Pending Review",
       "reviewBtn": "Review",
-      "verifyBtn": "Verify"
+      "verifyBtn": "Verify",
+      "reviewFailed": "Review failed",
+      "verifyFailed": "Verification failed",
+      "reviewed": "Reviewed",
+      "published": "Published",
+      "review": "Review",
+      "verify": "Verify",
+      "reviewedCount": "Reviewed",
+      "publishedCount": "Published",
+      "reviewedStatus": "Reviewed",
+      "verifiedStatus": "Verified",
+      "signedStatus": "Signed",
+      "publishedStatus": "Released"
     },
     "signer": {
       "selectSigner": "Please select signer",

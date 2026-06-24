@@ -21,13 +21,13 @@ const STATUS_COLOR: Record<string, string> = {
   SIGNED: "orange", RELEASED: "green",
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  DRAFT: "草稿", REVIEWED: "已复核", VERIFIED: "已验证",
-  SIGNED: "已签名", RELEASED: "已发布",
-};
-
 export default function NiptReports() {
   const { t } = useTranslation();
+  const STATUS_LABEL_TL: Record<string, string> = {
+    DRAFT: t("nipt.dashboard.draft"), REVIEWED: t("nipt.reports.reviewedStatus"),
+    VERIFIED: t("nipt.reports.verifiedStatus"), SIGNED: t("nipt.reports.signedStatus"),
+    RELEASED: t("nipt.reports.publishedStatus"),
+  };
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [reviewModal, setReviewModal] = useState<{ open: boolean; reportId: string }>({ open: false, reportId: "" });
@@ -71,7 +71,7 @@ export default function NiptReports() {
   };
 
   const handleReview = async () => {
-    if (!reviewer) { message.warning("请选择审核人员"); return; }
+    if (!reviewer) { message.warning(t("nipt.reports.selectReviewer")); return; }
     if (!password) { message.warning(t("nipt.signer.passwordRequired")); return; }
     setSubmitting(true);
     try {
@@ -79,18 +79,18 @@ export default function NiptReports() {
         reviewer_name: reviewer,
         password,
       });
-      message.success({ content: `已复核 - ${reviewer}`, duration: 5 });
+      message.success({ content: `${t("nipt.reports.reviewed")} - ${reviewer}`, duration: 5 });
       setReviewModal({ open: false, reportId: "" });
       setReviewer(""); setPassword("");
       fetchReports();
       setTimeout(() => handleDownload(reviewModal.reportId), 500);
     } catch (e: any) {
-      message.error(e?.response?.data?.error || "复核失败");
+      message.error(e?.response?.data?.error || t("nipt.reports.reviewFailed"));
     } finally { setSubmitting(false); }
   };
 
   const handleVerify = async () => {
-    if (!verifier) { message.warning("请选择验证人员"); return; }
+    if (!verifier) { message.warning(t("nipt.reports.selectVerifier")); return; }
     if (!password) { message.warning(t("nipt.signer.passwordRequired")); return; }
     setSubmitting(true);
     try {
@@ -98,12 +98,12 @@ export default function NiptReports() {
         verifier_name: verifier,
         password,
       });
-      message.success(`已发布 — ${verifier}`);
+      message.success(`${t("nipt.reports.published")} — ${verifier}`);
       setVerifyModal({ open: false, reportId: "" });
       setVerifier(""); setPassword("");
       fetchReports();
     } catch (e: any) {
-      message.error(e?.response?.data?.error || "验证失败");
+      message.error(e?.response?.data?.error || t("nipt.reports.verifyFailed"));
     } finally { setSubmitting(false); }
   };
 
@@ -208,7 +208,7 @@ export default function NiptReports() {
             disabled={!canReview && r.status !== "DRAFT"}
             onClick={() => setReviewModal({ open: true, reportId: r.id })}
           >
-            结果复核
+              {t("nipt.reports.review")}
           </Button>
         );
       },
@@ -236,7 +236,7 @@ export default function NiptReports() {
             icon={<SafetyCertificateOutlined />}
             onClick={() => setVerifyModal({ open: true, reportId: r.id })}
           >
-            报告验证
+              {t("nipt.reports.verify")}
           </Button>
         ) : (
           <Text type="secondary" style={{ fontSize: 11 }}>{t("nipt.reports.pendingReview")}</Text>
@@ -245,7 +245,7 @@ export default function NiptReports() {
     },
     {
       title: "Status", dataIndex: "status", width: 80, fixed: "right" as const,
-      render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{STATUS_LABEL[v] || v}</Tag>,
+      render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{STATUS_LABEL_TL[v] || v}</Tag>,
     },
   ];
 
@@ -255,8 +255,8 @@ export default function NiptReports() {
         <Title level={4} style={{ margin: 0 }}>{t("nipt.reports.title")}</Title>
         <Space>
           <Text type="secondary">
-            {reports.length} reports | 已复核: {reports.filter(r => r.status === "REVIEWED" || r.status === "RELEASED").length}
-            {" "}| 已发布: {reports.filter(r => r.status === "RELEASED").length}
+            {reports.length} reports | ${t("nipt.reports.reviewedCount")}: {reports.filter(r => r.status === "REVIEWED" || r.status === "RELEASED").length}
+            {" "}| {t("nipt.reports.publishedCount")}: {reports.filter(r => r.status === "RELEASED").length}
           </Text>
           <Button icon={<ReloadOutlined />} onClick={fetchReports} loading={loading}>{t("nipt.reports.refresh")}</Button>
         </Space>

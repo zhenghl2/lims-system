@@ -229,11 +229,11 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   }, [sampleResults, samples]);
 
   const failColumns = [
-    { title: "序号", dataIndex: "idx", width: 60 },
-    { title: "样本编号 (VG ID)", dataIndex: "vgId", width: 150 },
-    { title: "患者", dataIndex: "patient", width: 120 },
-    { title: "结果", dataIndex: "key", width: 60, render: () => <Tag color="red">Fail</Tag> },
-    { title: "失败备注", dataIndex: "note" },
+    { title: t("nipt.extraction.failedSampleSeq"), dataIndex: "idx", width: 60 },
+    { title: t("nipt.extraction.failedSampleVgId"), dataIndex: "vgId", width: 150 },
+    { title: t("nipt.extraction.failedSamplePatient"), dataIndex: "patient", width: 120 },
+    { title: t("nipt.extraction.failedSampleResult"), dataIndex: "key", width: 60, render: () => <Tag color="red">Fail</Tag> },
+    { title: t("nipt.extraction.failedSampleNote"), dataIndex: "note" },
   ];
 
   // ── Helpers ──
@@ -319,8 +319,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
         const totalSamples = samples.length;
         return (
           <Card
-            title={`手动提取登记 (${totalSamples} samples，共 48 个样本位)`}
-            extra={<Input.TextArea placeholder="备注（试剂批号差异、操作异常等）" value={manualNotes} onChange={e => setManualNotes(e.target.value)} autoSize={{ minRows: 1, maxRows: 3 }} style={{ width: 320, fontSize: 12 }} allowClear />}
+            title={`${t("nipt.extraction.manualTitle")} (${totalSamples} samples, 48 ${t("nipt.extraction.samplePositions")})`}
+            extra={<Input.TextArea placeholder={t("nipt.extraction.manualNotes")} value={manualNotes} onChange={e => setManualNotes(e.target.value)} autoSize={{ minRows: 1, maxRows: 3 }} style={{ width: 320, fontSize: 12 }} allowClear />}
             size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: 0 }}
           >
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
@@ -329,7 +329,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                 <col style={{ width: "11%" }} /><col style={{ width: "22.33%" }} />
                 <col style={{ width: "11%" }} /><col style={{ width: "22.33%" }} />
               </colgroup>
-              <thead><tr style={{ background: "#e8e8e8" }}><th style={TH}>序号</th><th style={TH}>样本编号 (VG ID)</th><th style={TH}>序号</th><th style={TH}>样本编号 (VG ID)</th><th style={TH}>序号</th><th style={TH}>样本编号 (VG ID)</th></tr></thead>
+              <thead><tr style={{ background: "#e8e8e8" }}><th style={TH}>{t("nipt.extraction.manualSeq")}</th><th style={TH}>{t("nipt.extraction.manualVgId")}</th><th style={TH}>{t("nipt.extraction.manualSeq")}</th><th style={TH}>{t("nipt.extraction.manualVgId")}</th><th style={TH}>{t("nipt.extraction.manualSeq")}</th><th style={TH}>{t("nipt.extraction.manualVgId")}</th></tr></thead>
               <tbody>
                 {[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15].map(row => {
                   const bg = row % 2 === 0 ? "#fff" : "#f5f5f5";
@@ -349,7 +349,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
               </tbody>
             </table>
             <div style={{ textAlign: "center", padding: "4px 0" }}>
-              <Text type="secondary" style={{ fontSize: 11 }}>按列从上到下排列（左列 1→16，中列 17→32，右列 33→48），序号方便一眼确认提取数量</Text>
+              <Text type="secondary" style={{ fontSize: 11 }}>{t("nipt.extraction.manualHint")}</Text>
             </div>
           </Card>
         );
@@ -366,8 +366,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
               const plateSamples = samples.slice(base, base + SAMPLES_PER_PLATE);
               const plateNo = `P${plateIdx + 1}`;
               return (
-                <Card key={plateIdx} title={`${plateNo} 磁棒法 Plate ${plateIdx+1}/${totalPlates} (${plateSamples.length} samples)`} size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: "4px 8px" }}
-                  extra={<Input.TextArea placeholder={`${plateNo} 备注`} defaultValue={magneticNotesRef.current[plateIdx]||""} onChange={e=>{magneticNotesRef.current[plateIdx]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:240,fontSize:11}} allowClear />}
+                <Card key={plateIdx} title={`${plateNo} ${t("nipt.extraction.magneticRod")} Plate ${plateIdx+1}/${totalPlates} (${plateSamples.length} samples)`} size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: "4px 8px" }}
+                  extra={<Input.TextArea placeholder={`${plateNo} ${t("nipt.extraction.magneticNotes")}`} defaultValue={magneticNotesRef.current[plateIdx]||""} onChange={e=>{magneticNotesRef.current[plateIdx]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:240,fontSize:11}} allowClear />}
                 >
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                     <colgroup><col style={{width:"3%"}} />{COLS_12.map(c=><col key={c} style={{width:c===6||c===12?"10%":"7.5%"}} />)}</colgroup>
@@ -414,8 +414,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
         let sortedPos = 0;
         for (let c = startCol; c < startCol + numCols; c++) { for (let row=0;row<ROWS;row++) { cellMap[`${ROWS_8[row]}${c}`]=sortedIndices[sortedPos]; sortedPos++; } }
         return (
-          <Card title={`自动化工作站 (${samples.length} samples，共 ${totalCells} 孔)`} size="small" style={{marginBottom:8}} bodyStyle={{padding:"4px 8px"}}
-            extra={<Input.TextArea placeholder="自动化工作站备注" defaultValue={magneticNotesRef.current["auto"]||""} onChange={e=>{magneticNotesRef.current["auto"]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:260,fontSize:11}} allowClear />}
+          <Card title={`${t("nipt.extraction.automatedTitle")} (${samples.length} samples, ${totalCells} ${t("nipt.extraction.wells")})`} size="small" style={{marginBottom:8}} bodyStyle={{padding:"4px 8px"}}
+            extra={<Input.TextArea placeholder={t("nipt.extraction.automatedNotes")} defaultValue={magneticNotesRef.current["auto"]||""} onChange={e=>{magneticNotesRef.current["auto"]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:260,fontSize:11}} allowClear />}
           >
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
               <colgroup><col style={{width:"3%"}} />{COLS_12.map(c=><col key={c} style={{width:"8.08%"}} />)}</colgroup>

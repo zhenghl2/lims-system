@@ -64,8 +64,9 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "hospital", title: "Hospital/Clinic", dataIndex: "ordering_facility", visible: true, width: 130, render: (v: string) => v || "-" },
   { key: "twins", title: "Twin", dataIndex: "multiple_gestation", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="orange">Twin</Tag> : <Tag color="green">Single</Tag> },
   { key: "ivf", title: "IVF", dataIndex: "ivf_status", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="purple">IVF</Tag> : "No" },
-  { key: "preg_history", title: "Preg. History", dataIndex: "pregnancy_history", visible: true, width: 100, render: (_v: string, r: any) => r.pregnancy_history || r.clinical_diagnosis || "否" },
+  { key: "preg_history", title: "Preg. History", dataIndex: "pregnancy_history", visible: true, width: 100, render: (_v: string, r: any) => r.pregnancy_history || r.clinical_diagnosis || "-" },
   { key: "diagnosis", title: "Diagnosis", dataIndex: "clinical_diagnosis", visible: true, width: 130, render: (v: string) => v || "-" },
+  { key: "registration_time", title: "Registration Time", dataIndex: "created_at", visible: true, width: 150, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "-" },
   { key: "fedex", title: "FedEx No.", dataIndex: "fedex_no", visible: true, width: 120, render: (v: string) => v || "-" },
   { key: "zscore_21", title: "Z21", dataIndex: "zscore_21", visible: true, width: 70, render: (v: number) => v?.toFixed(3) || "-" },
   { key: "zscore_18", title: "Z18", dataIndex: "zscore_18", visible: true, width: 70, render: (v: number) => v?.toFixed(3) || "-" },
@@ -142,11 +143,13 @@ export default function NiptSamples() {
     lmp: "lastMenstrualPeriod", hospital: "hospital", twins: "twin",
     ivf: "ivf", pregnancy_history: "pregHistory", diagnosis: "diagnosis",
     fedex: "fedexNo", all_chrom: "allChrom", fetal_fraction: "ffPercent",
-    gender: "sex", other: "other",
+    gender: "sex", other: "other", registration_time: "registrationTime",
   };
   const visibleCols = colConfig.filter(c => c.visible).map(c => ({
     ...c,
-    title: columnKeyMap[c.key] ? t(`nipt.samples.${columnKeyMap[c.key]}`) : c.title
+    title: columnKeyMap[c.key] ? t(`nipt.samples.${columnKeyMap[c.key]}`) : c.title,
+    // Override preg_history render for i18n
+    ...(c.key === "preg_history" ? { render: (_v: string, r: any) => r.pregnancy_history || t("nipt.samples.none") } : {}),
   }));
   const columns = [
     { key: "sample_id", title: t("nipt.samples.sampleId"), dataIndex: "sample_id", visible: true, width: 170, render: (v: string) => <Text code>{v}</Text> },

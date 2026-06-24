@@ -812,7 +812,8 @@
       "sampleRegistration": "样本登记",
       "receiving": "样本签收",
       "labWorkflow": "实验流程",
-      "reports": "报告"
+      "reports": "报告",
+      "draft": "草稿"
     },
     "samples": {
       "title": "NIPT 样本登记",
@@ -900,7 +901,8 @@
       "importRegister": "导入并登记",
       "chooseFolder": "选择文件夹",
       "chooseFiles": "选择文件",
-      "none": "否"
+      "none": "否",
+      "registrationTime": "登记时间"
     },
     "receiving": {
       "title": "NIPT 样本签收",
@@ -1073,7 +1075,11 @@
       "stepReagentPrep": "试剂准备（混匀、离心）",
       "stepSamplePrep": "样本准备",
       "stepOnMachine": "上机",
-      "stepCleanup": "实验结束（清洁台面、紫外 30min）"
+      "stepCleanup": "实验结束（清洁台面、紫外 30min）",
+      "samplePositions": "个样本位",
+      "magneticNotes": "备注",
+      "wells": "孔",
+      "automatedTitle": "自动化工作站"
     },
     "library": {
       "method": "建库方法",
@@ -1240,8 +1246,8 @@
       "reviewer": "审核人员",
       "verifier": "验证人员",
       "password": "密码",
-      "selectReviewer": "选择审核人员",
-      "selectVerifier": "选择验证人员",
+      "selectReviewer": "请选择审核人员",
+      "selectVerifier": "请选择验证人员",
       "enterPassword": "输入密码确认",
       "confirmReview": "确认复核",
       "confirmVerify": "确认验证并发布",
@@ -1252,7 +1258,19 @@
       "verifyGuide": "② 报告验证 (Verified By)",
       "pendingReview": "待复核",
       "reviewBtn": "结果复核",
-      "verifyBtn": "报告验证"
+      "verifyBtn": "报告验证",
+      "reviewFailed": "复核失败",
+      "verifyFailed": "验证失败",
+      "reviewed": "已复核",
+      "published": "已发布",
+      "review": "结果复核",
+      "verify": "报告验证",
+      "reviewedCount": "已复核",
+      "publishedCount": "已发布",
+      "reviewedStatus": "已复核",
+      "verifiedStatus": "已验证",
+      "signedStatus": "已签名",
+      "publishedStatus": "已发布"
     },
     "signer": {
       "selectSigner": "请选择签名人",

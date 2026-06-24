@@ -812,7 +812,8 @@
       "sampleRegistration": "Registro de Amostras",
       "receiving": "Recebimento",
       "labWorkflow": "Fluxo de Laboratório",
-      "reports": "Relatórios"
+      "reports": "Relatórios",
+      "draft": "Rascunho"
     },
     "samples": {
       "title": "Registro de Amostras NIPT",
@@ -900,7 +901,8 @@
       "importRegister": "Importar e Registrar",
       "chooseFolder": "Escolher Pasta",
       "chooseFiles": "Escolher Arquivos",
-      "none": "Nenhum"
+      "none": "Nenhum",
+      "registrationTime": "Hora de Registro"
     },
     "receiving": {
       "title": "Recebimento de Amostras NIPT",
@@ -1069,7 +1071,11 @@
       "stepReagentPrep": "Preparo Reagentes (misturar, centrifugar)",
       "stepSamplePrep": "Preparo de Amostras",
       "stepOnMachine": "Carregar na Máquina",
-      "stepCleanup": "Limpeza (limpar bancada, UV 30min)"
+      "stepCleanup": "Limpeza (limpar bancada, UV 30min)",
+      "samplePositions": "posições",
+      "magneticNotes": "Notas",
+      "wells": "poços",
+      "automatedTitle": "Estação Automatizada"
     },
     "library": {
       "method": "Método de Biblioteca",
@@ -1236,8 +1242,8 @@
       "reviewer": "Revisor",
       "verifier": "Verificador",
       "password": "Senha",
-      "selectReviewer": "Selecionar revisor",
-      "selectVerifier": "Selecionar verificador",
+      "selectReviewer": "Selecione o revisor",
+      "selectVerifier": "Selecione o verificador",
       "enterPassword": "Digite a senha para confirmar",
       "confirmReview": "Confirmar Revisão",
       "confirmVerify": "Confirmar e Publicar",
@@ -1248,7 +1254,19 @@
       "verifyGuide": "② Verificação (Verificado Por)",
       "pendingReview": "Pendente de Revisão",
       "reviewBtn": "Revisar",
-      "verifyBtn": "Verificar"
+      "verifyBtn": "Verificar",
+      "reviewFailed": "Falha na revisão",
+      "verifyFailed": "Falha na verificação",
+      "reviewed": "Revisado",
+      "published": "Publicado",
+      "review": "Revisar",
+      "verify": "Verificar",
+      "reviewedCount": "Revisado",
+      "publishedCount": "Publicado",
+      "reviewedStatus": "Revisado",
+      "verifiedStatus": "Verificado",
+      "signedStatus": "Assinado",
+      "publishedStatus": "Lançado"
     },
     "signer": {
       "selectSigner": "Selecione o assinante",
