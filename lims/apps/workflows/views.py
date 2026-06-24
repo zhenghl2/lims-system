@@ -600,10 +600,10 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         panel_code = request.query_params.get("panel", "")
         qs = self.get_queryset().order_by("-created_at")
         if panel_code:
-            qs = qs.filter(panel__code=panel_code)
+            qs = qs.filter(panel__code__startswith=panel_code)
 
         # Exclude batches with no extraction data
-        qs = qs.exclude(extraction_data__isnull=True).exclude(extraction_data={})
+        qs = qs.exclude(extraction_data__isnull=True).exclude(extraction_data__exact={})
         last_run = qs.first()
         if not last_run:
             return Response({})
