@@ -47,9 +47,12 @@ class RunSampleSerializer(serializers.ModelSerializer):
     sample_test_option = serializers.CharField(source="sample.test_option", read_only=True, default="")
     sample_source = serializers.CharField(source="sample.sample_source", read_only=True, default="")
     sample_ivf = serializers.BooleanField(source="sample.ivf_status", read_only=True, default=False)
-    sample_pregnancy_history = serializers.CharField(source="sample.pregnancy_history", read_only=True, default="")
+    sample_pregnancy_history = serializers.SerializerMethodField()
     sample_diagnosis = serializers.CharField(source="sample.clinical_diagnosis", read_only=True, default="")
     sample_fetal_fraction = serializers.FloatField(source="sample.fetal_fraction", read_only=True, default=None)
+
+    def get_sample_pregnancy_history(self, obj):
+        return obj.sample.pregnancy_history or obj.sample.clinical_diagnosis or ""
     sample_report_code = serializers.CharField(source="sample.report_code", read_only=True, default="")
 
     class Meta:
