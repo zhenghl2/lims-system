@@ -193,37 +193,51 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
 
   // Load saved form data + pre-fill from last batch
   useEffect(() => {
-    form.setFieldsValue({
-      lib_date: edata.lib_date ? dayjs(edata.lib_date) : dayjs(),
-      lib_time: edata.lib_time || dayjs().format("HH:mm"),
-      equipment: edata.equipment || [],
-      lib_kit: edata.lib_kit || undefined,
-      index_kit: edata.index_kit || undefined,
-      quant_kit: edata.quant_kit || undefined,
-      bead_kit: edata.bead_kit || undefined,
-      lib_kit_lot: edata.lib_kit_lot || "",
-      lib_kit_expiry: edata.lib_kit_expiry ? dayjs(edata.lib_kit_expiry) : undefined,
-      index_kit_lot: edata.index_kit_lot || "",
-      index_kit_expiry: edata.index_kit_expiry ? dayjs(edata.index_kit_expiry) : undefined,
-      quant_kit_lot: edata.quant_kit_lot || "",
-      quant_kit_expiry: edata.quant_kit_expiry ? dayjs(edata.quant_kit_expiry) : undefined,
-      bead_kit_lot: edata.bead_kit_lot || "",
-      bead_kit_expiry: edata.bead_kit_expiry ? dayjs(edata.bead_kit_expiry) : undefined,
-      cfDNA_volume: edata.cfDNA_volume ?? undefined,
-      pcr_cycles: edata.pcr_cycles ?? 8,
-      elution_volume: edata.elution_volume ?? 30,
-      temperature: edata.temperature ?? undefined,
-      humidity: edata.humidity ?? undefined,
-    });
-    setSteps(edata.step_confirmations || {});
-    if (batch.library_method) setMethod(batch.library_method);
-    if (batch.region) setRegion(batch.region);
-    setPositiveControl(edata.positive_control || "");
-    setNegativeControl(edata.negative_control || "");
+    const hasSavedData = !!(edata.lib_kit || (edata.equipment || []).length);
 
-    // 🆕 Pre-fill reagent & equipment from last batch for new batches
-    if (batch.id && !edata.lib_kit && !(edata.equipment || []).length && !defaultsFetchedRef.current) {
+    if (hasSavedData) {
+      // Load existing saved data
+      form.setFieldsValue({
+        lib_date: edata.lib_date ? dayjs(edata.lib_date) : dayjs(),
+        lib_time: edata.lib_time || dayjs().format("HH:mm"),
+        equipment: edata.equipment || [],
+        lib_kit: edata.lib_kit || undefined,
+        index_kit: edata.index_kit || undefined,
+        quant_kit: edata.quant_kit || undefined,
+        bead_kit: edata.bead_kit || undefined,
+        lib_kit_lot: edata.lib_kit_lot || "",
+        lib_kit_expiry: edata.lib_kit_expiry ? dayjs(edata.lib_kit_expiry) : undefined,
+        index_kit_lot: edata.index_kit_lot || "",
+        index_kit_expiry: edata.index_kit_expiry ? dayjs(edata.index_kit_expiry) : undefined,
+        quant_kit_lot: edata.quant_kit_lot || "",
+        quant_kit_expiry: edata.quant_kit_expiry ? dayjs(edata.quant_kit_expiry) : undefined,
+        bead_kit_lot: edata.bead_kit_lot || "",
+        bead_kit_expiry: edata.bead_kit_expiry ? dayjs(edata.bead_kit_expiry) : undefined,
+        cfDNA_volume: edata.cfDNA_volume ?? undefined,
+        pcr_cycles: edata.pcr_cycles ?? 8,
+        elution_volume: edata.elution_volume ?? 30,
+        temperature: edata.temperature ?? undefined,
+        humidity: edata.humidity ?? undefined,
+      });
+      setSteps(edata.step_confirmations || {});
+      setPositiveControl(edata.positive_control || "");
+      setNegativeControl(edata.negative_control || "");
+    } else if (batch.id && !defaultsFetchedRef.current) {
+      // No saved data → prefetch from last batch + set basic defaults
       defaultsFetchedRef.current = true;
+      form.setFieldsValue({
+        lib_date: dayjs(),
+        lib_time: dayjs().format("HH:mm"),
+        cfDNA_volume: edata.cfDNA_volume ?? undefined,
+        pcr_cycles: edata.pcr_cycles ?? 8,
+        elution_volume: edata.elution_volume ?? 30,
+        temperature: edata.temperature ?? undefined,
+        humidity: edata.humidity ?? undefined,
+      });
+      setSteps(edata.step_confirmations || {});
+      setPositiveControl(edata.positive_control || "");
+      setNegativeControl(edata.negative_control || "");
+
       api.get("/runs/last_batch_defaults/?panel=NIPT").then((res: any) => {
         const lib = res?.data?.library;
         if (lib) {
@@ -244,7 +258,20 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
           });
         }
       }).catch(() => {});
+    } else {
+      // No saved data, prefetch already attempted → just set defaults
+      form.setFieldsValue({
+        lib_date: dayjs(),
+        lib_time: dayjs().format("HH:mm"),
+        cfDNA_volume: edata.cfDNA_volume ?? undefined,
+        pcr_cycles: edata.pcr_cycles ?? 8,
+        elution_volume: edata.elution_volume ?? 30,
+        temperature: edata.temperature ?? undefined,
+        humidity: edata.humidity ?? undefined,
+      });
+      setSteps(edata.step_confirmations || {});
     }
+    if (batch.library_method) setMethod(batch.library_method);
   }, [edata, batch, form]);
 
   const toggleStep = (key: string) => setSteps(prev => ({ ...prev, [key]: !prev[key] }));
