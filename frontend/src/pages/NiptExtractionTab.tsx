@@ -135,20 +135,6 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     if (batch.extraction_method) setMethod(batch.extraction_method);
     if (batch.region) setRegion(batch.region);
 
-    // 🆕 Pre-fill reagent & equipment from last batch for new batches
-    if (batch.id && !edata.kit_type && !edata.reagent_lot && !defaultsFetchedRef.current) {
-      defaultsFetchedRef.current = true;
-      api.get("/runs/last_batch_defaults/?panel=NIPT").then((res: any) => {
-        const ext = res?.extraction;
-        if (ext) {
-          form.setFieldsValue({
-            equipment: ext.equipment || "",
-            kit_type: ext.kit_type || undefined,
-            reagent_lot: ext.reagent_lot || "",
-            reagent_expiry: ext.reagent_expiry ? dayjs(ext.reagent_expiry) : undefined,
-          });
-        }
-      }).catch(() => {});
     }
   }, [edata, batch, form]);
 
