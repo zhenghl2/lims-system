@@ -602,6 +602,8 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         if panel_code:
             qs = qs.filter(panel__code=panel_code)
 
+        # Exclude batches with no extraction data
+        qs = qs.exclude(extraction_data__isnull=True).exclude(extraction_data={})
         last_run = qs.first()
         if not last_run:
             return Response({})
