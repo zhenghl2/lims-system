@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Modal, Button, Card, Row, Col, Typography, message, Input } from "antd";
 import { CheckOutlined } from "@ant-design/icons";
 import api from "../api/client";
+import { useTranslation } from "../i18n/useTranslation";
 
 const { Text } = Typography;
 
@@ -17,6 +18,7 @@ interface Props {
 }
 
 export default function NiptSignerModal({ open, role, roleLabel, batchId, currentSigner, signUrl, onDone, onCancel }: Props) {
+  const { t } = useTranslation();
   const [signers, setSigners] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [password, setPassword] = useState("");
@@ -28,13 +30,13 @@ export default function NiptSignerModal({ open, role, roleLabel, batchId, curren
       setPassword("");
       api.get("/plasma-separation/signers/")
         .then(r => setSigners(r.data))
-        .catch(() => message.error("Failed to load signers"));
+        .catch(() => message.error(t("nipt.signer.failedLoad")));
     }
   }, [open]);
 
   const confirm = async () => {
-    if (!selected) { message.warning("请选择签名人"); return; }
-    if (!password) { message.warning("请输入密码"); return; }
+    if (!selected) { message.warning(t("nipt.signer.selectSignerWarning")); return; }
+    if (!password) { message.warning(t("nipt.signer.passwordRequired")); return; }
     setLoading(true);
     try {
       const url = signUrl || `/plasma-separation/${batchId}/sign/`;
@@ -43,10 +45,10 @@ export default function NiptSignerModal({ open, role, roleLabel, batchId, curren
         signer: selected,
         password,
       });
-      message.success(`${roleLabel}签名完成`);
+      message.success(`${roleLabel}${t("nipt.signer.signComplete").replace("{role}", "")}`);
       onDone();
     } catch (e: any) {
-      message.error(e?.response?.data?.error || "签名失败");
+      message.error(e?.response?.data?.error || t("nipt.signer.signFailed"));
     } finally {
       setLoading(false);
     }
@@ -54,13 +56,13 @@ export default function NiptSignerModal({ open, role, roleLabel, batchId, curren
 
   return (
     <Modal
-      title={`选择${roleLabel}`}
+      title={`${t("nipt.signer.select")}${roleLabel}`}
       open={open}
       onCancel={onCancel}
       footer={[
-        <Button key="cancel" onClick={onCancel}>取消</Button>,
+        <Button key="cancel" onClick={onCancel}>{t("nipt.signer.cancel")}</Button>,
         <Button key="confirm" type="primary" loading={loading} onClick={confirm} disabled={!selected}>
-          确认签名
+          {t("nipt.signer.confirm")}
         </Button>,
       ]}
       width={600}
@@ -91,7 +93,7 @@ export default function NiptSignerModal({ open, role, roleLabel, batchId, curren
       </Row>
       <div style={{ marginTop: 16, textAlign: "center" }}>
         <Input.Password
-          placeholder="请输入签名密码"
+          placeholder={t("nipt.signer.enterPassword")}
           value={password}
           onChange={e => setPassword(e.target.value)}
           style={{ maxWidth: 200 }}
@@ -100,7 +102,7 @@ export default function NiptSignerModal({ open, role, roleLabel, batchId, curren
       </div>
       {currentSigner && (
         <div style={{ marginTop: 12, textAlign: "center" }}>
-          <Text type="secondary">当前{roleLabel}: {currentSigner}</Text>
+          <Text type="secondary">{t("nipt.signer.currentSigner").replace("{role}", roleLabel).replace("{name}", currentSigner || "")}</Text>
         </div>
       )}
     </Modal>

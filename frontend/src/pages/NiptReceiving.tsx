@@ -3,6 +3,8 @@ import { Table, Button, Tag, Modal, Form, Select, Input, Space, Typography, mess
 import { CheckOutlined, CloseOutlined, CameraOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
+import api from "../api/client";
+import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -10,24 +12,6 @@ const { TextArea } = Input;
 const STATUS_MAP: Record<string, string> = {
   REGISTERED: "default", RECEIVED: "blue",
   IN_PROCESS: "orange", PLASMA_SEPARATED: "lime", COMPLETED: "green",
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  REGISTERED: "Registered", RECEIVED: "Received",
-  IN_PROCESS: "In Process", PLASMA_SEPARATED: "血浆已分离",
-  COMPLETED: "Completed", REPORTED: "Reported",
-  REJECTED: "Rejected",
-};
-
-const SAMPLE_TYPE_MAP: Record<string, string> = {
-  BLOOD: "血液",
-  PLASMA_CFDNA: "cfDNA Plasma",
-  PERIPHERAL_BLOOD: "Peripheral Blood",
-};
-
-const TEST_OPTION_MAP: Record<string, string> = {
-  NIPT: "Basic", Basic: "Basic",
-  NIPT_PLUS: "Plus", Plus: "Plus", NIPT_FULL: "Plus",
 };
 
 const REJECTION_REASONS = [
@@ -45,6 +29,33 @@ const REJECTION_REASONS = [
 ];
 
 export default function NiptReceiving() {
+  const { t } = useTranslation();
+  const TEST_OPTION_MAP_TL: Record<string, string> = {
+    NIPT: t("nipt.common.basic"),
+    Basic: t("nipt.common.basic"),
+    NIPT_PLUS: t("nipt.common.plus"),
+    Plus: t("nipt.common.plus"),
+    NIPT_FULL: t("nipt.common.plus"),
+  };
+  const SAMPLE_TYPE_MAP_TL: Record<string, string> = {
+    BLOOD: t("nipt.receiving.blood"),
+    PLASMA_CFDNA: t("nipt.receiving.cfdnaPlasma"),
+    PERIPHERAL_BLOOD: t("nipt.receiving.peripheralBlood"),
+  };
+  const STATUS_LABELS_TL: Record<string, string> = {
+    REGISTERED: t("nipt.dashboard.registered"),
+    RECEIVED: t("nipt.dashboard.received"),
+    IN_PROCESS: t("nipt.common.plasmaSeparatedStatus"),
+    PLASMA_SEPARATED: t("nipt.common.plasmaSeparatedStatus"),
+    COMPLETED: t("nipt.dashboard.completed"),
+    REPORTED: t("nipt.dashboard.reported"),
+    REJECTED: t("nipt.dashboard.rejected"),
+  };
+  // Translated rejection reasons
+  const rejectionReasonsTL = REJECTION_REASONS.map(r => ({
+    ...r,
+    label: t(`nipt.receiving.rejectionReasons.${r.value === "UNCLEAR_LABEL" ? "unclearLabel" : r.value === "INCOMPLETE_INFO" ? "incompleteInfo" : r.value === "INSUFFICIENT_VOLUME" ? "insufficientVolume" : r.value === "BURST_TUBE" ? "tubeBurst" : r.value === "LEAKAGE" ? "leakage" : r.value === "CONTAMINATED" ? "contaminated" : r.value === "TEMP_EXCEEDED" ? "tempExceeded" : r.value === "HEMOLYZED" ? "hemolyzed" : r.value === "WRONG_CONTAINER" ? "wrongContainer" : r.value === "EXPIRED_TRANSPORT" ? "expiredTransport" : "other"}`),
+  }));
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -79,7 +90,7 @@ export default function NiptReceiving() {
 
   const fetchData = useCallback(() => {
     setLoading(true);
-    const statusParam = activeTab === "pending" ? "REGISTERED" : "RECEIVED,IN_PROCESS,PLASMA_SEPARATED";
+    const statusParam = activeTab === "pending" ? "REGISTERED" : "RECEIVED,IN_PROCESS,PLASMA_SEPARATED,COMPLETED,REPORTED";
     samplesApi.list({ status: statusParam, panel: "NIPT,NIPT_PLUS,NIPT_FULL", page_size: 100 }).then((res: any) => {
       setData((res.data as any).results || res.data || []);
     }).catch(() => message.error("Failed to load samples")).finally(() => setLoading(false));
@@ -100,7 +111,10 @@ export default function NiptReceiving() {
     setReceiveLoading(true);
     try {
       if (!vgIdInput.trim()) { message.warning("Please enter VG ID"); setReceiveLoading(false); return; }
-      await samplesApi.accept(receiveTarget.id, { vg_id: vgIdInput.trim() });
+      await samplesApi.accept(receiveTarget.id);
+      try {
+        await api.patch(`/samples/${receiveTarget.id}/`, { vg_id: vgIdInput.trim() });
+      } catch {}
       message.success(`Sample ${receiveTarget.sample_id} received`);
       setReceiveModalOpen(false);
       fetchData();
@@ -112,23 +126,18 @@ export default function NiptReceiving() {
     }
   };
 
-  const manualEditsRef = useRef<Set<number>>(new Set());
-
   const handleBatchReceive = async () => {
     if (selectedRowKeys.length === 0) { message.warning("Select samples to receive"); return; }
-    // Build VG list from selected samples
     const selected = data.filter((s: any) => selectedRowKeys.includes(s.id));
     const list = selected.map((s: any, i: number) => ({
       id: s.id, sample_id: s.sample_id,
       vg_id: s.vg_id || (i === 0 ? "WJ" : ""),
     }));
     setBatchVgList(list);
-    manualEditsRef.current.clear();
     setBatchVgModal(true);
   };
 
   const confirmBatchReceive = async () => {
-    // Auto-fill empty VG IDs based on first one
     const filled = batchVgList.map((item, i) => {
       if (!item.vg_id && i > 0) {
         const first = batchVgList[0].vg_id;
@@ -144,7 +153,6 @@ export default function NiptReceiving() {
       return item;
     });
 
-    // Validate all have VG ID
     const missing = filled.filter(f => !f.vg_id.trim());
     if (missing.length > 0) {
       message.warning(`${missing.length} sample(s) missing VG ID`);
@@ -155,7 +163,8 @@ export default function NiptReceiving() {
     let success = 0;
     for (const item of filled) {
       try {
-        await samplesApi.accept(item.id, { vg_id: item.vg_id.trim() });
+        await samplesApi.accept(item.id);
+        try { await api.patch(`/samples/${item.id}/`, { vg_id: item.vg_id.trim() }); } catch {}
         success++;
       } catch { /* skip */ }
     }
@@ -197,57 +206,45 @@ export default function NiptReceiving() {
         await samplesApi.uploadImage(sample.id, file);
         message.success("Photo uploaded");
         fetchData();
-      } catch {
-        message.error("Upload failed");
-      }
+      } catch { message.error("Upload failed"); }
     };
     input.click();
   };
 
   const pendingColumns = [
-    { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 180 },
-    { title: "Name", dataIndex: "patient_name", key: "patient_name", width: 120 },
-    { title: "VG ID", dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
-    { title: "Age", dataIndex: "age", key: "age", width: 60 },
-    { title: "Gest. Weeks", dataIndex: "gestational_weeks", key: "gestational_weeks", width: 80 },
-    { title: "Sample Type", dataIndex: "sample_type_code", key: "sample_type_code", width: 100, render: (v: string) => SAMPLE_TYPE_MAP[v] || v || "-" },
-    { title: "Test Option", dataIndex: "test_option", key: "test_option", width: 80, render: (v: string) => TEST_OPTION_MAP[v] || v || "-" },
-    { title: "Collection Date", dataIndex: "collection_date", key: "collection_date", width: 120, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : "-" },
-    { title: "Sample Source",dataIndex: "sample_source", key: "sample_source", width: 160, ellipsis: true },
-    {
-      title: "Status", dataIndex: "status", key: "status", width: 100,
-      render: (v: string) => <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABELS[v] || v}</Tag>,
-    },
-    {
-      title: "", key: "photo", width: 60,
-      render: (_: any, r: any) => (
-        <Button type="link" icon={<CameraOutlined />} size="small" onClick={() => handlePhotoUpload(r)} title="Take photo" />
-      ),
-    },
-    {
-      title: "Action", key: "action", width: 180,
+    { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", key: "sample_id", width: 180 },
+    { title: t("nipt.samples.name"), dataIndex: "patient_name", key: "patient_name", width: 120 },
+    { title: t("nipt.samples.vgId"), dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
+    { title: t("nipt.samples.age"), dataIndex: "age", key: "age", width: 60 },
+    { title: t("nipt.samples.gestWeeks"), dataIndex: "gestational_weeks", key: "gestational_weeks", width: 80 },
+    { title: t("nipt.samples.sampleType"), dataIndex: "sample_type_code", key: "sample_type_code", width: 100, render: (v: string) => SAMPLE_TYPE_MAP_TL[v] || v || "-" },
+    { title: t("nipt.samples.testOption"), dataIndex: "test_option", key: "test_option", width: 80, render: (v: string) => TEST_OPTION_MAP_TL[v] || v || "-" },
+    { title: t("nipt.samples.collectionDate"), dataIndex: "collection_date", key: "collection_date", width: 120, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : "-" },
+    { title: t("nipt.samples.sampleSource"), dataIndex: "sample_source", key: "sample_source", width: 160, ellipsis: true },
+    { title: t("nipt.samples.status"), dataIndex: "status", key: "status", width: 100,
+      render: (v: string) => <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABELS_TL[v] || v}</Tag> },
+    { title: "", key: "photo", width: 60,
+      render: (_: any, r: any) => <Button type="link" icon={<CameraOutlined />} size="small" onClick={() => handlePhotoUpload(r)} title={t("nipt.receiving.takePhoto")} /> },
+    { title: t("nipt.receiving.action"), key: "action", width: 180,
       render: (_: any, r: any) => (
         <Space size="small">
-          <Button type="primary" size="small" icon={<CheckOutlined />} onClick={() => handleReceive(r)}>Receive</Button>
-          <Button danger size="small" icon={<CloseOutlined />} onClick={() => handleReject(r)}>Reject</Button>
+          <Button type="primary" size="small" icon={<CheckOutlined />} onClick={() => handleReceive(r)}>{t("nipt.receiving.receive")}</Button>
+          <Button danger size="small" icon={<CloseOutlined />} onClick={() => handleReject(r)}>{t("nipt.receiving.reject")}</Button>
         </Space>
-      ),
-    },
+      )},
   ];
 
   const receivedColumns = [
-    { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 180 },
-    { title: "Name", dataIndex: "patient_name", key: "patient_name", width: 120 },
-    { title: "VG ID", dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
-    { title: "Age", dataIndex: "age", key: "age", width: 60 },
-    { title: "Gest. Weeks", dataIndex: "gestational_weeks", key: "gestational_weeks", width: 80 },
-    { title: "Sample Type", dataIndex: "sample_type_code", key: "sample_type_code", width: 100, render: (v: string) => SAMPLE_TYPE_MAP[v] || v || "-" },
-    { title: "Test Option", dataIndex: "test_option", key: "test_option", width: 80, render: (v: string) => TEST_OPTION_MAP[v] || v || "-" },
-    { title: "Receipt Date", dataIndex: "receipt_date", key: "receipt_date", width: 120, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : "-" },
-    {
-      title: "Status", dataIndex: "status", key: "status", width: 100,
-      render: (v: string) => <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABELS[v] || v}</Tag>,
-    },
+    { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", key: "sample_id", width: 180 },
+    { title: t("nipt.samples.name"), dataIndex: "patient_name", key: "patient_name", width: 120 },
+    { title: t("nipt.samples.vgId"), dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
+    { title: t("nipt.samples.age"), dataIndex: "age", key: "age", width: 60 },
+    { title: t("nipt.samples.gestWeeks"), dataIndex: "gestational_weeks", key: "gestational_weeks", width: 80 },
+    { title: t("nipt.samples.sampleType"), dataIndex: "sample_type_code", key: "sample_type_code", width: 100, render: (v: string) => SAMPLE_TYPE_MAP_TL[v] || v || "-" },
+    { title: t("nipt.samples.testOption"), dataIndex: "test_option", key: "test_option", width: 80, render: (v: string) => TEST_OPTION_MAP_TL[v] || v || "-" },
+    { title: t("nipt.receiving.receiptDate"), dataIndex: "receipt_date", key: "receipt_date", width: 120, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : "-" },
+    { title: t("nipt.samples.status"), dataIndex: "status", key: "status", width: 100,
+      render: (v: string) => <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABELS_TL[v] || v}</Tag> },
   ];
 
   const rowSelection = activeTab === "pending" ? {
@@ -256,22 +253,21 @@ export default function NiptReceiving() {
   } : undefined;
 
   const tabItems = [
-    { key: "pending", label: `Pending Receiving (${tabCounts.pending || 0})`, children: null },
-    { key: "received", label: `Received (${tabCounts.received || 0})`, children: null },
+    { key: "pending", label: `${t("nipt.receiving.pendingReceiving")} (${tabCounts.pending || 0})`, children: null },
+    { key: "received", label: `${t("nipt.receiving.received")} (${tabCounts.received || 0})`, children: null },
   ];
 
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 16 }}>NIPT Sample Receiving</Title>
+      <Title level={4} style={{ marginBottom: 16 }}>{t("nipt.receiving.title")}</Title>
 
       <Tabs activeKey={activeTab} onChange={setActiveTab} items={tabItems} style={{ marginBottom: 16 }} />
 
-      {/* Batch actions */}
       {activeTab === "pending" && selectedRowKeys.length > 0 && (
         <Card size="small" style={{ marginBottom: 16, background: "#e6f7ff", border: "1px solid #91d5ff" }}>
           <Space>
-            <Text strong>{selectedRowKeys.length} sample(s) selected</Text>
-            <Button type="primary" icon={<CheckOutlined />} loading={batchLoading} onClick={handleBatchReceive}>Batch Receive</Button>
+            <Text strong>{t("nipt.receiving.selectedCount").replace("{count}", String(selectedRowKeys.length))}</Text>
+            <Button type="primary" icon={<CheckOutlined />} loading={batchLoading} onClick={handleBatchReceive}>{t("nipt.receiving.batchReceive")}</Button>
           </Space>
         </Card>
       )}
@@ -289,89 +285,54 @@ export default function NiptReceiving() {
 
       <input type="file" ref={fileInputRef} accept="image/*" capture="environment" style={{ display: "none" }} />
 
-      {/* Receive Modal */}
-      <Modal title="Confirm Receipt" open={receiveModalOpen} onOk={confirmReceive} onCancel={() => setReceiveModalOpen(false)} confirmLoading={receiveLoading} destroyOnClose>
+      <Modal title={t("nipt.receiving.confirmReceipt")} open={receiveModalOpen} onOk={confirmReceive} onCancel={() => setReceiveModalOpen(false)} confirmLoading={receiveLoading} destroyOnClose>
         {receiveTarget && (
           <div>
             <Row gutter={[16, 16]}>
-              <Col span={12}><Text type="secondary">Sample ID</Text><br /><Text strong>{receiveTarget.sample_id}</Text></Col>
-              <Col span={12}><Text type="secondary">Patient</Text><br /><Text strong>{receiveTarget.patient_name}</Text></Col>
-              <Col span={12}><Text type="secondary">Sample Type</Text><br /><Text>{SAMPLE_TYPE_MAP[receiveTarget.sample_type_code] || receiveTarget.sample_type_code}</Text></Col>
-              <Col span={12}><Text type="secondary">Gest. Weeks</Text><br /><Text>{receiveTarget.gestational_weeks || "-"}</Text></Col>
+              <Col span={12}><Text type="secondary">{t("nipt.samples.sampleId")}</Text><br /><Text strong>{receiveTarget.sample_id}</Text></Col>
+              <Col span={12}><Text type="secondary">{t("nipt.receiving.patient")}</Text><br /><Text strong>{receiveTarget.patient_name}</Text></Col>
+              <Col span={12}><Text type="secondary">{t("nipt.samples.sampleType")}</Text><br /><Text>{SAMPLE_TYPE_MAP_TL[receiveTarget.sample_type_code] || receiveTarget.sample_type_code}</Text></Col>
+              <Col span={12}><Text type="secondary">{t("nipt.samples.gestWeeks")}</Text><br /><Text>{receiveTarget.gestational_weeks || "-"}</Text></Col>
             </Row>
             <div style={{ marginTop: 16 }}>
-              <Text strong style={{ color: "#ff4d4f" }}>VG ID *</Text>
-              <Input
-                placeholder="Enter VG internal lab ID" autoFocus
-                value={vgIdInput}
-                onChange={e => setVgIdInput(e.target.value)}
-                style={{ marginTop: 4 }}
-              />
+              <Text strong style={{ color: "#ff4d4f" }}>{t("nipt.receiving.vgIdRequired")}</Text>
+              <Input placeholder={t("nipt.receiving.enterVgId")} autoFocus value={vgIdInput}
+                onChange={e => setVgIdInput(e.target.value)} style={{ marginTop: 4 }} />
             </div>
           </div>
         )}
       </Modal>
 
-      {/* Batch VG ID Modal */}
       <Modal
-        title={`Batch Receive — VG IDs (${batchVgList.length} samples)`}
-        open={batchVgModal}
-        onOk={confirmBatchReceive}
-        onCancel={() => setBatchVgModal(false)}
-        confirmLoading={batchLoading}
-        width={550}
-        destroyOnClose
+        title={t("nipt.receiving.batchVgTitle").replace("{count}", String(batchVgList.length))}
+        open={batchVgModal} onOk={confirmBatchReceive} onCancel={() => setBatchVgModal(false)}
+        confirmLoading={batchLoading} width={550} destroyOnClose
       >
-        <Table
-          rowKey="id" size="small" pagination={false}
-          dataSource={batchVgList}
+        <Table rowKey="id" size="small" pagination={false} dataSource={batchVgList}
           columns={[
-            { title: "Sample ID", dataIndex: "sample_id", width: 170, render: (v: string) => <Text code>{v}</Text> },
-            { title: "VG ID", dataIndex: "vg_id", width: 200,
+            { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", width: 170, render: (v: string) => <Text code>{v}</Text> },
+            { title: t("nipt.samples.vgId"), dataIndex: "vg_id", width: 200,
               render: (v: string, _r: any, i: number) => (
-                <Input
-                  value={v}
-                  autoFocus={i === 0}
-                  placeholder="VG ID"
+                <Input value={v} autoFocus={i === 0} placeholder={t("nipt.receiving.vgIdPlaceholder")}
                   onChange={e => {
-                    const val = e.target.value;
-                    const next = batchVgList.map((item, idx) => {
-                      if (idx === i) return { ...item, vg_id: val };
-                      // Real-time auto-increment from first row
-                      if (i === 0 && val && idx > 0) {
-                        const m = val.match(/^(.*?)(\d+)$/);
-                        if (m) {
-                          const base = m[1], startNum = parseInt(m[2]);
-                          const expected = base + (startNum + idx);
-                          // Only overwrite if empty or matches auto-increment pattern (not user-edited)
-                          if (!manualEditsRef.current.has(idx)) {
-                            return { ...item, vg_id: expected };
-                          }
-                        }
-                      }
-                      return item;
-                    });
-                    if (i > 0) manualEditsRef.current.add(i);
+                    const next = batchVgList.map((item, idx) => idx === i ? { ...item, vg_id: e.target.value } : item);
                     setBatchVgList(next);
-                  }}
-                />
-              ),
-            },
+                  }} />
+              )},
           ]}
         />
         <Text type="secondary" style={{ display: "block", marginTop: 8 }}>
-          Enter first VG ID, rest auto-increment. Empty cells will be auto-filled on confirm.
+          {t("nipt.receiving.autoIncrementHint")}
         </Text>
       </Modal>
 
-      {/* Reject Modal */}
-      <Modal title="Reject Sample" open={rejectOpen} onOk={confirmReject} onCancel={() => setRejectOpen(false)} destroyOnClose>
+      <Modal title={t("nipt.receiving.rejectSample")} open={rejectOpen} onOk={confirmReject} onCancel={() => setRejectOpen(false)} destroyOnClose>
         <Form form={form} layout="vertical">
-          <Form.Item name="reason" label="Rejection Reason" rules={[{ required: true }]}>
-            <Select placeholder="Select a reason" options={REJECTION_REASONS} />
+          <Form.Item name="reason" label={t("nipt.receiving.rejectionReason")} rules={[{ required: true }]}>
+            <Select placeholder={t("nipt.receiving.selectReason")} options={rejectionReasonsTL} />
           </Form.Item>
-          <Form.Item name="note" label="Note">
-            <TextArea rows={3} placeholder="Additional notes..." />
+          <Form.Item name="note" label={t("nipt.receiving.note")}>
+            <TextArea rows={3} placeholder={t("nipt.receiving.additionalNotes")} />
           </Form.Item>
         </Form>
       </Modal>

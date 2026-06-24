@@ -7,7 +7,7 @@ import {
   SaveOutlined, UploadOutlined
 } from "@ant-design/icons";
 import api from "../api/client";
-import * as XLSX from "xlsx";
+import { useTranslation } from "../i18n/useTranslation";
 
 const { Text } = Typography;
 
@@ -20,7 +20,6 @@ interface RunSample {
   sample_patient_name: string;
   sample_source: string;
   sample_test_option: string;
-  sample_report_code?: string;
   sample_gestational_weeks: number | null;
   sample_multiple_gestation: boolean;
   sample_ivf: boolean;
@@ -177,50 +176,12 @@ function EditableCell({ value, onChange, type, options, placeholder, min, max, s
   );
 }
 
-// ── CSV Import Helpers ─────────────────────────────────────
-
-/** Map "normal" → "Low Risk", keep other values as-is */
-function normalizeResult(v: string): string {
-  if (!v || v.trim() === "") return "";
-  if (v.trim().toLowerCase() === "normal") return "Low Risk";
-  return v.trim();
-}
-
-/** Map sex_group CSV value to table option */
-function mapSex(v: string): string {
-  const s = v.trim().toLowerCase();
-  if (s === "female") return "Female";
-  if (s === "male") return "Male";
-  return "N/A";
-}
-
-/** Derive T21/T18/T13 from win_out_of_range */
-function deriveChromResults(winOutOfRange: string): { t21: string; t18: string; t13: string } {
-  const v = winOutOfRange.trim().toLowerCase();
-  if (v === "normal" || v === "") {
-    return { t21: "Low Risk", t18: "Low Risk", t13: "Low Risk" };
-  }
-  return {
-    t21: v.includes("chr21") ? "High Risk" : "Low Risk",
-    t18: v.includes("chr18") ? "High Risk" : "Low Risk",
-    t13: v.includes("chr13") ? "High Risk" : "Low Risk",
-  };
-}
-
-/** Parse a numeric value from CSV cell */
-function parseNum(v: string): number | undefined {
-  if (!v || v.trim() === "") return undefined;
-  const n = parseFloat(v);
-  return isNaN(n) ? undefined : Math.round(n * 1000) / 1000;
-}
-
-
 // ── Main Component ─────────────────────────────────────────
 export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Props) {
+  const { t } = useTranslation();
   const [bioData, setBioData] = useState<Record<string, BioData>>({});
   const [saving, setSaving] = useState(false);
   const initialized = useRef(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load existing bioinformatics data from batch (only on batch change)
   useEffect(() => {
@@ -247,173 +208,13 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       await api.post(`/runs/${batch.id}/save_bioinformatics/`, {
         bioinformatics_data: bioData,
       });
-      message.success("生信分析结果已保存");
+      message.success(t("nipt.bioinformatics.saved"));
       onRefresh();
     } catch (e: any) {
-      message.error(e?.response?.data?.detail || "保存失败");
+      message.error(e?.response?.data?.detail || t("nipt.bioinformatics.saveFailed"));
     } finally {
       setSaving(false);
     }
-  };
-
-  // ── Excel / CSV Import ────────────────────────────────────
-  const handleImportExcel = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array" });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-
-        if (rows.length < 2) {
-          message.warning("文件至少需要包含表头 + 一行数据");
-          return;
-        }
-
-        // Build column index map from header row
-        const headers = rows[0].map((h: string) => h.trim());
-        const colIdx: Record<string, number> = {};
-        headers.forEach((h: string, i: number) => { colIdx[h] = i; });
-
-        // Required columns check
-        if (colIdx["sample"] === undefined) {
-          message.error("文件缺少 'sample' 列");
-          return;
-        }
-
-        // Build lookups: by VG ID (primary) and by report code (secondary)
-        const sampleByVGID: Record<string, RunSample> = {};
-        const sampleByReportCode: Record<string, RunSample> = {};
-        samples.forEach(s => {
-          const vgid = (s.sample_vg_id || "").trim();
-          if (vgid) sampleByVGID[vgid] = s;
-          const rc = (s.sample_report_code || "").trim();
-          if (rc) sampleByReportCode[rc] = s;
-        });
-
-        /** Match CSV sample name to a table row.
-         *  Strategy: 1) VG ID (last underscore segment), 2) Report code (last 2 segments),
-         *  3) Report code contains sample number */
-        function findSample(sampleName: string): RunSample | undefined {
-          const parts = sampleName.split("_");
-          // Try VG ID match: last segment (e.g. "HN1111")
-          const vgid = parts[parts.length - 1];
-          if (vgid && sampleByVGID[vgid]) return sampleByVGID[vgid];
-          // Try report code match: last 2 segments (e.g. "033_HN1111")
-          if (parts.length >= 2) {
-            const rc = parts.slice(-2).join("_");
-            if (sampleByReportCode[rc]) return sampleByReportCode[rc];
-          }
-          // Try matching by sample number (second-to-last segment) contained in report code
-          if (parts.length >= 2) {
-            const num = parts[parts.length - 2];
-            for (const rc of Object.keys(sampleByReportCode)) {
-              if (rc.includes("." + num + ".") || rc.endsWith("." + num)) {
-                return sampleByReportCode[rc];
-              }
-            }
-          }
-          return undefined;
-        }
-
-        const newBioData = { ...bioData };
-        let matched = 0;
-        let unmatched = 0;
-
-        // Process data rows (skip header)
-        for (let r = 1; r < rows.length; r++) {
-          const row = rows[r];
-          const sampleName = String(row[colIdx["sample"]] || "").trim();
-          if (!sampleName) continue;
-
-          const runSample = findSample(sampleName);
-
-          if (!runSample) {
-            unmatched++;
-            continue;
-          }
-
-          // Helper to get cell value by column name
-          const get = (col: string): string => String(row[colIdx[col]] ?? "").trim();
-
-          const sexGroup = get("sex_group");
-          const isMale = sexGroup.toLowerCase() === "male";
-          const winOutOfRange = get("win_out_of_range");
-          const chromResults = deriveChromResults(winOutOfRange);
-
-          // Parse numeric values, apply % conversion for columns with (%) in header
-          // ⚠️ Must parse raw float BEFORE 3dp rounding, then apply %, then round
-          const rawParse = (v: string) => { const n = parseFloat(v); return isNaN(n) ? undefined : n; };
-          const gcVal = rawParse(get("gc"));
-          const dupVal = rawParse(get("duplication"));
-          // If the CSV value appears to be a decimal ratio (< 1), multiply by 100 for % columns
-          const toPercent = (v: number) => Math.round(v * 100000) / 1000;
-          const entry: BioData = {
-            raw_reads: parseNum(get("raw_reads")),
-            uniq_reads: parseNum(get("unique_reads")),
-            gc: gcVal !== undefined ? (gcVal < 1 ? toPercent(gcVal) : Math.round(gcVal * 1000) / 1000) : undefined,
-            dup: dupVal !== undefined ? (dupVal < 1 ? toPercent(dupVal) : Math.round(dupVal * 1000) / 1000) : undefined,
-            z21: parseNum(get("chr21_z")),
-            z18: parseNum(get("chr18_z")),
-            z13: parseNum(get("chr13_z")),
-            sex: mapSex(sexGroup),
-            ff_percent: (() => {
-              const rawFf = rawParse(isMale ? get("FFY") : get("Seqff"));
-              return rawFf !== undefined ? (rawFf < 1 ? toPercent(rawFf) : Math.round(rawFf * 1000) / 1000) : undefined;
-            })(),
-            t21: chromResults.t21,
-            t18: chromResults.t18,
-            t13: chromResults.t13,
-            xo: normalizeResult(get("XO")),
-            xxx: normalizeResult(get("XXX")),
-            xxy: normalizeResult(get("XXY")),
-            xyy: normalizeResult(get("XYY")),
-            all_chrom: normalizeResult(get("All Chrom")),
-            plus_result: normalizeResult(get("Plus_Result")),
-            plus_highrisk_items: normalizeResult(get("Plus_HighRisk")),
-            // result: vgresult → Low Risk if "normal", High Risk if contains ":"
-            result: (() => {
-              const vg = get("vgresult");
-              if (!vg) return "";
-              if (vg.toLowerCase() === "normal") return "Low Risk";
-              if (vg.includes(":")) return "High Risk";
-              return vg;
-            })(),
-          };
-
-          // Remove undefined fields to avoid overriding existing data with undefined
-          const cleanEntry: BioData = {};
-          for (const [k, v] of Object.entries(entry)) {
-            if (v !== undefined && v !== "") {
-              (cleanEntry as any)[k] = v;
-            }
-          }
-
-          // Merge with existing data (existing takes priority for unchanged fields)
-          newBioData[runSample.id] = {
-            ...(newBioData[runSample.id] || {}),
-            ...cleanEntry,
-          };
-
-          matched++;
-        }
-
-        setBioData(newBioData);
-        if (matched > 0) {
-          message.success(
-            `成功导入 ${matched} 条记录` +
-            (unmatched > 0 ? `，${unmatched} 条未匹配（report code 未在表格中找到）` : "")
-          );
-        } else {
-          message.warning(`未匹配到任何样本，请检查文件中的 sample 列与表格 Report Code 是否对应`);
-        }
-      } catch {
-        message.error("文件解析失败，请确认是 .xlsx 或 .csv 格式");
-      }
-    };
-    reader.readAsArrayBuffer(file);
-    return false; // prevent auto-upload
   };
 
   // ── Columns ───────────────────────────────────────────────
@@ -457,17 +258,17 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
     {
       title: "Twin", dataIndex: "sample_multiple_gestation", key: "twin",
       width: 55, align: "center" as const,
-      render: (v: boolean) => v ? <Tag color="orange">Twin</Tag> : <Tag color="green">Single</Tag>,
+      render: (v: boolean) => v ? "👶👶" : "—",
     },
     {
       title: "IVF", dataIndex: "sample_ivf", key: "ivf",
       width: 50, align: "center" as const,
-      render: (v: boolean) => v ? <Tag color="purple">IVF</Tag> : "No",
+      render: (v: boolean) => v ? <Tag color="orange" style={{ fontSize: 11 }}>IVF</Tag> : "—",
     },
     {
       title: "Preg. History", dataIndex: "sample_pregnancy_history", key: "preg_history",
       width: 95, ellipsis: true,
-      render: (v: string) => v || "否",
+      render: (v: string) => v || "—",
     },
     {
       title: "Diagnosis", dataIndex: "sample_diagnosis", key: "diagnosis",
@@ -475,7 +276,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       render: (v: string) => v || "—",
     },
     {
-      title: "raw-reads", key: "raw_reads", width: 100, align: "center" as const,
+      title: "raw-reads", key: "raw_reads", width: 90, align: "center" as const,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.raw_reads}
@@ -485,7 +286,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "uniq-reads", key: "uniq_reads", width: 100, align: "center" as const,
+      title: "uniq-reads", key: "uniq_reads", width: 90, align: "center" as const,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.uniq_reads}
@@ -679,42 +480,22 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
   // ── Render ────────────────────────────────────────────────
   return (
     <div>
-      {/* Hidden file input */}
-      <input
-        type="file"
-        ref={fileInputRef}
-        style={{ display: "none" }}
-        accept=".xlsx,.xls,.csv"
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) {
-            handleImportExcel(file);
-            // Reset so same file can be re-selected
-            e.target.value = "";
-          }
-        }}
-      />
-
       {/* Toolbar */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <Space>
           <Text strong style={{ fontSize: 13 }}>
-            样本数: {samples.length}
+            {t("nipt.bioinformatics.sampleCount")}: {samples.length}
           </Text>
           {samples.length > 0 && (
             <Text type="secondary" style={{ fontSize: 12 }}>
-              | 已填写: {Object.keys(bioData).filter(k => bioData[k] && Object.keys(bioData[k]).length > 0).length}
+              | {t("nipt.bioinformatics.filledCount")}: {Object.keys(bioData).filter(k => bioData[k] && Object.keys(bioData[k]).length > 0).length}
             </Text>
           )}
         </Space>
         <Space>
-          <Tooltip title="导入 CSV/Excel 文件，根据 sample 列自动匹配 Report Code 填写分析结果">
-            <Button
-              icon={<UploadOutlined />}
-              onClick={() => fileInputRef.current?.click()}
-              disabled={samples.length === 0}
-            >
-              导入 Excel
+          <Tooltip title={t("nipt.bioinformatics.importExcelHint")}>
+            <Button icon={<UploadOutlined />} disabled>
+              {t("nipt.bioinformatics.importExcel")}
             </Button>
           </Tooltip>
           <Button
@@ -724,7 +505,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
             onClick={handleSave}
             disabled={!batch?.id}
           >
-            保存
+            {t("nipt.bioinformatics.save")}
           </Button>
         </Space>
       </div>
@@ -738,7 +519,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           size="small"
           pagination={false}
           bordered
-          locale={{ emptyText: "暂无样本数据" }}
+          locale={{ emptyText: t("nipt.bioinformatics.noSampleData") }}
           components={{
             header: {
               cell: (props: any) => (
@@ -761,7 +542,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           onClick={handleSave}
           disabled={!batch?.id}
         >
-          保存生信分析结果
+            {t("nipt.bioinformatics.saveResult")}
         </Button>
       </div>
     </div>

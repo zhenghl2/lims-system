@@ -4,15 +4,10 @@ import dayjs from "dayjs";
 import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
 import { getSignStatus } from "../utils/sign";
+import { useTranslation } from "../i18n/useTranslation";
 import { ROW_LABELS, COL_COUNT, REGIONS, STEPS, getVgId } from "../utils/constants";
 
 // ── Library prep methods ──
-const LIBRARY_METHODS = [
-  { value: "SINGLE_CHANNEL", label: "单枪建库" },
-  { value: "MULTI_CHANNEL", label: "排枪建库" },
-  { value: "AUTOMATED", label: "自动化移液工作站建库" },
-];
-
 // REGIONS imported from ../utils/constants
 
 const EQUIPMENT_OPTIONS = [
@@ -90,6 +85,12 @@ interface Props {
 }
 
 export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
+  const { t } = useTranslation();
+  const libraryMethods = [
+    { value: "SINGLE_CHANNEL", label: t("nipt.library.singleChannel") },
+    { value: "MULTI_CHANNEL", label: t("nipt.library.multiChannel") },
+    { value: "AUTOMATED", label: t("nipt.library.automated") },
+  ];
   const [form] = Form.useForm();
   const [steps, setSteps] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
@@ -319,11 +320,11 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
         },
       };
       await api.post(`/runs/${batch.id}/save_library/`, payload);
-      message.success("文库构建记录已保存");
+      message.success(t("nipt.library.saved"));
       onRefresh();
     } catch (e: any) {
-      if (e?.errorFields) { message.warning("请填写所有必填项"); return; }
-      message.error(e?.response?.data?.error || "保存失败");
+      if (e?.errorFields) { message.warning(t("nipt.extraction.fillRequired")); return; }
+      message.error(e?.response?.data?.error || t("nipt.common.saveFailed"));
     } finally { setSaving(false); }
   };
 
@@ -335,17 +336,17 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     <Row gutter={12} style={{ marginBottom: 8 }}>
       <Col span={13}>
         <Form.Item name={name} label={label} rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-          <Select options={kitOptions} placeholder={`选择${label}`} showSearch optionFilterProp="label" />
+          <Select options={kitOptions} placeholder={`${t("nipt.library.selectReagent")} ${label}`} showSearch optionFilterProp="label" />
         </Form.Item>
       </Col>
       <Col span={4}>
-        <Form.Item name={lotName} label="批次" rules={[{ required: true }]} style={{ marginBottom: 0 }}>
-          <Input placeholder="批次号" />
+        <Form.Item name={lotName} label={t("nipt.library.reagentLot")} rules={[{ required: true }]} style={{ marginBottom: 0 }}>
+          <Input placeholder={t("nipt.library.lotPlaceholder")} />
         </Form.Item>
       </Col>
       <Col span={5}>
-        <Form.Item name={expiryName} label="有效期" style={{ marginBottom: 0 }}>
-          <DatePicker picker="month" placeholder="YYYY-MM" style={{ width: "100%" }} format="YYYY-MM" />
+        <Form.Item name={expiryName} label={t("nipt.extraction.expiry")} style={{ marginBottom: 0 }}>
+          <DatePicker picker="month" placeholder={t("nipt.extraction.expiryPlaceholder")} style={{ width: "100%" }} format="YYYY-MM" />
         </Form.Item>
       </Col>
     </Row>
@@ -387,9 +388,9 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     let startCol = Math.floor((COL_COUNT - numCols) / 2);
     if (m !== "AUTOMATED" && startCol % 2 === 1) startCol -= 1;
     const colRange = `${startCol + 1}-${startCol + numCols}`;
-    if (m === "MANUAL") return `手动提取 → 居中${numCols}列(${colRange})，奇数列开头，${validCount}/${totalSamples}样本`;
-    if (m === "MAGNETIC_ROD") return `磁棒法提取 → 居中${numCols}列(${colRange})，奇数列开头，${validCount}/${totalSamples}样本`;
-    return `自动化工作站提取 → 居中${numCols}列，${validCount}/${totalSamples}样本`;
+    if (m === "MANUAL") return `${t("nipt.extraction.manual")} → ${t("nipt.library.centerCols").replace("{cols}", String(numCols)).replace("{range}", colRange)}, ${validCount}/${totalSamples} ${t("nipt.common.samples")}`;
+    if (m === "MAGNETIC_ROD") return `${t("nipt.extraction.magneticRod")} → ${t("nipt.library.centerCols").replace("{cols}", String(numCols)).replace("{range}", colRange)}, ${validCount}/${totalSamples} ${t("nipt.common.samples")}`;
+    return `${t("nipt.extraction.automated")} → ${t("nipt.library.centerCols").replace("{cols}", String(numCols)).replace("{range}", "")}, ${validCount}/${totalSamples} ${t("nipt.common.samples")}`;
   };
 
   return (
@@ -397,30 +398,30 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
       {/* Method & Region */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
-          <Form.Item label="建库方式" required>
-            <Select options={LIBRARY_METHODS} value={method} onChange={setMethod} placeholder="选择建库方式" />
+          <Form.Item label={t("nipt.library.method")} required>
+            <Select options={libraryMethods} value={method} onChange={setMethod} placeholder={t("nipt.library.method")} />
           </Form.Item>
         </Col>
         <Col span={8}>
           <Form.Item label="Region" required>
-            <Select options={REGIONS} value={region || undefined} onChange={setRegion} placeholder="Select region" />
+            <Select options={REGIONS} value={region || undefined} onChange={setRegion} placeholder={t("nipt.library.selectRegion")} />
           </Form.Item>
         </Col>
         <Col span={8} style={{ display: "flex", alignItems: "center", paddingTop: 6 }}>
           <span style={{ fontSize: 12, color: "#888" }}>
-            填充规则：{getExtractionLabel()}
+            {t("nipt.library.fillRule")}: {getExtractionLabel()}
           </span>
         </Col>
       </Row>
 
       {/* QC Controls */}
-      <Card size="small" title="质控品" style={{ marginBottom: 16 }}>
+      <Card size="small" title={t("nipt.library.controls")} style={{ marginBottom: 16 }}>
         <Row gutter={16}>
           <Col span={12}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>阳性质控品</span>
+              <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{t("nipt.library.positiveControl")}</span>
               <Input
-                placeholder="批次号/编号"
+                placeholder={t("nipt.library.lotOrSerial")}
                 value={positiveControl}
                 onChange={e => setPositiveControl(e.target.value)}
                 style={{ flex: 1 }}
@@ -429,9 +430,9 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
           </Col>
           <Col span={12}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>阴性质控品</span>
+              <span style={{ fontWeight: 600, whiteSpace: "nowrap" }}>{t("nipt.library.negativeControl")}</span>
               <Input
-                placeholder="批次号/编号"
+                placeholder={t("nipt.library.lotOrSerial")}
                 value={negativeControl}
                 onChange={e => setNegativeControl(e.target.value)}
                 style={{ flex: 1 }}
@@ -444,32 +445,32 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
       <Form form={form} layout="vertical">
         {/* Basic info */}
         <Row gutter={16}>
-          <Col span={6}><Form.Item name="lib_date" label="实验日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
-          <Col span={6}><Form.Item name="lib_time" label="实验时间" rules={[{ required: true }]}><Input placeholder="例：09:00" /></Form.Item></Col>
+          <Col span={6}><Form.Item name="lib_date" label={t("nipt.extraction.experimentDate")} rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="lib_time" label={t("nipt.extraction.experimentTime")} rules={[{ required: true }]}><Input placeholder={t("nipt.extraction.timePlaceholder")} /></Form.Item></Col>
           <Col span={6}>
-            <Form.Item name="equipment" label="设备类型" rules={[{ required: true }]}>
-              <Select mode="multiple" options={EQUIPMENT_OPTIONS} placeholder="选择设备" maxTagCount={2} />
+            <Form.Item name="equipment" label={t("nipt.library.equipment")} rules={[{ required: true }]}>
+              <Select mode="multiple" options={EQUIPMENT_OPTIONS} placeholder={t("nipt.library.selectEquipment")} maxTagCount={2} />
             </Form.Item>
           </Col>
         </Row>
 
         {/* Reagent kits - 4 rows */}
-        <Card size="small" title="建库试剂盒及配套试剂" style={{ marginBottom: 12 }}>
-          <ReagentRow name="lib_kit" label="建库试剂" kitOptions={kits.libKit} lotName="lib_kit_lot" expiryName="lib_kit_expiry" />
-          <ReagentRow name="index_kit" label="Index" kitOptions={kits.indexKit} lotName="index_kit_lot" expiryName="index_kit_expiry" />
-          <ReagentRow name="quant_kit" label="定量试剂" kitOptions={kits.quantKit} lotName="quant_kit_lot" expiryName="quant_kit_expiry" />
-          <ReagentRow name="bead_kit" label="纯化磁珠" kitOptions={kits.beadKit} lotName="bead_kit_lot" expiryName="bead_kit_expiry" />
+        <Card size="small" title={t("nipt.library.buildKit")} style={{ marginBottom: 12 }}>
+          <ReagentRow name="lib_kit" label={t("nipt.library.libraryKit")} kitOptions={kits.libKit} lotName="lib_kit_lot" expiryName="lib_kit_expiry" />
+          <ReagentRow name="index_kit" label={t("nipt.library.indexKit")} kitOptions={kits.indexKit} lotName="index_kit_lot" expiryName="index_kit_expiry" />
+          <ReagentRow name="quant_kit" label={t("nipt.library.quantKit")} kitOptions={kits.quantKit} lotName="quant_kit_lot" expiryName="quant_kit_expiry" />
+          <ReagentRow name="bead_kit" label={t("nipt.library.beadKit")} kitOptions={kits.beadKit} lotName="bead_kit_lot" expiryName="bead_kit_expiry" />
         </Card>
 
         {/* Volumes & cycles */}
         <Row gutter={16}>
-          <Col span={6}><Form.Item name="cfDNA_volume" label="cfDNA投入体积 (μL)" rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} /></Form.Item></Col>
-          <Col span={6}><Form.Item name="pcr_cycles" label="扩增循环数" rules={[{ required: true }]}><InputNumber min={0} max={20} style={{ width: "100%" }} /></Form.Item></Col>
-          <Col span={6}><Form.Item name="elution_volume" label="文库洗脱体积 (μL)" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="cfDNA_volume" label={t("nipt.library.cfDnaVolume")} rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="pcr_cycles" label={t("nipt.library.pcrCycles")} rules={[{ required: true }]}><InputNumber min={0} max={20} style={{ width: "100%" }} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="elution_volume" label={t("nipt.library.elutionVolume")} rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} /></Form.Item></Col>
         </Row>
         <Row gutter={16}>
-          <Col span={6}><Form.Item name="temperature" label="环境温度 (℃)"><InputNumber min={0} max={50} step={0.1} style={{ width: "100%" }} /></Form.Item></Col>
-          <Col span={6}><Form.Item name="humidity" label="环境湿度 (%)"><InputNumber min={0} max={100} style={{ width: "100%" }} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="temperature" label={t("nipt.extraction.temperature")}><InputNumber min={0} max={50} step={0.1} style={{ width: "100%" }} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="humidity" label={t("nipt.extraction.humidity")}><InputNumber min={0} max={100} style={{ width: "100%" }} /></Form.Item></Col>
         </Row>
       </Form>
 
@@ -477,7 +478,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
       <Card
         size="small"
         className="no-print-break"
-        title={<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}><span>建库样本排布 — 96孔板（{samples.length} samples）</span><Button size="small" onClick={handlePrint} >打印</Button></div>}
+        title={<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}><span>{t("nipt.library.plateLayout")} — 96-{t("nipt.library.wellPlate")}（{samples.length} samples）</span><Button size="small" onClick={handlePrint} >{t("nipt.pooling.print")}</Button></div>}
         style={{ marginBottom: 16 }}
       >
         <div style={{ overflowX: "auto" }}>
@@ -522,13 +523,20 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
       </Card>
       
       {/* Step Confirmations */}
-      <Card title="步骤确认" size="small" style={{ marginBottom: 16 }}>
+      <Card title={t("nipt.library.stepConfirm")} size="small" style={{ marginBottom: 16 }}>
         <Space wrap>
           {STEPS.map((step: { key: string; label: string }) => {
+            const stepLabelMap: Record<string, string> = {
+              uv_prep: t("nipt.extraction.stepUvPrep"),
+              reagent_prep: t("nipt.extraction.stepReagentPrep"),
+              sample_prep: t("nipt.extraction.stepSamplePrep"),
+              on_machine: t("nipt.extraction.stepOnMachine"),
+              cleanup: t("nipt.extraction.stepCleanup"),
+            };
             const manualHide = method === "SINGLE_CHANNEL" && (step.key === "uv_prep" || step.key === "on_machine");
             return (
               <Checkbox key={step.key} checked={!!steps[step.key]} onChange={() => toggleStep(step.key)} style={manualHide ? { opacity: 0.4 } : undefined}>
-                {step.label}{manualHide ? " (手动跳过)" : ""}
+                {stepLabelMap[step.key] || step.label}{manualHide ? " " + t("nipt.extraction.manualSkip") : ""}
               </Checkbox>
             );
           })}
@@ -536,20 +544,20 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
       </Card>
 
       {/* Signature */}
-      <Card title="电子签名" size="small" style={{ marginBottom: 16 }}>
+      <Card title={t("nipt.library.signature")} size="small" style={{ marginBottom: 16 }}>
         <Space>
-          {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>操作人: {opSigner} ✓</Button> : <Button onClick={()=>setOpModal(true)}>操作人签名</Button>}
-          {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>复核人: {rvSigner} ✓</Button> : <Button onClick={()=>setRvModal(true)}>复核人签名</Button>}
+          {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorLabel")}: {opSigner} ✓</Button> : <Button onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorSign")}</Button>}
+          {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerLabel")}: {rvSigner} ✓</Button> : <Button onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerSign")}</Button>}
         </Space>
       </Card>
 
       {/* Save */}
       <div style={{ textAlign: "right", marginBottom: 16 }}>
-        <Button type="primary" onClick={save} loading={saving}>保存文库构建记录</Button>
+        <Button type="primary" onClick={save} loading={saving}>{t("nipt.library.saveRecord")}</Button>
       </div>
 
-      <NiptSignerModal open={opModal} role="operator" roleLabel="操作人" batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/library/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
-      <NiptSignerModal open={rvModal} role="reviewer" roleLabel="复核人" batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/library/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
+      <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/library/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
+      <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/library/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
     </div>
   );
 }

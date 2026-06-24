@@ -5,6 +5,7 @@ import { Upload } from "antd";
 import * as XLSX from "xlsx";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
+import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -19,15 +20,7 @@ const STATUS_MAP: Record<string, string> = {
   REJECTED: "red",
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  REGISTERED: "Registered", RECEIVING: "Receiving", RECEIVED: "Received",
-  IN_PROCESS: "In Process", ACCEPTED: "Accepted",
-  PLASMA_SEPARATED: "血浆已分离",
-  EXTRACTION: "核酸提取", LIBRARY_PREP: "文库构建", POOLING: "文库定量及Pooling",
-  SEQUENCING: "上机测序", BIOINFORMATICS: "生物信息分析",
-  TESTING: "Testing", ANALYZING: "Analyzing",
-  COMPLETED: "Completed", REJECTED: "Rejected",
-};
+// Module-level (kept for reference, use STATUS_LABEL_TL in component)
 
 const TEST_OPTIONS = [
   { label: "NIPT Basic", value: "NIPT" },
@@ -65,7 +58,7 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "patient_dob", title: "DOB", dataIndex: "patient_dob", visible: true, width: 100, render: (v: string) => v || "-" },
   { key: "age", title: "Age", dataIndex: "age", visible: true, width: 60 },
   { key: "gestational_weeks", title: "Gest. Weeks", dataIndex: "gestational_weeks", visible: true, width: 80, render: (v: number) => v || "-" },
-  { key: "report_code", title: "Report Code", dataIndex: "report_code", visible: true, width: 140, render: (v: string, r: any) => v || r?.vg_id || "-" },
+  { key: "report_code", title: "Report Code", dataIndex: "report_code", visible: true, width: 140, render: (v: string) => v || "-" },
   { key: "send_report_id", title: "Send Report ID", dataIndex: "send_report_id", visible: true, width: 120, render: (v: string) => v || "-" },
   { key: "lmp", title: "Last Menstrual Period", dataIndex: "last_menstrual_period", visible: true, width: 130, render: (v: string) => v || "-" },
   { key: "hospital", title: "Hospital/Clinic", dataIndex: "ordering_facility", visible: true, width: 130, render: (v: string) => v || "-" },
@@ -91,6 +84,25 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
 ];
 
 export default function NiptSamples() {
+  const { t } = useTranslation();
+  const STATUS_LABEL_TL: Record<string, string> = {
+    REGISTERED: t("nipt.dashboard.registered"),
+    RECEIVING: t("nipt.dashboard.registered"),
+    RECEIVED: t("nipt.dashboard.received"),
+    IN_PROCESS: t("nipt.common.plasmaSeparatedStatus"),
+    ACCEPTED: t("nipt.dashboard.registered"),
+    PLASMA_SEPARATED: t("nipt.common.plasmaSeparatedStatus"),
+    EXTRACTION: t("nipt.common.extractionStatus"),
+    LIBRARY_PREP: t("nipt.common.libraryPrepStatus"),
+    POOLING: t("nipt.common.poolingStatus"),
+    SEQUENCING: t("nipt.common.sequencingStatus"),
+    BIOINFORMATICS: t("nipt.common.bioinformaticsStatus"),
+    TESTING: t("nipt.dashboard.registered"),
+    ANALYZING: t("nipt.dashboard.registered"),
+    COMPLETED: t("nipt.dashboard.completed"),
+    REPORTED: t("nipt.dashboard.reported"),
+    REJECTED: t("nipt.dashboard.rejected"),
+  };
   const [data, setData] = useState<any[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -121,16 +133,30 @@ export default function NiptSamples() {
   const [form] = Form.useForm();
   const [editingKey, setEditingKey] = useState<string>("");
 
-  const visibleCols = colConfig.filter(c => c.visible);
+  const columnKeyMap: Record<string, string> = {
+    source: "sampleSource", test_option: "testOption", external_id: "accessioningId",
+    collection_date: "collectionDate", acceptance_date: "acceptanceDate",
+    physician: "physician", patient_id: "patientId", patient_name: "name",
+    patient_dob: "dob", age: "age", gestational_weeks: "gestWeeks",
+    report_code: "reportCode", send_report_id: "sendReportId",
+    lmp: "lastMenstrualPeriod", hospital: "hospital", twins: "twin",
+    ivf: "ivf", pregnancy_history: "pregHistory", diagnosis: "diagnosis",
+    fedex: "fedexNo", all_chrom: "allChrom", fetal_fraction: "ffPercent",
+    gender: "sex", other: "other",
+  };
+  const visibleCols = colConfig.filter(c => c.visible).map(c => ({
+    ...c,
+    title: columnKeyMap[c.key] ? t(`nipt.samples.${columnKeyMap[c.key]}`) : c.title
+  }));
   const columns = [
-    { key: "sample_id", title: "Sample ID", dataIndex: "sample_id", visible: true, width: 170, render: (v: string) => <Text code>{v}</Text> },
-    { key: "vg_id", title: "VG ID", dataIndex: "vg_id", visible: true, width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
+    { key: "sample_id", title: t("nipt.samples.sampleId"), dataIndex: "sample_id", visible: true, width: 170, render: (v: string) => <Text code>{v}</Text> },
+    { key: "vg_id", title: t("nipt.samples.vgId"), dataIndex: "vg_id", visible: true, width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
     ...visibleCols,
-    { key: "status", title: "Status", dataIndex: "status", visible: true, width: 150, fixed: "right" as const, render: (v: string, r: any) => {
+    { key: "status", title: t("nipt.samples.status"), dataIndex: "status", visible: true, width: 150, fixed: "right" as const, render: (v: string, r: any) => {
       const reason = r.rejection_reason || "";
       return (
         <span>
-          <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABEL[v] || v}</Tag>
+          <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABEL_TL[v] || v}</Tag>
           {v === "REJECTED" && reason ? <Tag color="red" style={{ fontSize: 10, maxWidth: 120 }} title={reason}>{reason.replace("血浆分离不合格: ", "")}</Tag> : null}
         </span>
       );
@@ -139,12 +165,16 @@ export default function NiptSamples() {
 
     { key: "actions", title: "", width: 50, fixed: "right" as const,
       render: (_: any, record: any) => (
-        <Popconfirm title="Delete?" onConfirm={() => handleDelete(record.id)}>
+        <Popconfirm title={t("nipt.samples.delete")} onConfirm={() => handleDelete(record.id)}>
           <Button size="small" danger icon={<DeleteOutlined />} />
         </Popconfirm>
       ),
     },
   ];
+
+  // Override Diagnosis render to translate "否" → None/Nenhum
+  const diagCol = columns.find((c: any) => c.key === "diagnosis");
+  if (diagCol) diagCol.render = (v: string) => v === "否" ? t("nipt.samples.none") : (v || "-");
 
   // Patch send_report_id for inline editing (double-click row to edit)
   const sendReportCol = columns.find((c: any) => c.key === "send_report_id");
@@ -187,7 +217,7 @@ export default function NiptSamples() {
       const res = await samplesApi.list(params);
       setData((res.data as any).results || res.data || []);
       setTotal((res.data as any).count || 0);
-    } catch { message.error("Failed"); } finally { setLoading(false); }
+    } catch { message.error(t("nipt.common.failed")); } finally { setLoading(false); }
   }, [page, pageSize, search, statusFilter, vgIdFilter, acceptanceDateFilter, sourceFilter]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
@@ -276,7 +306,7 @@ export default function NiptSamples() {
       await samplesApi.create(buildPayload(values));
       message.success("Registered");
       setModalOpen(false); form.resetFields(); fetchData();
-    } catch (e: any) { if (e?.errorFields) return; message.error("Failed"); }
+    } catch (e: any) { if (e?.errorFields) return; message.error(t("nipt.common.failed")); }
   };
 
   // Parse one CSV line handling quotes
@@ -326,7 +356,7 @@ export default function NiptSamples() {
       await samplesApi.batchCreate({ samples });
       message.success(`Registered ${samples.length}`);
       setBatchText(""); setBatchMode(false); fetchData();
-    } catch { message.error("Failed"); }
+    } catch { message.error(t("nipt.common.failed")); }
   };
 
   // Download CSV template
@@ -390,86 +420,86 @@ export default function NiptSamples() {
   };
 
   const handleDelete = async (id: string) => {
-    try { await samplesApi.delete(id); message.success("Deleted"); fetchData(); } catch { message.error("Failed"); }
+    try { await samplesApi.delete(id); message.success(t("nipt.common.deleted")); fetchData(); } catch { message.error(t("nipt.common.failed")); }
   };
 
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <Title level={4} style={{ margin: 0 }}>NIPT Sample Registration</Title>
+        <Title level={4} style={{ margin: 0 }}>{t("nipt.samples.title")}</Title>
         <Space>
-          <Button icon={<ReloadOutlined />} onClick={fetchData}>Refresh</Button>
-          <Popover trigger="click" title="Column Display" content={
+          <Button icon={<ReloadOutlined />} onClick={fetchData}>{t("nipt.reports.refresh")}</Button>
+          <Popover trigger="click" title={t("nipt.samples.columnDisplay")} content={
               <div style={{ maxHeight: 400, overflow: "auto", minWidth: 200 }}>
                 {colConfig.map(c => (
                   <div key={c.key} style={{ marginBottom: 4 }}>
-                    <Checkbox checked={c.visible} onChange={() => toggleCol(c.key)}>{c.title}</Checkbox>
+                    <Checkbox checked={c.visible} onChange={() => toggleCol(c.key)}>{columnKeyMap[c.key] ? t(`nipt.samples.${columnKeyMap[c.key]}`) : c.title}</Checkbox>
                   </div>
                 ))}
               </div>
             }>
-              <Button icon={<SettingOutlined />}>Columns</Button>
+              <Button icon={<SettingOutlined />}>{t("nipt.samples.columns")}</Button>
             </Popover>
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setModalOpen(true); }}>Register</Button>
-          <Button icon={<PlusOutlined />} onClick={() => setBatchMode(true)}>Batch Import</Button>
-          <Button icon={<UploadOutlined />} onClick={() => { setFileModalOpen(true); setFileList([]); }}>Register from File</Button>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => { form.resetFields(); setModalOpen(true); }}>{t("nipt.samples.register")}</Button>
+          <Button icon={<PlusOutlined />} onClick={() => setBatchMode(true)}>{t("nipt.samples.batchImport")}</Button>
+          <Button icon={<UploadOutlined />} onClick={() => { setFileModalOpen(true); setFileList([]); }}>{t("nipt.samples.registerFromFile")}</Button>
         </Space>
       </div>
       <div style={{ marginBottom: 16, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-        <Input.Search placeholder="Search (ID/Name/VG/Physician...)" allowClear onSearch={(v) => { setSearch(v); setPage(1); }} style={{ width: 260 }} />
-        <Input placeholder="VG ID" allowClear value={vgIdFilter} onChange={e => { setVgIdFilter(e.target.value); setPage(1); }} style={{ width: 110 }} />
-        <DatePicker placeholder="Acceptance Date" allowClear value={acceptanceDateFilter ? dayjs(acceptanceDateFilter) : null} onChange={d => { setAcceptanceDateFilter(d?.format("YYYY-MM-DD") || ""); setPage(1); }} style={{ width: 140 }} format="YYYY-MM-DD" />
-        <Select placeholder="Sample Source" allowClear style={{ width: 150 }} value={sourceFilter || undefined}
+        <Input.Search placeholder={t("nipt.samples.searchPlaceholder")} allowClear onSearch={(v) => { setSearch(v); setPage(1); }} style={{ width: 260 }} />
+        <Input placeholder={t("nipt.sequencing.vgId")} allowClear value={vgIdFilter} onChange={e => { setVgIdFilter(e.target.value); setPage(1); }} style={{ width: 110 }} />
+        <DatePicker placeholder={t("nipt.samples.acceptanceDate")} allowClear value={acceptanceDateFilter ? dayjs(acceptanceDateFilter) : null} onChange={d => { setAcceptanceDateFilter(d?.format("YYYY-MM-DD") || ""); setPage(1); }} style={{ width: 140 }} format="YYYY-MM-DD" />
+        <Select placeholder={t("nipt.samples.sampleSource")} allowClear style={{ width: 150 }} value={sourceFilter || undefined}
           onChange={(v) => { setSourceFilter(v || ""); setPage(1); }}
           options={["BCC", "巴西万基", "韩国", "CYJ印度", "CYJ澳洲", "澳洲经销商", "西班牙代理", "澳洲", "西班牙巴塞罗那经销商", "YLH西班牙bygens", "YLH西班牙LABGENETICS", "CYJ澳洲经销商", "CYJ秘鲁", "CYJ美国"].map(v => ({ label: v, value: v }))} />
-        <Select placeholder="Status" allowClear style={{ width: 150 }} value={statusFilter || undefined}
+        <Select placeholder={t("nipt.samples.status")} allowClear style={{ width: 150 }} value={statusFilter || undefined}
           onChange={(v) => { setStatusFilter(v || ""); setPage(1); }}
-          options={["", ...Object.keys(STATUS_LABEL)].map(v => ({ label: v || "All Statuses", value: v }))} />
+          options={["", ...Object.keys(STATUS_LABEL_TL)].map(v => ({ label: v || "All Statuses", value: v }))} />
       </div>
       <Table rowKey="id" dataSource={data} columns={columns} loading={loading} size="small" onRow={(record) => ({ onDoubleClick: () => { if (record.id) setEditingKey(record.id); } })}
         scroll={{ x: 4500, y: "calc(100vh - 280px)" }}
         pagination={{ current: page, pageSize, total, showTotal: t => `Total ${t}`, showSizeChanger: true, pageSizeOptions: ['10', '20', '50', '100'], onChange: (p, ps) => { setPage(p); if (ps !== pageSize) { setPageSize(ps); localStorage.setItem('nipt_samples_pageSize', String(ps)); } } }} />
 
       {/* Register Modal */}
-      <Modal title="Register NIPT Sample" open={modalOpen} onOk={handleRegister} onCancel={() => setModalOpen(false)} width={700} destroyOnClose>
+      <Modal title={t("nipt.samples.registerModalTitle")} open={modalOpen} onOk={handleRegister} onCancel={() => setModalOpen(false)} width={700} destroyOnClose>
         <Form form={form} layout="vertical" size="small">
           <Space style={{ display: "flex" }} wrap>
-            <Form.Item name="source" label="A. Source"><Select options={SOURCE_OPTIONS} style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="source_other" label="Other"><Input style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="test_option" label="B. Test Option" initialValue="NIPT"><Select options={TEST_OPTIONS} style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="external_id" label="C. Accessioning ID"><Input style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="source" label={t("nipt.samples.sourceLabel")}><Select options={SOURCE_OPTIONS} style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="source_other" label={t("nipt.receiving.rejectionReasons.other")}><Input style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="test_option" label={t("nipt.samples.testOptionLabel")} initialValue="NIPT"><Select options={TEST_OPTIONS} style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="external_id" label={t("nipt.samples.accessioningId")}><Input style={{ width: 160 }} /></Form.Item>
           </Space>
           <Space style={{ display: "flex" }} wrap>
-            <Form.Item name="collection_date" label="D. Collection Date"><DatePicker style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="acceptance_date" label="E. Acceptance Date" initialValue={dayjs()}><DatePicker style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="physician" label="G. Physician"><Input style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="collection_date" label={t("nipt.samples.collectionDateLabel")}><DatePicker style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="acceptance_date" label={t("nipt.samples.acceptanceDateLabel")} initialValue={dayjs()}><DatePicker style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="physician" label={t("nipt.samples.physicianLabel")}><Input style={{ width: 160 }} /></Form.Item>
           </Space>
           <Space style={{ display: "flex" }} wrap>
-            <Form.Item name="vg_id" label="VG ID"><Input style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="id_card" label="H. Patient ID"><Input style={{ width: 200 }} /></Form.Item>
-            <Form.Item name="patient_name" label="I. Name" rules={[{ required: true }]}><Input style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="patient_dob" label="J. DOB"><DatePicker style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="age" label="K. Age"><InputNumber min={1} max={100} style={{ width: 80 }} /></Form.Item>
+            <Form.Item name="vg_id" label={t("nipt.sequencing.vgId")}><Input style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="id_card" label={t("nipt.samples.patientIdLabel")}><Input style={{ width: 200 }} /></Form.Item>
+            <Form.Item name="patient_name" label={t("nipt.samples.nameLabel")} rules={[{ required: true }]}><Input style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="patient_dob" label={t("nipt.samples.dobLabel")}><DatePicker style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="age" label={t("nipt.samples.ageLabel")}><InputNumber min={1} max={100} style={{ width: 80 }} /></Form.Item>
           </Space>
           <Space style={{ display: "flex" }} wrap>
-            <Form.Item name="gestational_weeks" label="L. Gest. Weeks"><InputNumber min={1} max={45} style={{ width: 100 }} /></Form.Item>
-            <Form.Item name="report_code" label="M. Report Code"><Input style={{ width: 140 }} disabled placeholder="= VG ID" /></Form.Item>
-            <Form.Item name="send_report_id" label="N. Send Report ID"><Input style={{ width: 140 }} /></Form.Item>
-            <Form.Item name="last_menstrual_period" label="O. LMP"><DatePicker style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="ordering_facility" label="P. Hospital/Clinic"><Input style={{ width: 160 }} placeholder="e.g. Bangkok Hospital" /></Form.Item>
+            <Form.Item name="gestational_weeks" label={t("nipt.samples.gestWeeksLabel")}><InputNumber min={1} max={45} style={{ width: 100 }} /></Form.Item>
+            <Form.Item name="report_code" label={t("nipt.samples.reportCodeLabel")}><Input style={{ width: 140 }} disabled placeholder={t("nipt.samples.vgIdPlaceholder")} /></Form.Item>
+            <Form.Item name="send_report_id" label={t("nipt.samples.sendReportIdLabel")}><Input style={{ width: 140 }} /></Form.Item>
+            <Form.Item name="last_menstrual_period" label={t("nipt.samples.lmpLabel")}><DatePicker style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="ordering_facility" label={t("nipt.samples.hospitalLabel")}><Input style={{ width: 160 }} placeholder={t("nipt.samples.hospitalPlaceholder")} /></Form.Item>
           </Space>
           <Space style={{ display: "flex" }} wrap>
-            <Form.Item name="multiple_gestation" label="P. Twin" valuePropName="checked"><Switch /></Form.Item>
-            <Form.Item name="ivf_status" label="Q. IVF" valuePropName="checked"><Switch /></Form.Item>
-            <Form.Item name="pregnancy_history" label="R. Preg. History"><Input placeholder="G/P" style={{ width: 120 }} /></Form.Item>
-            <Form.Item name="clinical_diagnosis" label="S. Diagnosis"><Input style={{ width: 200 }} /></Form.Item>
-            <Form.Item name="fedex_no" label="T. FedEx No."><Input style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="multiple_gestation" label={t("nipt.samples.twinLabel")} valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name="ivf_status" label={t("nipt.samples.ivfLabel")} valuePropName="checked"><Switch /></Form.Item>
+            <Form.Item name="pregnancy_history" label={t("nipt.samples.pregHistoryLabel")}><Input placeholder={t("nipt.samples.gpPlaceholder")} style={{ width: 120 }} /></Form.Item>
+            <Form.Item name="clinical_diagnosis" label={t("nipt.samples.diagnosisLabel")}><Input style={{ width: 200 }} /></Form.Item>
+            <Form.Item name="fedex_no" label={t("nipt.samples.fedexLabel")}><Input style={{ width: 160 }} /></Form.Item>
           </Space>
         </Form>
       </Modal>
 
       {/* Batch Import Modal */}
-      <Modal title="Batch Import NIPT Samples" open={batchMode}
+      <Modal title={t("nipt.samples.batchImportTitle")} open={batchMode}
         onOk={batchUploadMode === "paste" ? handleBatchRegister : undefined}
         onCancel={() => { setBatchMode(false); setBatchText(""); setBatchUploadMode("paste"); }}
         width={850}
@@ -496,7 +526,7 @@ export default function NiptSamples() {
             showUploadList={false}
             beforeUpload={handleUploadExcel}
           >
-            <Button icon={<UploadOutlined />}>Upload Excel / CSV</Button>
+            <Button icon={<UploadOutlined />}>{t("nipt.samples.uploadExcel")}</Button>
           </Upload>
         </Space>
 
@@ -515,20 +545,20 @@ export default function NiptSamples() {
       </Modal>
 
       {/* Register from File Modal */}
-      <Modal title="Register from File" open={fileModalOpen} onCancel={() => { setFileModalOpen(false); setFileList([]); }} width={600}
+      <Modal title={t("nipt.samples.registerFromFile")} open={fileModalOpen} onCancel={() => { setFileModalOpen(false); setFileList([]); }} width={600}
         footer={[
-          <Button key="cancel" onClick={() => { setFileModalOpen(false); setFileList([]); }}>Cancel</Button>,
+          <Button key="cancel" onClick={() => { setFileModalOpen(false); setFileList([]); }}>{t("nipt.samples.cancel")}</Button>,
           <Button key="submit" type="primary" loading={importing} disabled={fileList.length === 0} onClick={handleFileImport}>
-            Import & Register
+            {t("nipt.samples.importRegister")}
           </Button>,
         ]}>
         <Form layout="vertical">
-          <Form.Item label="Source" required>
+          <Form.Item label={t("nipt.samples.sourceLabel")} required>
             <Select value={fileSource} onChange={setFileSource}
-              options={[{ label: "泰国", value: "泰国" }, { label: "巴西", value: "巴西" }]}
+              options={[{ label: t("nipt.samples.thailand"), value: "泰国" }, { label: t("nipt.samples.brazil"), value: "巴西" }]}
               style={{ width: 200 }} />
           </Form.Item>
-          <Form.Item label={fileSource === "泰国" ? "Select PDF Folder" : "Select File"}>
+          <Form.Item label={fileSource === "泰国" ? t("nipt.samples.selectPdfFolder") : t("nipt.samples.selectFile")}>
             {fileSource === "泰国" ? (
               <>
                 <input
@@ -567,10 +597,10 @@ export default function NiptSamples() {
                   }}
                 />
                 <Button icon={<UploadOutlined />} onClick={() => folderInputRef.current?.click()}>
-                  Choose Folder
+                  {t("nipt.samples.chooseFolder")}
                 </Button>
                 <Button icon={<UploadOutlined />} style={{ marginLeft: 8 }} onClick={() => fileInputRef.current?.click()}>
-                  Choose Files
+                  {t("nipt.samples.chooseFiles")}
                 </Button>
                 {fileMsg && <Text type="secondary" style={{ marginLeft: 12 }}>{fileMsg}</Text>}
               </>
@@ -612,10 +642,10 @@ export default function NiptSamples() {
                   }}
                 />
                 <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>
-                  Choose Files
+                  {t("nipt.samples.chooseFiles")}
                 </Button>
                 <Button icon={<UploadOutlined />} style={{ marginLeft: 8 }} onClick={() => folderInputRef.current?.click()}>
-                  Choose Folder
+                  {t("nipt.samples.chooseFolder")}
                 </Button>
                 {fileMsg && <Text type="secondary" style={{ marginLeft: 12 }}>{fileMsg}</Text>}
               </>
@@ -655,7 +685,7 @@ export default function NiptSamples() {
             )}
             {importResult.created?.length > 0 && (
               <div style={{ marginTop: 8 }}>
-                <Text strong>Created samples:</Text>
+                <Text strong>{t("nipt.samples.createdSamples")}</Text>
                 <div style={{ maxHeight: 200, overflow: "auto", marginTop: 4 }}>
                   {importResult.created.map((s: any, i: number) => (
                     <div key={i} style={{ fontSize: 12, padding: "2px 0" }}>

@@ -168,10 +168,10 @@ export default function DashboardLayout({ children, header }: Props) {
 
     { key: "/samples",       icon: <BarcodeOutlined />,         label: t("nav.samples") },
 
-    { key: "/receiving",    icon: <InboxOutlined />,           label: "Receiving" },
-    { key: "/plasma-separation", icon: <ExperimentOutlined />, label: "Plasma Separation" },
+    { key: "/receiving",    icon: <InboxOutlined />,           label: t("nav.receiving") },
+    { key: "/plasma-separation", icon: <ExperimentOutlined />, label: t("nav.plasmaSeparation") },
 
-    { key: "/workflow",      icon: <ExperimentOutlined />,      label: "Lab Workflow" },
+    { key: "/workflow",      icon: <ExperimentOutlined />,      label: t("nav.labWorkflow") },
 
     { key: "/reports-nipt",   icon: <FileTextOutlined />,      label: t("nav.reports") },
 
@@ -672,19 +672,19 @@ export default function DashboardLayout({ children, header }: Props) {
                 items: [
 
 
-                  { key: 'en', label: 'ð¬ð§ English' },
+                  { key: 'en', label: '🇬🇧 English' },
 
 
 
 
 
-                  { key: 'zh', label: 'ð¨ð³ 中文' },
+                  { key: 'zh', label: '🇨🇳 中文' },
 
 
 
 
 
-                  { key: 'pt', label: 'ð§ð· Português' },
+                  { key: 'pt', label: '🇧🇷 Português' },
 
 
 

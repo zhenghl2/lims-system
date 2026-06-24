@@ -6,12 +6,7 @@ import NiptSignerModal from "./NiptSignerModal";
 import { getSampleBadge, getCellBg } from "../utils/badge";
 import { getSignStatus } from "../utils/sign";
 import { ROWS_8, COLS_12, REGIONS, STEPS, EXTRACTION_KITS } from "../utils/constants";
-
-const EXTRACTION_METHODS = [
-  { value: "MANUAL", label: "Manual (手动提取)" },
-  { value: "MAGNETIC_ROD", label: "Magnetic Rod (磁棒法)" },
-  { value: "AUTOMATED", label: "Automated Workstation (自动化工作站)" },
-];
+import { useTranslation } from "../i18n/useTranslation";
 
 // REGIONS imported from ../utils/constants
 
@@ -102,6 +97,12 @@ function SampleCell({ label, sampleIdx, results, onChange, cellStyle }: {
 }
 
 export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) {
+  const { t } = useTranslation();
+  const extractionMethods = [
+    { value: "MANUAL", label: t("nipt.extraction.manual") },
+    { value: "MAGNETIC_ROD", label: t("nipt.extraction.magneticRod") },
+    { value: "AUTOMATED", label: t("nipt.extraction.automated") },
+  ];
   const [form] = Form.useForm();
   const [steps, setSteps] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
@@ -251,43 +252,50 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
       {/* Method & Region */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
-          <Form.Item label="Extraction Method" required>
-            <Select options={EXTRACTION_METHODS} value={method || undefined} onChange={setMethod} placeholder="Select method" />
+          <Form.Item label={t("nipt.extraction.method")} required>
+            <Select options={extractionMethods} value={method || undefined} onChange={setMethod} placeholder={t("nipt.extraction.selectMethod")} />
           </Form.Item>
         </Col>
         <Col span={8}>
-          <Form.Item label="Region" required>
-            <Select options={REGIONS} value={region || undefined} onChange={setRegion} placeholder="Select region" />
+          <Form.Item label={t("nipt.extraction.region")} required>
+            <Select options={REGIONS} value={region || undefined} onChange={setRegion} placeholder={t("nipt.extraction.selectRegion")} />
           </Form.Item>
         </Col>
       </Row>
 
       <Form form={form} layout="vertical">
         <Row gutter={16}>
-          <Col span={6}><Form.Item name="extraction_date" label="实验日期" rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
-          <Col span={6}><Form.Item name="extraction_time" label="实验时间"><Input placeholder="例：09:00" /></Form.Item></Col>
-          <Col span={6}><Form.Item name="equipment" label="设备类型"><Input placeholder="预留" disabled /></Form.Item></Col>
-          <Col span={6}><Form.Item name="kit_type" label="提取试剂盒" rules={[{ required: true }]}><Select options={kits} placeholder="选择试剂盒" showSearch optionFilterProp="label" /></Form.Item></Col>
+          <Col span={6}><Form.Item name="extraction_date" label={t("nipt.extraction.experimentDate")} rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="extraction_time" label={t("nipt.extraction.experimentTime")}><Input placeholder={t("nipt.extraction.timePlaceholder")} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="equipment" label={t("nipt.extraction.equipment")}><Input placeholder={t("nipt.extraction.equipmentPlaceholder")} disabled /></Form.Item></Col>
+          <Col span={6}><Form.Item name="kit_type" label={t("nipt.extraction.kitType")} rules={[{ required: true }]}><Select options={kits} placeholder={t("nipt.extraction.kitPlaceholder")} showSearch optionFilterProp="label" /></Form.Item></Col>
         </Row>
         <Row gutter={16}>
-          <Col span={6}><Form.Item name="reagent_lot" label="试剂批次" rules={[{ required: true }]}><Input placeholder="批次号" /></Form.Item></Col>
-          <Col span={6}><Form.Item name="reagent_expiry" label="有效期"><Input placeholder="YYYY-MM" /></Form.Item></Col>
-          <Col span={6}><Form.Item name="plasma_volume" label="血浆投入体积 (mL)" rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder="e.g. 4.0" /></Form.Item></Col>
-          <Col span={6}><Form.Item name="elution_volume" label="CfDNA洗脱体积 (μL)" rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} placeholder="e.g. 60" /></Form.Item></Col>
+          <Col span={6}><Form.Item name="reagent_lot" label={t("nipt.extraction.reagentLot")} rules={[{ required: true }]}><Input placeholder={t("nipt.extraction.lotPlaceholder")} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="reagent_expiry" label={t("nipt.extraction.expiry")}><Input placeholder="YYYY-MM" /></Form.Item></Col>
+          <Col span={6}><Form.Item name="plasma_volume" label={t("nipt.extraction.plasmaVolume")} rules={[{ required: true }]}><InputNumber min={0} step={0.1} style={{ width: "100%" }} placeholder={t("nipt.extraction.plasmaPlaceholder")} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="elution_volume" label={t("nipt.extraction.elutionVolume")} rules={[{ required: true }]}><InputNumber min={0} style={{ width: "100%" }} placeholder={t("nipt.extraction.elutionPlaceholder")} /></Form.Item></Col>
         </Row>
         <Row gutter={16}>
-          <Col span={6}><Form.Item name="temperature" label="环境温度 (℃)"><InputNumber min={0} max={50} step={0.1} style={{ width: "100%" }} placeholder="e.g. 25" /></Form.Item></Col>
-          <Col span={6}><Form.Item name="humidity" label="环境湿度 (%)"><InputNumber min={0} max={100} style={{ width: "100%" }} placeholder="e.g. 55" /></Form.Item></Col>
+          <Col span={6}><Form.Item name="temperature" label={t("nipt.extraction.temperature")}><InputNumber min={0} max={50} step={0.1} style={{ width: "100%" }} placeholder={t("nipt.extraction.tempPlaceholder")} /></Form.Item></Col>
+          <Col span={6}><Form.Item name="humidity" label={t("nipt.extraction.humidity")}><InputNumber min={0} max={100} style={{ width: "100%" }} placeholder={t("nipt.extraction.humidityPlaceholder")} /></Form.Item></Col>
         </Row>
       </Form>
 
-      <Card title="步骤确认" size="small" style={{ marginBottom: 16 }}>
+      <Card title={t("nipt.extraction.stepConfirm")} size="small" style={{ marginBottom: 16 }}>
         <Space wrap>
           {STEPS.map(step => {
+            const stepLabelMap: Record<string, string> = {
+              uv_prep: t("nipt.extraction.stepUvPrep"),
+              reagent_prep: t("nipt.extraction.stepReagentPrep"),
+              sample_prep: t("nipt.extraction.stepSamplePrep"),
+              on_machine: t("nipt.extraction.stepOnMachine"),
+              cleanup: t("nipt.extraction.stepCleanup"),
+            };
             const manualHide = method === "MANUAL" && (step.key === "uv_prep" || step.key === "on_machine");
             return (
               <Checkbox key={step.key} checked={!!steps[step.key]} onChange={() => toggleStep(step.key)} style={manualHide ? { opacity: 0.4 } : undefined}>
-                {step.label}{manualHide ? " (手动跳过)" : ""}
+                {stepLabelMap[step.key] || step.label}{manualHide ? " " + t("nipt.extraction.manualSkip") : ""}
               </Checkbox>
             );
           })}
@@ -296,11 +304,11 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
 
       {/* Color legend for test option and twin markers */}
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12, fontSize: 12, color: "#666" }}>
-        <span>图例：</span>
-        <span style={{ background: "#e6f4ff", padding: "2px 8px", borderRadius: 3, border: "1px solid #91caff" }}>浅蓝 = Plus</span>
-        <span style={{ background: "#f6ffed", padding: "2px 8px", borderRadius: 3, border: "1px solid #b7eb8f" }}>浅绿 = Basic</span>
-        <span style={{ background: "#e8d5f5", padding: "2px 8px", borderRadius: 3, border: "1px solid #c9a2e0" }}>浅紫 = Basic All</span>
-        <span>👶👶 = Twin（双胎标记）</span>
+        <span>{t("nipt.extraction.legend")}</span>
+        <span style={{ background: "#e6f4ff", padding: "2px 8px", borderRadius: 3, border: "1px solid #91caff" }}>{t("nipt.extraction.legendPlus")}</span>
+        <span style={{ background: "#f6ffed", padding: "2px 8px", borderRadius: 3, border: "1px solid #b7eb8f" }}>{t("nipt.extraction.legendBasic")}</span>
+        <span style={{ background: "#e8d5f5", padding: "2px 8px", borderRadius: 3, border: "1px solid #c9a2e0" }}>{t("nipt.extraction.legendBasicAll")}</span>
+        <span>{t("nipt.extraction.legendTwin")}</span>
       </div>
 
       {/* ═══ MANUAL ═══ */}
@@ -441,12 +449,12 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
 
       {/* Actions & Signatures */}
       <Space>
-        <Button type="primary" onClick={save} loading={saving}>保存提取记录</Button>
-        {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>操作人: {opSigner} ✓</Button> : <Button onClick={()=>setOpModal(true)}>操作人签名</Button>}
-        {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>复核人: {rvSigner} ✓</Button> : <Button onClick={()=>setRvModal(true)}>复核人签名</Button>}
+        <Button type="primary" onClick={save} loading={saving}>{t("nipt.extraction.saveRecord")}</Button>
+        {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorLabel")}: {opSigner} ✓</Button> : <Button onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorSign")}</Button>}
+        {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerLabel")}: {rvSigner} ✓</Button> : <Button onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerSign")}</Button>}
       </Space>
-      <NiptSignerModal open={opModal} role="operator" roleLabel="操作人" batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/extraction/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
-      <NiptSignerModal open={rvModal} role="reviewer" roleLabel="复核人" batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/extraction/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
+      <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/extraction/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
+      <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/extraction/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
     </div>
   );
 }

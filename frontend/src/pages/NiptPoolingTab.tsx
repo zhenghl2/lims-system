@@ -5,6 +5,7 @@ import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
 import { getSampleBadge, calcPoolingAmount } from "../utils/badge";
 import { getSignStatus } from "../utils/sign";
+import { useTranslation } from "../i18n/useTranslation";
 
 const { Text } = Typography;
 
@@ -39,6 +40,7 @@ interface SampleRow {
 // getSignStatus imported from ../utils/sign
 
 export default function NiptPoolingTab({ batch, onRefresh }: Props) {
+  const { t } = useTranslation();
   const pdata = useMemo(() => batch.pooling_data || {}, [batch.pooling_data]);
   const libraryPlate = useMemo(() => batch.library_data?.library_plate || [], [batch.library_data]);
 
@@ -203,7 +205,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
     const w = window.open("", "_blank", "width=1200,height=800");
     if (!w || !printRef.current) return;
     w.document.write(`
-      <html><head><title>文库定量及Pooling</title>
+      <html><head><title>{t("nipt.common.poolingStatus")}</title>
       <style>
         body { font-family: sans-serif; padding: 20px; }
         table { border-collapse: collapse; width: 100%; font-size: 12px; }
@@ -231,7 +233,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
   if (plateSamples.length === 0) {
     return (
       <Card size="small">
-        <Text type="secondary">请先在文库构建步骤中填写建库样本排布表格。</Text>
+        <Text type="secondary">{t("nipt.pooling.noDataHint")}</Text>
       </Card>
     );
   }
@@ -248,18 +250,18 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
           </Space>
         </div>
         <Space>
-          <Button icon={<PrinterOutlined />} onClick={print}>打印</Button>
-          <Button type="primary" onClick={save} loading={saving}>保存</Button>
+          <Button icon={<PrinterOutlined />} onClick={print}>{t("nipt.pooling.print")}</Button>
+          <Button type="primary" onClick={save} loading={saving}>{t("nipt.common.save")}</Button>
         </Space>
       </div>
 
       {/* Color legend */}
       <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12, fontSize: 12, color: "#666" }}>
-        <span>图例：</span>
-        <span style={{ background: "#e6f4ff", padding: "2px 8px", borderRadius: 3, border: "1px solid #91caff" }}>浅蓝 = Plus</span>
-        <span style={{ background: "#f6ffed", padding: "2px 8px", borderRadius: 3, border: "1px solid #b7eb8f" }}>浅绿 = Basic</span>
-        <span style={{ background: "#e8d5f5", padding: "2px 8px", borderRadius: 3, border: "1px solid #c9a2e0" }}>浅紫 = Basic All</span>
-        <span>👶👶 = Twin（双胎标记）</span>
+        <span>{t("nipt.pooling.legend")}</span>
+        <span style={{ background: "#e6f4ff", padding: "2px 8px", borderRadius: 3, border: "1px solid #91caff" }}>{t("nipt.extraction.legendPlus")}</span>
+        <span style={{ background: "#f6ffed", padding: "2px 8px", borderRadius: 3, border: "1px solid #b7eb8f" }}>{t("nipt.extraction.legendBasic")}</span>
+        <span style={{ background: "#e8d5f5", padding: "2px 8px", borderRadius: 3, border: "1px solid #c9a2e0" }}>{t("nipt.extraction.legendBasicAll")}</span>
+        <span>{t("nipt.extraction.legendTwin")}</span>
       </div>
 
       {/* Signatures */}
@@ -276,7 +278,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
 
       {/* Pooling base input */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, fontSize: 12 }}>
-        <span style={{ color: "#666" }}>Pooling 投入量 (ng):</span>
+        <span style={{ color: "#666" }}>{t("nipt.pooling.poolingAmount")}</span>
         <InputNumber
           size="small"
           min={1}
@@ -285,7 +287,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
           onChange={v => v !== null && setPoolingBase(v)}
           style={{ width: 80 }}
         />
-        <span style={{ color: "#999" }}>双胎 ×2，Plus ×2.5</span>
+        <span style={{ color: "#999" }}>{t("nipt.pooling.legendTwinPlus")}</span>
       </div>
 
       {/* Printable table */}
@@ -294,17 +296,17 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
           <thead>
             <tr>
               <th style={th} rowSpan={2}>编号</th>
-              <th style={th} rowSpan={2}>样本名称</th>
-              <th style={th} rowSpan={2}>index</th>
+              <th style={th} rowSpan={2}>{t("nipt.pooling.sampleName")}</th>
+              <th style={th} rowSpan={2}>{t("nipt.pooling.index")}</th>
               <th style={th} rowSpan={2}>浓度<br/>ng/μL</th>
               <th style={th} rowSpan={2}>洗脱体积<br/>μL</th>
               <th style={th} rowSpan={2}>产量<br/>ng</th>
               <th style={th} rowSpan={2}>pooling<br/>投入量 ng</th>
-              <th style={th} rowSpan={2}>pooling<br/>投入体积 μL</th>
-              <th style={th} colSpan={2}>pooling 汇总</th>
+              <th style={th} rowSpan={2}>pooling<br/>{t("nipt.pooling.poolingVolume")}</th>
+              <th style={th} colSpan={2}>{t("nipt.pooling.poolingSummary")}</th>
             </tr>
             <tr>
-              <th style={th}>总体积 μL</th>
+              <th style={th}>{t("nipt.pooling.totalVolume")}</th>
               <th style={th}>理论浓度 ng/μL</th>
             </tr>
           </thead>

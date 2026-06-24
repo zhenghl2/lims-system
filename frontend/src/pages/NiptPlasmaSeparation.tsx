@@ -13,6 +13,7 @@ import {
 import dayjs from "dayjs";
 import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
+import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
 
@@ -23,6 +24,7 @@ const QC_RESULT_MAP: Record<string, { color: string; label: string }> = {
 };
 
 export default function NiptPlasmaSeparation() {
+  const { t } = useTranslation();
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
@@ -135,7 +137,7 @@ export default function NiptPlasmaSeparation() {
   const handleDelete = async (id: string) => {
     try {
       await api.delete(`/plasma-separation/${id}/`);
-      message.success("Deleted");
+      message.success(t("nipt.common.deleted"));
       if (selectedBatch?.id === id) {
         setSelectedBatch(null);
         setBatchDetail(null);
@@ -259,7 +261,7 @@ export default function NiptPlasmaSeparation() {
     {
       title: "", key: "actions", width: 40,
       render: (_: any, r: any) => (
-        <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}>
+        <Popconfirm title={t("nipt.samples.delete")} onConfirm={() => handleDelete(r.id)}>
           <Button size="small" danger icon={<DeleteOutlined />} disabled={r.status === "COMPLETED"} />
         </Popconfirm>
       ),
@@ -318,7 +320,7 @@ export default function NiptPlasmaSeparation() {
         bodyStyle={{ padding: selectedBatch ? 16 : undefined }}
       >
         {!selectedBatch ? (
-          <Empty description="Select a batch" style={{ marginTop: 80 }} />
+          <Empty description={t("nipt.plasmaSeparation.selectBatch")} style={{ marginTop: 80 }} />
         ) : detailLoading ? (
           <Text type="secondary">Loading...</Text>
         ) : batchDetail ? (
@@ -334,7 +336,7 @@ export default function NiptPlasmaSeparation() {
               <Space>
                 <Button icon={<ReloadOutlined />} onClick={() => fetchDetail(selectedBatch.id)} />
                 <Popconfirm
-                  title="Complete this batch? Samples will advance to IN_PROCESS or be rejected."
+                  title={t("nipt.plasmaSeparation.completeConfirm")}
                   onConfirm={handleComplete}
                   disabled={!canComplete}
                 >
@@ -354,9 +356,9 @@ export default function NiptPlasmaSeparation() {
 
             {/* Equipment Type */}
             <div style={{ marginBottom: 12, padding: "8px 12px", background: "#fafafa", borderRadius: 6, display: "flex", alignItems: "center", gap: 8 }}>
-              <Text type="secondary">Equipment:</Text>
-              <Tag color="blue">High-Speed Centrifuge</Tag>
-              <Tag color="orange">Low-Speed Centrifuge</Tag>
+              <Text type="secondary">{t("nipt.plasmaSeparation.equipment")}</Text>
+              <Tag color="blue">{t("nipt.plasmaSeparation.highSpeedCentrifuge")}</Tag>
+              <Tag color="orange">{t("nipt.plasmaSeparation.lowSpeedCentrifuge")}</Tag>
             </div>
 
             {/* Photos */}
@@ -378,7 +380,7 @@ export default function NiptPlasmaSeparation() {
                   </Space>
                 </Image.PreviewGroup>
               ) : (
-                <Text type="secondary">No photos yet</Text>
+                <Text type="secondary">{t("nipt.plasmaSeparation.noPhotos")}</Text>
               )}
             </Card>
 
@@ -455,7 +457,7 @@ export default function NiptPlasmaSeparation() {
             </Card>
 
             {/* Signatures */}
-            <Card size="small" title="Signatures" style={{ marginBottom: 12 }}>
+            <Card size="small" title={t("nipt.plasmaSeparation.signatures")} style={{ marginBottom: 12 }}>
               <Space size="large">
                 <div>
                   <Text type="secondary">Operator: </Text>
@@ -506,7 +508,7 @@ export default function NiptPlasmaSeparation() {
 
       {/* ── Create Batch Modal ── */}
       <Modal
-        title="New Plasma Separation Batch"
+        title={t("nipt.plasmaSeparation.createTitle")}
         open={createOpen}
         onOk={handleCreate}
         onCancel={() => { setCreateOpen(false); setCreateSelectedIds([]); }}
@@ -530,7 +532,7 @@ export default function NiptPlasmaSeparation() {
             </Col>
           </Row>
           <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
-            <Text strong>Select Samples</Text>
+            <Text strong>{t("nipt.plasmaSeparation.selectSamples")}</Text>
             <Tag color="blue" style={{ fontSize: 13, padding: "2px 10px" }}>
               {availableSamples.length} RECEIVED
             </Tag>
@@ -548,7 +550,7 @@ export default function NiptPlasmaSeparation() {
               </Button>
             )}
             <Input.Search
-              placeholder="Search sample or patient..."
+              placeholder={t("nipt.plasmaSeparation.searchPlaceholder")}
               allowClear
               size="small"
               style={{ width: 220, marginLeft: "auto" }}

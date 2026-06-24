@@ -3,8 +3,9 @@ import {
   Table, Card, Typography, Tag, Button, Modal, Select, Input,
   Space, message, Descriptions, Dropdown
 } from "antd";
-import { ReloadOutlined, CheckCircleOutlined, SafetyCertificateOutlined, DownloadOutlined, FileWordOutlined } from "@ant-design/icons";
+import { ReloadOutlined, CheckCircleOutlined, SafetyCertificateOutlined, DownloadOutlined, FileWordOutlined, FilePdfOutlined } from "@ant-design/icons";
 import { reportsApi } from "../api";
+import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
 
@@ -26,6 +27,7 @@ const STATUS_LABEL: Record<string, string> = {
 };
 
 export default function NiptReports() {
+  const { t } = useTranslation();
   const [reports, setReports] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [reviewModal, setReviewModal] = useState<{ open: boolean; reportId: string }>({ open: false, reportId: "" });
@@ -70,7 +72,7 @@ export default function NiptReports() {
 
   const handleReview = async () => {
     if (!reviewer) { message.warning("请选择审核人员"); return; }
-    if (!password) { message.warning("请输入密码"); return; }
+    if (!password) { message.warning(t("nipt.signer.passwordRequired")); return; }
     setSubmitting(true);
     try {
       await reportsApi.review(reviewModal.reportId, {
@@ -89,7 +91,7 @@ export default function NiptReports() {
 
   const handleVerify = async () => {
     if (!verifier) { message.warning("请选择验证人员"); return; }
-    if (!password) { message.warning("请输入密码"); return; }
+    if (!password) { message.warning(t("nipt.signer.passwordRequired")); return; }
     setSubmitting(true);
     try {
       await reportsApi.verify(verifyModal.reportId, {
@@ -139,9 +141,9 @@ export default function NiptReports() {
     { title: "Report Code", dataIndex: "report_code", width: 100, ellipsis: true, render: (v: any) => v || "—" },
     { title: "Send Report ID", dataIndex: "send_report_id", width: 90, ellipsis: true, render: (v: any) => v || "—" },
     { title: "Age", dataIndex: "age", width: 50, align: "center" as const, render: (v: any) => v != null ? String(v) : "—" },
-    { title: "Twin", dataIndex: "multiple_gestation", width: 50, align: "center" as const, render: (v: any) => v ? <Tag color="orange">Twin</Tag> : <Tag color="green">Single</Tag> },
-    { title: "IVF", dataIndex: "ivf_status", width: 50, align: "center" as const, render: (v: any) => v ? <Tag color="purple">IVF</Tag> : "No" },
-    { title: "Preg. History", dataIndex: "pregnancy_history", width: 100, ellipsis: true, render: (_v: any, r: any) => r.pregnancy_history || r.clinical_diagnosis || "否" },
+    { title: "Twin", dataIndex: "multiple_gestation", width: 50, align: "center" as const, render: (v: any) => v ? "👶👶" : "—" },
+    { title: "IVF", dataIndex: "ivf_status", width: 50, align: "center" as const, render: (v: any) => v ? <Tag color="orange" style={{ fontSize: 10 }}>{t("nipt.samples.ivf")}</Tag> : "—" },
+    { title: "Preg. History", dataIndex: "pregnancy_history", width: 100, ellipsis: true, render: (v: any) => v || "—" },
     { title: "Diagnosis", dataIndex: "clinical_diagnosis", width: 120, ellipsis: true, render: (v: any) => v || "—" },
     makeBioCol("All Chrom", "all_chrom", 80),
     makeBioCol("Plus Result", "plus_result", 90),
@@ -169,6 +171,7 @@ export default function NiptReports() {
         if (r.pdf_file_path) {
           const items = [
             { key: 'docx', icon: <FileWordOutlined />, label: 'Word' },
+            { key: 'pdf', icon: <FilePdfOutlined />, label: 'PDF' },
           ];
           return (
             <Dropdown menu={{
@@ -236,7 +239,7 @@ export default function NiptReports() {
             报告验证
           </Button>
         ) : (
-          <Text type="secondary" style={{ fontSize: 11 }}>待复核</Text>
+          <Text type="secondary" style={{ fontSize: 11 }}>{t("nipt.reports.pendingReview")}</Text>
         );
       },
     },
@@ -249,27 +252,27 @@ export default function NiptReports() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-        <Title level={4} style={{ margin: 0 }}>NIPT Reports</Title>
+        <Title level={4} style={{ margin: 0 }}>{t("nipt.reports.title")}</Title>
         <Space>
           <Text type="secondary">
             {reports.length} reports | 已复核: {reports.filter(r => r.status === "REVIEWED" || r.status === "RELEASED").length}
             {" "}| 已发布: {reports.filter(r => r.status === "RELEASED").length}
           </Text>
-          <Button icon={<ReloadOutlined />} onClick={fetchReports} loading={loading}>Refresh</Button>
+          <Button icon={<ReloadOutlined />} onClick={fetchReports} loading={loading}>{t("nipt.reports.refresh")}</Button>
         </Space>
       </div>
 
       {/* Workflow guide */}
       <Card size="small" style={{ marginBottom: 12, background: "#fafafa" }}>
         <Descriptions size="small" column={3}>
-          <Descriptions.Item label="① 结果复核 (Reviewed By)">
-            <Tag color="blue">审核生信分析结果 → 报告 DRAFT</Tag>
+          <Descriptions.Item label={t("nipt.reports.workflowGuide")}>
+            <Tag color="blue">{t("nipt.reports.reviewGuide1")}</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="② 报告验证 (Verified By)">
-            <Tag color="purple">检查报告内容 → 报告 RELEASED</Tag>
+          <Descriptions.Item label={t("nipt.reports.verifyGuide")}>
+            <Tag color="purple">{t("nipt.reports.reviewGuide2")}</Tag>
           </Descriptions.Item>
-          <Descriptions.Item label="审核人员">
-            <Text code>叶秀清 / 张云红 / 吴梦婷 / 陈宇佳</Text>
+          <Descriptions.Item label={t("nipt.reports.reviewer")}>
+            <Text code>{t("nipt.reports.reviewerList")}</Text>
           </Descriptions.Item>
         </Descriptions>
       </Card>
@@ -294,29 +297,29 @@ export default function NiptReports() {
 
       {/* Review Modal */}
       <Modal
-        title="结果复核 — Reviewed By"
+        title={t("nipt.reports.reviewTitle")}
         open={reviewModal.open}
         onOk={handleReview}
         onCancel={() => { setReviewModal({ open: false, reportId: "" }); setReviewer(""); setPassword(""); }}
         confirmLoading={submitting}
-        okText="确认复核"
+        okText={t("nipt.reports.confirmReview")}
       >
         <Space direction="vertical" style={{ width: "100%" }}>
           <div>
-            <Text strong>审核人员</Text>
+            <Text strong>{t("nipt.reports.reviewer")}</Text>
             <Select
               style={{ width: "100%", marginTop: 4 }}
-              placeholder="选择审核人员"
+              placeholder={t("nipt.reports.selectReviewer")}
               options={REVIEWERS}
               value={reviewer || undefined}
               onChange={setReviewer}
             />
           </div>
           <div>
-            <Text strong>密码</Text>
+            <Text strong>{t("nipt.reports.password")}</Text>
             <Input.Password
               style={{ marginTop: 4 }}
-              placeholder="输入密码确认"
+              placeholder={t("nipt.reports.enterPassword")}
               value={password}
               onChange={e => setPassword(e.target.value)}
               onPressEnter={handleReview}
@@ -327,29 +330,29 @@ export default function NiptReports() {
 
       {/* Verify Modal */}
       <Modal
-        title="报告验证 — Verified By"
+        title={t("nipt.reports.verifyTitle")}
         open={verifyModal.open}
         onOk={handleVerify}
         onCancel={() => { setVerifyModal({ open: false, reportId: "" }); setVerifier(""); setPassword(""); }}
         confirmLoading={submitting}
-        okText="确认验证并发布"
+        okText={t("nipt.reports.confirmVerify")}
       >
         <Space direction="vertical" style={{ width: "100%" }}>
           <div>
-            <Text strong>验证人员</Text>
+            <Text strong>{t("nipt.reports.verifier")}</Text>
             <Select
               style={{ width: "100%", marginTop: 4 }}
-              placeholder="选择验证人员"
+              placeholder={t("nipt.reports.selectVerifier")}
               options={REVIEWERS}
               value={verifier || undefined}
               onChange={setVerifier}
             />
           </div>
           <div>
-            <Text strong>密码</Text>
+            <Text strong>{t("nipt.reports.password")}</Text>
             <Input.Password
               style={{ marginTop: 4 }}
-              placeholder="输入密码确认"
+              placeholder={t("nipt.reports.enterPassword")}
               value={password}
               onChange={e => setPassword(e.target.value)}
               onPressEnter={handleVerify}

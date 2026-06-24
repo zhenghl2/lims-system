@@ -4,6 +4,7 @@ import { PlusOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icon
 import dayjs from "dayjs";
 import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
+import { useTranslation } from "../i18n/useTranslation";
 
 const { Text } = Typography;
 
@@ -99,7 +100,8 @@ const PLATFORM_OPTIONS = [{ label:"泰国", options:[{ value:"ILLUMINA_500",labe
 const EQUIPMENT_OPTIONS = [{ value:"ILLUMINA_500",label:"illumina500" },{ value:"ILLUMINA_550DX",label:"illumina550dx" },{ value:"SALUS_PRO",label:"Salus Pro" },{ value:"SIKUN_2000",label:"Sikun2000" },{ value:"MGI_G99",label:"MGI G99" },{ value:"PCR_ABI_9700",label:"PCR仪 - ABI 9700" },{ value:"PCR_ABI_Veriti",label:"PCR仪 - ABI Veriti" },{ value:"PCR_BioRad_T100",label:"PCR仪 - Bio-Rad T100" }];
 const CHIP_OPTIONS_BY_PLATFORM: Record<string,{value:string;label:string}[]> = { ILLUMINA_500:[{value:"S1",label:"S1 Flow Cell"},{value:"S2",label:"S2 Flow Cell"},{value:"S4",label:"S4 Flow Cell"}], ILLUMINA_550DX:[{value:"S1",label:"S1 Flow Cell"},{value:"S2",label:"S2 Flow Cell"}], SALUS_PRO:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}], SIKUN_2000:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}], MGI_G99:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}] };
 const READ_TYPE_OPTIONS = [{ value:"SE75",label:"SE75" },{ value:"SE100",label:"SE100" },{ value:"PE150",label:"PE150" }];
-const DEFAULT_REAGENT_TYPES = ["测序试剂","芯片/Flow Cell","清洗液"];
+const DEFAULT_REAGENT_TYPES = [{ key: "SEQUENCING", label: "测序试剂" }, { key: "CHIP_FLOWCELL", label: "芯片/Flow Cell" }, { key: "WASH_BUFFER", label: "清洗液" }];
+const REAGENT_OPTIONS = [{ key: "SEQUENCING", label: "测序试剂" }, { key: "CHIP_FLOWCELL", label: "芯片/Flow Cell" }, { key: "WASH_BUFFER", label: "清洗液" }, { key: "NAOH_DENATURE", label: "NaOH变性液" }, { key: "OTHER", label: "其他" }];
 const REAGENT_KITS_BY_PLATFORM: Record<string,Record<string,{value:string;label:string}[]>> = { ILLUMINA_500:{"测序试剂":[{value:"NextSeq500_High_v2.5",label:"NextSeq 500 High Output v2.5"}],"芯片/Flow Cell":[{value:"S1_FlowCell",label:"S1 Flow Cell"},{value:"S2_FlowCell",label:"S2 Flow Cell"}],"清洗液":[{value:"Wash_Buffer_A",label:"Wash Buffer A"}]},ILLUMINA_550DX:{"测序试剂":[{value:"NextSeq550_High_v2.5",label:"NextSeq 550 High Output v2.5"}],"芯片/Flow Cell":[{value:"S1_FlowCell",label:"S1 Flow Cell"},{value:"S2_FlowCell",label:"S2 Flow Cell"}],"清洗液":[{value:"Wash_Buffer_A",label:"Wash Buffer A"}]},SALUS_PRO:{"测序试剂":[{value:"Salus_Seq_Kit_v1",label:"Salus Pro Sequencing Kit v1"}],"芯片/Flow Cell":[{value:"FCL_Chip",label:"FCL Chip"},{value:"FCS_Chip",label:"FCS Chip"}],"清洗液":[{value:"Salus_Wash",label:"Salus Wash Buffer"}]},SIKUN_2000:{"测序试剂":[{value:"Sikun_Seq_Kit",label:"Sikun2000 Sequencing Kit"}],"芯片/Flow Cell":[{value:"FCL_Chip",label:"FCL Chip"},{value:"FCS_Chip",label:"FCS Chip"}],"清洗液":[{value:"Sikun_Wash",label:"Sikun Wash Buffer"}]},MGI_G99:{"测序试剂":[{value:"MGI_G99_Standard",label:"MGI G99 Standard Kit"}],"芯片/Flow Cell":[{value:"FCL_Chip",label:"FCL Chip"},{value:"FCS_Chip",label:"FCS Chip"}],"清洗液":[{value:"MGI_Wash",label:"MGI Wash Buffer"}]} };
 const STEPS = [{ key:"clean_equip",label:"设备准备（清洗）" },{ key:"reagent_prep",label:"试剂准备（解冻、混匀、离心）" },{ key:"sample_prep",label:"样本准备" },{ key:"on_machine",label:"上机测序" },{ key:"cleanup",label:"实验结束（清洁台面、紫外 30min）" }];
 
@@ -115,6 +117,13 @@ function getSignStatus(edata:any, role:"operator"|"reviewer") {
 }
 
 export default function NiptSequencingTab({batch,onRefresh}:Props) {
+  const { t } = useTranslation();
+  // Reagent type: English key ↔ Chinese label mapping (backward compat with saved data)
+  const reagentKeyToChinese: Record<string, string> = { SEQUENCING: "测序试剂", CHIP_FLOWCELL: "芯片/Flow Cell", WASH_BUFFER: "清洗液", NAOH_DENATURE: "NaOH变性液", OTHER: "其他" };
+  const chineseToReagentKey: Record<string, string> = {};
+  Object.entries(reagentKeyToChinese).forEach(([k, v]) => { chineseToReagentKey[v] = k; });
+  const translateReagentType = (v: string) => chineseToReagentKey[v] || v;
+  const reagentOptionsTL = REAGENT_OPTIONS.map(o => ({ value: o.key, label: t(`nipt.sequencing.${o.key === "SEQUENCING" ? "seqReagent" : o.key === "CHIP_FLOWCELL" ? "chipFlowCell" : o.key === "WASH_BUFFER" ? "washBuffer" : o.key === "NAOH_DENATURE" ? "naohDenature" : "otherReagent"}`) }));
   const [form]=Form.useForm();
   const edata=useMemo(()=>batch.sequencing_data||{},[batch.sequencing_data]);
   const [platform,setPlatform]=useState(edata.platform||"");
@@ -128,8 +137,8 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
   const {signed:rvSigned,name:rvSigner}=getSignStatus(edata,"reviewer");
 
   const [reagents,setReagents]=useState<ReagentRow[]>(()=>{
-    if(edata.reagents&&Array.isArray(edata.reagents)) return edata.reagents.map((r:any,i:number)=>({id:i+1,type:r.type||"",kit:r.kit||"",lot:r.lot||"",expiry:r.expiry||""}));
-    return DEFAULT_REAGENT_TYPES.map((t,i)=>({id:i+1,type:t,kit:"",lot:"",expiry:""}));
+    if(edata.reagents&&Array.isArray(edata.reagents)) return edata.reagents.map((r:any,i:number)=>({id:i+1,type:translateReagentType(r.type)||"",kit:r.kit||"",lot:r.lot||"",expiry:r.expiry||""}));
+    return DEFAULT_REAGENT_TYPES.map((t,i)=>({id:i+1,type:t.key,kit:"",lot:"",expiry:""}));
   });
 
   const chipOptions=useMemo(()=>CHIP_OPTIONS_BY_PLATFORM[platform]||[],[platform]);
@@ -267,55 +276,55 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
     <div>
       {/* Platform */}
       <Row gutter={16} style={{marginBottom:16}}>
-        <Col span={8}><Form.Item label="测序平台" required><Select options={PLATFORM_OPTIONS} value={platform||undefined} onChange={setPlatform} placeholder="选择测序平台" showSearch optionFilterProp="label"/></Form.Item></Col>
+        <Col span={8}><Form.Item label={t("nipt.sequencing.platform")} required><Select options={PLATFORM_OPTIONS} value={platform||undefined} onChange={setPlatform} placeholder={t("nipt.sequencing.selectPlatform")} showSearch optionFilterProp="label"/></Form.Item></Col>
         <Col span={8} style={{display:"flex",alignItems:"center",paddingTop:6}}><span style={{fontSize:12,color:"#888"}}>{platform?`${PLATFORM_OPTIONS.flatMap(g=>g.options).find(o=>o.value===platform)?.label||platform}`:""}</span></Col>
       </Row>
 
       <Form form={form} layout="vertical">
         {/* Basic info */}
-        <Card size="small" title="基本信息" style={{marginBottom:12}}>
+        <Card size="small" title={t("nipt.sequencing.basicInfo")} style={{marginBottom:12}}>
           <Row gutter={[16,8]}>
-            <Col span={6}><Form.Item name="seq_date" label="实验日期" rules={[{required:true}]} style={{marginBottom:0}}><DatePicker style={{width:"100%"}}/></Form.Item></Col>
-            <Col span={6}><Form.Item name="seq_time" label="实验时间" rules={[{required:true}]} style={{marginBottom:0}}><Input placeholder="例：09:00"/></Form.Item></Col>
-            <Col span={6}><Form.Item name="equipment" label="设备类型" rules={[{required:true}]} style={{marginBottom:0}}><Select mode="multiple" options={EQUIPMENT_OPTIONS} placeholder="测序仪 / PCR仪" maxTagCount={2}/></Form.Item></Col>
-            <Col span={6}><Form.Item name="chip" label="芯片/Flow Cell" rules={[{required:true}]} style={{marginBottom:0}}><Select options={chipOptions} placeholder="选择芯片" disabled={!platform}/></Form.Item></Col>
-            <Col span={6}><Form.Item name="conc_pM" label="上样浓度 (pM)" rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} step={0.1} style={{width:"100%"}} placeholder="e.g. 12"/></Form.Item></Col>
-            <Col span={6}><Form.Item name="read_type" label="Reads 类型" rules={[{required:true}]} style={{marginBottom:0}}><Select options={READ_TYPE_OPTIONS} placeholder="选择"/></Form.Item></Col>
-            <Col span={6}><Form.Item name="target_reads" label="目标数据量 (M reads)" rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} style={{width:"100%"}} placeholder="e.g. 25"/></Form.Item></Col>
-            <Col span={6}><Form.Item name="temperature" label="环境温度 (℃)" style={{marginBottom:0}}><InputNumber min={0} max={50} step={0.1} style={{width:"100%"}}/></Form.Item></Col>
-            <Col span={6}><Form.Item name="humidity" label="环境湿度 (%)" style={{marginBottom:0}}><InputNumber min={0} max={100} style={{width:"100%"}}/></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_date" label={t("nipt.extraction.experimentDate")} rules={[{required:true}]} style={{marginBottom:0}}><DatePicker style={{width:"100%"}}/></Form.Item></Col>
+            <Col span={6}><Form.Item name="seq_time" label={t("nipt.extraction.experimentTime")} rules={[{required:true}]} style={{marginBottom:0}}><Input placeholder="例：09:00"/></Form.Item></Col>
+            <Col span={6}><Form.Item name="equipment" label={t("nipt.sequencing.equipment")} rules={[{required:true}]} style={{marginBottom:0}}><Select mode="multiple" options={EQUIPMENT_OPTIONS} placeholder={t("nipt.sequencing.equipmentPlaceholder")} maxTagCount={2}/></Form.Item></Col>
+            <Col span={6}><Form.Item name="chip" label={t("nipt.sequencing.chipType")} rules={[{required:true}]} style={{marginBottom:0}}><Select options={chipOptions} placeholder={t("nipt.sequencing.selectChip")} disabled={!platform}/></Form.Item></Col>
+            <Col span={6}><Form.Item name="conc_pM" label={t("nipt.sequencing.concentration")} rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} step={0.1} style={{width:"100%"}} placeholder="e.g. 12"/></Form.Item></Col>
+            <Col span={6}><Form.Item name="read_type" label={t("nipt.sequencing.readLength")} rules={[{required:true}]} style={{marginBottom:0}}><Select options={READ_TYPE_OPTIONS} placeholder="选择"/></Form.Item></Col>
+            <Col span={6}><Form.Item name="target_reads" label={t("nipt.sequencing.targetReads")} rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} style={{width:"100%"}} placeholder="e.g. 25"/></Form.Item></Col>
+            <Col span={6}><Form.Item name="temperature" label={t("nipt.extraction.temperature")} style={{marginBottom:0}}><InputNumber min={0} max={50} step={0.1} style={{width:"100%"}}/></Form.Item></Col>
+            <Col span={6}><Form.Item name="humidity" label={t("nipt.extraction.humidity")} style={{marginBottom:0}}><InputNumber min={0} max={100} style={{width:"100%"}}/></Form.Item></Col>
           </Row>
         </Card>
       </Form>
 
       {/* ── Sample Index Table ── */}
       {indexRows.length > 0 && (
-        <Card size="small" title={`样本 Index 信息 (${indexRows.length} samples)`} style={{marginBottom:12}}
-          extra={<Button size="small" icon={<DownloadOutlined />} onClick={handleDownloadCsv}>下载 CSV</Button>}>
+        <Card size="small" title={`${t("nipt.sequencing.indexTable")} (${indexRows.length} samples)`} style={{marginBottom:12}}
+          extra={<Button size="small" icon={<DownloadOutlined />} onClick={handleDownloadCsv}>{t("nipt.sequencing.downloadCsv")}</Button>}>
           <Table rowKey="key" size="small" pagination={false} dataSource={indexRows} columns={indexColumns}
             scroll={{x:800}}
-            locale={{emptyText:"暂无样本数据 — 请先在文库定量及Pooling步骤中填写index"}}/>
+            locale={{emptyText:t("nipt.sequencing.noIndexData")}}/>
           <div style={{marginTop:8,fontSize:11,color:"#999"}}>
-            Index1_i7 / Index2_i5 从 N34101-N34116 接头index信息表自动匹配
+            {t("nipt.sequencing.indexHint")}
           </div>
         </Card>
       )}
 
       {/* Reagents */}
-      <Card size="small" title="试剂" extra={<Button size="small" icon={<PlusOutlined/>} onClick={addReagent}>添加试剂</Button>} style={{marginBottom:12}}>
+      <Card size="small" title={t("nipt.sequencing.reagents")} extra={<Button size="small" icon={<PlusOutlined/>} onClick={addReagent}>{t("nipt.sequencing.addReagent")}</Button>} style={{marginBottom:12}}>
         {reagents.length===0?(
-          <div style={{textAlign:"center",padding:16,color:"#999",fontSize:12}}>暂无试剂，点击「添加试剂」添加</div>
+          <div style={{textAlign:"center",padding:16,color:"#999",fontSize:12}}>{t("nipt.sequencing.noReagents")}</div>
         ):(
           <div style={{overflowX:"auto"}}>
             <table style={{borderCollapse:"collapse",width:"100%",fontSize:12}}>
-              <thead><tr><th style={thStyle}>试剂名称</th><th style={thStyle}>试剂盒</th><th style={thStyle}>批次号</th><th style={thStyle}>有效期</th><th style={{...thStyle,width:40}}></th></tr></thead>
+              <thead><tr><th style={thStyle}>{t("nipt.sequencing.reagentName")}</th><th style={thStyle}>{t("nipt.sequencing.reagentKit")}</th><th style={thStyle}>{t("nipt.sequencing.lotNumber")}</th><th style={thStyle}>{t("nipt.extraction.expiry")}</th><th style={{...thStyle,width:40}}></th></tr></thead>
               <tbody>
-                {reagents.map(r=>{const kits=reagentKits[r.type]||[];return(
+                {reagents.map(r=>{const kits=reagentKits[reagentKeyToChinese[r.type]||r.type]||[];return(
                   <tr key={r.id}>
-                    <td style={tdStyle}><Select size="small" value={r.type||undefined} onChange={v=>{updateReagent(r.id,"type",v);updateReagent(r.id,"kit","");}} options={["测序试剂","芯片/Flow Cell","清洗液","NaOH变性液","其他"].map(t=>({value:t,label:t}))} placeholder="类型" style={{width:"100%"}} bordered={false}/></td>
-                    <td style={tdStyle}><Select size="small" value={r.kit||undefined} onChange={v=>updateReagent(r.id,"kit",v)} options={kits} placeholder="选择试剂盒" style={{width:"100%",minWidth:120}} bordered={false} showSearch optionFilterProp="label" popupMatchSelectWidth={false}/></td>
-                    <td style={tdStyle}><Input size="small" value={r.lot} onChange={e=>updateReagent(r.id,"lot",e.target.value)} placeholder="批次号" bordered={false} style={{textAlign:"center"}}/></td>
-                    <td style={tdStyle}><DatePicker size="small" picker="month" value={r.expiry?dayjs(r.expiry):null} onChange={d=>updateReagent(r.id,"expiry",d?.format("YYYY-MM")||"")} placeholder="YYYY-MM" style={{width:"100%"}} bordered={false} format="YYYY-MM"/></td>
+                    <td style={tdStyle}><Select size="small" value={r.type||undefined} onChange={v=>{updateReagent(r.id,"type",v);updateReagent(r.id,"kit","");}} options={reagentOptionsTL} placeholder={t("nipt.sequencing.reagentType")} style={{"width":"100%"}} bordered={false}/></td>
+                    <td style={tdStyle}><Select size="small" value={r.kit||undefined} onChange={v=>updateReagent(r.id,"kit",v)} options={kits} placeholder={t("nipt.extraction.kitPlaceholder")} style={{"width":"100%",minWidth:120}} bordered={false} showSearch optionFilterProp="label" popupMatchSelectWidth={false}/></td>
+                    <td style={tdStyle}><Input size="small" value={r.lot} onChange={e=>updateReagent(r.id,"lot",e.target.value)} placeholder={t("nipt.extraction.lotPlaceholder")} bordered={false} style={{"textAlign":"center"}}/></td>
+                    <td style={tdStyle}><DatePicker size="small" picker="month" value={r.expiry?dayjs(r.expiry):null} onChange={d=>updateReagent(r.id,"expiry",d?.format("YYYY-MM")||"")} placeholder={t("nipt.extraction.expiryPlaceholder")} style={{"width":"100%"}} bordered={false} format="YYYY-MM"/></td>
                     <td style={tdStyle}><Button type="link" danger size="small" icon={<DeleteOutlined/>} onClick={()=>removeReagent(r.id)}/></td>
                   </tr>
                 );})}
@@ -326,23 +335,23 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
       </Card>
 
       {/* Step Confirmations */}
-      <Card title="步骤确认" size="small" style={{marginBottom:16}}>
-        <Space wrap>{STEPS.map(step=>(<Checkbox key={step.key} checked={!!steps[step.key]} onChange={()=>toggleStep(step.key)}>{step.label}</Checkbox>))}</Space>
+      <Card title={t("nipt.extraction.stepConfirm")} size="small" style={{marginBottom:16}}>
+        <Space wrap>{STEPS.map(step=>{const slm:Record<string,string>={clean_equip:t("nipt.sequencing.stepCleanEquip"),reagent_prep:t("nipt.sequencing.stepReagentPrep"),sample_prep:t("nipt.sequencing.stepSamplePrep"),on_machine:t("nipt.sequencing.stepOnMachine"),cleanup:t("nipt.sequencing.stepCleanup")};return(<Checkbox key={step.key} checked={!!steps[step.key]} onChange={()=>toggleStep(step.key)}>{slm[step.key]||step.label}</Checkbox>);})}</Space>
       </Card>
 
       {/* Signature */}
-      <Card title="电子签名" size="small" style={{marginBottom:16}}>
+      <Card title={t("nipt.library.signature")} size="small" style={{marginBottom:16}}>
         <Space>
-          {opSigned?<Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>操作人: {opSigner} ✓</Button>:<Button onClick={()=>setOpModal(true)}>操作人签名</Button>}
-          {rvSigned?<Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>复核人: {rvSigner} ✓</Button>:<Button onClick={()=>setRvModal(true)}>复核人签名</Button>}
+          {opSigned?<Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorLabel")}: {opSigner} ✓</Button>:<Button onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorSign")}</Button>}
+          {rvSigned?<Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerLabel")}: {rvSigner} ✓</Button>:<Button onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerSign")}</Button>}
         </Space>
       </Card>
 
       {/* Save */}
-      <div style={{textAlign:"right",marginBottom:16}}><Button type="primary" onClick={save} loading={saving}>保存上机测序记录</Button></div>
+      <div style={{textAlign:"right",marginBottom:16}}><Button type="primary" onClick={save} loading={saving}>{t("nipt.sequencing.saveRecord")}</Button></div>
 
-      <NiptSignerModal open={opModal} role="operator" roleLabel="操作人" batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/sequencing/sign/`} onDone={()=>{setOpModal(false);onRefresh();}} onCancel={()=>setOpModal(false)}/>
-      <NiptSignerModal open={rvModal} role="reviewer" roleLabel="复核人" batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/sequencing/sign/`} onDone={()=>{setRvModal(false);onRefresh();}} onCancel={()=>setRvModal(false)}/>
+      <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/sequencing/sign/`} onDone={()=>{setOpModal(false);onRefresh();}} onCancel={()=>setOpModal(false)}/>
+      <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/sequencing/sign/`} onDone={()=>{setRvModal(false);onRefresh();}} onCancel={()=>setRvModal(false)}/>
     </div>
   );
 }

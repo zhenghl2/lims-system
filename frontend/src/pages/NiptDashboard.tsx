@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { Row, Col, Card, Statistic, Typography, Table, Tag, Space, Empty } from "antd";
 import { ExperimentOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, FileDoneOutlined, FilterOutlined, BuildOutlined, MergeCellsOutlined, CloudUploadOutlined, BarChartOutlined } from "@ant-design/icons";
 import { samplesApi, runsApi } from "../api";
+import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
 
 export default function NiptDashboard() {
+  const { t } = useTranslation();
   const [stats, setStats] = useState<any>({});
   const [runStats, setRunStats] = useState<any[]>([]);
 
@@ -40,18 +42,18 @@ export default function NiptDashboard() {
   const s = stats as Record<string, number>;
 
   const statCards = [
-    { title: "Total", value: s.total || 0, icon: <ExperimentOutlined />, color: "#1677ff" },
-    { title: "Registered", value: s.registered || 0, icon: <ExperimentOutlined />, color: "#8c8c8c" },
-    { title: "Received", value: s.received || 0, icon: <InboxOutlined />, color: "#faad14" },
-    { title: "血浆已分离", value: s.plasma_separated || 0, icon: <FilterOutlined />, color: "#a0d911" },
-    { title: "核酸提取", value: s.extraction || 0, icon: <FilterOutlined />, color: "#13c2c2" },
-    { title: "文库构建", value: s.library_prep || 0, icon: <BuildOutlined />, color: "#1677ff" },
-    { title: "Pooling", value: s.pooling || 0, icon: <MergeCellsOutlined />, color: "#2f54eb" },
-    { title: "上机测序", value: s.sequencing || 0, icon: <CloudUploadOutlined />, color: "#722ed1" },
-    { title: "生信分析", value: s.bioinformatics || 0, icon: <BarChartOutlined />, color: "#eb2f96" },
-    { title: "Completed", value: s.completed || 0, icon: <CheckCircleOutlined />, color: "#52c41a" },
-    { title: "Reported", value: s.reported || 0, icon: <FileDoneOutlined />, color: "#13c2c2" },
-    { title: "Rejected", value: s.rejected || 0, icon: <CloseCircleOutlined />, color: "#ff4d4f" },
+    { title: t("nipt.dashboard.total"), value: s.total || 0, icon: <ExperimentOutlined />, color: "#1677ff" },
+    { title: t("nipt.dashboard.registered"), value: s.registered || 0, icon: <ExperimentOutlined />, color: "#8c8c8c" },
+    { title: t("nipt.dashboard.received"), value: s.received || 0, icon: <InboxOutlined />, color: "#faad14" },
+    { title: t("nipt.dashboard.plasmaSeparated"), value: s.plasma_separated || 0, icon: <FilterOutlined />, color: "#a0d911" },
+    { title: t("nipt.dashboard.extraction"), value: s.extraction || 0, icon: <FilterOutlined />, color: "#13c2c2" },
+    { title: t("nipt.dashboard.libraryPrep"), value: s.library_prep || 0, icon: <BuildOutlined />, color: "#1677ff" },
+    { title: t("nipt.dashboard.pooling"), value: s.pooling || 0, icon: <MergeCellsOutlined />, color: "#2f54eb" },
+    { title: t("nipt.dashboard.sequencing"), value: s.sequencing || 0, icon: <CloudUploadOutlined />, color: "#722ed1" },
+    { title: t("nipt.dashboard.bioinformatics"), value: s.bioinformatics || 0, icon: <BarChartOutlined />, color: "#eb2f96" },
+    { title: t("nipt.dashboard.completed"), value: s.completed || 0, icon: <CheckCircleOutlined />, color: "#52c41a" },
+    { title: t("nipt.dashboard.reported"), value: s.reported || 0, icon: <FileDoneOutlined />, color: "#13c2c2" },
+    { title: t("nipt.dashboard.rejected"), value: s.rejected || 0, icon: <CloseCircleOutlined />, color: "#ff4d4f" },
   ];
 
   const statusColors: Record<string, string> = {
@@ -61,7 +63,7 @@ export default function NiptDashboard() {
 
   return (
     <div>
-      <Title level={4} style={{ marginBottom: 16 }}>NIPT Dashboard</Title>
+      <Title level={4} style={{ marginBottom: 16 }}>{t("nipt.dashboard.title")}</Title>
 
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
         {statCards.map((c, i) => (
@@ -75,28 +77,28 @@ export default function NiptDashboard() {
 
       <Row gutter={[16, 16]}>
         <Col span={12}>
-          <Card title="Recent Batches" size="small">
+          <Card title={t("nipt.dashboard.recentBatches")} size="small">
             {runStats.length > 0 ? (
               <Table rowKey="id" size="small" dataSource={runStats} pagination={false}
                 columns={[
-                  { title: "Run #", dataIndex: "run_number", width: 150, render: (v: string) => <Text code>{v}</Text> },
-                  { title: "Samples", dataIndex: "sample_count", width: 70, align: "center" as const },
-                  { title: "Status", dataIndex: "status", width: 100, render: (v: string) => <Tag color={statusColors[v]}>{v}</Tag> },
-                  { title: "Created", dataIndex: "created_at", width: 100, render: (v: string) => new Date(v).toLocaleDateString() },
+                  { title: t("nipt.workflow.runNumber"), dataIndex: "run_number", width: 150, render: (v: string) => <Text code>{v}</Text> },
+                  { title: t("nipt.workflow.samples"), dataIndex: "sample_count", width: 70, align: "center" as const },
+                  { title: t("nipt.workflow.status"), dataIndex: "status", width: 100, render: (v: string) => <Tag color={statusColors[v]}>{v}</Tag> },
+                  { title: t("nipt.workflow.created"), dataIndex: "created_at", width: 100, render: (v: string) => new Date(v).toLocaleDateString() },
                 ]}
               />
-            ) : <Empty description="No batches yet" image={Empty.PRESENTED_IMAGE_SIMPLE} />}
+            ) : <Empty description={t("nipt.dashboard.noBatchesYet")} image={Empty.PRESENTED_IMAGE_SIMPLE} />}
           </Card>
         </Col>
         <Col span={12}>
-          <Card title="Quick Guide" size="small">
+          <Card title={t("nipt.dashboard.quickGuide")} size="small">
             <Space direction="vertical" size="small">
-              <Text>1. Register samples in <Text strong>Sample Registration</Text>（样本登记）</Text>
-              <Text>2. Receive samples in <Text strong>Receiving</Text>（样本签收）</Text>
-              <Text>3. Create batch and start workflow in <Text strong>Lab Workflow</Text>（实验流程）</Text>
-              <Text>4. NIPT 5-step workflow:</Text>
-              <Text style={{ paddingLeft: 16 }}>① 核酸提取 → ② 文库构建 → ③ 文库定量及Pooling → ④ 上机测序 → ⑤ 生物信息分析</Text>
-              <Text>5. View reports in <Text strong>Reports</Text>（报告）</Text>
+              <Text>{t("nipt.dashboard.guideStep1")}</Text>
+              <Text>{t("nipt.dashboard.guideStep2")}</Text>
+              <Text>{t("nipt.dashboard.guideStep3")}</Text>
+              <Text>{t("nipt.dashboard.guideStep4")}</Text>
+              <Text style={{ paddingLeft: 16 }}>{t("nipt.dashboard.guideStep5")}</Text>
+              <Text>{t("nipt.dashboard.guideStep6")}</Text>
             </Space>
           </Card>
         </Col>
