@@ -187,7 +187,7 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
     if(batch.id&&!edata.platform&&!(edata.equipment||[]).length&&!defaultsFetchedRef.current){
       defaultsFetchedRef.current=true;
       api.get("/runs/last_batch_defaults/?panel=NIPT").then((res:any)=>{
-        const seq=res?.sequencing;
+        const seq=res?.data?.sequencing;
         if(seq){
           if(seq.platform)setPlatform(seq.platform);
           form.setFieldsValue({
