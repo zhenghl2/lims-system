@@ -138,7 +138,9 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     // 🆕 Pre-fill reagent & equipment from last batch for new batches
     if (batch.id && !edata.kit_type && !edata.reagent_lot && !defaultsFetchedRef.current) {
       defaultsFetchedRef.current = true;
+      console.log('[pre-fill] fetching last batch defaults...');
       api.get("/runs/last_batch_defaults/?panel=NIPT").then((res: any) => {
+        console.log('[pre-fill] got response:', res);
         const ext = res?.extraction;
         if (ext) {
           form.setFieldsValue({
