@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Table, Button, Tag, Space, Typography, Modal, Form, Input, message, Popconfirm, Card, Empty, Tabs } from "antd";
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
@@ -144,6 +144,30 @@ export default function NiptWorkflow() {
     return idx >= 0 && idx < order.length - 1 ? order[idx + 1] : null;
   })() : null;
 
+  // Find last batch with data for pre-filling new batches
+  const lastBatchLibData = useMemo(() => {
+    if (!selectedBatch?.id) return null;
+    const sorted = [...batches]
+      .filter((b: any) => b.id !== selectedBatch.id)
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    for (const b of sorted) {
+      const lib = b.library_data;
+      if (lib && (lib.lib_kit || (lib.equipment || []).length > 0)) return lib;
+    }
+    return null;
+  }, [batches, selectedBatch?.id]);
+  const lastBatchSeqData = useMemo(() => {
+    if (!selectedBatch?.id) return null;
+    const sorted = [...batches]
+      .filter((b: any) => b.id !== selectedBatch.id)
+      .sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    for (const b of sorted) {
+      const seq = b.sequencing_data;
+      if (seq && (seq.platform || (seq.equipment || []).length > 0)) return seq;
+    }
+    return null;
+  }, [batches, selectedBatch?.id]);
+
   const batchColumns = [
     { title: t("nipt.workflow.runNumber"), dataIndex: "run_number", key: "run_number", width: 170, render: (v: string) => <Text code>{v}</Text> },
     { title: t("nipt.workflow.samples"), dataIndex: "sample_count", key: "sample_count", width: 70, align: "center" as const },
@@ -159,11 +183,13 @@ export default function NiptWorkflow() {
       case "extraction":
         return <NiptExtractionTab batch={selectedBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={() => fetchDetail(selectedBatch.id)} />;
       case "library":
-        return <NiptLibraryTab batch={selectedBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={() => fetchDetail(selectedBatch.id)} />;
+        return <NiptLibraryTab batch={selectedBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={() => fetchDetail(selectedBatch.id)}
+          lastBatchLibData={lastBatchLibData}
+        />;
       case "pooling":
         return <NiptPoolingTab batch={selectedBatch} onRefresh={() => fetchDetail(selectedBatch.id)} />;
       case "sequencing":
-        return <NiptSequencingTab batch={selectedBatch} onRefresh={() => fetchDetail(selectedBatch.id)} />;
+        return <NiptSequencingTab batch={selectedBatch} onRefresh={() => fetchDetail(selectedBatch.id)} lastBatchSeqData={lastBatchSeqData} />;
       case "bioinformatics":
         return <NiptBioinformaticsTab batch={selectedBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={() => fetchDetail(selectedBatch.id)} />;
       default:

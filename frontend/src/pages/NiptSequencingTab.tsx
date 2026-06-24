@@ -106,7 +106,7 @@ const REAGENT_KITS_BY_PLATFORM: Record<string,Record<string,{value:string;label:
 const STEPS = [{ key:"clean_equip",label:"设备准备（清洗）" },{ key:"reagent_prep",label:"试剂准备（解冻、混匀、离心）" },{ key:"sample_prep",label:"样本准备" },{ key:"on_machine",label:"上机测序" },{ key:"cleanup",label:"实验结束（清洁台面、紫外 30min）" }];
 
 interface ReagentRow { id:number; type:string; kit:string; lot:string; expiry:string; }
-interface Props { batch:any; onRefresh:()=>void; }
+interface Props { batch:any; onRefresh:()=>void; lastBatchSeqData?:any; }
 interface IndexRow { key:number; idx:number; vgId:string; index:string; i7:string; i5:string; batchNumber:string; uploadId:string; reportCode:string; }
 
 function getSignStatus(edata:any, role:"operator"|"reviewer") {
@@ -116,7 +116,7 @@ function getSignStatus(edata:any, role:"operator"|"reviewer") {
   return {signed:true,name:sig.username,time:sig.signed_at||""};
 }
 
-export default function NiptSequencingTab({batch,onRefresh}:Props) {
+export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData}:Props) {
   const { t } = useTranslation();
   // Reagent type: English key ↔ Chinese label mapping (backward compat with saved data)
   const reagentKeyToChinese: Record<string, string> = { SEQUENCING: "测序试剂", CHIP_FLOWCELL: "芯片/Flow Cell", WASH_BUFFER: "清洗液", NAOH_DENATURE: "NaOH变性液", OTHER: "其他" };
@@ -133,6 +133,7 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
   const [rvModal,setRvModal]=useState(false);
   const counterRef=useRef(100);
   const defaultsFetchedRef=useRef(false);
+  useEffect(() => { defaultsFetchedRef.current = false; }, [batch.id]);
   const {signed:opSigned,name:opSigner}=getSignStatus(edata,"operator");
   const {signed:rvSigned,name:rvSigner}=getSignStatus(edata,"reviewer");
 
@@ -179,8 +180,8 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
 
   useEffect(()=>{
     form.setFieldsValue({
-      seq_date:edata.seq_date?dayjs(edata.seq_date):undefined,
-      seq_time:edata.seq_time||"",
+      seq_date:edata.seq_date?dayjs(edata.seq_date):dayjs(),
+      seq_time:edata.seq_time||dayjs().format("HH:mm"),
       equipment:edata.equipment||[],
       chip:edata.chip||undefined,
       conc_pM:edata.conc_pM??undefined,
@@ -191,25 +192,25 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
     });
     setSteps(edata.step_confirmations||{});
     if(edata.platform)setPlatform(edata.platform);
-
-    // 🆕 Pre-fill reagent & equipment from last batch for new batches
-    if(batch.id&&!edata.platform&&!(edata.equipment||[]).length&&!defaultsFetchedRef.current){
-      defaultsFetchedRef.current=true;
-      api.get("/runs/last_batch_defaults/?panel=NIPT").then((res:any)=>{
-        const seq=res?.data?.sequencing;
-        if(seq){
-          if(seq.platform)setPlatform(seq.platform);
-          form.setFieldsValue({
-            equipment:seq.equipment||[],
-            chip:seq.chip||undefined,
-          });
-          if(seq.reagents&&Array.isArray(seq.reagents)&&seq.reagents.length>0){
-            setReagents(seq.reagents.map((r:any,i:number)=>({id:i+1,type:r.type||"",kit:r.kit||"",lot:r.lot||"",expiry:r.expiry||""})));
-          }
-        }
-      }).catch(()=>{});
-    }
   },[edata,form]);
+
+  // Pre-fill platform/equipment/chip from last batch (runs once per batch.id)
+  useEffect(()=>{
+    if(!batch.id||!lastBatchSeqData)return;
+    const hasData=!!(edata.platform||(edata.equipment||[]).length);
+    if(hasData)return;
+    if(defaultsFetchedRef.current)return;
+    defaultsFetchedRef.current=true;
+    const seq=lastBatchSeqData;
+    if(seq.platform)setPlatform(seq.platform);
+    form.setFieldsValue({
+      equipment:seq.equipment||[],
+      chip:seq.chip||undefined,
+    });
+    if(seq.reagents&&Array.isArray(seq.reagents)&&seq.reagents.length>0){
+      setReagents(seq.reagents.map((r:any,i:number)=>({id:i+1,type:translateReagentType(r.type)||"",kit:r.kit||"",lot:r.lot||"",expiry:r.expiry||""})));
+    }
+  },[batch.id,lastBatchSeqData]);
 
   const toggleStep=(key:string)=>setSteps(prev=>({...prev,[key]:!prev[key]}));
   const addReagent=()=>{const id=++counterRef.current;setReagents(prev=>[...prev,{id,type:"",kit:"",lot:"",expiry:""}]);};
