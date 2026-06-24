@@ -287,8 +287,8 @@ export default function NiptWorkflow() {
         okButtonProps={{ disabled: selectedIds.length === 0 }}
       >
         <Form form={form} layout="vertical">
-          <Form.Item name="batch_number" label="Batch Number" rules={[{ required: true }]} extra={<Text type="secondary">Batch号需包含chip编号，例：NIPT-20260609-001-chip1</Text>}>
-            <Input placeholder="e.g. NIPT-20260609-001-chip1" />
+          <Form.Item name="batch_number" label="Batch Number" rules={[{ required: true }]} extra={<Text type="secondary">Batch号需包含chip编号，例：chip6972</Text>}>
+            <Input placeholder="e.g. chip6972" />
           </Form.Item>
           <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
             <Text strong>Select Samples</Text>
