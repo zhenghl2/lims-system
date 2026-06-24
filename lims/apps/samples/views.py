@@ -120,6 +120,7 @@ class SampleViewSet(viewsets.ModelViewSet):
         receiver_id = request.data.get("receiver_id")
         receipt_date = request.data.get("receipt_date")
         password = request.data.get("password", "")
+        vg_id = request.data.get("vg_id", "").strip()
         if receiver_id:
             try:
                 receiver = Receiver.objects.get(id=receiver_id, is_active=True)
@@ -134,7 +135,11 @@ class SampleViewSet(viewsets.ModelViewSet):
             sample.receipt_date = datetime.strptime(receipt_date, "%Y-%m-%d").date()
         else:
             sample.receipt_date = timezone.now().date()
-        sample.save(update_fields=["status", "received_by", "receipt_date", "updated_at"])
+        update_fields = ["status", "received_by", "receipt_date", "updated_at"]
+        if vg_id:
+            sample.vg_id = vg_id
+            update_fields.append("vg_id")
+        sample.save(update_fields=update_fields)
         SampleMovement.objects.create(
             sample=sample, to_location="RECEIVING",
             reason="RECEIPT", performed_by=request.user,

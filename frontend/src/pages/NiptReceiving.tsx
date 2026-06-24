@@ -3,7 +3,6 @@ import { Table, Button, Tag, Modal, Form, Select, Input, Space, Typography, mess
 import { CheckOutlined, CloseOutlined, CameraOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
-import api from "../api/client";
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
@@ -101,10 +100,7 @@ export default function NiptReceiving() {
     setReceiveLoading(true);
     try {
       if (!vgIdInput.trim()) { message.warning("Please enter VG ID"); setReceiveLoading(false); return; }
-      await samplesApi.accept(receiveTarget.id);
-      try {
-        await api.patch(`/samples/${receiveTarget.id}/`, { vg_id: vgIdInput.trim() });
-      } catch {}
+      await samplesApi.accept(receiveTarget.id, { vg_id: vgIdInput.trim() });
       message.success(`Sample ${receiveTarget.sample_id} received`);
       setReceiveModalOpen(false);
       fetchData();
@@ -156,10 +152,7 @@ export default function NiptReceiving() {
     let success = 0;
     for (const item of filled) {
       try {
-        await samplesApi.accept(item.id);
-        try {
-          await api.patch(`/samples/${item.id}/`, { vg_id: item.vg_id.trim() });
-        } catch {}
+        await samplesApi.accept(item.id, { vg_id: item.vg_id.trim() });
         success++;
       } catch { /* skip */ }
     }

@@ -43,8 +43,8 @@ export const samplesApi = {
     api.post(`/samples/${id}/reject/`, {
       rejection_reason: reason, rejection_note: note,
     }),
-  accept: (id: string) =>
-    api.post(`/samples/${id}/accept/`),
+  accept: (id: string, data?: Record<string, unknown>) =>
+    api.post(`/samples/${id}/accept/`, data || {}),
   uploadImage: (id: string, file: File) =>
     api.post(`/samples/${id}/upload_image/`, file, {
       headers: { "Content-Type": "multipart/form-data" },
