@@ -134,6 +134,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     setSampleResults(edata.sample_results || {});
     if (batch.extraction_method) setMethod(batch.extraction_method);
     if (batch.region) setRegion(batch.region);
+
+    }
   }, [edata, batch, form]);
 
   const toggleStep = (key: string) => setSteps(prev => ({ ...prev, [key]: !prev[key] }));

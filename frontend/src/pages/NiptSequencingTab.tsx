@@ -182,6 +182,8 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
     });
     setSteps(edata.step_confirmations||{});
     if(edata.platform)setPlatform(edata.platform);
+
+    }
   },[edata,form]);
 
   const toggleStep=(key:string)=>setSteps(prev=>({...prev,[key]:!prev[key]}));
