@@ -457,17 +457,17 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
     {
       title: "Twin", dataIndex: "sample_multiple_gestation", key: "twin",
       width: 55, align: "center" as const,
-      render: (v: boolean) => v ? "👶👶" : "—",
+      render: (v: boolean) => v ? <Tag color="orange">Twin</Tag> : <Tag color="green">Single</Tag>,
     },
     {
       title: "IVF", dataIndex: "sample_ivf", key: "ivf",
       width: 50, align: "center" as const,
-      render: (v: boolean) => v ? <Tag color="orange" style={{ fontSize: 11 }}>IVF</Tag> : "—",
+      render: (v: boolean) => v ? <Tag color="purple">IVF</Tag> : "No",
     },
     {
       title: "Preg. History", dataIndex: "sample_pregnancy_history", key: "preg_history",
       width: 95, ellipsis: true,
-      render: (v: string) => v || "—",
+      render: (v: string) => v || "否",
     },
     {
       title: "Diagnosis", dataIndex: "sample_diagnosis", key: "diagnosis",
