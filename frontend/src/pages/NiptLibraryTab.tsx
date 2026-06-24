@@ -217,8 +217,6 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     if (batch.region) setRegion(batch.region);
     setPositiveControl(edata.positive_control || "");
     setNegativeControl(edata.negative_control || "");
-
-    }
   }, [edata, batch, form]);
 
   const toggleStep = (key: string) => setSteps(prev => ({ ...prev, [key]: !prev[key] }));
