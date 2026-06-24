@@ -203,7 +203,10 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const { signed: rvSigned, name: rvSigner } = getSignStatus(edata, "reviewer");
   const [opModal, setOpModal] = useState(false);
   const [rvModal, setRvModal] = useState(false);
-  const kits = EXTRACTION_KITS[region] || [];
+  // When no region selected, show all kits; otherwise show region-specific
+  const kits = region
+    ? (EXTRACTION_KITS[region] || [])
+    : Object.values(EXTRACTION_KITS).flat();
 
   // ── Failed samples list ──
   const failedSamples = useMemo(() => {
