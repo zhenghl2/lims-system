@@ -222,7 +222,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh }: Props) {
     if (batch.id && !edata.lib_kit && !(edata.equipment || []).length && !defaultsFetchedRef.current) {
       defaultsFetchedRef.current = true;
       api.get("/runs/last_batch_defaults/?panel=NIPT").then((res: any) => {
-        const lib = res?.library;
+        const lib = res?.data?.library;
         if (lib) {
           form.setFieldsValue({
             equipment: lib.equipment || [],
