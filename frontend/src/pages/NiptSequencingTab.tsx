@@ -123,7 +123,7 @@ export default function NiptSequencingTab({batch,onRefresh}:Props) {
   const [opModal,setOpModal]=useState(false);
   const [rvModal,setRvModal]=useState(false);
   const counterRef=useRef(100);
-  
+  const defaultsFetchedRef=useRef(false);
   const {signed:opSigned,name:opSigner}=getSignStatus(edata,"operator");
   const {signed:rvSigned,name:rvSigner}=getSignStatus(edata,"reviewer");
 

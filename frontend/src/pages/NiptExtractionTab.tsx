@@ -110,6 +110,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const [region, setRegion] = useState(batch.region || "");
   const magneticNotesRef = useRef<Record<string, string>>({});
   const edata = useMemo(() => batch.extraction_data || {}, [batch.extraction_data]);
+  const defaultsFetchedRef = useRef(false);
 
   // sampleResults: keyed by sample index → { status, note }
   const [sampleResults, setSampleResults] = useState<Record<string, { status: string; note: string }>>({});
