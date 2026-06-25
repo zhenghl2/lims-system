@@ -318,6 +318,18 @@ export default function NiptReceiving() {
                   onChange={e => {
                     const next = batchVgList.map((item, idx) => idx === i ? { ...item, vg_id: e.target.value } : item);
                     setBatchVgList(next);
+                  }}
+                  onBlur={e => {
+                    if (i !== 0) return;
+                    const val = e.target.value;
+                    const match = val.match(/^(.*?)(\d+)$/);
+                    if (!match) return;
+                    const base = match[1];
+                    const num = parseInt(match[2]);
+                    const next = batchVgList.map((item, idx) =>
+                      idx === 0 ? item : { ...item, vg_id: base + (num + idx) }
+                    );
+                    setBatchVgList(next);
                   }} />
               )},
           ]}
