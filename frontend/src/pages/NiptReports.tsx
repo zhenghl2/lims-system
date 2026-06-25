@@ -122,29 +122,29 @@ export default function NiptReports() {
   });
 
   const columns = [
-    { title: "Report #", dataIndex: "report_number", width: 150, fixed: "left" as const,
+    { title: t("nipt.reports.reportNumber"), dataIndex: "report_number", width: 150, fixed: "left" as const,
       render: (v: string) => <Text code style={{ fontSize: 11 }}>{v}</Text> },
-    { title: "VG ID", dataIndex: "sample_vg_id", width: 85, fixed: "left" as const,
+    { title: t("nipt.samples.vgId"), dataIndex: "sample_vg_id", width: 85, fixed: "left" as const,
       render: (v: string) => v || "—" },
-    { title: "Name", dataIndex: "patient_name", width: 110, ellipsis: true },
-    { title: "Sample Source",dataIndex: "sample_source", width: 110, ellipsis: true, render: (v: any) => v || "—" },
-    { title: "Test Option", dataIndex: "test_option", width: 85, render: (v: any) => { if (!v) return "—"; const colors: Record<string, string> = { "basic": "blue", "plus": "purple", "basic_all": "green" }; const key = (v || "").toLowerCase().replace(/ /g, "_"); return <Tag color={colors[key] || "default"} style={{ fontSize: 10 }}>{v}</Tag>; } },
-    { title: "Accessioning ID", dataIndex: "external_id", width: 100, ellipsis: true, render: (v: any) => v || "—" },
-    { title: "Collection Date", dataIndex: "collection_date", width: 90, render: (v: any) => v || "—" },
-    { title: "Acceptance Date", dataIndex: "acceptance_date", width: 90, render: (v: any) => v || "—" },
-    { title: "Physician", dataIndex: "physician", width: 100, ellipsis: true, render: (v: any) => v || "—" },
-    { title: "Patient ID", dataIndex: "id_card", width: 130, ellipsis: true, render: (v: any) => v || "—" },
-    { title: "DOB", dataIndex: "patient_dob", width: 85, render: (v: any) => v || "—" },
-    { title: "LMP", dataIndex: "last_menstrual_period", width: 90, render: (v: any) => v || "—" },
-    { title: "Hospital/Clinic", dataIndex: "ordering_facility", width: 130, ellipsis: true, render: (v: any) => v || "—" },
-    { title: "Gest. Weeks", dataIndex: "gestational_weeks", width: 75, align: "center" as const, render: (v: any) => v != null ? `${v}w` : "—" },
-    { title: "Report Code", dataIndex: "report_code", width: 100, ellipsis: true, render: (v: any) => v || "—" },
-    { title: "Send Report ID", dataIndex: "send_report_id", width: 90, ellipsis: true, render: (v: any) => v || "—" },
-    { title: "Age", dataIndex: "age", width: 50, align: "center" as const, render: (v: any) => v != null ? String(v) : "—" },
-    { title: "Twin", dataIndex: "multiple_gestation", width: 50, align: "center" as const, render: (v: any) => v ? "👶👶" : "—" },
-    { title: "IVF", dataIndex: "ivf_status", width: 50, align: "center" as const, render: (v: any) => v ? <Tag color="orange" style={{ fontSize: 10 }}>{t("nipt.samples.ivf")}</Tag> : "—" },
-    { title: "Preg. History", dataIndex: "pregnancy_history", width: 100, ellipsis: true, render: (v: any) => v || "—" },
-    { title: "Diagnosis", dataIndex: "clinical_diagnosis", width: 120, ellipsis: true, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.name"), dataIndex: "patient_name", width: 110, ellipsis: true },
+    { title: t("nipt.samples.sampleSource"),dataIndex: "sample_source", width: 110, ellipsis: true, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.testOption"), dataIndex: "test_option", width: 85, render: (v: any) => { if (!v) return "—"; const colors: Record<string, string> = { "basic": "blue", "plus": "purple", "basic_all": "green" }; const key = (v || "").toLowerCase().replace(/ /g, "_"); return <Tag color={colors[key] || "default"} style={{ fontSize: 10 }}>{v}</Tag>; } },
+    { title: t("nipt.reports.accessioningId"), dataIndex: "external_id", width: 100, ellipsis: true, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.collectionDate"), dataIndex: "collection_date", width: 90, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.acceptanceDate"), dataIndex: "acceptance_date", width: 90, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.physician"), dataIndex: "physician", width: 100, ellipsis: true, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.patientId"), dataIndex: "id_card", width: 130, ellipsis: true, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.dob"), dataIndex: "patient_dob", width: 85, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.lastMenstrualPeriod"), dataIndex: "last_menstrual_period", width: 90, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.hospital"), dataIndex: "ordering_facility", width: 130, ellipsis: true, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.gestWeeks"), dataIndex: "gestational_weeks", width: 75, align: "center" as const, render: (v: any) => v != null ? `${v}w` : "—" },
+    { title: t("nipt.samples.reportCode"), dataIndex: "report_code", width: 100, ellipsis: true, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.sendReportId"), dataIndex: "send_report_id", width: 90, ellipsis: true, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.age"), dataIndex: "age", width: 50, align: "center" as const, render: (v: any) => v != null ? String(v) : "—" },
+    { title: t("nipt.samples.twin"), dataIndex: "multiple_gestation", width: 50, align: "center" as const, render: (v: any) => v ? "👶👶" : "—" },
+    { title: t("nipt.samples.ivf"), dataIndex: "ivf_status", width: 50, align: "center" as const, render: (v: any) => v ? <Tag color="orange" style={{ fontSize: 10 }}>{t("nipt.samples.ivf")}</Tag> : "—" },
+    { title: t("nipt.samples.pregHistory"), dataIndex: "pregnancy_history", width: 100, ellipsis: true, render: (v: any) => v || "—" },
+    { title: t("nipt.samples.diagnosis"), dataIndex: "clinical_diagnosis", width: 120, ellipsis: true, render: (v: any) => v || "—" },
     makeBioCol("All Chrom", "all_chrom", 80),
     makeBioCol("Plus Result", "plus_result", 90),
     makeBioCol("Plus HighRisk", "plus_highrisk_items", 110),
@@ -185,7 +185,7 @@ export default function NiptReports() {
       },
     },
     {
-      title: "Reviewed By", key: "review", width: 160,
+      title: t("nipt.reports.reviewedBy"), key: "review", width: 160,
       render: (_: any, r: any) => {
         if (r.reviewed_by_name) {
           return (
@@ -214,7 +214,7 @@ export default function NiptReports() {
       },
     },
     {
-      title: "Verified By", key: "verify", width: 160,
+      title: t("nipt.reports.verifiedBy"), key: "verify", width: 160,
       render: (_: any, r: any) => {
         if (r.verified_by_name) {
           return (
@@ -244,7 +244,7 @@ export default function NiptReports() {
       },
     },
     {
-      title: "Status", dataIndex: "status", width: 80, fixed: "right" as const,
+      title: t("nipt.samples.status"), dataIndex: "status", width: 80, fixed: "right" as const,
       render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{STATUS_LABEL_TL[v] || v}</Tag>,
     },
   ];

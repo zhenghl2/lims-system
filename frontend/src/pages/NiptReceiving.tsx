@@ -43,6 +43,7 @@ export default function NiptReceiving() {
     PERIPHERAL_BLOOD: t("nipt.receiving.peripheralBlood"),
   };
   const STATUS_LABELS_TL: Record<string, string> = {
+    PRE_PROCESSING: t("nipt.common.preProcessing"),
     REGISTERED: t("nipt.dashboard.registered"),
     RECEIVED: t("nipt.dashboard.received"),
     IN_PROCESS: t("nipt.common.plasmaSeparatedStatus"),

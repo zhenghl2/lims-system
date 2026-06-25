@@ -813,7 +813,8 @@
       "receiving": "Receiving",
       "labWorkflow": "Lab Workflow",
       "reports": "Reports",
-      "draft": "Draft"
+      "draft": "Draft",
+      "plasmaSeparating": "Plasma Separating"
     },
     "samples": {
       "title": "NIPT Sample Registration",
@@ -964,12 +965,12 @@
       "qc": "QC",
       "edit": "Edit",
       "batchPass": "Batch Pass",
-      "reasonNotes": "Reason / Notes",
+      "reasonNotes": "Reason/Notes",
       "signatures": "Signatures",
       "operator": "Operator:",
       "reviewer": "Reviewer:",
       "sign": "Sign",
-      "cannotComplete": "Cannot complete yet:",
+      "cannotComplete": "Cannot complete",
       "allNeedQc": " • All samples need QC",
       "operatorRequired": " • Operator signature required",
       "reviewerRequired": " • Reviewer signature required",
@@ -980,7 +981,22 @@
       "experimentTime": "Experiment Time",
       "searchPlaceholder": "Search sample or patient...",
       "selectSamples": "Select Samples",
-      "createBtn": "Create"
+      "createBtn": "Create",
+      "loading": "Loading...",
+      "sampleCount": "Samples",
+      "allSamplesNeedQc": "All samples need QC",
+      "operatorSignatureRequired": "Operator signature required",
+      "reviewerSignatureRequired": "Reviewer signature required",
+      "photosRequired": "At least one photo required",
+      "pendingStatus": "Pending",
+      "passStatus": "Pass",
+      "failStatus": "Fail",
+      "failSelectReason": "Fail — select reason:",
+      "batchNumber": "Batch Number",
+      "samples": "Samples",
+      "status": "Status",
+      "inProgress": "In Progress",
+      "completedStatus": "Completed"
     },
     "workflow": {
       "title": "NIPT Batches",
@@ -1266,7 +1282,11 @@
       "reviewedStatus": "Reviewed",
       "verifiedStatus": "Verified",
       "signedStatus": "Signed",
-      "publishedStatus": "Released"
+      "publishedStatus": "Released",
+      "reportNumber": "Report #",
+      "accessioningId": "Accessioning ID",
+      "reviewedBy": "Reviewed By",
+      "verifiedBy": "Verified By"
     },
     "signer": {
       "selectSigner": "Please select signer",
@@ -1296,7 +1316,12 @@
       "sequencingStatus": "Sequencing",
       "bioinformaticsStatus": "Bioinformatics",
       "samples": "samples",
-      "saveFailed": "Save failed"
+      "saveFailed": "Save failed",
+      "preProcessing": "Plasma Separating"
+    },
+    "plasma": {
+      "notes": "Notes",
+      "notePlaceholder": "Optional note (e.g. Pass but with remarks)"
     }
   }
 }

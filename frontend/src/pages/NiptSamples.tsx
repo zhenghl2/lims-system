@@ -11,6 +11,7 @@ const { Title, Text } = Typography;
 const { TextArea } = Input;
 
 const STATUS_MAP: Record<string, string> = {
+  DRAFT: "default",
   REGISTERED: "default", RECEIVING: "blue", RECEIVED: "blue",
   IN_PROCESS: "orange", ACCEPTED: "blue", PLASMA_SEPARATED: "lime",
   EXTRACTION: "cyan", LIBRARY_PREP: "blue", POOLING: "geekblue",
@@ -87,6 +88,8 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
 export default function NiptSamples() {
   const { t } = useTranslation();
   const STATUS_LABEL_TL: Record<string, string> = {
+    DRAFT: t("nipt.dashboard.draft"),
+    PRE_PROCESSING: t("nipt.common.preProcessing"),
     REGISTERED: t("nipt.dashboard.registered"),
     RECEIVING: t("nipt.dashboard.registered"),
     RECEIVED: t("nipt.dashboard.received"),

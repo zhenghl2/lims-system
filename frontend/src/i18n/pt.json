@@ -813,7 +813,8 @@
       "receiving": "Recebimento",
       "labWorkflow": "Fluxo de Laboratório",
       "reports": "Relatórios",
-      "draft": "Rascunho"
+      "draft": "Rascunho",
+      "plasmaSeparating": "Separando Plasma"
     },
     "samples": {
       "title": "Registro de Amostras NIPT",
@@ -964,12 +965,12 @@
       "qc": "CQ",
       "edit": "Editar",
       "batchPass": "Aprovar em Lote",
-      "reasonNotes": "Motivo / Notas",
+      "reasonNotes": "Motivo/Notas",
       "signatures": "Assinaturas",
       "operator": "Operador:",
       "reviewer": "Revisor:",
       "sign": "Assinar",
-      "cannotComplete": "Não é possível concluir:",
+      "cannotComplete": "Não pode concluir",
       "allNeedQc": " • Todas as amostras precisam de CQ",
       "operatorRequired": " • Assinatura do operador necessária",
       "reviewerRequired": " • Assinatura do revisor necessária",
@@ -980,7 +981,22 @@
       "experimentTime": "Hora do Experimento",
       "searchPlaceholder": "Pesquisar amostra ou paciente...",
       "selectSamples": "Selecionar Amostras",
-      "createBtn": "Criar"
+      "createBtn": "Criar",
+      "loading": "Carregando...",
+      "sampleCount": "Amostras",
+      "allSamplesNeedQc": "Todas amostras precisam CQ",
+      "operatorSignatureRequired": "Assinatura do operador necessária",
+      "reviewerSignatureRequired": "Assinatura do revisor necessária",
+      "photosRequired": "Pelo menos uma foto necessária",
+      "pendingStatus": "Pendente",
+      "passStatus": "Aprovado",
+      "failStatus": "Falha",
+      "failSelectReason": "Falha — selecione o motivo:",
+      "batchNumber": "Nº do Lote",
+      "samples": "Amostras",
+      "status": "Estado",
+      "inProgress": "Em Andamento",
+      "completedStatus": "Concluído"
     },
     "workflow": {
       "title": "Lotes NIPT",
@@ -1266,7 +1282,11 @@
       "reviewedStatus": "Revisado",
       "verifiedStatus": "Verificado",
       "signedStatus": "Assinado",
-      "publishedStatus": "Lançado"
+      "publishedStatus": "Lançado",
+      "reportNumber": "Relatório #",
+      "accessioningId": "ID de Acesso",
+      "reviewedBy": "Revisado Por",
+      "verifiedBy": "Verificado Por"
     },
     "signer": {
       "selectSigner": "Selecione o assinante",
@@ -1296,7 +1316,12 @@
       "sequencingStatus": "Sequenciamento",
       "bioinformaticsStatus": "Bioinformática",
       "samples": "amostras",
-      "saveFailed": "Falha ao salvar"
+      "saveFailed": "Falha ao salvar",
+      "preProcessing": "Separando Plasma"
+    },
+    "plasma": {
+      "notes": "Notas",
+      "notePlaceholder": "Nota opcional (ex: Pass mas com observações)"
     }
   }
 }

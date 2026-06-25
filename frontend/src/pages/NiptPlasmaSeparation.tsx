@@ -17,14 +17,13 @@ import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
 
-const QC_RESULT_MAP: Record<string, { color: string; label: string }> = {
-  PENDING: { color: "default", label: "Pending" },
-  PASS: { color: "green", label: "Pass" },
-  FAIL: { color: "red", label: "Fail" },
-};
-
 export default function NiptPlasmaSeparation() {
   const { t } = useTranslation();
+  const QC_RESULT_MAP_TL: Record<string, { color: string; label: string }> = {
+    PENDING: { color: "default", label: t("nipt.plasmaSeparation.pendingStatus") },
+    PASS: { color: "green", label: t("nipt.plasmaSeparation.passStatus") },
+    FAIL: { color: "red", label: t("nipt.plasmaSeparation.failStatus") },
+  };
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
@@ -246,17 +245,21 @@ export default function NiptPlasmaSeparation() {
 
   const columns = [
     {
-      title: "Batch Number", dataIndex: "batch_number", key: "batch_number", width: 240,
+      title: t("nipt.plasmaSeparation.batchNumber"), dataIndex: "batch_number", key: "batch_number", width: 240,
       render: (v: string) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text>,
     },
     {
-      title: "Samples", dataIndex: "sample_count", key: "sample_count", width: 80,
+      title: t("nipt.plasmaSeparation.sampleCount"), dataIndex: "sample_count", key: "sample_count", width: 80,
     },
     {
-      title: "Status", dataIndex: "status_display", key: "status", width: 110,
-      render: (v: string, r: any) => (
-        <Tag color={r.status === "COMPLETED" ? "green" : "blue"}>{v}</Tag>
-      ),
+      title: t("nipt.samples.status"), dataIndex: "status_display", key: "status", width: 110,
+      render: (v: string, r: any) => {
+        const statusMap: Record<string, string> = {
+          "In Progress": t("nipt.plasmaSeparation.inProgress"),
+          "Completed": t("nipt.plasmaSeparation.completedStatus"),
+        };
+        return <Tag color={r.status === "COMPLETED" ? "green" : "blue"}>{statusMap[v] || v}</Tag>;
+      },
     },
     {
       title: "", key: "actions", width: 40,
@@ -277,7 +280,7 @@ export default function NiptPlasmaSeparation() {
     <div style={{ display: "flex", gap: 16, height: "calc(100vh - 120px)" }}>
       {/* ── Left: Batch List ── */}
       <Card
-        title={<Title level={5} style={{ margin: 0 }}>🩸 Plasma Separation</Title>}
+        title={<Title level={5} style={{ margin: 0 }}>🩸 {t("nipt.plasmaSeparation.title")}</Title>}
         extra={
           <Space>
             <Button icon={<ReloadOutlined />} onClick={fetchBatches} />
@@ -292,7 +295,7 @@ export default function NiptPlasmaSeparation() {
                 })
                 .catch(() => {});
             }}>
-              New Batch
+              {t("nipt.plasmaSeparation.newBatch")}
             </Button>
           </Space>
         }
@@ -322,7 +325,7 @@ export default function NiptPlasmaSeparation() {
         {!selectedBatch ? (
           <Empty description={t("nipt.plasmaSeparation.selectBatch")} style={{ marginTop: 80 }} />
         ) : detailLoading ? (
-          <Text type="secondary">Loading...</Text>
+          <Text type="secondary">{t("nipt.plasmaSeparation.loading")}</Text>
         ) : batchDetail ? (
           <>
             {/* Header */}
@@ -341,7 +344,7 @@ export default function NiptPlasmaSeparation() {
                   disabled={!canComplete}
                 >
                   <Button type="primary" icon={<CheckOutlined />} disabled={!canComplete}>
-                    Complete
+                    {t("nipt.plasmaSeparation.complete")}
                   </Button>
                 </Popconfirm>
               </Space>
@@ -349,9 +352,9 @@ export default function NiptPlasmaSeparation() {
 
             {/* Info bar */}
             <Row gutter={16} style={{ marginBottom: 12, padding: "8px 12px", background: "#fafafa", borderRadius: 6 }}>
-              <Col><Text type="secondary">Date: </Text><Text strong>{batchDetail.experiment_date}</Text></Col>
-              <Col><Text type="secondary">Time: </Text><Text strong>{batchDetail.experiment_time}</Text></Col>
-              <Col><Text type="secondary">Samples: </Text><Text strong>{batchDetail.batch_samples?.length || 0}</Text></Col>
+              <Col><Text type="secondary">{t("nipt.extraction.experimentDate")}: </Text><Text strong>{batchDetail.experiment_date}</Text></Col>
+              <Col><Text type="secondary">{t("nipt.extraction.experimentTime")}: </Text><Text strong>{batchDetail.experiment_time}</Text></Col>
+              <Col><Text type="secondary">{t("nipt.plasmaSeparation.samples")}: </Text><Text strong>{batchDetail.batch_samples?.length || 0}</Text></Col>
             </Row>
 
             {/* Equipment Type */}
@@ -362,11 +365,11 @@ export default function NiptPlasmaSeparation() {
             </div>
 
             {/* Photos */}
-            <Card size="small" title={`Photos (${batchDetail.photos?.length || 0})`} style={{ marginBottom: 12 }}
+            <Card size="small" title={`${t("nipt.plasmaSeparation.photos")} (${batchDetail.photos?.length || 0})`} style={{ marginBottom: 12 }}
               extra={
                 <Upload showUploadList={false} beforeUpload={handlePhotoUpload} accept="image/*" disabled={batchDetail.status === "COMPLETED"}>
                   <Button size="small" icon={<CameraOutlined />} loading={uploading} disabled={batchDetail.status === "COMPLETED"}>
-                    Upload
+                    {t("nipt.plasmaSeparation.upload")}
                   </Button>
                 </Upload>
               }
@@ -385,13 +388,13 @@ export default function NiptPlasmaSeparation() {
             </Card>
 
             {/* Samples with QC */}
-            <Card size="small" title={`Samples (${batchDetail.batch_samples?.length || 0})`} style={{ marginBottom: 12 }}
+            <Card size="small" title={`${t("nipt.plasmaSeparation.samples")} (${batchDetail.batch_samples?.length || 0})`} style={{ marginBottom: 12 }}
               extra={
                 <Space>
                   <Text type="secondary">
-                    Pass: {batchDetail.batch_samples?.filter((s: any) => s.qc_result === "PASS").length || 0}
-                    {" / "}Fail: {batchDetail.batch_samples?.filter((s: any) => s.qc_result === "FAIL").length || 0}
-                    {" / "}Pending: {batchDetail.batch_samples?.filter((s: any) => s.qc_result === "PENDING").length || 0}
+                    {t("nipt.plasmaSeparation.pass")}: {batchDetail.batch_samples?.filter((s: any) => s.qc_result === "PASS").length || 0}
+                    {" / "}{t("nipt.plasmaSeparation.fail")}: {batchDetail.batch_samples?.filter((s: any) => s.qc_result === "FAIL").length || 0}
+                    {" / "}{t("nipt.plasmaSeparation.pending")}: {batchDetail.batch_samples?.filter((s: any) => s.qc_result === "PENDING").length || 0}
                   </Text>
                   <Button
                     size="small"
@@ -401,7 +404,7 @@ export default function NiptPlasmaSeparation() {
                     onClick={handleBatchPass}
                     disabled={batchDetail.status === "COMPLETED" || selectedSampleKeys.length === 0}
                   >
-                    Batch Pass ({selectedSampleKeys.length})
+                    {t("nipt.plasmaSeparation.batchPass")} ({selectedSampleKeys.length})
                   </Button>
                 </Space>
               }
@@ -419,21 +422,21 @@ export default function NiptPlasmaSeparation() {
                   }),
                 }}
                 columns={[
-                  { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 150, render: (v: string) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text> },
-                  { title: "VG ID", dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
-                  { title: "Test Option", dataIndex: "test_option", key: "test_option", width: 90,
+                  { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", key: "sample_id", width: 150, render: (v: string) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text> },
+                  { title: t("nipt.samples.vgId"), dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
+                  { title: t("nipt.samples.testOption"), dataIndex: "test_option", key: "test_option", width: 90,
                     render: (v: string) => {
                       if (!v) return <Text type="secondary">-</Text>;
                       const colors: Record<string, string> = { "Basic": "blue", "Plus": "purple", "Basic All": "green" };
                       return <Tag color={colors[v] || "default"} style={{ fontSize: 11 }}>{v}</Tag>;
                     },
                   },
-                  { title: "Patient", dataIndex: "patient_name", key: "patient_name", width: 110 },
+                  { title: t("nipt.receiving.patient"), dataIndex: "patient_name", key: "patient_name", width: 110 },
                   {
                     title: "QC", dataIndex: "qc_result", key: "qc_result", width: 100,
-                    render: (v: string) => <Tag color={QC_RESULT_MAP[v]?.color}>{QC_RESULT_MAP[v]?.label || v}</Tag>,
+                    render: (v: string) => <Tag color={QC_RESULT_MAP_TL[v]?.color}>{QC_RESULT_MAP_TL[v]?.label || v}</Tag>,
                   },
-                  { title: "Reason / Notes", dataIndex: "notes", key: "notes", width: 160, ellipsis: true,
+                  { title: t("nipt.plasmaSeparation.reasonNotes"), dataIndex: "notes", key: "notes", width: 160, ellipsis: true,
                     render: (v: string, r: any) => {
                       const reason = qcReasons.find(q => q.code === r.qc_reason);
                       return (
@@ -445,10 +448,10 @@ export default function NiptPlasmaSeparation() {
                     },
                   },
                   {
-                    title: "Action", key: "action", width: 90,
+                    title: t("nipt.receiving.action"), key: "action", width: 90,
                     render: (_: any, r: any) => (
                       <Button size="small" onClick={() => handleQc(r)} disabled={batchDetail.status === "COMPLETED"}>
-                        {r.qc_result === "PENDING" ? "QC" : "Edit"}
+                        {r.qc_result === "PENDING" ? t("nipt.plasmaSeparation.qc") : t("nipt.plasmaSeparation.edit")}
                       </Button>
                     ),
                   },
@@ -460,7 +463,7 @@ export default function NiptPlasmaSeparation() {
             <Card size="small" title={t("nipt.plasmaSeparation.signatures")} style={{ marginBottom: 12 }}>
               <Space size="large">
                 <div>
-                  <Text type="secondary">Operator: </Text>
+                  <Text type="secondary">{t("nipt.extraction.operatorLabel")}: </Text>
                   {(batchDetail.operator_signature_data && batchDetail.operator_signature_data.username) || batchDetail.operator_signature ? (
                     <Space>
                       <Text strong>{batchDetail.operator_signature_data?.username || batchDetail.operator_name}</Text>
@@ -469,12 +472,12 @@ export default function NiptPlasmaSeparation() {
                   ) : (
                     <Button size="small" icon={<UserOutlined />} onClick={() => openSignModal("operator")}
                       disabled={batchDetail.status === "COMPLETED"}>
-                      Sign
+                      {t("nipt.plasmaSeparation.sign")}
                     </Button>
                   )}
                 </div>
                 <div>
-                  <Text type="secondary">Reviewer: </Text>
+                  <Text type="secondary">{t("nipt.extraction.reviewerLabel")}: </Text>
                   {(batchDetail.reviewer_signature_data && batchDetail.reviewer_signature_data.username) || batchDetail.reviewer_signature ? (
                     <Space>
                       <Text strong>{batchDetail.reviewer_signature_data?.username || batchDetail.reviewer_name}</Text>
@@ -483,7 +486,7 @@ export default function NiptPlasmaSeparation() {
                   ) : (
                     <Button size="small" icon={<UserOutlined />} onClick={() => openSignModal("reviewer")}
                       disabled={batchDetail.status === "COMPLETED"}>
-                      Sign
+                      {t("nipt.plasmaSeparation.sign")}
                     </Button>
                   )}
                 </div>
@@ -494,11 +497,11 @@ export default function NiptPlasmaSeparation() {
             {!canComplete && batchDetail.status !== "COMPLETED" && (
               <Card size="small" style={{ background: "#fffbe6", border: "1px solid #ffe58f" }}>
                 <Text type="warning">
-                  Cannot complete yet:
-                  {!allQcDone && " • All samples need QC"}
-                  {!opSigned && " • Operator signature required"}
-                  {!rvSigned && " • Reviewer signature required"}
-                  {!batchDetail?.photos?.length && " • At least one photo required"}
+                  {t("nipt.plasmaSeparation.cannotComplete")}:
+                  {!allQcDone && ` • ${t("nipt.plasmaSeparation.allSamplesNeedQc")}`}
+                  {!opSigned && ` • ${t("nipt.plasmaSeparation.operatorSignatureRequired")}`}
+                  {!rvSigned && ` • ${t("nipt.plasmaSeparation.reviewerSignatureRequired")}`}
+                  {!batchDetail?.photos?.length && ` • ${t("nipt.plasmaSeparation.photosRequired")}`}
                 </Text>
               </Card>
             )}
@@ -575,9 +578,9 @@ export default function NiptPlasmaSeparation() {
               preserveSelectedRowKeys: true,
             }}
             columns={[
-              { title: "Sample ID", dataIndex: "sample_id", key: "sample_id", width: 170, render: (v: string) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text> },
-              { title: "VG ID", dataIndex: "vg_id", key: "vg_id", width: 90, render: (v: string) => v || "-" },
-              { title: "Patient", dataIndex: "patient_name", key: "patient_name" },
+              { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", key: "sample_id", width: 170, render: (v: string) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text> },
+              { title: t("nipt.samples.vgId"), dataIndex: "vg_id", key: "vg_id", width: 90, render: (v: string) => v || "-" },
+              { title: t("nipt.receiving.patient"), dataIndex: "patient_name", key: "patient_name" },
               { title: "Panel", dataIndex: "panel_name", key: "panel_name", width: 80 },
             ]}
           />
@@ -606,11 +609,11 @@ export default function NiptPlasmaSeparation() {
                 loading={qcLoading}
                 onClick={submitQc}
               >
-                Pass
+                {t("nipt.plasmaSeparation.pass")}
               </Button>
             </div>
             <div style={{ marginTop: 16 }}>
-              <Text type="secondary">Fail — select reason:</Text>
+              <Text type="secondary">{t("nipt.plasmaSeparation.failSelectReason")}</Text>
               <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8, justifyContent: "center" }}>
                 {qcReasons.length > 0 ? qcReasons.map(r => (
                   <Button
@@ -622,7 +625,7 @@ export default function NiptPlasmaSeparation() {
                   >
                     {r.label}
                   </Button>
-                )) : <Text type="secondary">Loading...</Text>}
+                )) : <Text type="secondary">{t("nipt.plasmaSeparation.loading")}</Text>}
               </div>
             </div>
             <div style={{ marginTop: 16 }}>
