@@ -307,14 +307,18 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           if (vgr) entry.result = vgr;
 
           // Chromosome status: XO/XXX/XXY/XYY
-          // If vgresult mentions X or Y chromosome issue → leave blank for manual
-          // Otherwise default to Low Risk (normal)
+          // If vgresult has no X/Y issue → default all to Low Risk
+          // If vgresult has X/Y issue → read from CSV columns
           const vgrLower = String(row["vgresult"] || "").toLowerCase();
           const hasXY = vgrLower.includes("x:") || vgrLower.includes("y:");
           const chromMap: Record<string, string> = { "xo": "XO", "xxx": "XXX", "xxy": "XXY", "xyy": "XYY" };
-          for (const field of Object.values(chromMap)) {
+          for (const [csvKey, field] of Object.entries(chromMap)) {
             if (hasXY) {
-              // Leave blank — user fills manually
+              // Read from CSV: normal → Low Risk, high risk → High Risk
+              const csvVal = String(row[csvKey] || "").trim().toLowerCase();
+              if (csvVal === "high risk" || csvVal === "高风险") (entry as any)[field] = "High Risk";
+              else if (csvVal === "normal" || csvVal === "正常") (entry as any)[field] = "Low Risk";
+              else if (csvVal) (entry as any)[field] = csvVal;
             } else {
               (entry as any)[field] = "Low Risk";
             }
