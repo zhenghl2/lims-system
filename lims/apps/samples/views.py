@@ -273,6 +273,7 @@ class SampleViewSet(viewsets.ModelViewSet):
           - files: one or more PDF files
         """
         source = request.data.get("source", "泰国")
+        fedex_no = request.data.get("fedex_no", "")
         uploaded_files = request.FILES.getlist("files")
 
         if not uploaded_files:
@@ -358,6 +359,7 @@ class SampleViewSet(viewsets.ModelViewSet):
                     "multiple_gestation": data.get("multiple_gestation", False),
                     "ivf_status": data.get("ivf_status", False),
                     "clinical_diagnosis": data.get("clinical_diagnosis", ""),
+                    "fedex_no": fedex_no,
                     "panel_code": panel_code,
                 }
 

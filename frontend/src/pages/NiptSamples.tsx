@@ -128,6 +128,7 @@ export default function NiptSamples() {
   const [fileSource, setFileSource] = useState("泰国");
   const [fileList, setFileList] = useState<any[]>([]);
   const [fileMsg, setFileMsg] = useState("");
+  const [fedexNo, setFedexNo] = useState("");
   const [importing, setImporting] = useState(false);
   const [resultModalOpen, setResultModalOpen] = useState(false);
   const [importResult, setImportResult] = useState<any>(null);
@@ -260,12 +261,14 @@ export default function NiptSamples() {
     try {
       const formData = new FormData();
       formData.append("source", fileSource);
+      if (fedexNo.trim()) formData.append("fedex_no", fedexNo.trim());
       fileList.forEach((f: File) => formData.append("files", f));
       const result = await samplesApi.registerFromPdf(formData);
       setImportResult(result.data);
       setResultModalOpen(true);
       setFileModalOpen(false);
       setFileList([]);
+      setFedexNo("");
       setFileMsg("");
       message.success(`Imported ${result.data.created_count} samples`);
       // Trigger Excel download if provided
@@ -551,9 +554,9 @@ export default function NiptSamples() {
       </Modal>
 
       {/* Register from File Modal */}
-      <Modal title={t("nipt.samples.registerFromFile")} open={fileModalOpen} onCancel={() => { setFileModalOpen(false); setFileList([]); }} width={600}
+      <Modal title={t("nipt.samples.registerFromFile")} open={fileModalOpen} onCancel={() => { setFileModalOpen(false); setFileList([]); setFedexNo(""); }} width={600}
         footer={[
-          <Button key="cancel" onClick={() => { setFileModalOpen(false); setFileList([]); }}>{t("nipt.samples.cancel")}</Button>,
+          <Button key="cancel" onClick={() => { setFileModalOpen(false); setFileList([]); setFedexNo(""); }}>{t("nipt.samples.cancel")}</Button>,
           <Button key="submit" type="primary" loading={importing} disabled={fileList.length === 0} onClick={handleFileImport}>
             {t("nipt.samples.importRegister")}
           </Button>,
@@ -563,6 +566,10 @@ export default function NiptSamples() {
             <Select value={fileSource} onChange={setFileSource}
               options={[{ label: t("nipt.samples.thailand"), value: "泰国" }, { label: t("nipt.samples.brazil"), value: "巴西" }]}
               style={{ width: 200 }} />
+          </Form.Item>
+          <Form.Item label={t("nipt.samples.fedexNo")}>
+            <Input value={fedexNo} onChange={e => setFedexNo(e.target.value)}
+              placeholder="FX1234567890" style={{ width: 280 }} />
           </Form.Item>
           <Form.Item label={fileSource === "泰国" ? t("nipt.samples.selectPdfFolder") : t("nipt.samples.selectFile")}>
             {fileSource === "泰国" ? (

@@ -902,6 +902,7 @@
       "importRegister": "Import & Register",
       "chooseFolder": "Choose Folder",
       "chooseFiles": "Choose Files",
+      "fedexNo": "FedEx No.",
       "none": "None",
       "registrationTime": "Registration Time"
     },
