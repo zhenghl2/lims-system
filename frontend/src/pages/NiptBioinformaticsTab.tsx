@@ -8,6 +8,7 @@ import {
 } from "@ant-design/icons";
 import api from "../api/client";
 import { useTranslation } from "../i18n/useTranslation";
+import * as XLSX from "xlsx";
 
 const { Text } = Typography;
 
@@ -182,6 +183,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
   const [bioData, setBioData] = useState<Record<string, BioData>>({});
   const [saving, setSaving] = useState(false);
   const initialized = useRef(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Load existing bioinformatics data from batch (only on batch change)
   useEffect(() => {
@@ -215,6 +217,76 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
     } finally {
       setSaving(false);
     }
+  };
+
+  // Excel import: parse file, match by VG ID, fill bioData
+  const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target?.result, { type: "binary" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        if (rows.length < 2) { message.warning("Empty file"); return; }
+
+        // Header row maps column names to BioData fields
+        const header = rows[0].map((h: any) => String(h || "").trim());
+        const fieldMap: Record<string, string> = {
+          "raw reads": "raw_reads", "raw_reads": "raw_reads",
+          "unique reads": "uniq_reads", "uniq_reads": "uniq_reads",
+          "gc%": "gc", "gc": "gc",
+          "dup%": "dup", "dup": "dup",
+          "result": "result",
+          "z21": "z21", "z18": "z18", "z13": "z13",
+          "t21": "t21", "t18": "t18", "t13": "t13",
+          "xo": "xo", "xxx": "xxx", "xxy": "xxy", "xyy": "xyy",
+          "all chrom": "all_chrom", "all_chrom": "all_chrom",
+          "plus result": "plus_result", "plus_result": "plus_result",
+          "plus highrisk": "plus_highrisk_items", "plus_highrisk_items": "plus_highrisk_items",
+          "ff%": "ff_percent", "ff_percent": "ff_percent",
+          "sex": "sex",
+        };
+
+        // Build VG ID → runSampleId map
+        const vgMap = new Map<string, string>();
+        for (const s of samples) {
+          if (s.sample_vg_id) vgMap.set(s.sample_vg_id.trim(), s.id);
+        }
+
+        const newBio = { ...bioData };
+        let matched = 0, skipped = 0;
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          const vgId = String(row[0] || "").trim();
+          const rsId = vgMap.get(vgId);
+          if (!rsId) { skipped++; continue; }
+          matched++;
+          const entry: BioData = { ...(newBio[rsId] || {}) };
+          for (let c = 1; c < header.length; c++) {
+            const colName = header[c].toLowerCase().replace(/[\s_-]+/g, " ").trim();
+            const field = fieldMap[colName];
+            if (field && row[c] !== undefined && row[c] !== null && row[c] !== "") {
+              const val = row[c];
+              if (["raw_reads", "uniq_reads", "gc", "dup", "z21", "z18", "z13", "ff_percent"].includes(field)) {
+                (entry as any)[field] = Number(val);
+              } else {
+                (entry as any)[field] = String(val).trim();
+              }
+            }
+          }
+          newBio[rsId] = entry;
+        }
+        setBioData(newBio);
+        message.success(`Imported ${matched} sample(s)${skipped > 0 ? `, ${skipped} skipped (VG ID not found)` : ""}`);
+      } catch (err: any) {
+        message.error("Failed to parse Excel: " + (err?.message || err));
+      }
+    };
+    reader.readAsBinaryString(file);
+    // Reset input so same file can be re-selected
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   // ── Columns ───────────────────────────────────────────────
@@ -493,8 +565,15 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           )}
         </Space>
         <Space>
+          <input
+            type="file"
+            ref={fileInputRef}
+            style={{ display: "none" }}
+            accept=".xlsx,.xls,.csv"
+            onChange={handleImportExcel}
+          />
           <Tooltip title={t("nipt.bioinformatics.importExcelHint")}>
-            <Button icon={<UploadOutlined />} disabled>
+            <Button icon={<UploadOutlined />} onClick={() => fileInputRef.current?.click()}>
               {t("nipt.bioinformatics.importExcel")}
             </Button>
           </Tooltip>
