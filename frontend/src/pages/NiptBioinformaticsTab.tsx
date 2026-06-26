@@ -311,7 +311,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           // If vgresult has X/Y issue → read from CSV columns
           const vgrLower = String(row["vgresult"] || "").toLowerCase();
           const hasXY = vgrLower.includes("x:") || vgrLower.includes("y:");
-          const chromMap: Record<string, string> = { "xo": "XO", "xxx": "XXX", "xxy": "XXY", "xyy": "XYY" };
+          const chromMap: Record<string, string> = { "XO": "XO", "XXX": "XXX", "XXY": "XXY", "XYY": "XYY" };
           for (const [csvKey, field] of Object.entries(chromMap)) {
             if (hasXY) {
               // Read from CSV: normal → Low Risk, high risk → High Risk
