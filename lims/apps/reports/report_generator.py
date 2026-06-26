@@ -41,8 +41,8 @@ def select_template(sample_source, test_option, is_twin, has_no_result, gender_r
     """Select the appropriate DOCX template based on sample attributes."""
     src = (sample_source or "").strip()
 
-    # Brazilian source (巴西万基)
-    if src == "巴西万基":
+    # Brazilian source (巴西万基 / 巴西)
+    if src in ("巴西万基", "巴西"):
         if has_no_result:
             return _get_template_path(TEMPLATE_MAP["plus_br_no_result"])
         return _get_template_path(TEMPLATE_MAP["plus_br"])
@@ -253,7 +253,7 @@ def generate_report(report):
     ctx = build_context(report)
 
     # Brazilian formatting
-    if sample_source == "巴西万基":
+    if sample_source in ("巴西万基", "巴西"):
         apply_brazil_formatting(ctx)
         if isinstance(ctx.get("Report_Date"), datetime):
             ctx["Report_Date"] = ctx["Report_Date"].strftime("%d/%m/%Y")
