@@ -3,8 +3,9 @@ import {
   Table, Card, Typography, Tag, Button, Modal, Select, Input,
   Space, message, Descriptions, Dropdown
 } from "antd";
-import { ReloadOutlined, CheckCircleOutlined, SafetyCertificateOutlined, DownloadOutlined, FileWordOutlined, FilePdfOutlined } from "@ant-design/icons";
+import { ReloadOutlined, CheckCircleOutlined, SafetyCertificateOutlined, DownloadOutlined, FileWordOutlined, FilePdfOutlined, EditOutlined } from "@ant-design/icons";
 import { reportsApi } from "../api";
+import api from "../api/client";
 import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
@@ -19,6 +20,12 @@ const REVIEWERS = [
 const STATUS_COLOR: Record<string, string> = {
   DRAFT: "default", REVIEWED: "blue", VERIFIED: "purple",
   SIGNED: "orange", RELEASED: "green",
+};
+
+const TEST_OPTION_LETTER: Record<string, string> = {
+  "Basic": "B",
+  "Plus": "P",
+  "Basic All": "A",
 };
 
 export default function NiptReports() {
@@ -36,6 +43,13 @@ export default function NiptReports() {
   const [verifier, setVerifier] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  // Batch fill state
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [batchFillOpen, setBatchFillOpen] = useState(false);
+  const [batchFillSuffix, setBatchFillSuffix] = useState("");
+  // Inline edit state
+  const [editingCell, setEditingCell] = useState<string>("");
 
   const fetchReports = async () => {
     setLoading(true);
@@ -60,7 +74,7 @@ export default function NiptReports() {
       const a = document.createElement("a");
       a.href = url;
       const d = res.headers?.["content-disposition"] || "";
-      const m = d.match(/filename="?(.+?)"?$/);
+      const m = d.match(/filename=\"?(.+?)\"?\$/);
       const ext = fmt === "pdf" ? ".pdf" : ".docx";
       a.download = m ? m[1] : "report" + ext;
       document.body.appendChild(a);
@@ -107,6 +121,77 @@ export default function NiptReports() {
     } finally { setSubmitting(false); }
   };
 
+  // Save single send_report_id inline edit
+  const handleSaveSendId = async (reportId: string, sampleId: string, value: string) => {
+    setEditingCell("");
+    const trimmed = value.trim();
+    try {
+      await api.post("/reports/batch-update-send-report-id/", {
+        updates: [{ sample_id: sampleId, send_report_id: trimmed }]
+      });
+      setReports(prev => prev.map(r => r.id === reportId ? { ...r, send_report_id: trimmed } : r));
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "Update failed");
+    }
+  };
+
+  // Batch fill handler
+  const handleBatchFill = async () => {
+    if (!batchFillSuffix || selectedRowKeys.length === 0) return;
+
+    const selected = reports.filter(r => selectedRowKeys.includes(r.id));
+    // Only BCC
+    const bcc = selected.filter(r => r.sample_source === "BCC");
+    if (bcc.length === 0) {
+      message.warning("No BCC samples selected");
+      return;
+    }
+
+    // Parse suffix: letter + number, e.g. A250 or B008
+    const match = batchFillSuffix.trim().match(/^([A-Z])(\d+)$/);
+    if (!match) {
+      message.warning("Invalid suffix format. Use e.g. A250 or B008");
+      return;
+    }
+    const suffixLetter = match[1];
+    let suffixNum = parseInt(match[2]);
+
+    // Generate IDs, sorted by acceptance_date then external_id
+    const sorted = [...bcc].sort((a, b) => {
+      const da = a.acceptance_date || "";
+      const db = b.acceptance_date || "";
+      if (da !== db) return da.localeCompare(db);
+      return (a.external_id || "").localeCompare(b.external_id || "");
+    });
+
+    const updates = sorted.map(r => {
+      const dateStr = r.acceptance_date ? r.acceptance_date.replace(/-/g, "").slice(2) : "000000";
+      const letter = TEST_OPTION_LETTER[r.test_option] || "X";
+      const sid = `VGNPT${letter}TLBCC${dateStr}${suffixLetter}${suffixNum++}`;
+      return { sample_id: r.sample, send_report_id: sid };
+    });
+
+    try {
+      const res = await api.post("/reports/batch-update-send-report-id/", { updates });
+      message.success(`Updated ${res.data.updated_count} samples`);
+      // Update local state
+      const updateMap = new Map(updates.map(u => [u.sample_id, u.send_report_id]));
+      setReports(prev => prev.map(r => updateMap.has(r.sample) ? { ...r, send_report_id: updateMap.get(r.sample) } : r));
+      setBatchFillOpen(false);
+      setBatchFillSuffix("");
+      setSelectedRowKeys([]);
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "Batch update failed");
+    }
+  };
+
+  // Selected BCC count for button display
+  const selectedBcc = reports.filter(r => selectedRowKeys.includes(r.id) && r.sample_source === "BCC");
+  const selectedNonBcc = selectedRowKeys.filter(id => {
+    const r = reports.find(r => r.id === id);
+    return r && r.sample_source !== "BCC";
+  });
+
   // Bio data column helpers
   const formatNum = (v: any) => v != null ? (typeof v === 'number' ? v.toLocaleString() : String(v)) : "—";
   const formatFloat = (v: any, decimals = 2) => v != null ? Number(v).toFixed(decimals) : "—";
@@ -130,6 +215,31 @@ export default function NiptReports() {
     { title: t("nipt.samples.sampleSource"),dataIndex: "sample_source", width: 110, ellipsis: true, render: (v: any) => v || "—" },
     { title: t("nipt.samples.testOption"), dataIndex: "test_option", width: 85, render: (v: any) => { if (!v) return "—"; const colors: Record<string, string> = { "basic": "blue", "plus": "purple", "basic_all": "green" }; const key = (v || "").toLowerCase().replace(/ /g, "_"); return <Tag color={colors[key] || "default"} style={{ fontSize: 10 }}>{v}</Tag>; } },
     { title: t("nipt.reports.accessioningId"), dataIndex: "external_id", width: 100, ellipsis: true, render: (v: any) => v || "—" },
+    // ── send_report_id: inline editable, right after accessioningId ──
+    {
+      title: t("nipt.samples.sendReportId"), dataIndex: "send_report_id", width: 200,
+      render: (v: any, r: any) => {
+        if (editingCell === r.id) {
+          return (
+            <Input
+              size="small"
+              autoFocus
+              defaultValue={v || ""}
+              onPressEnter={(e: any) => handleSaveSendId(r.id, r.sample, e.target.value)}
+              onBlur={(e: any) => handleSaveSendId(r.id, r.sample, e.target.value)}
+              style={{ width: 185 }}
+              onKeyDown={(e: any) => { if (e.key === "Escape") setEditingCell(""); }}
+            />
+          );
+        }
+        return (
+          <span onClick={() => setEditingCell(r.id)} style={{ cursor: "pointer", whiteSpace: "nowrap" }}>
+            {v || <Text type="secondary">—</Text>}
+            <EditOutlined style={{ marginLeft: 4, fontSize: 10, color: "#999" }} />
+          </span>
+        );
+      }
+    },
     { title: t("nipt.samples.collectionDate"), dataIndex: "collection_date", width: 90, render: (v: any) => v || "—" },
     { title: t("nipt.samples.acceptanceDate"), dataIndex: "acceptance_date", width: 90, render: (v: any) => v || "—" },
     { title: t("nipt.samples.physician"), dataIndex: "physician", width: 100, ellipsis: true, render: (v: any) => v || "—" },
@@ -139,7 +249,6 @@ export default function NiptReports() {
     { title: t("nipt.samples.hospital"), dataIndex: "ordering_facility", width: 130, ellipsis: true, render: (v: any) => v || "—" },
     { title: t("nipt.samples.gestWeeks"), dataIndex: "gestational_weeks", width: 75, align: "center" as const, render: (v: any) => v != null ? `${v}w` : "—" },
     { title: t("nipt.samples.reportCode"), dataIndex: "report_code", width: 100, ellipsis: true, render: (v: any) => v || "—" },
-    { title: t("nipt.samples.sendReportId"), dataIndex: "send_report_id", width: 90, ellipsis: true, render: (v: any) => v || "—" },
     { title: t("nipt.samples.age"), dataIndex: "age", width: 50, align: "center" as const, render: (v: any) => v != null ? String(v) : "—" },
     { title: t("nipt.samples.twin"), dataIndex: "multiple_gestation", width: 50, align: "center" as const, render: (v: any) => v ? "👶👶" : "—" },
     { title: t("nipt.samples.ivf"), dataIndex: "ivf_status", width: 50, align: "center" as const, render: (v: any) => v ? <Tag color="orange" style={{ fontSize: 10 }}>{t("nipt.samples.ivf")}</Tag> : "—" },
@@ -197,7 +306,6 @@ export default function NiptReports() {
             </Space>
           );
         }
-        // Allow review for DRAFT or REVIEWED status
         const canReview = r.status === "DRAFT" || r.status === "REVIEWED";
         return (
           <Button
@@ -226,7 +334,6 @@ export default function NiptReports() {
             </Space>
           );
         }
-        // Allow verify only after reviewed
         const canVerify = r.status === "REVIEWED";
         return canVerify ? (
           <Button
@@ -255,9 +362,19 @@ export default function NiptReports() {
         <Title level={4} style={{ margin: 0 }}>{t("nipt.reports.title")}</Title>
         <Space>
           <Text type="secondary">
-            {reports.length} reports | ${t("nipt.reports.reviewedCount")}: {reports.filter(r => r.status === "REVIEWED" || r.status === "RELEASED").length}
+            {reports.length} reports | {t("nipt.reports.reviewedCount")}: {reports.filter(r => r.status === "REVIEWED" || r.status === "RELEASED").length}
             {" "}| {t("nipt.reports.publishedCount")}: {reports.filter(r => r.status === "RELEASED").length}
           </Text>
+          {selectedRowKeys.length > 0 && (
+            <Button
+              type="primary"
+              size="small"
+              onClick={() => setBatchFillOpen(true)}
+              disabled={selectedBcc.length === 0}
+            >
+              {t("nipt.reports.batchFillSendId")} ({selectedBcc.length} BCC)
+            </Button>
+          )}
           <Button icon={<ReloadOutlined />} onClick={fetchReports} loading={loading}>{t("nipt.reports.refresh")}</Button>
         </Space>
       </div>
@@ -275,15 +392,24 @@ export default function NiptReports() {
             <Text code>{t("nipt.reports.reviewerList")}</Text>
           </Descriptions.Item>
         </Descriptions>
+        {selectedNonBcc.length > 0 && (
+          <Text type="secondary" style={{ fontSize: 11 }}>
+            {selectedNonBcc.length} non-BCC sample(s) selected, will be skipped during batch fill.
+          </Text>
+        )}
       </Card>
 
       <Table
         rowKey="id"
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (keys: any) => setSelectedRowKeys(keys as string[]),
+        }}
         dataSource={reports}
         columns={columns}
         loading={loading}
         size="small"
-        scroll={{ x: 5100 }}
+        scroll={{ x: 5200 }}
         pagination={{ pageSize: 30, showTotal: t => `Total ${t}` }}
         bordered
         components={{
@@ -359,6 +485,54 @@ export default function NiptReports() {
             />
           </div>
         </Space>
+      </Modal>
+
+      {/* Batch Fill Modal */}
+      <Modal
+        title={t("nipt.reports.batchFillSendId")}
+        open={batchFillOpen}
+        onOk={handleBatchFill}
+        onCancel={() => { setBatchFillOpen(false); setBatchFillSuffix(""); }}
+        okText={t("nipt.reports.fillGenerate")}
+        width={650}
+      >
+        <div style={{ marginBottom: 12 }}>
+          <Text strong>{t("nipt.reports.selectedBccSamples")}: {selectedBcc.length}</Text>
+        </div>
+        {/* Preview list */}
+        <div style={{ maxHeight: 260, overflow: "auto", marginBottom: 16, background: "#fafafa", padding: 8, borderRadius: 4 }}>
+          <table style={{ width: "100%", fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", padding: "2px 6px" }}>VG ID</th>
+                <th style={{ textAlign: "left", padding: "2px 6px" }}>{t("nipt.samples.name")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedBcc.map(r => (
+                <tr key={r.id}>
+                  <td style={{ padding: "2px 6px" }}><Text code style={{ fontSize: 11 }}>{r.sample_vg_id || "—"}</Text></td>
+                  <td style={{ padding: "2px 6px" }}>{r.patient_name}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <Text strong>{t("nipt.reports.suffixFormat")}</Text>
+          <Text type="secondary" style={{ display: "block", marginBottom: 8, fontSize: 11 }}>
+            VGNPT&#123;A/B/P&#125;TLBCC&#123;YYMMDD&#125;<b>[suffix]</b> {" "}
+            e.g. A250 → A250, A251, A252...
+          </Text>
+        </div>
+        <Input
+          placeholder="e.g. A250 or B008"
+          value={batchFillSuffix}
+          onChange={e => setBatchFillSuffix(e.target.value)}
+          onPressEnter={handleBatchFill}
+          style={{ width: 280 }}
+          autoFocus
+        />
       </Modal>
     </div>
   );

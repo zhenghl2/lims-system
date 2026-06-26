@@ -213,3 +213,38 @@ class ReportViewSet(viewsets.ModelViewSet):
         report.sample.status = "REPORTED"
         report.sample.save(update_fields=["status", "updated_at"])
         return Response({"status": "RELEASED"})
+
+    @action(detail=False, methods=["post"], url_path="batch-update-send-report-id")
+    def batch_update_send_report_id(self, request):
+        """Batch update send_report_id on Sample records.
+        
+        POST /api/v1/reports/batch-update-send-report-id/
+        Body: { "updates": [{"sample_id": "xxx", "send_report_id": "VGNPT..."}, ...] }
+        """
+        updates = request.data.get("updates", [])
+        if not updates:
+            return Response({"error": "No updates provided"}, status=400)
+        
+        from lims.apps.samples.models import Sample
+        updated = []
+        errors = []
+        for item in updates:
+            sample_id = item.get("sample_id")
+            send_id = item.get("send_report_id", "")
+            if not sample_id:
+                errors.append({"item": item, "error": "sample_id required"})
+                continue
+            try:
+                sample = Sample.objects.get(id=sample_id, is_deleted=False)
+                sample.send_report_id = send_id
+                sample.save(update_fields=["send_report_id", "updated_at"])
+                updated.append({"sample_id": sample_id, "send_report_id": send_id})
+            except Sample.DoesNotExist:
+                errors.append({"sample_id": sample_id, "error": "Sample not found"})
+        
+        return Response({
+            "updated_count": len(updated),
+            "error_count": len(errors),
+            "updated": updated,
+            "errors": errors,
+        })
