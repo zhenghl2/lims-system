@@ -232,6 +232,8 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
         const wb = XLSX.read(ev.target?.result, { type: "binary" });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        console.log("[import] rows count:", rows.length);
+        console.log("[import] first row keys:", rows.length > 0 ? Object.keys(rows[0]) : "none");
         if (rows.length === 0) { message.warning("Empty file"); return; }
 
         // Build VG ID → runSampleId map
@@ -239,42 +241,45 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
         for (const s of samples) {
           if (s.sample_vg_id) vgMap.set(s.sample_vg_id.trim(), s.id);
         }
+        console.log("[import] vgMap:", [...vgMap.entries()]);
 
-        const r3 = (v: number) => Math.round(v * 1000) / 1000; // round to 3dp
+        const r3 = (v: number) => Math.round(v * 1000) / 1000;
 
-        // Helper: deduce T-chrom result from win_out_of_range
-        const deduceT = (chr: string, winOut: string): string => {
-          if (!winOut) return "";
-          const parts = winOut.split(",").map(s => s.trim());
-          if (parts.includes(chr)) return "High Risk";
-          return "Low Risk";
+        // Helper: translate normal/high risk CSV values
+        const toRisk = (csvVal: string): string => {
+          const v = (csvVal || "").trim().toLowerCase();
+          if (v === "high risk" || v === "高风险") return "High Risk";
+          if (v === "normal" || v === "正常") return "Low Risk";
+          return v || "Low Risk";
         };
 
-        const newBio = { ...bioData };
+        const newBio: Record<string, BioData> = { ...bioData };
         let matched = 0, skipped = 0;
+
         for (const row of rows) {
-          // Extract VG ID from sample column: last _ segment
           const sampleField = String(row["sample"] || row["Sample"] || "");
           const vgId = sampleField.includes("_") ? sampleField.split("_").pop()!.trim() : sampleField.trim();
           const rsId = vgMap.get(vgId);
-          if (!rsId) { skipped++; continue; }
-          matched++;
+          if (!rsId) { console.log("[import] skip unmatched:", vgId); skipped++; continue; }
 
-          const entry: BioData = { ...(newBio[rsId] || {}) };
+          console.log(`[import] match: ${vgId} → rsId=${rsId}`);
+
+          const entry: BioData = {};
           const winOut = String(row["win_out_of_range"] || "");
+          const sexGroup = String(row["sex_group"] || "").toLowerCase();
 
-          // Numeric fields — round to 3dp
+          // ── Numeric fields (3 decimal places) ──
           const rawReads = Number(row["raw_reads"]);
           if (!isNaN(rawReads)) entry.raw_reads = r3(rawReads);
 
           const uniqReads = Number(row["unique_reads"]);
           if (!isNaN(uniqReads)) entry.uniq_reads = r3(uniqReads);
 
-          // gc is already percentage (38.99), keep as-is
+          // GC is already percentage (38.99), keep as-is
           const gc = Number(row["gc"]);
           if (!isNaN(gc)) entry.gc = r3(gc);
 
-          // duplication: CSV is decimal (0.0366), convert to % (×100)
+          // Duplication: CSV decimal (0.0366) → % (×100)
           const dup = Number(row["duplication"]);
           if (!isNaN(dup)) entry.dup = r3(dup * 100);
 
@@ -286,59 +291,54 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           const z13 = Number(row["chr13_z"]);
           if (!isNaN(z13)) entry.z13 = r3(z13);
 
-          // FF%: male → FFY, female → Seqff; both ×100
-          const sexGroup = String(row["sex_group"] || "").toLowerCase();
+          // ── FF%: male → FFY, female → Seqff; both ×100 ──
           const ffRaw = sexGroup === "male" ? Number(row["FFY"]) : Number(row["Seqff"]);
           if (!isNaN(ffRaw)) entry.ff_percent = r3(ffRaw * 100);
 
-          // Sex
-          const sex = String(row["sex_group"] || "");
-          if (sex) entry.sex = sex.charAt(0).toUpperCase() + sex.slice(1).toLowerCase();
+          // ── Sex ──
+          if (sexGroup) entry.sex = sexGroup.charAt(0).toUpperCase() + sexGroup.slice(1);
 
-          // T21/T18/T13 deduced from win_out_of_range
+          // ── T21/T18/T13 from win_out_of_range ──
           if (winOut) {
-            entry.t21 = deduceT("chr21", winOut);
-            entry.t18 = deduceT("chr18", winOut);
-            entry.t13 = deduceT("chr13", winOut);
+            const parts = winOut.split(",").map((s: string) => s.trim());
+            entry.t21 = parts.includes("chr21") ? "High Risk" : "Low Risk";
+            entry.t18 = parts.includes("chr18") ? "High Risk" : "Low Risk";
+            entry.t13 = parts.includes("chr13") ? "High Risk" : "Low Risk";
           }
 
-          // Result: use vgresult
+          // ── Result: vgresult ──
           const vgr = String(row["vgresult"] || "");
           if (vgr) entry.result = vgr;
 
-          // Chromosome status: XO/XXX/XXY/XYY
-          // If vgresult has no X/Y issue → default all to Low Risk
-          // If vgresult has X/Y issue → read from CSV columns
-          const vgrLower = String(row["vgresult"] || "").toLowerCase();
-          const hasXY = vgrLower.includes("x:") || vgrLower.includes("y:");
-          const chromMap: Record<string, string> = { "XO": "XO", "XXX": "XXX", "XXY": "XXY", "XYY": "XYY" };
-          for (const [csvKey, field] of Object.entries(chromMap)) {
-            if (hasXY) {
-              // Read from CSV: normal → Low Risk, high risk → High Risk
-              const csvVal = String(row[csvKey] || "").trim().toLowerCase();
-              if (csvVal === "high risk" || csvVal === "高风险") (entry as any)[field] = "High Risk";
-              else if (csvVal === "normal" || csvVal === "正常") (entry as any)[field] = "Low Risk";
-              else if (csvVal) (entry as any)[field] = csvVal;
-            } else {
-              (entry as any)[field] = "Low Risk";
-            }
-          }
+          // ── XO / XXX / XXY / XYY ──
+          // Always read from CSV; default "Low Risk" if column is empty
+          entry.xo = toRisk(row["XO"]);
+          entry.xxx = toRisk(row["XXX"]);
+          entry.xxy = toRisk(row["XXY"]);
+          entry.xyy = toRisk(row["XYY"]);
+          console.log(`[import] ${vgId} XO=${entry.xo} XXX=${entry.xxx} XXY=${entry.xxy} XYY=${entry.xyy}`);
 
-          // All Chrom
-          const ac = String(row["All Chrom"] || row["all_chrom"] || "");
+          // ── All Chrom ──
+          const ac = String(row["All Chrom"] || "");
           if (ac) entry.all_chrom = ac;
 
-          // Plus fields
-          const pr = String(row["Plus_Result"] || row["plus_result"] || "");
+          // ── Plus fields ──
+          const pr = String(row["Plus_Result"] || "");
           if (pr) entry.plus_result = pr;
-          const ph = String(row["Plus_HighRisk"] || row["plus_highrisk_items"] || "");
+          const ph = String(row["Plus_HighRisk"] || "");
           if (ph) entry.plus_highrisk_items = ph;
 
+          console.log("[import] entry:", JSON.stringify(entry));
           newBio[rsId] = entry;
+          matched++;
         }
+
+        console.log("[import] newBio keys:", Object.keys(newBio));
+        console.log("[import] newBio:", JSON.stringify(newBio));
         setBioData(newBio);
         message.success(`Imported ${matched} sample(s)${skipped > 0 ? `, ${skipped} skipped (VG ID not found)` : ""}`);
       } catch (err: any) {
+        console.error("[import] error:", err);
         message.error("Failed to parse file: " + (err?.message || err));
       }
     };
