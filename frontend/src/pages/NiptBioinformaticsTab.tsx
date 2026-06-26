@@ -219,7 +219,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
     }
   };
 
-  // Excel import: parse file, match by VG ID, fill bioData
+  // Excel/CSV import: parse CHIP6972-style merged results file
   const handleImportExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -228,26 +228,8 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       try {
         const wb = XLSX.read(ev.target?.result, { type: "binary" });
         const ws = wb.Sheets[wb.SheetNames[0]];
-        const rows: any[] = XLSX.utils.sheet_to_json(ws, { header: 1 });
-        if (rows.length < 2) { message.warning("Empty file"); return; }
-
-        // Header row maps column names to BioData fields
-        const header = rows[0].map((h: any) => String(h || "").trim());
-        const fieldMap: Record<string, string> = {
-          "raw reads": "raw_reads", "raw_reads": "raw_reads",
-          "unique reads": "uniq_reads", "uniq_reads": "uniq_reads",
-          "gc%": "gc", "gc": "gc",
-          "dup%": "dup", "dup": "dup",
-          "result": "result",
-          "z21": "z21", "z18": "z18", "z13": "z13",
-          "t21": "t21", "t18": "t18", "t13": "t13",
-          "xo": "xo", "xxx": "xxx", "xxy": "xxy", "xyy": "xyy",
-          "all chrom": "all_chrom", "all_chrom": "all_chrom",
-          "plus result": "plus_result", "plus_result": "plus_result",
-          "plus highrisk": "plus_highrisk_items", "plus_highrisk_items": "plus_highrisk_items",
-          "ff%": "ff_percent", "ff_percent": "ff_percent",
-          "sex": "sex",
-        };
+        const rows: Record<string, any>[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        if (rows.length === 0) { message.warning("Empty file"); return; }
 
         // Build VG ID → runSampleId map
         const vgMap = new Map<string, string>();
@@ -255,37 +237,100 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           if (s.sample_vg_id) vgMap.set(s.sample_vg_id.trim(), s.id);
         }
 
+        const r3 = (v: number) => Math.round(v * 1000) / 1000; // round to 3dp
+
+        // Helper: deduce T-chrom result from win_out_of_range
+        const deduceT = (chr: string, winOut: string): string => {
+          if (!winOut) return "";
+          const parts = winOut.split(",").map(s => s.trim());
+          if (parts.includes(chr)) return "High Risk";
+          return "Low Risk";
+        };
+
         const newBio = { ...bioData };
         let matched = 0, skipped = 0;
-        for (let i = 1; i < rows.length; i++) {
-          const row = rows[i];
-          const vgId = String(row[0] || "").trim();
+        for (const row of rows) {
+          // Extract VG ID from sample column: last _ segment
+          const sampleField = String(row["sample"] || row["Sample"] || "");
+          const vgId = sampleField.includes("_") ? sampleField.split("_").pop()!.trim() : sampleField.trim();
           const rsId = vgMap.get(vgId);
           if (!rsId) { skipped++; continue; }
           matched++;
+
           const entry: BioData = { ...(newBio[rsId] || {}) };
-          for (let c = 1; c < header.length; c++) {
-            const colName = header[c].toLowerCase().replace(/[\s_-]+/g, " ").trim();
-            const field = fieldMap[colName];
-            if (field && row[c] !== undefined && row[c] !== null && row[c] !== "") {
-              const val = row[c];
-              if (["raw_reads", "uniq_reads", "gc", "dup", "z21", "z18", "z13", "ff_percent"].includes(field)) {
-                (entry as any)[field] = Number(val);
-              } else {
-                (entry as any)[field] = String(val).trim();
-              }
-            }
+          const winOut = String(row["win_out_of_range"] || "");
+
+          // Numeric fields — round to 3dp
+          const rawReads = Number(row["raw_reads"]);
+          if (!isNaN(rawReads)) entry.raw_reads = r3(rawReads);
+
+          const uniqReads = Number(row["unique_reads"]);
+          if (!isNaN(uniqReads)) entry.uniq_reads = r3(uniqReads);
+
+          // gc is already percentage (38.99), keep as-is
+          const gc = Number(row["gc"]);
+          if (!isNaN(gc)) entry.gc = r3(gc);
+
+          // duplication: CSV is decimal (0.0366), convert to % (×100)
+          const dup = Number(row["duplication"]);
+          if (!isNaN(dup)) entry.dup = r3(dup * 100);
+
+          // Z scores
+          const z21 = Number(row["chr21_z"]);
+          if (!isNaN(z21)) entry.z21 = r3(z21);
+          const z18 = Number(row["chr18_z"]);
+          if (!isNaN(z18)) entry.z18 = r3(z18);
+          const z13 = Number(row["chr13_z"]);
+          if (!isNaN(z13)) entry.z13 = r3(z13);
+
+          // FF%: male → FFY, female → Seqff; both ×100
+          const sexGroup = String(row["sex_group"] || "").toLowerCase();
+          const ffRaw = sexGroup === "male" ? Number(row["FFY"]) : Number(row["Seqff"]);
+          if (!isNaN(ffRaw)) entry.ff_percent = r3(ffRaw * 100);
+
+          // Sex
+          const sex = String(row["sex_group"] || "");
+          if (sex) entry.sex = sex.charAt(0).toUpperCase() + sex.slice(1).toLowerCase();
+
+          // T21/T18/T13 deduced from win_out_of_range
+          if (winOut) {
+            entry.t21 = deduceT("chr21", winOut);
+            entry.t18 = deduceT("chr18", winOut);
+            entry.t13 = deduceT("chr13", winOut);
           }
+
+          // Result: use vgresult
+          const vgr = String(row["vgresult"] || "");
+          if (vgr) entry.result = vgr;
+
+          // Chromosome status: XO/XXX/XXY/XYY — normal → empty, else "High Risk"
+          const chromMap: Record<string, string> = { "xo": "XO", "xxx": "XXX", "xxy": "XXY", "xyy": "XYY" };
+          for (const [csvKey, field] of Object.entries(chromMap)) {
+            const val = String(row[csvKey] || "").trim().toLowerCase();
+            if (val === "high risk") (entry as any)[field] = "High Risk";
+            else if (val === "normal") (entry as any)[field] = "Low Risk";
+            else if (val) (entry as any)[field] = val;
+          }
+
+          // All Chrom
+          const ac = String(row["All Chrom"] || row["all_chrom"] || "");
+          if (ac) entry.all_chrom = ac;
+
+          // Plus fields
+          const pr = String(row["Plus_Result"] || row["plus_result"] || "");
+          if (pr) entry.plus_result = pr;
+          const ph = String(row["Plus_HighRisk"] || row["plus_highrisk_items"] || "");
+          if (ph) entry.plus_highrisk_items = ph;
+
           newBio[rsId] = entry;
         }
         setBioData(newBio);
         message.success(`Imported ${matched} sample(s)${skipped > 0 ? `, ${skipped} skipped (VG ID not found)` : ""}`);
       } catch (err: any) {
-        message.error("Failed to parse Excel: " + (err?.message || err));
+        message.error("Failed to parse file: " + (err?.message || err));
       }
     };
     reader.readAsBinaryString(file);
-    // Reset input so same file can be re-selected
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -348,7 +393,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       render: (v: string) => v || "—",
     },
     {
-      title: "raw-reads", key: "raw_reads", width: 90, align: "center" as const,
+      title: "raw-reads", key: "raw_reads", width: 110, align: "center" as const,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.raw_reads}
@@ -358,7 +403,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "uniq-reads", key: "uniq_reads", width: 90, align: "center" as const,
+      title: "uniq-reads", key: "uniq_reads", width: 110, align: "center" as const,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.uniq_reads}
@@ -368,7 +413,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "GC (%)", key: "gc", width: 70, align: "center" as const,
+      title: "GC (%)", key: "gc", width: 75, align: "center" as const,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.gc}
@@ -378,7 +423,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "Dup (%)", key: "dup", width: 70, align: "center" as const,
+      title: "Dup (%)", key: "dup", width: 75, align: "center" as const,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.dup}
@@ -388,7 +433,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "Result", key: "result", width: 120,
+      title: "Result", key: "result", width: 130,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.result}
@@ -398,7 +443,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "Z21", key: "z21", width: 65, align: "center" as const,
+      title: "Z21", key: "z21", width: 75, align: "center" as const,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.z21}
@@ -408,7 +453,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "Z18", key: "z18", width: 65, align: "center" as const,
+      title: "Z18", key: "z18", width: 75, align: "center" as const,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.z18}
@@ -418,7 +463,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "Z13", key: "z13", width: 65, align: "center" as const,
+      title: "Z13", key: "z13", width: 75, align: "center" as const,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.z13}
@@ -428,7 +473,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "T21", key: "t21", width: 90,
+      title: "T21", key: "t21", width: 100,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.t21}
@@ -438,7 +483,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "T18", key: "t18", width: 90,
+      title: "T18", key: "t18", width: 100,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.t18}
@@ -448,7 +493,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "T13", key: "t13", width: 90,
+      title: "T13", key: "t13", width: 100,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.t13}
@@ -458,7 +503,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "XO", key: "xo", width: 90,
+      title: "XO", key: "xo", width: 95,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.xo}
@@ -468,7 +513,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "XXX", key: "xxx", width: 90,
+      title: "XXX", key: "xxx", width: 95,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.xxx}
@@ -478,7 +523,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "XXY", key: "xxy", width: 90,
+      title: "XXY", key: "xxy", width: 95,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.xxy}
@@ -488,7 +533,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "XYY", key: "xyy", width: 90,
+      title: "XYY", key: "xyy", width: 95,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.xyy}
@@ -498,7 +543,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "All Chrom", key: "all_chrom", width: 120,
+      title: "All Chrom", key: "all_chrom", width: 140,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.all_chrom}
@@ -508,7 +553,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "Plus Result", key: "plus_result", width: 120,
+      title: "Plus Result", key: "plus_result", width: 140,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.plus_result}
@@ -518,7 +563,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "Plus HighRisk", key: "plus_highrisk_items", width: 140,
+      title: "Plus HighRisk", key: "plus_highrisk_items", width: 160,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.plus_highrisk_items}
@@ -528,7 +573,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       ),
     },
     {
-      title: "FF (%)", key: "ff_percent", width: 70, align: "center" as const,
+      title: "FF (%)", key: "ff_percent", width: 75, align: "center" as const,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.ff_percent}
