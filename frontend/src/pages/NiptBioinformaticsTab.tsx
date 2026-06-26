@@ -91,9 +91,10 @@ interface EditableCellProps {
   min?: number;
   max?: number;
   step?: number;
+  danger?: boolean; // QC highlight: red text
 }
 
-function EditableCell({ value, onChange, type, options, placeholder, min, max, step }: EditableCellProps) {
+function EditableCell({ value, onChange, type, options, placeholder, min, max, step, danger }: EditableCellProps) {
   const [editing, setEditing] = useState(false);
   const [localValue, setLocalValue] = useState<any>(value);
 
@@ -104,6 +105,8 @@ function EditableCell({ value, onChange, type, options, placeholder, min, max, s
     if (localValue !== value) onChange(localValue);
   };
 
+  const dangerStyle = danger ? { color: "#ff4d4f", fontWeight: 700 } : {};
+
   if (!editing) {
     const display = value !== null && value !== undefined && value !== ""
       ? (type === "select" && options
@@ -113,7 +116,7 @@ function EditableCell({ value, onChange, type, options, placeholder, min, max, s
     return (
       <div
         onClick={() => setEditing(true)}
-        style={{ cursor: "pointer", minWidth: 40, minHeight: 22, padding: "1px 4px", borderRadius: 3 }}
+        style={{ cursor: "pointer", minWidth: 40, minHeight: 22, padding: "1px 4px", borderRadius: 3, ...dangerStyle }}
         onMouseEnter={e => (e.currentTarget.style.background = "#f0f5ff")}
         onMouseLeave={e => (e.currentTarget.style.background = "transparent")}
       >
@@ -303,13 +306,18 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           const vgr = String(row["vgresult"] || "");
           if (vgr) entry.result = vgr;
 
-          // Chromosome status: XO/XXX/XXY/XYY — normal → empty, else "High Risk"
+          // Chromosome status: XO/XXX/XXY/XYY
+          // If vgresult mentions X or Y chromosome issue → leave blank for manual
+          // Otherwise default to Low Risk (normal)
+          const vgrLower = String(row["vgresult"] || "").toLowerCase();
+          const hasXY = vgrLower.includes("x:") || vgrLower.includes("y:");
           const chromMap: Record<string, string> = { "xo": "XO", "xxx": "XXX", "xxy": "XXY", "xyy": "XYY" };
-          for (const [csvKey, field] of Object.entries(chromMap)) {
-            const val = String(row[csvKey] || "").trim().toLowerCase();
-            if (val === "high risk") (entry as any)[field] = "High Risk";
-            else if (val === "normal") (entry as any)[field] = "Low Risk";
-            else if (val) (entry as any)[field] = val;
+          for (const field of Object.values(chromMap)) {
+            if (hasXY) {
+              // Leave blank — user fills manually
+            } else {
+              (entry as any)[field] = "Low Risk";
+            }
           }
 
           // All Chrom
@@ -449,6 +457,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.z21}
           onChange={v => updateCell(record.id, "z21", v)}
           type="number" step={0.01} placeholder="Z21"
+          danger={bioData[record.id]?.z21 != null && (bioData[record.id]!.z21! < -2.8 || bioData[record.id]!.z21! > 2.8)}
         />
       ),
     },
@@ -459,6 +468,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.z18}
           onChange={v => updateCell(record.id, "z18", v)}
           type="number" step={0.01} placeholder="Z18"
+          danger={bioData[record.id]?.z18 != null && (bioData[record.id]!.z18! < -2.8 || bioData[record.id]!.z18! > 2.8)}
         />
       ),
     },
@@ -469,6 +479,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.z13}
           onChange={v => updateCell(record.id, "z13", v)}
           type="number" step={0.01} placeholder="Z13"
+          danger={bioData[record.id]?.z13 != null && (bioData[record.id]!.z13! < -2.8 || bioData[record.id]!.z13! > 2.8)}
         />
       ),
     },
@@ -479,6 +490,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.t21}
           onChange={v => updateCell(record.id, "t21", v)}
           type="select" options={CHROM_RESULT_OPTIONS} placeholder="T21"
+          danger={bioData[record.id]?.t21 === "High Risk"}
         />
       ),
     },
@@ -489,6 +501,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.t18}
           onChange={v => updateCell(record.id, "t18", v)}
           type="select" options={CHROM_RESULT_OPTIONS} placeholder="T18"
+          danger={bioData[record.id]?.t18 === "High Risk"}
         />
       ),
     },
@@ -499,6 +512,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.t13}
           onChange={v => updateCell(record.id, "t13", v)}
           type="select" options={CHROM_RESULT_OPTIONS} placeholder="T13"
+          danger={bioData[record.id]?.t13 === "High Risk"}
         />
       ),
     },
@@ -509,6 +523,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.xo}
           onChange={v => updateCell(record.id, "xo", v)}
           type="select" options={CHROM_RESULT_OPTIONS} placeholder="XO"
+          danger={bioData[record.id]?.xo === "High Risk"}
         />
       ),
     },
@@ -519,6 +534,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.xxx}
           onChange={v => updateCell(record.id, "xxx", v)}
           type="select" options={CHROM_RESULT_OPTIONS} placeholder="XXX"
+          danger={bioData[record.id]?.xxx === "High Risk"}
         />
       ),
     },
@@ -529,6 +545,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.xxy}
           onChange={v => updateCell(record.id, "xxy", v)}
           type="select" options={CHROM_RESULT_OPTIONS} placeholder="XXY"
+          danger={bioData[record.id]?.xxy === "High Risk"}
         />
       ),
     },
@@ -539,6 +556,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.xyy}
           onChange={v => updateCell(record.id, "xyy", v)}
           type="select" options={CHROM_RESULT_OPTIONS} placeholder="XYY"
+          danger={bioData[record.id]?.xyy === "High Risk"}
         />
       ),
     },
@@ -579,6 +597,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           value={bioData[record.id]?.ff_percent}
           onChange={v => updateCell(record.id, "ff_percent", v)}
           type="number" min={0} max={100} step={0.01} placeholder="FF%"
+          danger={bioData[record.id]?.ff_percent != null && bioData[record.id]!.ff_percent! < 4}
         />
       ),
     },
