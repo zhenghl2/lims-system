@@ -378,7 +378,13 @@ export default function NiptPlasmaSeparation() {
                 <Image.PreviewGroup>
                   <Space wrap>
                     {batchDetail.photos.map((p: any) => (
-                      <Image key={p.id} src={p.image} width={100} height={80} style={{ objectFit: "cover", borderRadius: 4 }} />
+                      <div key={p.id} style={{ position: "relative", display: "inline-block" }}>
+                      <Image src={p.image} width={100} height={80} style={{ objectFit: "cover", borderRadius: 4 }} />
+                      <Button size="small" danger type="text" icon={<DeleteOutlined />}
+                        style={{ position: "absolute", top: -8, right: -8, background: "#fff", borderRadius: "50%", padding: 0, minWidth: 20, height: 20 }}
+                        onClick={() => handlePhotoDelete(p.id)}
+                        disabled={batchDetail.status === "COMPLETED"} />
+                    </div>
                     ))}
                   </Space>
                 </Image.PreviewGroup>
