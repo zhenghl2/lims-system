@@ -101,6 +101,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   const [negativeControl, setNegativeControl] = useState("");
   const [method, setMethod] = useState(batch.library_method || "MULTI_CHANNEL");
   const [region, setRegion] = useState(batch.region || "");
+  const [startCoord, setStartCoord] = useState(batch.library_data?.start_coord || "");
 
   // Sync region when batch is updated (e.g. after extraction tab saves a different region)
   useEffect(() => {
@@ -115,6 +116,17 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
 
   // ── Plate state: 8×12 cells, each with {vgId, index} ──
   const [plate, setPlate] = useState<PlateCell[][]>([]);
+
+  // Parse coordinate like "D2" -> { row: 3, col: 1 }
+  const parseCoord = (coord: string): { row: number; col: number } | null => {
+    if (!coord || !coord.trim()) return null;
+    const match = coord.trim().toUpperCase().match(/^([A-H])(\d{1,2})$/);
+    if (!match) return null;
+    const row = ROW_LABELS.indexOf(match[1]);
+    const col = parseInt(match[2], 10) - 1;
+    if (row === -1 || col < 0 || col >= COL_COUNT) return null;
+    return { row, col };
+  };
 
   // ── Build 96-well plate based on extraction method ──
   const buildPlate = useMemo(() => {
@@ -141,7 +153,21 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       return aId.localeCompare(bId, undefined, { numeric: true });
     });
 
-    if (extMethod === "AUTOMATED") {
+    const coord = parseCoord(startCoord);
+
+    if (coord) {
+      // Custom start coordinate: fill from cell, top->bottom, left->right, stop at col 12
+      let idx = 0;
+      for (let c = coord.col; c < COL_COUNT; c++) {
+        const rowStart = (c === coord.col) ? coord.row : 0;
+        for (let r = rowStart; r < 8; r++) {
+          if (idx < sortedSamples.length) {
+            p[r][c] = { vgId: getVgId(sortedSamples[idx]), index: "" };
+            idx++;
+          }
+        }
+      }
+    } else if (extMethod === "AUTOMATED") {
       // Automated: center-aligned, same as extraction table
       const numCols = Math.min(Math.ceil(sortedSamples.length / 8), COL_COUNT);
       const startCol = Math.floor((COL_COUNT - numCols) / 2);
@@ -173,7 +199,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       }
     }
     return p;
-  }, [samples, batch.extraction_method, batch.extraction_data]);
+  }, [samples, batch.extraction_method, batch.extraction_data, startCoord]);
 
   // ── Load saved plate indices ──
   useEffect(() => {
@@ -234,6 +260,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     setSteps(edata.step_confirmations || {});
     setPositiveControl(edata.positive_control || "");
     setNegativeControl(edata.negative_control || "");
+    if (edata.start_coord) setStartCoord(edata.start_coord);
     if (batch.library_method) setMethod(batch.library_method);
   }, [edata, form]);
 
@@ -333,6 +360,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
           humidity: vals.humidity,
           step_confirmations: steps,
           library_plate: plateData,
+          start_coord: startCoord,
           positive_control: positiveControl,
           negative_control: negativeControl,
         },
@@ -496,7 +524,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       <Card
         size="small"
         className="no-print-break"
-        title={<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}><span>{t("nipt.library.plateLayout")} — 96-{t("nipt.library.wellPlate")}（{samples.length} samples）</span><Button size="small" onClick={handlePrint} >{t("nipt.pooling.print")}</Button></div>}
+        title={<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}><span>{t("nipt.library.plateLayout")} — 96-{t("nipt.library.wellPlate")}（{samples.length} samples）<Input size="small" placeholder="起始坐标如 D2" value={startCoord} onChange={e => { const v = e.target.value.toUpperCase().replace(/[^A-H0-9]/g, ""); setStartCoord(v.length <= 3 ? v : v.slice(0,3)); }} style={{ width: 85, marginLeft: 10 }} maxLength={3} /></span><Button size="small" onClick={handlePrint} >{t("nipt.pooling.print")}</Button></div>}
         style={{ marginBottom: 16 }}
       >
         <div style={{ overflowX: "auto" }}>
