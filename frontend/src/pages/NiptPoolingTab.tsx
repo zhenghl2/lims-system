@@ -113,6 +113,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
   const [rows, setRows] = useState<SampleRow[]>([]);
   const [saving, setSaving] = useState(false);
   const [poolingBase, setPoolingBase] = useState(pdata.poolingBase ?? DEFAULT_POOLING_AMOUNT);
+  const [globalElutionVol, setGlobalElutionVol] = useState(pdata.globalElutionVol ?? DEFAULT_ELUTION_VOL);
   const printRef = useRef<HTMLDivElement>(null);
   // Ref to capture latest poolingBase for buildRows without stale closure
   const poolingBaseRef = useRef(poolingBase);
@@ -131,6 +132,14 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
       return { ...r, poolingAmount: defaultPA, poolingVolume: pv };
     }));
   }, [poolingBase]);
+
+  // Sync global elution volume to all rows
+  useEffect(() => {
+    setRows(prev => prev.map(r => {
+      const y = (r.concentration || 0) * globalElutionVol;
+      return { ...r, elutionVolume: globalElutionVol, yield: y, eliminated: y > 0 && y < YIELD_THRESHOLD };
+    }));
+  }, [globalElutionVol]);
 
   const updateCell = (rowIdx: number, field: string, value: number | null) => {
     setRows(prev => {
@@ -184,6 +193,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
       await api.post(`/runs/${batch.id}/save_pooling/`, {
         pooling_data: {
           poolingBase,
+          globalElutionVol,
           samples,
           totals: {
             totalMass: totals.totalMass,
@@ -288,6 +298,15 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
           style={{ width: 80 }}
         />
         <span style={{ color: "#999" }}>{t("nipt.pooling.legendTwinPlus")}</span>
+        <span style={{ color: "#666" }}>洗脱体积 (μL):</span>
+        <InputNumber
+          size="small"
+          min={1}
+          step={1}
+          value={globalElutionVol}
+          onChange={v => v !== null && setGlobalElutionVol(v)}
+          style={{ width: 70 }}
+        />
       </div>
 
       {/* Printable table */}
