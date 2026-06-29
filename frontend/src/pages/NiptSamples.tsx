@@ -220,7 +220,7 @@ export default function NiptSamples() {
       if (statusFilter) params.status = statusFilter;
       if (vgIdFilter) params.vg_id = vgIdFilter;
       if (acceptanceDateFilter) params.acceptance_date = acceptanceDateFilter;
-      if (sourceFilter) params.sample_source = sourceFilter;
+      if (sourceFilter) params.sample_source = sourceFilter === "巴西万基" ? "巴西" : sourceFilter;
       const res = await samplesApi.list(params);
       setData((res.data as any).results || res.data || []);
       setTotal((res.data as any).count || 0);
