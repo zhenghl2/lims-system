@@ -48,7 +48,7 @@ const SOURCE_OPTIONS = [
 ];
 
 const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;visible:boolean;render?:(v:any, r?:any)=>React.ReactNode}> = [
-  { key: "source", title: "Sample Source",dataIndex: "sample_source", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "source", title: "Sample Source",dataIndex: "sample_source", visible: true, width: 100, render: (v: string) => v === "巴西" ? "巴西万基" : (v || "-") },
   { key: "test_option", title: "Test Option", dataIndex: "test_option", visible: true, width: 100, render: (v: string) => v || "-" },
   { key: "external_id", title: "Accessioning ID", dataIndex: "external_id", visible: true, width: 140, render: (v: string) => <Text code>{v || "-"}</Text> },
   { key: "collection_date", title: "Collection Date", dataIndex: "collection_date", visible: true, width: 110, render: (v: string) => v || "-" },
@@ -281,7 +281,7 @@ export default function NiptSamples() {
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
           a.href = url;
-          a.download = fileSource === '巴西' ? 'baxi_NIPPT.xlsx' : 'taiguoNIPT.xlsx';
+          a.download = fileSource === '巴西万基' ? 'baxi_NIPPT.xlsx' : 'taiguoNIPT.xlsx';
           document.body.appendChild(a);
           a.click();
           document.body.removeChild(a);
@@ -564,7 +564,7 @@ export default function NiptSamples() {
         <Form layout="vertical">
           <Form.Item label={t("nipt.samples.sourceLabel")} required>
             <Select value={fileSource} onChange={setFileSource}
-              options={[{ label: t("nipt.samples.thailand"), value: "泰国" }, { label: t("nipt.samples.brazil"), value: "巴西" }]}
+              options={[{ label: t("nipt.samples.thailand"), value: "泰国" }, { label: t("nipt.samples.brazil"), value: "巴西万基" }]}
               style={{ width: 200 }} />
           </Form.Item>
           <Form.Item label={t("nipt.samples.fedexNo")}>
