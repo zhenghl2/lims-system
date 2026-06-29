@@ -228,6 +228,21 @@ class SampleViewSet(viewsets.ModelViewSet):
                 **aggregations,
             })
         return Response(results)
+    @action(detail=False, methods=["get"])
+    def due_soon(self, request):
+        """Samples with report_due_date within 2 days, not yet reported."""
+        today = date.today()
+        cutoff = today + timedelta(days=2)
+        qs = self.get_queryset().filter(report_due_date__isnull=False).exclude(report_due_date="").exclude(status__in=["REPORTED", "REJECTED"])
+        results = []
+        for s in qs:
+            try:
+                d = date(int(s.report_due_date[6:10]), int(s.report_due_date[3:5]), int(s.report_due_date[0:2]))
+                if d >= today and d <= cutoff:
+                    results.append({"id": str(s.id), "sample_id": s.sample_id, "vg_id": s.vg_id, "sample_source": s.sample_source, "status": s.status})
+            except: pass
+        return Response(results)
+
     @action(detail=False, methods=["post"])
     def batch_create(self, request):
         """Create multiple samples in batch. Accepts {"samples": [{...}, ...]}."""
