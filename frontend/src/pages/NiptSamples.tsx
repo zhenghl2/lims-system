@@ -158,7 +158,22 @@ export default function NiptSamples() {
     ...c,
     title: columnKeyMap[c.key] ? t(`nipt.samples.${columnKeyMap[c.key]}`) : c.title,
     // Override preg_history render for i18n
-    ...(c.key === "preg_history" ? { render: (_v: string, r: any) => r.pregnancy_history || t("nipt.samples.none") } : {}),
+    ...(
+      ["patient_name", "age", "gestational_weeks", "id_card", "external_id",
+       "physician", "ordering_facility", "clinical_diagnosis", "fedex_no",
+       "report_code", "pregnancy_history", "price", "sinal", "balance",
+       "gender_info", "report_due_date", "send_report_id"
+      ].includes(c.key)
+        ? { render: (v: any, record: any) =>
+            record && record.id && record.id === editingKey
+              ? <Input size="small" defaultValue={v ?? ""} autoFocus
+                  onPressEnter={(e: any) => saveCell(record.id, c.dataIndex || c.key, e.target.value)}
+                  onBlur={(e: any) => saveCell(record.id, c.dataIndex || c.key, e.target.value)}
+                  style={{ width: c.width || 100 }} />
+              : (c.key === "pregnancy_history" ? (v || t("nipt.samples.none")) : (v || "-"))
+        }
+        : {}
+    ),
   }));
   const columns = [
     { key: "sample_id", title: t("nipt.samples.sampleId"), dataIndex: "sample_id", visible: true, width: 170, render: (v: string) => <Text code>{v}</Text> },
@@ -187,19 +202,6 @@ export default function NiptSamples() {
   // Override Diagnosis render to translate "否" → None/Nenhum
   const diagCol = columns.find((c: any) => c.key === "diagnosis");
   if (diagCol) diagCol.render = (v: string) => v === "否" ? t("nipt.samples.none") : (v || "-");
-
-  // Patch send_report_id for inline editing (double-click row to edit)
-  const sendReportCol = columns.find((c: any) => c.key === "send_report_id");
-  if (sendReportCol) {
-    // @ts-ignore — override render with record-aware inline editor
-    sendReportCol.render = (v: string, record: any) =>
-      record.id === editingKey
-        ? <Input size="small" defaultValue={v} autoFocus
-            onPressEnter={(e: any) => saveCell(record.id, "send_report_id", e.target.value)}
-            onBlur={(e: any) => saveCell(record.id, "send_report_id", e.target.value)}
-            style={{ width: 100 }} />
-        : (v || "-");
-  }
 
   // Patch acceptance_date for inline editing
   const acceptDateCol = columns.find((c: any) => c.key === "acceptance_date");
