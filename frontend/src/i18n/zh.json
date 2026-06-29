@@ -794,7 +794,7 @@
       "plasmaSeparated": "血浆已分离",
       "extraction": "核酸提取",
       "libraryPrep": "文库构建",
-      "pooling": "Pooling",
+      "pooling": "定量",
       "sequencing": "上机测序",
       "bioinformatics": "生信分析",
       "completed": "已完成",
@@ -902,7 +902,6 @@
       "importRegister": "导入并登记",
       "chooseFolder": "选择文件夹",
       "chooseFiles": "选择文件",
-      "fedexNo": "FedEx号",
       "none": "否",
       "registrationTime": "登记时间"
     },
