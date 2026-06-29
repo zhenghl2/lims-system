@@ -110,7 +110,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const [method, setMethod] = useState(batch.extraction_method || "");
   const [manualNotes, setManualNotes] = useState("");
   const [photos, setPhotos] = useState<string[]>((batch.extraction_data?.photos as string[]) || []);
-  const [plateSkipCoords, setPlateSkipCoords] = useState<Record<number, string>>({});
+  const [plateSkipCoords, setPlateSkipCoords] = useState<Record<number, string>>((batch.extraction_data?.plate_skip_coords as any) || {});
   const [region, setRegion] = useState(batch.region || "");
   const magneticNotesRef = useRef<Record<string, string>>({});
   const edata = useMemo(() => batch.extraction_data || {}, [batch.extraction_data]);
@@ -200,6 +200,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
           step_confirmations: steps,
           manual_notes: manualNotes,
           magnetic_notes: magneticNotesRef.current,
+          plate_skip_coords: plateSkipCoords,
           sample_results: sampleResults,
           photos,
         },
