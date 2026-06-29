@@ -342,6 +342,9 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   const removePhoto = (uid: string) => setPhotos(prev => prev.filter((_, i) => String(i) !== uid));
 
   const save = async () => {
+    // Validate: all filled cells must have index
+    const missingIndex = plate.some(row => row.some(cell => cell.vgId && !cell.index));
+    if (missingIndex) { message.warning(\请填写所有样本的Index编号\); return; }
     try {
       const vals = await form.validateFields();
       setSaving(true);
