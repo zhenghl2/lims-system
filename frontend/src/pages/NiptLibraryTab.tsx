@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber } from "antd";
+import { Form, Input, Upload, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
@@ -101,6 +102,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   const [negativeControl, setNegativeControl] = useState("");
   const [method, setMethod] = useState(batch.library_method || "MULTI_CHANNEL");
   const [region, setRegion] = useState(batch.region || "");
+  const [photos, setPhotos] = useState<string[]>((batch.library_data?.photos as string[]) || []);
   const [startCoord, setStartCoord] = useState(batch.library_data?.start_coord || "");
 
   // Sync region when batch is updated (e.g. after extraction tab saves a different region)
@@ -327,6 +329,15 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     setTimeout(() => { const s = document.getElementById("print-fix"); if (s) s.remove(); }, 100);
   };
 
+  // Photo upload handlers
+  const beforeUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => setPhotos(prev => [...prev, e.target?.result as string]);
+    reader.readAsDataURL(file);
+    return false;
+  };
+  const removePhoto = (uid: string) => setPhotos(prev => prev.filter((_, i) => String(i) !== uid));
+
   const save = async () => {
     try {
       const vals = await form.validateFields();
@@ -359,6 +370,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
           temperature: vals.temperature,
           humidity: vals.humidity,
           step_confirmations: steps,
+          photos,
           library_plate: plateData,
           start_coord: startCoord,
           positive_control: positiveControl,
@@ -441,6 +453,20 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
 
   return (
     <div id="lib-print-area">
+      {/* ── Photos ── */}
+      <Card size="small" title="实验照片" style={{ marginBottom: 16 }}>
+        <Upload
+          listType="picture-card"
+          fileList={photos.map((url, i) => ({ uid: String(i), name: `photo-${i}.jpg`, status: "done" as const, url }))}
+          beforeUpload={beforeUpload}
+          onRemove={(f) => removePhoto(f.uid)}
+          accept="image/*"
+          maxCount={6}
+        >
+          {photos.length < 6 && <div><PlusOutlined /><div style={{ marginTop: 8, fontSize: 12 }}>拍照/上传</div></div>}
+        </Upload>
+      </Card>
+
       {/* Method & Region */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>

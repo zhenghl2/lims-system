@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography, Popover, Radio, Tag, Table } from "antd";
+import { Form, Input, Upload, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography, Popover, Radio, Tag, Table } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
@@ -108,6 +109,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const [saving, setSaving] = useState(false);
   const [method, setMethod] = useState(batch.extraction_method || "");
   const [manualNotes, setManualNotes] = useState("");
+  const [photos, setPhotos] = useState<string[]>((batch.extraction_data?.photos as string[]) || []);
   const [plateSkipCoords, setPlateSkipCoords] = useState<Record<number, string>>({});
   const [region, setRegion] = useState(batch.region || "");
   const magneticNotesRef = useRef<Record<string, string>>({});
@@ -168,6 +170,15 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     });
   };
 
+  // Photo upload handlers
+  const beforeUpload = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (e) => setPhotos(prev => [...prev, e.target?.result as string]);
+    reader.readAsDataURL(file);
+    return false;
+  };
+  const removePhoto = (uid: string) => setPhotos(prev => prev.filter((_, i) => String(i) !== uid));
+
   const save = async () => {
     try {
       const vals = await form.validateFields();
@@ -190,6 +201,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
           manual_notes: manualNotes,
           magnetic_notes: magneticNotesRef.current,
           sample_results: sampleResults,
+          photos,
         },
       };
       await api.post(`/runs/${batch.id}/save_extraction/`, payload);
@@ -250,6 +262,20 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
 
   return (
     <div>
+      {/* ── Photos ── */}
+      <Card size="small" title="实验照片" style={{ marginBottom: 16 }}>
+        <Upload
+          listType="picture-card"
+          fileList={photos.map((url, i) => ({ uid: String(i), name: `photo-${i}.jpg`, status: "done" as const, url }))}
+          beforeUpload={beforeUpload}
+          onRemove={(f) => removePhoto(f.uid)}
+          accept="image/*"
+          maxCount={6}
+        >
+          {photos.length < 6 && <div><PlusOutlined /><div style={{ marginTop: 8, fontSize: 12 }}>拍照/上传</div></div>}
+        </Upload>
+      </Card>
+
       {/* Method & Region */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
