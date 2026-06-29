@@ -236,22 +236,22 @@ class SampleViewSet(viewsets.ModelViewSet):
         cutoff = today + timedelta(days=2)
         qs = self.get_queryset().filter(
             report_due_date__isnull=False,
-            report_due_date__lte=cutoff.strftime("%d/%m/%Y"),
-        ).exclude(status__in=["REPORTED", "REJECTED"]).order_by("report_due_date")
-        # Filter: parse DD/MM/YYYY and compare with today
+        ).exclude(report_due_date="").exclude(
+            status__in=["REPORTED", "REJECTED"]
+        ).order_by("report_due_date")
         results = []
         for s in qs:
             try:
                 d = date(int(s.report_due_date[6:10]), int(s.report_due_date[3:5]), int(s.report_due_date[0:2]))
-                if d >= today and (d - today).days <= 2:
+                if d >= today and d <= cutoff:
                     results.append({
-                        "id": s.id, "sample_id": s.sample_id, "vg_id": s.vg_id,
+                        "id": str(s.id), "sample_id": s.sample_id, "vg_id": s.vg_id,
                         "sample_source": s.sample_source, "status": s.status,
                         "report_due_date": s.report_due_date,
                     })
             except (ValueError, IndexError):
                 pass
-        return Response(results)
+        return Response(results)return Response(results)
 
     @action(detail=False, methods=["post"])
     def batch_create(self, request):
