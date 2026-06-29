@@ -132,7 +132,7 @@ export default function NiptReceiving() {
     const selected = data.filter((s: any) => selectedRowKeys.includes(s.id));
     const list = selected.map((s: any, i: number) => ({
       id: s.id, sample_id: s.sample_id,
-      vg_id: s.vg_id || (i === 0 ? "WJ" : ""),
+      vg_id: s.vg_id || (i === 0 ? "HN" : ""),
     }));
     setBatchVgList(list);
     setBatchVgModal(true);
