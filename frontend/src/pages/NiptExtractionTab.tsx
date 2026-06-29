@@ -125,8 +125,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
       kit_type: edata.kit_type || undefined,
       reagent_lot: edata.reagent_lot || "",
       reagent_expiry: edata.reagent_expiry ? dayjs(edata.reagent_expiry) : undefined,
-      plasma_volume: edata.plasma_volume ?? undefined,
-      elution_volume: edata.elution_volume ?? undefined,
+      plasma_volume: edata.plasma_volume ?? 1,
+      elution_volume: edata.elution_volume ?? 55,
       temperature: edata.temperature ?? undefined,
       humidity: edata.humidity ?? undefined,
     });
