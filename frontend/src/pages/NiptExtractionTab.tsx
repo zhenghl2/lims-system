@@ -262,20 +262,6 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
 
   return (
     <div>
-      {/* ── Photos ── */}
-      <Card size="small" title="实验照片" style={{ marginBottom: 16 }}>
-        <Upload
-          listType="picture-card"
-          fileList={photos.map((url, i) => ({ uid: String(i), name: `photo-${i}.jpg`, status: "done" as const, url }))}
-          beforeUpload={beforeUpload}
-          onRemove={(f) => removePhoto(f.uid)}
-          accept="image/*"
-          maxCount={6}
-        >
-          {photos.length < 6 && <div><PlusOutlined /><div style={{ marginTop: 8, fontSize: 12 }}>拍照/上传</div></div>}
-        </Upload>
-      </Card>
-
       {/* Method & Region */}
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
@@ -517,6 +503,20 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
           <Table dataSource={failedSamples} columns={failColumns} rowKey="key" size="small" pagination={false} />
         </Card>
       )}
+
+      {/* ── Photos ── */}
+      <Card size="small" title="实验照片" style={{ marginBottom: 16 }}>
+        <Upload
+          listType="picture-card"
+          fileList={photos.map((url, i) => ({ uid: String(i), name: `photo-${i}.jpg`, status: "done" as const, url }))}
+          beforeUpload={beforeUpload}
+          onRemove={(f) => removePhoto(f.uid)}
+          accept="image/*"
+          maxCount={6}
+        >
+          {photos.length < 6 && <div><PlusOutlined /><div style={{ marginTop: 8, fontSize: 12 }}>拍照/上传</div></div>}
+        </Upload>
+      </Card>
 
       {/* Actions & Signatures */}
       <Space>
