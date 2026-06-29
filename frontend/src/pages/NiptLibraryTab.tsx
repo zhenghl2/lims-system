@@ -307,7 +307,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       if (isFirstInCol && /^\d+$/.test(value.trim())) {
         const base = parseInt(value, 10);
         let offset = 1;
-        for (let r = 1; r < 8; r++) {
+        for (let r = row + 1; r < 8; r++) {
           if (!prev[r]?.[col]?.vgId) continue;
           next[r] = [...next[r]];
           next[r][col] = { ...next[r][col], index: String(base + offset++) };
