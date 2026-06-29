@@ -122,6 +122,7 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
             "ordering_physician", "ordering_facility",
             "physician", "report_code", "send_report_id",
             "last_menstrual_period", "pregnancy_history", "fedex_no",
+            "price", "sinal", "balance", "gender_info", "report_due_date",
             "collection_date", "collection_time", "receipt_temp", "consent_given",
             "receipt_date", "receipt_time",
             "acceptance_date",

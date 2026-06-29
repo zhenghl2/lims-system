@@ -69,6 +69,11 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "diagnosis", title: "Diagnosis", dataIndex: "clinical_diagnosis", visible: true, width: 130, render: (v: string) => v || "-" },
   { key: "registration_time", title: "Registration Time", dataIndex: "created_at", visible: true, width: 150, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "-" },
   { key: "fedex", title: "FedEx No.", dataIndex: "fedex_no", visible: true, width: 120, render: (v: string) => v || "-" },
+  { key: "price", title: "Price", dataIndex: "price", visible: true, width: 80, render: (v: string) => v || "-" },
+  { key: "sinal", title: "Sinal", dataIndex: "sinal", visible: true, width: 80, render: (v: string) => v || "-" },
+  { key: "balance", title: "Balance", dataIndex: "balance", visible: true, width: 80, render: (v: string) => v || "-" },
+  { key: "gender_info", title: "Gender Info", dataIndex: "gender_info", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "report_due_date", title: "Report Due Date", dataIndex: "report_due_date", visible: true, width: 120, render: (v: string) => v || "-" },
   { key: "zscore_21", title: "Z21", dataIndex: "zscore_21", visible: true, width: 70, render: (v: number) => v?.toFixed(3) || "-" },
   { key: "zscore_18", title: "Z18", dataIndex: "zscore_18", visible: true, width: 70, render: (v: number) => v?.toFixed(3) || "-" },
   { key: "zscore_13", title: "Z13", dataIndex: "zscore_13", visible: true, width: 70, render: (v: number) => v?.toFixed(3) || "-" },
@@ -146,7 +151,7 @@ export default function NiptSamples() {
     report_code: "reportCode", send_report_id: "sendReportId",
     lmp: "lastMenstrualPeriod", hospital: "hospital", twins: "twin",
     ivf: "ivf", pregnancy_history: "pregHistory", diagnosis: "diagnosis",
-    fedex: "fedexNo", all_chrom: "allChrom", fetal_fraction: "ffPercent",
+    fedex: "fedexNo", price: "price", sinal: "sinal", balance: "balance", gender_info: "genderInfo", report_due_date: "reportDueDate", all_chrom: "allChrom", fetal_fraction: "ffPercent",
     gender: "sex", other: "other", registration_time: "registrationTime",
   };
   const visibleCols = colConfig.filter(c => c.visible).map(c => ({
@@ -253,6 +258,11 @@ export default function NiptSamples() {
     pregnancy_history: values.pregnancy_history || "",
     clinical_diagnosis: values.clinical_diagnosis || "",
     fedex_no: values.fedex_no || "",
+    price: values.price || "",
+    sinal: values.sinal || "",
+    balance: values.balance || "",
+    gender_info: values.gender_info || "",
+    report_due_date: values.report_due_date || "",
   });
 
   const handleFileImport = async () => {
@@ -358,7 +368,7 @@ export default function NiptSamples() {
         multiple_gestation: getBool(15), ivf_status: getBool(16),
         pregnancy_history: p[17]?.trim() || undefined,
         clinical_diagnosis: p[18]?.trim() || undefined,
-        fedex_no: p[19]?.trim() || undefined, test_option: p[20]?.trim() || undefined,
+        fedex_no: p[19]?.trim() || undefined, price: p[20]?.trim() || undefined, sinal: p[21]?.trim() || undefined, balance: p[22]?.trim() || undefined, gender_info: p[23]?.trim() || undefined, report_due_date: p[24]?.trim() || undefined, test_option: p[25]?.trim() || undefined,
       };
     });
     try {
@@ -373,7 +383,7 @@ export default function NiptSamples() {
     const headers = [
       "Name", "Age", "GestWeeks", "Panel", "Source", "IDCard", "ExtID",
       "CollDate", "AcptDate", "Physician", "DOB", "RptCode", "SendID", "LMP", "Hospital",
-      "Twin(Y/N)", "IVF(Y/N)", "PregHist", "Diagnosis", "FedEx", "TestOpt",
+      "Twin(Y/N)", "IVF(Y/N)", "PregHist", "Diagnosis", "FedEx", "Price", "Sinal", "Balance", "GenderInfo", "ReportDueDate", "TestOpt",
     ];
     const example = [
       "Zhang Li", "28", "12", "NIPT", "Bangkok Hospital", "440101199801012345",
@@ -541,10 +551,10 @@ export default function NiptSamples() {
 
         <div style={{ marginBottom: 8 }}>
           <Text type="secondary">
-            Paste CSV (comma-separated). 21 columns: Name,Age,GestWeeks,Panel,Source,IDCard,ExtID,CollDate,AcptDate,Physician,DOB,RptCode,SendID,LMP,Hospital,Twin(Y/N),IVF(Y/N),PregHist,Diagnosis,FedEx,TestOpt
+            Paste CSV (comma-separated). 26 columns: Name,Age,GestWeeks,Panel,Source,IDCard,ExtID,CollDate,AcptDate,Physician,DOB,RptCode,SendID,LMP,Hospital,Twin(Y/N),IVF(Y/N),PregHist,Diagnosis,FedEx,Price,Sinal,Balance,GenderInfo,ReportDueDate,TestOpt
           </Text>
           <Text code style={{ display: "block", marginTop: 4, fontSize: 11, whiteSpace: "pre-wrap" }}>
-            Name,Age,GestWeeks,Panel,Source,IDCard,ExtID,CollDate,AcptDate,Physician,DOB,RptCode,SendID,LMP,Hospital,Twin(Y/N),IVF(Y/N),PregHist,Diagnosis,FedEx,TestOpt
+            Name,Age,GestWeeks,Panel,Source,IDCard,ExtID,CollDate,AcptDate,Physician,DOB,RptCode,SendID,LMP,Hospital,Twin(Y/N),IVF(Y/N),PregHist,Diagnosis,FedEx,Price,Sinal,Balance,GenderInfo,ReportDueDate,TestOpt
           </Text>
         </div>
         <TextArea rows={12} value={batchText} onChange={e => setBatchText(e.target.value)}

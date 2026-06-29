@@ -849,7 +849,7 @@
       "ivf": "FIV",
       "pregHistory": "Hist. Gest.",
       "diagnosis": "Diagnóstico",
-      "fedexNo": "FedEx Nº",
+      "fedexNo": "Nº FedEx",
       "z21": "Z21",
       "z18": "Z18",
       "z13": "Z13",
@@ -902,9 +902,13 @@
       "importRegister": "Importar e Registrar",
       "chooseFolder": "Escolher Pasta",
       "chooseFiles": "Escolher Arquivos",
-      "fedexNo": "Nº FedEx",
       "none": "Nenhum",
-      "registrationTime": "Hora de Registro"
+      "registrationTime": "Hora de Registro",
+      "price": "Price",
+      "sinal": "Sinal",
+      "balance": "Balance",
+      "genderInfo": "Gender",
+      "reportDueDate": "Report Due Date"
     },
     "receiving": {
       "title": "Recebimento de Amostras NIPT",

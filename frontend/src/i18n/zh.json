@@ -903,7 +903,12 @@
       "chooseFolder": "选择文件夹",
       "chooseFiles": "选择文件",
       "none": "否",
-      "registrationTime": "登记时间"
+      "registrationTime": "登记时间",
+      "price": "Price",
+      "sinal": "Sinal",
+      "balance": "Balance",
+      "genderInfo": "额外信息",
+      "reportDueDate": "报告截止日期"
     },
     "receiving": {
       "title": "NIPT 样本签收",

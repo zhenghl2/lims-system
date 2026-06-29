@@ -902,9 +902,13 @@
       "importRegister": "Import & Register",
       "chooseFolder": "Choose Folder",
       "chooseFiles": "Choose Files",
-      "fedexNo": "FedEx No.",
       "none": "None",
-      "registrationTime": "Registration Time"
+      "registrationTime": "Registration Time",
+      "price": "Price",
+      "sinal": "Sinal",
+      "balance": "Balance",
+      "genderInfo": "Gender",
+      "reportDueDate": "Report Due Date"
     },
     "receiving": {
       "title": "NIPT Sample Receiving",

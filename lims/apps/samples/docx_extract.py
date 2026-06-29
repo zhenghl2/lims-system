@@ -47,12 +47,17 @@ def extract_brazil_docx(file_path, source="巴西万基"):
                 for cell in row.cells:
                     table13.append(cell.text.strip() if cell.text.strip() else "")
 
+    # Price, Sinal, Balance
+    price = _safe_get(table13, 1).replace("R$", "").strip() if len(table13) > 1 else ""
+    sinal = _safe_get(table13, 3).replace("R$", "").strip() if len(table13) > 3 else ""
+    balance = _safe_get(table13, 5).replace("R$", "").strip() if len(table13) > 5 else ""
+
     # Report due date
     if len(table13) > 15:
         report_due_raw = "".join(re.findall(r"resultados(.+?)$", _safe_get(table13, 15)))
         report_due_date = report_due_raw.replace("(DD/MM/YY)", "").replace(":", "").strip()
     else:
-        report_due_date = ""
+        report_due_date = 
 
     # Client name
     if len(table13) > 9:
@@ -136,6 +141,9 @@ def extract_brazil_docx(file_path, source="巴西万基"):
         'multiple_gestation': False,
         'ivf_status': False,
         'clinical_diagnosis': '',
+        'price': price,
+        'sinal': sinal,
+        'balance': balance,
         'fetal_gender': fetal_gender,  # Brazil-specific
         'seq': seq,
         'sales': sales,

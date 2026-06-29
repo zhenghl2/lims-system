@@ -360,6 +360,11 @@ class SampleViewSet(viewsets.ModelViewSet):
                     "ivf_status": data.get("ivf_status", False),
                     "clinical_diagnosis": data.get("clinical_diagnosis", ""),
                     "fedex_no": fedex_no,
+                    "price": data.get("price", ""),
+                    "sinal": data.get("sinal", ""),
+                    "balance": data.get("balance", ""),
+                    "gender_info": data.get("fetal_gender", ""),
+                    "report_due_date": data.get("report_due_date", ""),
                     "panel_code": panel_code,
                 }
 
