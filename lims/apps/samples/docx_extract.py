@@ -57,7 +57,7 @@ def extract_brazil_docx(file_path, source="巴西万基"):
         report_due_raw = "".join(re.findall(r"resultados(.+?)$", _safe_get(table13, 15)))
         report_due_date = report_due_raw.replace("(DD/MM/YY)", "").replace(":", "").strip()
     else:
-        report_due_date = 
+        report_due_date = ""
 
     # Client name
     if len(table13) > 9:
