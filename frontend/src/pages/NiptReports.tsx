@@ -185,8 +185,31 @@ export default function NiptReports() {
     }
   };
 
+  // Brazil fill: copy external_id -> send_report_id for 巴西万基/巴西 samples
+  const handleBrazilFill = async () => {
+    const selected = reports.filter(r => selectedRowKeys.includes(r.id));
+    const brazil = selected.filter(r => r.sample_source === "巴西万基" || r.sample_source === "巴西");
+    if (brazil.length === 0) { message.warning("No 巴西万基 samples selected"); return; }
+
+    const updates = brazil.map(r => ({
+      sample_id: r.sample,
+      send_report_id: r.external_id || "",
+    }));
+
+    try {
+      const res = await api.post("/reports/batch-update-send-report-id/", { updates });
+      message.success(`Updated ${res.data.updated_count} samples`);
+      const updateMap = new Map(updates.map(u => [u.sample_id, u.send_report_id]));
+      setReports(prev => prev.map(r => updateMap.has(r.sample) ? { ...r, send_report_id: updateMap.get(r.sample) } : r));
+      setSelectedRowKeys([]);
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "Batch update failed");
+    }
+  };
+
   // Selected BCC count for button display
   const selectedBcc = reports.filter(r => selectedRowKeys.includes(r.id) && r.sample_source === "BCC");
+  const selectedBrazil = reports.filter(r => selectedRowKeys.includes(r.id) && (r.sample_source === "巴西万基" || r.sample_source === "巴西"));
   const selectedNonBcc = selectedRowKeys.filter(id => {
     const r = reports.find(r => r.id === id);
     return r && r.sample_source !== "BCC";
@@ -375,6 +398,14 @@ export default function NiptReports() {
               {t("nipt.reports.batchFillSendId")} ({selectedBcc.length} BCC)
             </Button>
           )}
+          {selectedRowKeys.length > 0 && selectedBrazil.length > 0 && (
+            <Button
+              type="primary"
+              size="small"
+              onClick={handleBrazilFill}
+            >
+              填充巴西发送ID ({selectedBrazil.length} 巴西万基)
+            </Button>
           <Button icon={<ReloadOutlined />} onClick={fetchReports} loading={loading}>{t("nipt.reports.refresh")}</Button>
         </Space>
       </div>
