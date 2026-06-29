@@ -297,7 +297,7 @@ class SampleViewSet(viewsets.ModelViewSet):
             # Extract data from each PDF (or DOCX for Brazil)
             from .pdf_extract import extract_thai_pdf, generate_excel
             from .docx_extract import extract_brazil_docx, generate_excel_brazil
-            is_brazil = source == "巴西"
+            is_brazil = source in ("巴西", "巴西万基")
             extracted = []
             for fpath in pdf_paths:
                 if is_brazil:
