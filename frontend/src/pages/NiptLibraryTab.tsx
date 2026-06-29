@@ -303,7 +303,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       next[row] = [...next[row]];
       next[row][col] = { ...next[row][col], index: value };
       // Auto-fill: if editing row 0 with a pure number, increment down the column
-      if (row === 0 && /^\d+$/.test(value.trim())) {
+      const isFirstInCol = prev.slice(0, row).every(r => !r[col]?.vgId);
+      if (isFirstInCol && /^\d+$/.test(value.trim())) {
         const base = parseInt(value, 10);
         for (let r = 1; r < 8; r++) {
           next[r] = [...next[r]];
