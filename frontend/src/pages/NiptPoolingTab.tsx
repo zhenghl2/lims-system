@@ -261,7 +261,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
         </div>
         <Space>
           <Button icon={<PrinterOutlined />} onClick={print}>{t("nipt.pooling.print")}</Button>
-          <Button type="primary" onClick={save} loading={saving}>{t("nipt.common.save")}</Button>
+          <Button type="primary" onClick={save} loading={saving}>{t("nipt.pooling.saveRecord")}</Button>
         </Space>
       </div>
 

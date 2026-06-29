@@ -1162,7 +1162,8 @@
       "save": "Salvar",
       "operatorSign": "Assinatura Operador",
       "reviewerSign": "Assinatura Revisor",
-      "saved": "Registro de pooling salvo"
+      "saved": "Registro de pooling salvo",
+      "saveRecord": "Save Pooling Record"
     },
     "sequencing": {
       "basicInfo": "Informações Básicas",

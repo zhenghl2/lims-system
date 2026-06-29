@@ -1164,7 +1164,8 @@
       "save": "保存",
       "operatorSign": "操作人签名",
       "reviewerSign": "复核人签名",
-      "saved": "Pooling 记录已保存"
+      "saved": "Pooling 记录已保存",
+      "saveRecord": "保存定量记录"
     },
     "sequencing": {
       "basicInfo": "基本信息",

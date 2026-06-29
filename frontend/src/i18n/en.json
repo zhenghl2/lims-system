@@ -1162,7 +1162,8 @@
       "save": "Save",
       "operatorSign": "Operator Sign",
       "reviewerSign": "Reviewer Sign",
-      "saved": "Pooling record saved"
+      "saved": "Pooling record saved",
+      "saveRecord": "Save Pooling Record"
     },
     "sequencing": {
       "basicInfo": "Basic Info",
