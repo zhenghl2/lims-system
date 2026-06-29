@@ -212,6 +212,16 @@ export default function NiptPlasmaSeparation() {
     return false;
   };
 
+  const handlePhotoDelete = async (photoId: string) => {
+    try {
+      await api.delete(`/plasma-separation/${selectedBatch.id}/photos/${photoId}/`);
+      message.success("Photo deleted");
+      fetchDetail(selectedBatch.id);
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "Failed to delete photo");
+    }
+  };
+
   const handleBatchPass = async () => {
     const samples = batchDetail?.batch_samples || [];
     const targets = samples.filter((s: any) => selectedSampleKeys.includes(s.id));
