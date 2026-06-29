@@ -358,7 +358,7 @@ export default function NiptSamples() {
         : (v || "-");
   }
 
-  const toggleCol = (key: string) => {{
+  const toggleCol = (key: string) => {
     setColConfig(prev => prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c));
   };
 
