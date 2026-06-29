@@ -213,7 +213,168 @@ export default function NiptSamples() {
         : (v || <Text type="secondary">-</Text>);
   }
 
-  const toggleCol = (key: string) => {
+  const patient_nameCol = columns.find((c: any) => c.key === "patient_name");
+  if (patient_nameCol) {
+    patient_nameCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "patient_name", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "patient_name", e.target.value)}
+            style={{ width: patient_nameCol.width || 100 }} />
+        : (v || "-");
+  }
+  const ageCol = columns.find((c: any) => c.key === "age");
+  if (ageCol) {
+    ageCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "age", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "age", e.target.value)}
+            style={{ width: ageCol.width || 100 }} />
+        : (v || "-");
+  }
+  const gestational_weeksCol = columns.find((c: any) => c.key === "gestational_weeks");
+  if (gestational_weeksCol) {
+    gestational_weeksCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "gestational_weeks", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "gestational_weeks", e.target.value)}
+            style={{ width: gestational_weeksCol.width || 100 }} />
+        : (v || "-");
+  }
+  const id_cardCol = columns.find((c: any) => c.key === "id_card");
+  if (id_cardCol) {
+    id_cardCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "id_card", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "id_card", e.target.value)}
+            style={{ width: id_cardCol.width || 100 }} />
+        : (v || "-");
+  }
+  const external_idCol = columns.find((c: any) => c.key === "external_id");
+  if (external_idCol) {
+    external_idCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "external_id", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "external_id", e.target.value)}
+            style={{ width: external_idCol.width || 100 }} />
+        : (v || "-");
+  }
+  const physicianCol = columns.find((c: any) => c.key === "physician");
+  if (physicianCol) {
+    physicianCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "ordering_physician", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "ordering_physician", e.target.value)}
+            style={{ width: physicianCol.width || 100 }} />
+        : (v || "-");
+  }
+  const ordering_facilityCol = columns.find((c: any) => c.key === "ordering_facility");
+  if (ordering_facilityCol) {
+    ordering_facilityCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "ordering_facility", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "ordering_facility", e.target.value)}
+            style={{ width: ordering_facilityCol.width || 100 }} />
+        : (v || "-");
+  }
+  const clinical_diagnosisCol = columns.find((c: any) => c.key === "clinical_diagnosis");
+  if (clinical_diagnosisCol) {
+    clinical_diagnosisCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "clinical_diagnosis", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "clinical_diagnosis", e.target.value)}
+            style={{ width: clinical_diagnosisCol.width || 100 }} />
+        : (v || "-");
+  }
+  const fedex_noCol = columns.find((c: any) => c.key === "fedex_no");
+  if (fedex_noCol) {
+    fedex_noCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "fedex_no", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "fedex_no", e.target.value)}
+            style={{ width: fedex_noCol.width || 100 }} />
+        : (v || "-");
+  }
+  const report_codeCol = columns.find((c: any) => c.key === "report_code");
+  if (report_codeCol) {
+    report_codeCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "report_code", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "report_code", e.target.value)}
+            style={{ width: report_codeCol.width || 100 }} />
+        : (v || "-");
+  }
+  const pregnancy_historyCol = columns.find((c: any) => c.key === "pregnancy_history");
+  if (pregnancy_historyCol) {
+    pregnancy_historyCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "pregnancy_history", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "pregnancy_history", e.target.value)}
+            style={{ width: pregnancy_historyCol.width || 100 }} />
+        : (v || "-");
+  }
+  const priceCol = columns.find((c: any) => c.key === "price");
+  if (priceCol) {
+    priceCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "price", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "price", e.target.value)}
+            style={{ width: priceCol.width || 100 }} />
+        : (v || "-");
+  }
+  const sinalCol = columns.find((c: any) => c.key === "sinal");
+  if (sinalCol) {
+    sinalCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "sinal", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "sinal", e.target.value)}
+            style={{ width: sinalCol.width || 100 }} />
+        : (v || "-");
+  }
+  const balanceCol = columns.find((c: any) => c.key === "balance");
+  if (balanceCol) {
+    balanceCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "balance", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "balance", e.target.value)}
+            style={{ width: balanceCol.width || 100 }} />
+        : (v || "-");
+  }
+  const gender_infoCol = columns.find((c: any) => c.key === "gender_info");
+  if (gender_infoCol) {
+    gender_infoCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "gender_info", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "gender_info", e.target.value)}
+            style={{ width: gender_infoCol.width || 100 }} />
+        : (v || "-");
+  }
+  const report_due_dateCol = columns.find((c: any) => c.key === "report_due_date");
+  if (report_due_dateCol) {
+    report_due_dateCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "report_due_date", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "report_due_date", e.target.value)}
+            style={{ width: report_due_dateCol.width || 100 }} />
+        : (v || "-");
+  }
+
+    const toggleCol = (key: string) => {
     setColConfig(prev => prev.map(c => c.key === key ? { ...c, visible: !c.visible } : c));
   };
 
