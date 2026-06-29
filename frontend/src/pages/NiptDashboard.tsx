@@ -1,8 +1,8 @@
-import { useEffect, useState } from "react";
-import { Row, Col, Card, Statistic, Typography, Table, Tag, Space, Empty } from "antd";
-import { ExperimentOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, FileDoneOutlined, FilterOutlined, BuildOutlined, MergeCellsOutlined, CloudUploadOutlined, BarChartOutlined } from "@ant-design/icons";
-import { samplesApi, runsApi } from "../api";
-import { useTranslation } from "../i18n/useTranslation";
+import { Table,  useEffect, useState } from "react";
+import { Table,  Row, Col, Card, Typography, Statistic, Typography, Table, Tag, Space, Empty } from "antd";
+import { Table,  ExperimentOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, FileDoneOutlined, FilterOutlined, BuildOutlined, MergeCellsOutlined, CloudUploadOutlined, BarChartOutlined } from "@ant-design/icons";
+import { Table,  samplesApi, runsApi } from "../api";
+import { Table,  useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
 
@@ -83,7 +83,7 @@ export default function NiptDashboard() {
             {runStats.length > 0 ? (
               <Table rowKey="id" size="small" dataSource={runStats} pagination={false}
                 columns={[
-                  { title: t("nipt.workflow.runNumber"), dataIndex: "run_number", width: 150, render: (v: string) => <Text code>{v}</Text> },
+                  { title: t("nipt.workflow.runNumber"), dataIndex: "run_number", width: 150, render: (v: string) => <Typography.Text code>{v}</Typography.Text> },
                   { title: t("nipt.workflow.samples"), dataIndex: "sample_count", width: 70, align: "center" as const },
                   { title: t("nipt.workflow.status"), dataIndex: "status", width: 100, render: (v: string) => <Tag color={statusColors[v]}>{v}</Tag> },
                   { title: t("nipt.workflow.created"), dataIndex: "created_at", width: 100, render: (v: string) => new Date(v).toLocaleDateString() },
@@ -95,12 +95,12 @@ export default function NiptDashboard() {
         <Col span={12}>
           <Card title={t("nipt.dashboard.quickGuide")} size="small">
             <Space direction="vertical" size="small">
-              <Text>{t("nipt.dashboard.guideStep1")}</Text>
-              <Text>{t("nipt.dashboard.guideStep2")}</Text>
-              <Text>{t("nipt.dashboard.guideStep3")}</Text>
-              <Text>{t("nipt.dashboard.guideStep4")}</Text>
-              <Text style={{ paddingLeft: 16 }}>{t("nipt.dashboard.guideStep5")}</Text>
-              <Text>{t("nipt.dashboard.guideStep6")}</Text>
+              <Typography.Text>{t("nipt.dashboard.guideStep1")}</Typography.Text>
+              <Typography.Text>{t("nipt.dashboard.guideStep2")}</Typography.Text>
+              <Typography.Text>{t("nipt.dashboard.guideStep3")}</Typography.Text>
+              <Typography.Text>{t("nipt.dashboard.guideStep4")}</Typography.Text>
+              <Typography.Text style={{ paddingLeft: 16 }}>{t("nipt.dashboard.guideStep5")}</Typography.Text>
+              <Typography.Text>{t("nipt.dashboard.guideStep6")}</Typography.Text>
             </Space>
           </Card>
         </Col>

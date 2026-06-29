@@ -52,6 +52,7 @@ export const samplesApi = {
   statsByPanel: () => api.get("/samples/stats_by_panel/"),
   delete: (id: string) => api.delete(`/samples/${id}/`),
   stats: () => api.get<SampleStats>("/samples/stats/"),
+  dueSoon: () => api.get("/samples/due_soon/"),
   batchCreate: (data: { samples: Record<string, unknown>[] }) =>
     api.post("/samples/batch_create/", data),
   registerFromPdf: (formData: FormData) =>
