@@ -158,26 +158,7 @@ export default function NiptSamples() {
     ...c,
     title: columnKeyMap[c.key] ? t(`nipt.samples.${columnKeyMap[c.key]}`) : c.title,
     // Override preg_history render for i18n
-    ...(
-      ["patient_name", "age", "gestational_weeks", "id_card", "external_id",
-       "physician", "ordering_facility", "clinical_diagnosis", "fedex_no",
-       "report_code", "send_report_id", "pregnancy_history",
-       "price", "sinal", "balance", "gender_info", "report_due_date"
-      ].includes(c.key)
-        ? {
-            render: (v: any, record: any) => {
-              if (c.key === "pregnancy_history" && !(record && record.id && record.id === editingKey))
-                return v || t("nipt.samples.none");
-              if (record && record.id && record.id === editingKey)
-                return <Input size="small" defaultValue={v ?? ""} autoFocus
-                  onPressEnter={(e: any) => saveCell(record.id, c.dataIndex || c.key, e.target.value)}
-                  onBlur={(e: any) => saveCell(record.id, c.dataIndex || c.key, e.target.value)}
-                  style={{ width: c.width || 100 }} />;
-              return v || "-";
-            }
-          }
-        : {}
-    ),
+    ...(c.key === "preg_history" ? { render: (_v: string, r: any) => r.pregnancy_history || t("nipt.samples.none") } : {}),
   }));
   const columns = [
     { key: "sample_id", title: t("nipt.samples.sampleId"), dataIndex: "sample_id", visible: true, width: 170, render: (v: string) => <Text code>{v}</Text> },
@@ -207,6 +188,19 @@ export default function NiptSamples() {
   const diagCol = columns.find((c: any) => c.key === "diagnosis");
   if (diagCol) diagCol.render = (v: string) => v === "否" ? t("nipt.samples.none") : (v || "-");
 
+  // Patch send_report_id for inline editing (double-click row to edit)
+  const sendReportCol = columns.find((c: any) => c.key === "send_report_id");
+  if (sendReportCol) {
+    // @ts-ignore — override render with record-aware inline editor
+    sendReportCol.render = (v: string, record: any) =>
+      record.id === editingKey
+        ? <Input size="small" defaultValue={v} autoFocus
+            onPressEnter={(e: any) => saveCell(record.id, "send_report_id", e.target.value)}
+            onBlur={(e: any) => saveCell(record.id, "send_report_id", e.target.value)}
+            style={{ width: 100 }} />
+        : (v || "-");
+  }
+
   // Patch acceptance_date for inline editing
   const acceptDateCol = columns.find((c: any) => c.key === "acceptance_date");
   if (acceptDateCol) {
@@ -217,6 +211,199 @@ export default function NiptSamples() {
             onChange={(d: any) => { if (d) saveCell(record.id, "acceptance_date", d.format("YYYY-MM-DD")); }}
             style={{ width: 110 }} format="YYYY-MM-DD" />
         : (v || <Text type="secondary">-</Text>);
+  }
+
+  const patient_nameCol = columns.find((c: any) => c.key === "patient_name");
+  if (patient_nameCol) {
+    patient_nameCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "patient_name", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "patient_name", e.target.value)}
+          style={{ width: patient_nameCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const ageCol = columns.find((c: any) => c.key === "age");
+  if (ageCol) {
+    ageCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "age", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "age", e.target.value)}
+          style={{ width: ageCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const gestational_weeksCol = columns.find((c: any) => c.key === "gestational_weeks");
+  if (gestational_weeksCol) {
+    gestational_weeksCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "gestational_weeks", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "gestational_weeks", e.target.value)}
+          style={{ width: gestational_weeksCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const id_cardCol = columns.find((c: any) => c.key === "id_card");
+  if (id_cardCol) {
+    id_cardCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "id_card", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "id_card", e.target.value)}
+          style={{ width: id_cardCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const external_idCol = columns.find((c: any) => c.key === "external_id");
+  if (external_idCol) {
+    external_idCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "external_id", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "external_id", e.target.value)}
+          style={{ width: external_idCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const physicianCol = columns.find((c: any) => c.key === "physician");
+  if (physicianCol) {
+    physicianCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "ordering_physician", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "ordering_physician", e.target.value)}
+          style={{ width: physicianCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const ordering_facilityCol = columns.find((c: any) => c.key === "ordering_facility");
+  if (ordering_facilityCol) {
+    ordering_facilityCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "ordering_facility", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "ordering_facility", e.target.value)}
+          style={{ width: ordering_facilityCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const clinical_diagnosisCol = columns.find((c: any) => c.key === "clinical_diagnosis");
+  if (clinical_diagnosisCol) {
+    clinical_diagnosisCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "clinical_diagnosis", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "clinical_diagnosis", e.target.value)}
+          style={{ width: clinical_diagnosisCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const fedex_noCol = columns.find((c: any) => c.key === "fedex_no");
+  if (fedex_noCol) {
+    fedex_noCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "fedex_no", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "fedex_no", e.target.value)}
+          style={{ width: fedex_noCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const report_codeCol = columns.find((c: any) => c.key === "report_code");
+  if (report_codeCol) {
+    report_codeCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "report_code", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "report_code", e.target.value)}
+          style={{ width: report_codeCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const pregnancy_historyCol = columns.find((c: any) => c.key === "pregnancy_history");
+  if (pregnancy_historyCol) {
+    pregnancy_historyCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "pregnancy_history", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "pregnancy_history", e.target.value)}
+          style={{ width: pregnancy_historyCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const priceCol = columns.find((c: any) => c.key === "price");
+  if (priceCol) {
+    priceCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "price", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "price", e.target.value)}
+          style={{ width: priceCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const sinalCol = columns.find((c: any) => c.key === "sinal");
+  if (sinalCol) {
+    sinalCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "sinal", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "sinal", e.target.value)}
+          style={{ width: sinalCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const balanceCol = columns.find((c: any) => c.key === "balance");
+  if (balanceCol) {
+    balanceCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "balance", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "balance", e.target.value)}
+          style={{ width: balanceCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const gender_infoCol = columns.find((c: any) => c.key === "gender_info");
+  if (gender_infoCol) {
+    gender_infoCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "gender_info", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "gender_info", e.target.value)}
+          style={{ width: gender_infoCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
+  }
+  const report_due_dateCol = columns.find((c: any) => c.key === "report_due_date");
+  if (report_due_dateCol) {
+    report_due_dateCol.render = (v: string, record: any) => {
+      if (record.id === editingKey) {
+        return <Input size="small" defaultValue={v} autoFocus
+          onPressEnter={(e: any) => saveCell(record.id, "report_due_date", e.target.value)}
+          onBlur={(e: any) => saveCell(record.id, "report_due_date", e.target.value)}
+          style={{ width: report_due_dateCol.width || 100 }} />;
+      }
+      return <span style={{cursor:"pointer"}} onClick={(e) => { e.stopPropagation(); setEditingKey(record.id); }}>{v || "-"}</span>;
+    };
   }
 
   const toggleCol = (key: string) => {
