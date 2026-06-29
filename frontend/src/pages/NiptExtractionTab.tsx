@@ -108,6 +108,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const [saving, setSaving] = useState(false);
   const [method, setMethod] = useState(batch.extraction_method || "");
   const [manualNotes, setManualNotes] = useState("");
+  const [plateSkipCoords, setPlateSkipCoords] = useState<Record<number, string>>({});
   const [region, setRegion] = useState(batch.region || "");
   const magneticNotesRef = useRef<Record<string, string>>({});
   const edata = useMemo(() => batch.extraction_data || {}, [batch.extraction_data]);
@@ -357,17 +358,51 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
 
       {/* ═══ MAGNETIC ROD ═══ */}
       {method === "MAGNETIC_ROD" && (() => {
-        const SAMPLES_PER_PLATE = 16;
-        const totalPlates = Math.ceil(samples.length / SAMPLES_PER_PLATE);
+        // Build plates with skip-aware sample placement
+        const plates: { cells: {row:number; col:number; sampleIdx:number}[] }[] = [];
+        let si = 0; // sample index
+        let pi = 0; // plate index
+        while (si < samples.length) {
+          const skips = plateSkipCoords[pi] || "";
+          const skipSet = new Set(skips.split(",").map((s: string) => s.trim().toUpperCase()).filter((s: string) => /^[A-H](1[0-2]|[1-9])$/.test(s)));
+          const cells: {row:number; col:number; sampleIdx:number}[] = [];
+          // Col 1 rows A-H
+          for (let r = 0; r < 8; r++) {
+            if (skipSet.has(`${ROWS_8[r]}1`)) continue;
+            if (si < samples.length) cells.push({row: r, col: 1, sampleIdx: si++});
+          }
+          // Col 7 rows A-H
+          for (let r = 0; r < 8; r++) {
+            if (skipSet.has(`${ROWS_8[r]}7`)) continue;
+            if (si < samples.length) cells.push({row: r, col: 7, sampleIdx: si++});
+          }
+          if (cells.length > 0) { plates.push({ cells }); pi++; }
+          else break;
+        }
+        const totalPlates = plates.length;
         return (
           <>
-            {Array.from({ length: totalPlates }, (_, plateIdx) => {
-              const base = plateIdx * SAMPLES_PER_PLATE;
-              const plateSamples = samples.slice(base, base + SAMPLES_PER_PLATE);
-              const plateNo = `P${plateIdx + 1}`;
+            {plates.map((plate, pIdx) => {
+              const skips = plateSkipCoords[pIdx] || "";
+              const skipSet = new Set(skips.split(",").map((s: string) => s.trim().toUpperCase()).filter((s: string) => /^[A-H](1[0-2]|[1-9])$/.test(s)));
+              // Build lookup: "row:col" -> sampleIdx
+              const cellMap = new Map<string, number>();
+              plate.cells.forEach(c => cellMap.set(`${ROWS_8[c.row]}:${c.col}`, c.sampleIdx));
+              const plateNo = `P${pIdx + 1}`;
               return (
-                <Card key={plateIdx} title={`${plateNo} ${t("nipt.extraction.magneticRod")} Plate ${plateIdx+1}/${totalPlates} (${plateSamples.length} samples)`} size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: "4px 8px" }}
-                  extra={<Input.TextArea placeholder={`${plateNo} ${t("nipt.extraction.magneticNotes")}`} defaultValue={magneticNotesRef.current[plateIdx]||""} onChange={e=>{magneticNotesRef.current[plateIdx]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:240,fontSize:11}} allowClear />}
+                <div key={pIdx}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 12 }}>
+                    <span style={{ color: "#666", whiteSpace: "nowrap" }}>{plateNo} 跳过孔位:</span>
+                    <Input
+                      size="small"
+                      placeholder="如 B1,C7"
+                      value={skips}
+                      onChange={e => setPlateSkipCoords(prev => ({...prev, [pIdx]: e.target.value.toUpperCase()}))}
+                      style={{ width: 160 }}
+                    />
+                  </div>
+                <Card key={pIdx} title={`${plateNo} ${t("nipt.extraction.magneticRod")} Plate ${pIdx+1}/${totalPlates} (${plate.cells.length} samples)`} size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: "4px 8px" }}
+                  extra={<Input.TextArea placeholder={`${plateNo} ${t("nipt.extraction.magneticNotes")}`} defaultValue={magneticNotesRef.current[pIdx]||""} onChange={e=>{magneticNotesRef.current[pIdx]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:240,fontSize:11}} allowClear />}
                 >
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
                     <colgroup><col style={{width:"3%"}} />{COLS_12.map(c=><col key={c} style={{width:c===6||c===12?"10%":"7.5%"}} />)}</colgroup>
@@ -375,16 +410,25 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                     <tbody>
                       {ROWS_8.map((r,rowIdx)=>{
                         const bg = rowIdx%2===0?"#fff":"#f5f5f5";
-                        const col1Idx=base+rowIdx, col7Idx=base+8+rowIdx;
-                        const s1=col1Idx<samples.length?(getLabel(col1Idx)):"";
-                        const s7=col7Idx<samples.length?(getLabel(col7Idx)):"";
+                        const col1Idx = cellMap.get(`${r}:1`);
+                        const col7Idx = cellMap.get(`${r}:7`);
+                        const s1 = col1Idx !== undefined ? getLabel(col1Idx) : "";
+                        const s7 = col7Idx !== undefined ? getLabel(col7Idx) : "";
+                        const skipped1 = skipSet.has(`${r}1`);
+                        const skipped7 = skipSet.has(`${r}7`);
                         return (<tr key={r} style={{background:bg}}>
                           <td style={{border:"1px solid #d9d9d9",padding:"3px 4px",textAlign:"center",fontWeight:600,color:"#595959",fontSize:11}}>{r}</td>
                           {COLS_12.map(c=>{
                             const isProductCol=c===6||c===12;
                             if(isProductCol) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:"#fff1f0",minHeight:28,verticalAlign:"middle"}}><span style={{color:"#cf1322",fontWeight:600}}>产物</span></td>;
-                            if(c===1&&s1) return <SampleCell label={s1} sampleIdx={col1Idx} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle"}} />;
-                            if(c===7&&s7) return <SampleCell label={s7} sampleIdx={col7Idx} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle"}} />;
+                            if(c===1) {
+                              if(skipped1) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:"#fff2f0",minHeight:28,verticalAlign:"middle",color:"#cf1322"}}>✕</td>;
+                              if(s1) return <SampleCell label={s1} sampleIdx={col1Idx!} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle"}} />;
+                            }
+                            if(c===7) {
+                              if(skipped7) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:"#fff2f0",minHeight:28,verticalAlign:"middle",color:"#cf1322"}}>✕</td>;
+                              if(s7) return <SampleCell label={s7} sampleIdx={col7Idx!} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle"}} />;
+                            }
                             return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:bg,minHeight:28,verticalAlign:"middle"}}></td>;
                           })}
                         </tr>);
@@ -392,6 +436,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                     </tbody>
                   </table>
                 </Card>
+                </div>
               );
             })}
           </>
