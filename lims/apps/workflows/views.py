@@ -8,6 +8,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import SearchFilter, OrderingFilter
 from datetime import date
 from .models import WorkflowProtocol, SampleRun, RunSample, WorkflowStep
+from lims.apps.samples.models import Sample
 from lims.apps.users.models import User
 from lims.apps.plasma_separation.views import NIPT_SIGNERS, NIPT_SIGNER_PASSWORD
 from .serializers import (
@@ -33,7 +34,6 @@ def _sync_sample_failures(run, step_key, sample_results):
     - fail → REJECTED with rejection_reason="[步骤名] 备注"
     - pass → revert if previously REJECTED by this same step
     """
-    from lims.apps.samples.models import Sample
     label = STEP_LABELS.get(step_key, step_key)
     run_samples = list(run.run_samples.all().order_by("created_at"))
 
@@ -113,7 +113,6 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
 
-        from lims.apps.samples.models import Sample
         from lims.apps.organizations.models import Site
 
         user = request.user
@@ -299,7 +298,6 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         run.save(update_fields=["status", "updated_at"])
 
         # Only when COMPLETED: auto-create reports and mark all linked samples COMPLETED
-        from lims.apps.samples.models import Sample
         from django.utils import timezone
 
         # Sync sample status to match run step (for granular tracking)
@@ -540,7 +538,6 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         # Sync pooling QC failures
         samples = pooling_data.get("samples", [])
-        from lims.apps.samples.models import Sample
         failed_vg_ids = [s.get("vgId", "") for s in samples if s.get("qc") == "FAIL"]
         if failed_vg_ids:
             Sample.objects.filter(
@@ -617,7 +614,6 @@ class SampleRunViewSet(viewsets.ModelViewSet):
             vg_id = item.get("vgId", "")
             report_code = item.get("reportCode", "")
             if vg_id and report_code:
-                from lims.apps.samples.models import Sample
                 cnt = Sample.objects.filter(
                     vg_id=vg_id, is_deleted=False,
                     panel__code__in=["NIPT", "NIPT_PLUS", "NIPT_FULL"],
@@ -678,7 +674,6 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         # Sync bioinformatics QC failures → REJECTED (but still allowed in reports)
         QC_FAIL_VALUES = {"浓度低", "高GC", "数据量不足", "多条染色体临界", "其他"}
         run_samples_map = {str(rs.id): rs for rs in run.run_samples.all()}
-        from lims.apps.samples.models import Sample
         for rs_id, data in bio_data.items():
             qc = (data.get("qc_status") or "").strip()
             if qc in QC_FAIL_VALUES:
