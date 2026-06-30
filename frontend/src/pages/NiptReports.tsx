@@ -95,7 +95,7 @@ export default function NiptReports() {
       const a = document.createElement("a");
       a.href = url;
       const d = res.headers?.["content-disposition"] || "";
-      const m = d.match(/filename=\"?(.+?)\"?\$/);
+      const m = d.match(/filename[^;=\n]*=["']?([^"'\n;]+)["']?/i);
       const ext = fmt === "pdf" ? ".pdf" : ".docx";
       a.download = m ? m[1] : "report" + ext;
       document.body.appendChild(a);
