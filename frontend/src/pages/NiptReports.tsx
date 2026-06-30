@@ -74,7 +74,7 @@ export default function NiptReports() {
           send_report_id: r.external_id,
         }));
         api.post("/reports/batch-update-send-report-id/", { updates })
-          .then((res: any) => {
+          .then(() => {
             const updateMap = new Map(updates.map((u: any) => [u.sample_id, u.send_report_id]));
             setReports((prev: any[]) => prev.map(r =>
               updateMap.has(r.sample) ? { ...r, send_report_id: updateMap.get(r.sample) } : r
