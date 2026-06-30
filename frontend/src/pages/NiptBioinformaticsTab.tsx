@@ -337,9 +337,12 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
             entry.t13 = parts.includes("chr13") ? "High Risk" : "Low Risk";
           }
 
-          // ── Result: vgresult ──
-          const vgr = String(row["vgresult"] || "");
-          if (vgr) entry.result = vgr;
+          // ── Result: win_out_of_range / win_zscores ──
+          const woor = String(row["win_out_of_range"] || "").trim();
+          const wsz = String(row["win_zscores"] || "").trim();
+          if (woor || wsz) {
+            entry.result = (woor && wsz) ? `${woor}/${wsz}` : (woor || wsz);
+          }
 
           // ── XO / XXX / XXY / XYY ──
           // Always read from CSV; default "Low Risk" if column is empty
