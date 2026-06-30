@@ -282,11 +282,14 @@ export default function NiptReports() {
     makeBioCol("uniq-reads", "uniq_reads", 90, formatNum),
     makeBioCol("GC (%)", "gc", 70, formatFloat),
     makeBioCol("Dup (%)", "dup", 70, formatFloat),
-    makeBioCol("QC", "qc_status", 80, (v: any) => {
-      if (!v || v === "PASS") return <Tag color="green" style={{fontSize:10}}>PASS</Tag>;
-      const colors: Record<string,string> = {"浓度低":"orange","高GC":"red","数据量不足":"volcano","多条染色体临界":"purple","其他":"default"};
-      return <Tag color={colors[v]||"red"} style={{fontSize:10}}>{v}</Tag>;
-    }),
+    { title: "QC", key: "qc_status", width: 80, align: "center" as const,
+      render: (_: any, r: any) => {
+        const v = getBio(r, "qc_status") || "PASS";
+        if (v === "PASS") return <Tag color="green" style={{fontSize:10}}>PASS</Tag>;
+        const colors: Record<string,string> = {"浓度低":"orange","高GC":"red","数据量不足":"volcano","多条染色体临界":"purple","其他":"default"};
+        return <Tag color={colors[v]||"red"} style={{fontSize:10}}>{v}</Tag>;
+      },
+    },
     makeBioCol("Result", "result", 100),
     makeBioCol("Z21", "z21", 65, formatFloat),
     makeBioCol("Z18", "z18", 65, formatFloat),
