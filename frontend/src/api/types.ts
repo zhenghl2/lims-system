@@ -76,6 +76,16 @@ export interface SampleStats {
   total_rejected_today: number;
 }
 
+export interface UrgentSample {
+  id: string;
+  vg_id: string;
+  sample_source: string;
+  report_due_date: string;
+  status: string;
+  status_display: string;
+  days_remaining: number;
+}
+
 export interface SampleRejection {
   reason: string;
   note: string;

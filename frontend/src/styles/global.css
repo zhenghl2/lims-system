@@ -23,3 +23,11 @@ body {
 .row-high-risk td {
   border-bottom: 1px solid #ffccc7 !important;
 }
+
+/* Urgent/overdue sample row highlighting */
+.urgent-row-overdue td { background-color: #fff1f0 !important; }
+.urgent-row-today td { background-color: #fff7e6 !important; }
+.urgent-row-near td { background-color: #fffbe6 !important; }
+.urgent-row-overdue:hover td { background-color: #ffccc7 !important; }
+.urgent-row-today:hover td { background-color: #ffe7ba !important; }
+.urgent-row-near:hover td { background-color: #fff1b8 !important; }

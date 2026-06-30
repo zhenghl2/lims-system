@@ -814,7 +814,18 @@
       "labWorkflow": "Fluxo de Laboratório",
       "reports": "Relatórios",
       "draft": "Rascunho",
-      "plasmaSeparating": "Separando Plasma"
+      "plasmaSeparating": "Separando Plasma",
+      "urgentTitle": "Amostras Urgentes / Vencidas",
+      "daysThreshold": "Limite de Alerta (dias)",
+      "vgId": "VG ID",
+      "sampleSource": "Origem",
+      "reportDueDate": "Prazo do Relatório",
+      "daysRemaining": "Dias Restantes",
+      "noUrgent": "Nenhuma amostra urgente ou vencida",
+      "overdue": "Vencido",
+      "dueToday": "Vence Hoje",
+      "daysLeft": "{n} dias restantes",
+      "days": "dias"
     },
     "samples": {
       "title": "Registro de Amostras NIPT",

@@ -814,7 +814,18 @@
       "labWorkflow": "实验流程",
       "reports": "报告",
       "draft": "草稿",
-      "plasmaSeparating": "血浆分离中"
+      "plasmaSeparating": "血浆分离中",
+      "urgentTitle": "临期/到期样本提醒",
+      "daysThreshold": "提醒阈值(天)",
+      "vgId": "VG ID",
+      "sampleSource": "样本来源",
+      "reportDueDate": "报告截止日期",
+      "daysRemaining": "剩余天数",
+      "noUrgent": "暂无临期/到期样本",
+      "overdue": "已过期",
+      "dueToday": "今天到期",
+      "daysLeft": "剩余 {n} 天",
+      "days": "天"
     },
     "samples": {
       "title": "NIPT 样本登记",

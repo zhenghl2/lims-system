@@ -103,6 +103,20 @@ class SampleListSerializer(serializers.ModelSerializer):
         return None
 
 
+
+class SampleUrgentSerializer(serializers.ModelSerializer):
+    """Lightweight serializer for urgent/near-deadline NIPT samples."""
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    days_remaining = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Sample
+        fields = ['id', 'vg_id', 'sample_source', 'report_due_date',
+                  'status', 'status_display', 'days_remaining']
+
+    def get_days_remaining(self, obj):
+        return getattr(obj, 'days_remaining', None)
+
 class SampleReceiveSerializer(serializers.ModelSerializer):
     """Serializer for sample receipt (create + auto-barcode)."""
     sample_type_id = serializers.UUIDField(write_only=True, required=False)

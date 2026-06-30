@@ -14,7 +14,7 @@ from .models import Sample, SamplePhoto, SampleType, TestPanel, SampleMovement
 from lims.apps.organizations.models import Receiver
 from .serializers import (
     SamplePhotoSerializer, SamplePhotoListSerializer,
-    SampleSerializer, SampleListSerializer, SampleReceiveSerializer,
+    SampleSerializer, SampleListSerializer, SampleReceiveSerializer, SampleUrgentSerializer,
     SampleRejectSerializer, SampleMovementSerializer, SampleTypeSerializer, TestPanelSerializer,
 )
 from lims.core.permissions import IsSiteScoped
@@ -81,6 +81,8 @@ class SampleViewSet(viewsets.ModelViewSet):
             return SampleListSerializer
         if self.action == "create":
             return SampleReceiveSerializer
+        if self.action == "urgent":
+            return SampleUrgentSerializer
         return SampleSerializer
     @transaction.atomic
     def create(self, request, *args, **kwargs):
@@ -228,6 +230,36 @@ class SampleViewSet(viewsets.ModelViewSet):
                 **aggregations,
             })
         return Response(results)
+    @action(detail=False, methods=["get"])
+    def urgent(self, request):
+        """Return NIPT samples near or past their report due date."""
+        from datetime import timedelta
+        from django.db.models.expressions import RawSQL
+
+        days = int(request.query_params.get("days", 2))
+        today = timezone.now().date()
+        deadline = today + timedelta(days=days)
+
+        qs = self.get_queryset().filter(
+            panel__code__in=["NIPT", "NIPT_PLUS", "NIPT_FULL"],
+        ).exclude(
+            status__in=["REJECTED", "COMPLETED", "REPORTED", "ARCHIVED", "DISPOSED"]
+        ).annotate(
+            due_date=RawSQL("TO_DATE(NULLIF(report_due_date, ''), 'DD/MM/YYYY')", []),
+        ).filter(
+            due_date__lte=deadline,
+            due_date__isnull=False,
+        ).exclude(
+            report_due_date="",
+        ).annotate(
+            days_remaining=RawSQL(
+                "TO_DATE(NULLIF(report_due_date, ''), 'DD/MM/YYYY') - CURRENT_DATE", []
+            ),
+        ).order_by("due_date")
+
+        serializer = self.get_serializer(qs, many=True)
+        return Response(serializer.data)
+
     @action(detail=False, methods=["post"])
     def batch_create(self, request):
         """Create multiple samples in batch. Accepts {"samples": [{...}, ...]}."""

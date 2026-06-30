@@ -4,7 +4,7 @@ import type {
   Run, RunStats, Report, TestPanel,
   Instrument, ReagentLot, Pageable,
   QCControlMaterial, QCRun, QCChart, QCEvent,
-  PanelStats as _PanelStats, CaseItem, CaseDetail, CaseSample as _cs, CaseDashboard,
+  PanelStats as _PanelStats, CaseItem, CaseDetail, CaseSample as _cs, CaseDashboard, UrgentSample,
   CaseCreatePayload, ConfirmReceiptPayload, DeleteSamplePayload, WorkflowStep, SampleRun as _sr,
 } from "./types";
 
@@ -50,6 +50,8 @@ export const samplesApi = {
       headers: { "Content-Type": "multipart/form-data" },
     }),
   statsByPanel: () => api.get("/samples/stats_by_panel/"),
+  urgent: (params?: { days?: number }) =>
+    api.get<UrgentSample[]>("/samples/urgent/", { params }),
   delete: (id: string) => api.delete(`/samples/${id}/`),
   stats: () => api.get<SampleStats>("/samples/stats/"),
   batchCreate: (data: { samples: Record<string, unknown>[] }) =>

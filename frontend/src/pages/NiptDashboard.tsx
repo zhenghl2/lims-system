@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import { Row, Col, Card, Statistic, Typography, Table, Tag, Space, Empty } from "antd";
-import { ExperimentOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, FileDoneOutlined, FilterOutlined, BuildOutlined, MergeCellsOutlined, CloudUploadOutlined, BarChartOutlined } from "@ant-design/icons";
+import { Row, Col, Card, Statistic, Typography, Table, Tag, Space, Empty, Select } from "antd";
+import { ExperimentOutlined, InboxOutlined, CheckCircleOutlined, CloseCircleOutlined, FileDoneOutlined, FilterOutlined, BuildOutlined, MergeCellsOutlined, CloudUploadOutlined, BarChartOutlined, ClockCircleOutlined } from "@ant-design/icons";
 import { samplesApi, runsApi } from "../api";
+import type { UrgentSample } from "../api/types";
 import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
@@ -10,6 +11,8 @@ export default function NiptDashboard() {
   const { t } = useTranslation();
   const [stats, setStats] = useState<any>({});
   const [runStats, setRunStats] = useState<any[]>([]);
+  const [urgentSamples, setUrgentSamples] = useState<UrgentSample[]>([]);
+  const [thresholdDays, setThresholdDays] = useState(2);
 
   useEffect(() => {
     samplesApi.statsByPanel().then(r => {
@@ -40,6 +43,12 @@ export default function NiptDashboard() {
       .then(r => setRunStats((r.data as any)?.results || [])).catch(() => {});
   }, []);
 
+  useEffect(() => {
+    samplesApi.urgent({ days: thresholdDays })
+      .then(r => setUrgentSamples(r.data || []))
+      .catch(() => setUrgentSamples([]));
+  }, [thresholdDays]);
+
   const s = stats as Record<string, number>;
 
   const statCards = [
@@ -63,6 +72,27 @@ export default function NiptDashboard() {
     ANALYZING: "orange", COMPLETED: "green", FAILED: "red",
   };
 
+  const renderDaysRemaining = (days: number) => {
+    if (days < 0) return <Tag color="red">{t("nipt.dashboard.overdue")} {Math.abs(days)} {t("nipt.dashboard.days")}</Tag>;
+    if (days === 0) return <Tag color="orange">{t("nipt.dashboard.dueToday")}</Tag>;
+    return <Tag color="gold">{t("nipt.dashboard.daysLeft").replace("{n}", String(days))}</Tag>;
+  };
+
+  const urgentRowClass = (record: UrgentSample) => {
+    if (record.days_remaining < 0) return "urgent-row-overdue";
+    if (record.days_remaining === 0) return "urgent-row-today";
+    return "urgent-row-near";
+  };
+
+  const daysOptions = [
+    { value: 1, label: "1" },
+    { value: 2, label: "2" },
+    { value: 3, label: "3" },
+    { value: 5, label: "5" },
+    { value: 7, label: "7" },
+    { value: 14, label: "14" },
+  ];
+
   return (
     <div>
       <Title level={4} style={{ marginBottom: 16 }}>{t("nipt.dashboard.title")}</Title>
@@ -75,6 +105,80 @@ export default function NiptDashboard() {
             </Card>
           </Col>
         ))}
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col span={24}>
+          <Card
+            size="small"
+            title={
+              <Space>
+                <ClockCircleOutlined style={{ color: "#faad14" }} />
+                <span>{t("nipt.dashboard.urgentTitle")}</span>
+              </Space>
+            }
+            extra={
+              <Space>
+                <Text type="secondary">{t("nipt.dashboard.daysThreshold")}:</Text>
+                <Select
+                  size="small"
+                  value={thresholdDays}
+                  onChange={(v) => setThresholdDays(v)}
+                  options={daysOptions}
+                  style={{ width: 70 }}
+                />
+              </Space>
+            }
+          >
+            {urgentSamples.length > 0 ? (
+              <Table<UrgentSample>
+                rowKey="id"
+                size="small"
+                dataSource={urgentSamples}
+                pagination={false}
+                rowClassName={urgentRowClass}
+                columns={[
+                  {
+                    title: t("nipt.dashboard.vgId"),
+                    dataIndex: "vg_id",
+                    width: 130,
+                    sorter: (a, b) => (a.vg_id || "").localeCompare(b.vg_id || ""),
+                    render: (v: string) => <Text code>{v || "-"}</Text>,
+                  },
+                  {
+                    title: t("nipt.dashboard.sampleSource"),
+                    dataIndex: "sample_source",
+                    width: 120,
+                    sorter: (a, b) => (a.sample_source || "").localeCompare(b.sample_source || ""),
+                  },
+                  {
+                    title: t("nipt.dashboard.reportDueDate"),
+                    dataIndex: "report_due_date",
+                    width: 130,
+                    sorter: (a, b) => (a.report_due_date || "").localeCompare(b.report_due_date || ""),
+                  },
+                  {
+                    title: t("common.status"),
+                    dataIndex: "status_display",
+                    width: 180,
+                    sorter: (a, b) => (a.status_display || "").localeCompare(b.status_display || ""),
+                    render: (v: string) => <Tag>{v}</Tag>,
+                  },
+                  {
+                    title: t("nipt.dashboard.daysRemaining"),
+                    dataIndex: "days_remaining",
+                    width: 110,
+                    defaultSortOrder: "ascend" as const,
+                    sorter: (a, b) => a.days_remaining - b.days_remaining,
+                    render: (v: number) => renderDaysRemaining(v),
+                  },
+                ]}
+              />
+            ) : (
+              <Empty description={t("nipt.dashboard.noUrgent")} image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            )}
+          </Card>
+        </Col>
       </Row>
 
       <Row gutter={[16, 16]}>

@@ -814,7 +814,18 @@
       "labWorkflow": "Lab Workflow",
       "reports": "Reports",
       "draft": "Draft",
-      "plasmaSeparating": "Plasma Separating"
+      "plasmaSeparating": "Plasma Separating",
+      "urgentTitle": "Urgent / Overdue Samples",
+      "daysThreshold": "Alert Threshold (days)",
+      "vgId": "VG ID",
+      "sampleSource": "Sample Source",
+      "reportDueDate": "Report Due Date",
+      "daysRemaining": "Days Remaining",
+      "noUrgent": "No urgent or overdue samples",
+      "overdue": "Overdue",
+      "dueToday": "Due Today",
+      "daysLeft": "{n} days left",
+      "days": "days"
     },
     "samples": {
       "title": "NIPT Sample Registration",
