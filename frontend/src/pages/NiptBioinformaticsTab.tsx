@@ -148,8 +148,8 @@ function EditableCell({ value, onChange, type, options, placeholder, min, max, s
         autoFocus size="small" value={localValue}
         style={{ width: "100%", minWidth: 100 }}
         options={options}
-        onChange={v => { setLocalValue(v); commit(); }}
-        onBlur={commit}
+        onChange={v => { setLocalValue(v); setEditing(false); onChange(v); }}
+        onBlur={() => setEditing(false)}
         open
       />
     );
