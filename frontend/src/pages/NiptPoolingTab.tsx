@@ -46,6 +46,21 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
   const libraryPlate = useMemo(() => batch.library_data?.library_plate || [], [batch.library_data]);
 
   // Extract samples from library plate in column-major order, with metadata from run_samples
+  // Build set of vgIds that failed in library step
+  const libFailVgIds = useMemo(() => {
+    const results = batch.library_data?.sample_results || {};
+    const runSamples = batch.run_samples || [];
+    const failSet = new Set<string>();
+    for (const [idxStr, result] of Object.entries(results)) {
+      if ((result as any).status === "fail") {
+        const idx = parseInt(idxStr);
+        const rs = runSamples[idx];
+        if (rs?.sample_vg_id) failSet.add(rs.sample_vg_id);
+      }
+    }
+    return failSet;
+  }, [batch.library_data?.sample_results, batch.run_samples]);
+
   const plateSamples = useMemo(() => {
     const list: { vgId: string; index: string; badge: { text: string; bg?: string }; testOpt: string; isTwin: boolean }[] = [];
     // Build lookup map from run_samples by vgId for badge info
@@ -76,8 +91,9 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
         }
       }
     }
-    return list;
-  }, [libraryPlate, batch.run_samples]);
+    // Exclude library-failed samples
+    return list.filter(ps => !libFailVgIds.has(ps.vgId));
+  }, [libraryPlate, batch.run_samples, libFailVgIds]);
 
   // Build sample rows with saved data or defaults (matched by vgId, not position)
   const buildRows = (): SampleRow[] => {
