@@ -315,11 +315,11 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           if (!isNaN(dup)) entry.dup = r3(dup * 100);
 
           // Z scores
-          const z21 = Number(row["chr21_z"]);
+          const z21 = Number(row["win_chr21_z"]);
           if (!isNaN(z21)) entry.z21 = r3(z21);
-          const z18 = Number(row["chr18_z"]);
+          const z18 = Number(row["win_chr18_z"]);
           if (!isNaN(z18)) entry.z18 = r3(z18);
-          const z13 = Number(row["chr13_z"]);
+          const z13 = Number(row["win_chr13_z"]);
           if (!isNaN(z13)) entry.z13 = r3(z13);
 
           // ── FF%: male → FFY, female → Seqff; both ×100 ──
