@@ -28,16 +28,36 @@ TEMPLATE_MAP = {
     "basic_aus": "Test_Report-Low_risk_basic_tpl_aus.docx",
     "plus_cyj": "Test_Report-Low_risk_plus_tpl_cyj.docx",
     "basic_cyj": "Test_Report-Low_risk_basic_tpl_cyj.docx",
+    # BCC QC failure templates
+    "basic_fail": "Test_Report-Low_risk_basic_fail_tpl.docx",
+    "basic_all_fail": "Test_Report-Low_risk_basicAll_fail_tpl.docx",
+    "plus_fail": "Test_Report-Low_risk_plus_fail_tpl.docx",
 }
 
 RESULT_COLS = ["T21", "T18", "T13", "XO", "XXX", "XXY", "XYY"]
+
+# QC failure values and their report descriptions
+QC_FAIL_VALUES = {"浓度低", "高GC", "数据量不足", "多条染色体临界", "其他"}
+
+QC_FAILURE_MESSAGES = {
+    "浓度低": "No results due to insufficient fetal DNA or combination with other factors "
+              "in this sample. The reason may include normal variation, gestational age, "
+              "maternal weight, and certain medications. Redraw is recommended.",
+    "高GC": "GC values higher in experimental group compared to control. "
+            "Repeat specimen recommended for confirmation.",
+    "多条染色体临界": "No results due to limitations of the test algorithm. "
+                     "A repeat specimen is required for further testing.",
+    "数据量不足": "Insufficient data for accurate analysis. "
+                  "A repeat specimen is required for further testing.",
+    "其他": "Test could not be completed. A repeat specimen is recommended.",
+}
 
 
 def _get_template_path(name):
     return os.path.join(TPL_DIR, name)
 
 
-def select_template(sample_source, test_option, is_twin, has_no_result, gender_report):
+def select_template(sample_source, test_option, is_twin, has_no_result, gender_report, is_qc_fail=False):
     """Select the appropriate DOCX template based on sample attributes."""
     src = (sample_source or "").strip()
 
@@ -66,6 +86,14 @@ def select_template(sample_source, test_option, is_twin, has_no_result, gender_r
         return _get_template_path(TEMPLATE_MAP["basic_cyj"])
 
     # Default (BCC and others)
+    if is_qc_fail:
+        if test_option == "Plus":
+            return _get_template_path(TEMPLATE_MAP["plus_fail"])
+        elif test_option == "Basic All":
+            return _get_template_path(TEMPLATE_MAP["basic_all_fail"])
+        else:  # Basic
+            return _get_template_path(TEMPLATE_MAP["basic_fail"])
+
     if test_option == "Plus":
         return _get_template_path(TEMPLATE_MAP["plus"])
     elif test_option == "Basic All":
@@ -119,6 +147,10 @@ def build_context(report):
     ctx["Zscore21"] = bio.get("z21")
     ctx["Zscore18"] = bio.get("z18")
     ctx["Zscore13"] = bio.get("z13")
+
+    # ── QC failure reason for BCC reports ──
+    qc_status = str(bio.get("qc_status", "") or "").strip()
+    ctx["failure_reason"] = QC_FAILURE_MESSAGES.get(qc_status, "")
     ctx["T21"] = bio.get("t21", "")
     ctx["T18"] = bio.get("t18", "")
     ctx["T13"] = bio.get("t13", "")
@@ -241,10 +273,18 @@ def generate_report(report):
         for r in RESULT_COLS
     )
 
+    # Determine if QC failed for this sample
+    is_qc_fail = False
+    if bio:
+        qc_status = str(bio.get("qc_status", "") or "").strip()
+        if qc_status in QC_FAIL_VALUES:
+            is_qc_fail = True
+
     # Select template
     template_path = select_template(
         sample_source, test_option, is_twin, has_no_result,
-        bool(getattr(sample, "gender_report", False))
+        bool(getattr(sample, "gender_report", False)),
+        is_qc_fail
     )
     logger.info(f"Generating report for {report.report_number}: source={sample_source}, "
                 f"test={test_option}, twin={is_twin}, template={os.path.basename(template_path)}")
