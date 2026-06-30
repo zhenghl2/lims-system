@@ -74,6 +74,8 @@ class PlasmaSeparationSample(models.Model):
     )
     qc_reason = models.CharField(max_length=50, blank=True, default="")
     notes = models.CharField(max_length=200, blank=True, default="")
+    # 🆕 Plasma count per sample
+    plasma_count = models.PositiveSmallIntegerField(default=3, help_text="该样本本次分离所得血浆份数")
 
     class Meta:
         db_table = "plasma_separation_samples"

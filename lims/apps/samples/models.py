@@ -163,6 +163,20 @@ class Sample(models.Model):
     rejection_note = models.TextField(blank=True)
     rejection_handling = models.TextField(blank=True)
     rejection_communication = models.TextField(blank=True)
+
+    # 🆕 Plasma tracking
+    plasma_count = models.PositiveSmallIntegerField(default=3, help_text="血浆分离所得总份数")
+    plasma_remaining = models.PositiveSmallIntegerField(default=3, help_text="剩余可用血浆份数")
+
+    # 🆕 Retest markers
+    retest_flag = models.CharField(max_length=20, blank=True, default="", help_text="重做标记 R1/R2/...")
+    retest_reason = models.CharField(max_length=100, blank=True, default="", help_text="重做或重采原因")
+
+    # 🆕 Experiment history
+    experiment_history = models.JSONField(default=list, blank=True, help_text="历史实验记录 [{run_number, status, rejection_reason, step, timestamp, ...}]")
+
+    # 🆕 Recollection linkage
+    recollected_from_vg_id = models.CharField(max_length=50, blank=True, default="", db_index=True, help_text="重采来源样本的 VG-ID")
     consent_given = models.BooleanField(null=True, blank=True)
     consent_date = models.DateField(null=True, blank=True)
     site = models.ForeignKey("organizations.Site", on_delete=models.PROTECT, related_name="samples", null=True, blank=True)
