@@ -1246,7 +1246,14 @@
       "importExcelHint": "Importar Excel para preencher resultados",
       "noSampleData": "Sem dados de amostra",
       "sampleCount": "Amostras",
-      "filledCount": "Preenchidos"
+      "filledCount": "Preenchidos",
+      "qc": "CQ",
+      "qcPass": "PASS",
+      "qcLowFF": "FF Baixo",
+      "qcHighGC": "GC Alto",
+      "qcLowData": "Dados Baixos",
+      "qcMultiChromBorderline": "Limítrofe Multi Crom.",
+      "qcOther": "Outro"
     },
     "reports": {
       "title": "Relatórios NIPT",

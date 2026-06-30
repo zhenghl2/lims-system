@@ -350,6 +350,15 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
   // ── Columns ───────────────────────────────────────────────
   const formatWeeks = (v: number | null) => v != null ? `${v}w` : "—";
 
+  const qcOptions = [
+    { value: "PASS", label: t("nipt.bioinformatics.qcPass") },
+    { value: "浓度低", label: t("nipt.bioinformatics.qcLowFF") },
+    { value: "高GC", label: t("nipt.bioinformatics.qcHighGC") },
+    { value: "数据量不足", label: t("nipt.bioinformatics.qcLowData") },
+    { value: "多条染色体临界", label: t("nipt.bioinformatics.qcMultiChromBorderline") },
+    { value: "其他", label: t("nipt.bioinformatics.qcOther") },
+  ];
+
   const columns = [
     {
       title: "VG ID", dataIndex: "sample_vg_id", key: "vg_id",
@@ -406,20 +415,13 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       render: (v: string) => v || "—",
     },
     {
-      title: "QC", key: "qc_status", width: 150,
+      title: t("nipt.bioinformatics.qc"), key: "qc_status", width: 150,
       render: (_: any, record: RunSample) => (
         <EditableCell
           value={bioData[record.id]?.qc_status}
           onChange={v => updateCell(record.id, "qc_status", v)}
           type="select"
-          options={[
-            { value: "PASS", label: "PASS" },
-            { value: "浓度低", label: "浓度低" },
-            { value: "高GC", label: "高GC" },
-            { value: "数据量不足", label: "数据量不足" },
-            { value: "多条染色体临界", label: "多条染色体临界" },
-            { value: "其他", label: "其他" },
-          ]}
+          options={qcOptions}
           placeholder="QC"
         />
       ),

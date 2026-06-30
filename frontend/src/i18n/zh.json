@@ -1248,7 +1248,14 @@
       "importExcelHint": "导入 Excel 表格填写分析结果",
       "noSampleData": "暂无样本数据",
       "sampleCount": "样本数",
-      "filledCount": "已填写"
+      "filledCount": "已填写",
+      "qc": "QC",
+      "qcPass": "PASS",
+      "qcLowFF": "浓度低",
+      "qcHighGC": "高GC",
+      "qcLowData": "数据量不足",
+      "qcMultiChromBorderline": "多条染色体临界",
+      "qcOther": "其他"
     },
     "reports": {
       "title": "NIPT 报告",

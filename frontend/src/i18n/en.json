@@ -1246,7 +1246,14 @@
       "importExcelHint": "Import Excel to fill analysis results",
       "noSampleData": "No sample data",
       "sampleCount": "Samples",
-      "filledCount": "Filled"
+      "filledCount": "Filled",
+      "qc": "QC",
+      "qcPass": "PASS",
+      "qcLowFF": "Low FF",
+      "qcHighGC": "High GC",
+      "qcLowData": "Low Data",
+      "qcMultiChromBorderline": "Multi Chr. Borderline",
+      "qcOther": "Other"
     },
     "reports": {
       "title": "NIPT Reports",
