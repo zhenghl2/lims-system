@@ -540,9 +540,9 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         # Sync pooling QC failures
         samples = pooling_data.get("samples", [])
+        from lims.apps.samples.models import Sample
         failed_vg_ids = [s.get("vgId", "") for s in samples if s.get("qc") == "FAIL"]
         if failed_vg_ids:
-            from lims.apps.samples.models import Sample
             Sample.objects.filter(
                 vg_id__in=failed_vg_ids,
                 run_samples__run=run,
