@@ -148,8 +148,17 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData}:Pro
   // ── Build index table from pooling data ──
   const poolSamples: any[] = useMemo(() => {
     const pdata = batch.pooling_data || {};
-    return (pdata.samples || []).filter((s: any) => s.qc !== "FAIL");
-  }, [batch.pooling_data]);
+    const runSampleMap = new Map<string, string>();
+    (batch.run_samples || []).forEach((rs: any) => {
+      if (rs.sample_vg_id) runSampleMap.set(rs.sample_vg_id, rs.sample_status || "");
+    });
+    return (pdata.samples || []).filter((s: any) => {
+      if (s.qc === "FAIL") return false;
+      const st = runSampleMap.get(s.vgId);
+      if (st === "REJECTED") return false;
+      return true;
+    });
+  }, [batch.pooling_data, batch.run_samples]);
 
   const indexRows: IndexRow[] = useMemo(() => {
     // Extract batch number from notes (format: "Batch: XXXXX")

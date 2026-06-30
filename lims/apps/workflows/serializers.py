@@ -50,6 +50,7 @@ class RunSampleSerializer(serializers.ModelSerializer):
     sample_pregnancy_history = serializers.SerializerMethodField()
     sample_diagnosis = serializers.CharField(source="sample.clinical_diagnosis", read_only=True, default="")
     sample_fetal_fraction = serializers.FloatField(source="sample.fetal_fraction", read_only=True, default=None)
+    sample_status = serializers.CharField(source="sample.status", read_only=True, default="")
 
     def get_sample_pregnancy_history(self, obj):
         return obj.sample.pregnancy_history or obj.sample.clinical_diagnosis or ""
@@ -61,7 +62,7 @@ class RunSampleSerializer(serializers.ModelSerializer):
             "id", "run", "sample", "sample_barcode", "sample_vg_id", "sample_patient_id",
             "sample_patient_name", "sample_multiple_gestation", "sample_gestational_weeks",
             "sample_test_option", "sample_source", "sample_ivf", "sample_pregnancy_history",
-            "sample_diagnosis", "sample_fetal_fraction", "sample_report_code",
+            "sample_diagnosis", "sample_fetal_fraction", "sample_report_code", "sample_status",
             "well_position", "plate_number", "index_sequence", "index_combo_id",
             "pool_group", "barcode", "status", "result_summary", "created_at",
         ]

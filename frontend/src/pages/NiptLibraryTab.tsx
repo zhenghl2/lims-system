@@ -114,7 +114,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   // Reload sampleResults when batch changes
   useEffect(() => {
     setSampleResults((batch.library_data?.sample_results as any) || {});
-  }, [batch.id]);
+  }, [batch.library_data?.sample_results]);
   const defaultsFetchedRef = useRef(false);
   // Reset prefetch flag when batch changes
   useEffect(() => { defaultsFetchedRef.current = false; }, [batch.id]);
