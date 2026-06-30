@@ -281,7 +281,13 @@ class PlasmaSeparationBatchViewSet(viewsets.ModelViewSet):
         ps.qc_result = qc_result
         ps.qc_reason = qc_reason
         ps.notes = notes
-        ps.save(update_fields=["qc_result", "qc_reason", "notes"])
+        # 🆕 Update plasma_count if provided
+        plasma_count = request.data.get("plasma_count")
+        update_fields = ["qc_result", "qc_reason", "notes"]
+        if plasma_count is not None:
+            ps.plasma_count = int(plasma_count)
+            update_fields.append("plasma_count")
+        ps.save(update_fields=update_fields)
 
         return Response(PlasmaSeparationSampleSerializer(ps).data)
 

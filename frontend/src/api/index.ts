@@ -56,6 +56,10 @@ export const samplesApi = {
     api.post("/samples/batch_create/", data),
   registerFromPdf: (formData: FormData) =>
     api.post("/samples/register-from-pdf/", formData),
+  redo: (id: string, data?: Record<string, unknown>) =>
+    api.post(`/samples/${id}/redo/`, data || {}),
+  recollect: (id: string, data?: Record<string, unknown>) =>
+    api.post(`/samples/${id}/recollect/`, data || {}),
 };
 
 // ── Runs ──────────────────────────────────────────────────────

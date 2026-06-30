@@ -63,6 +63,11 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "send_report_id", title: "Send Report ID", dataIndex: "send_report_id", visible: true, width: 120, render: (v: string) => v || "-" },
   { key: "lmp", title: "Last Menstrual Period", dataIndex: "last_menstrual_period", visible: true, width: 130, render: (v: string) => v || "-" },
   { key: "hospital", title: "Hospital/Clinic", dataIndex: "ordering_facility", visible: true, width: 130, render: (v: string) => v || "-" },
+  { key: "plasma_count", title: "Plasma", dataIndex: "plasma_count", visible: true, width: 55, render: (v: number) => v ?? "-" },
+  { key: "plasma_remaining", title: "Remain", dataIndex: "plasma_remaining", visible: true, width: 55, render: (v: number) => v ?? "-" },
+  { key: "retest_flag", title: "Retest", dataIndex: "retest_flag", visible: true, width: 55, render: (v: string) => v ? <Tag color="orange" style={{ fontSize: 11 }}>{v}</Tag> : "-" },
+  { key: "retest_reason", title: "Retest Reason", dataIndex: "retest_reason", visible: true, width: 120, render: (v: string) => v || "-" },
+  { key: "recollected_from", title: "Recollected From", dataIndex: "recollected_from_vg_id", visible: true, width: 110, render: (v: string) => v ? <Tag color="purple" style={{ fontSize: 11 }}>← {v}</Tag> : "-" },
   { key: "twins", title: "Twin", dataIndex: "multiple_gestation", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="orange">Twin</Tag> : <Tag color="green">Single</Tag> },
   { key: "ivf", title: "IVF", dataIndex: "ivf_status", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="purple">IVF</Tag> : "No" },
   { key: "preg_history", title: "Preg. History", dataIndex: "pregnancy_history", visible: true, width: 100, render: (_v: string, r: any) => r.pregnancy_history || r.clinical_diagnosis || "-" },
@@ -86,6 +91,24 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "xyy", title: "XYY", dataIndex: "xyy", visible: true, width: 55 },
   { key: "all_chrom", title: "All Chrom", dataIndex: "all_chrom", visible: true, width: 55 },
   { key: "fetal_fraction", title: "FF%", dataIndex: "fetal_fraction", visible: true, width: 55, render: (v: number) => v ? `${v}%` : "-" },
+  { key: "experiment_history", title: "Exp. History", dataIndex: "experiment_history", visible: true, width: 90,
+    render: (v: any[]) => {
+      if (!v || v.length === 0) return "-";
+      const popoverContent = <div style={{ maxWidth: 380, maxHeight: 300, overflow: "auto", fontSize: 12 }}>
+        {v.map((h: any, i: number) => (
+          <div key={i} style={{ marginBottom: 6, padding: "4px 6px", background: h.action === "RETEST" ? "#fff7e6" : h.action === "RECOLLECTED" ? "#f9f0ff" : "#fff1f0", borderRadius: 4, border: "1px solid #f0f0f0" }}>
+            {h.action === "RETEST" && <Tag color="orange" style={{ fontSize: 10, marginRight: 4 }}>{h.retest_flag}</Tag>}
+            {h.action === "RECOLLECTED" && <Tag color="purple" style={{ fontSize: 10, marginRight: 4 }}>重采</Tag>}
+            {!h.action && <Tag color="red" style={{ fontSize: 10, marginRight: 4 }}>FAIL</Tag>}
+            <span style={{ fontWeight: 500 }}>{h.rejection_reason || h.reason || h.retest_reason || h.action}</span>
+            {h.run_number && <div style={{ color: "#888", fontSize: 10 }}>Run: {h.run_number}</div>}
+            {h.timestamp && <div style={{ color: "#aaa", fontSize: 10 }}>{dayjs(h.timestamp).format("MM-DD HH:mm")}</div>}
+          </div>
+        ))}
+      </div>;
+      return <Popover content={popoverContent} trigger="hover"><Tag color="blue" style={{ cursor: "pointer" }}>{v.length} 🔍</Tag></Popover>;
+    },
+  },
   { key: "gender", title: "Sex", dataIndex: "gender", visible: true, width: 55 },
   { key: "other", title: "Other", dataIndex: "other", visible: true, width: 100, render: (v: string) => v || "-" },
 ];
@@ -175,11 +198,33 @@ export default function NiptSamples() {
     } },
 
 
-    { key: "actions", title: "", width: 50, fixed: "right" as const,
+    { key: "actions", title: "", width: 180, fixed: "right" as const,
       render: (_: any, record: any) => (
-        <Popconfirm title={t("nipt.samples.delete")} onConfirm={() => handleDelete(record.id)}>
-          <Button size="small" danger icon={<DeleteOutlined />} />
-        </Popconfirm>
+        <Space size={2} wrap>
+          {/* 🆕 重做：有剩余血浆 → 复用血浆重新排队 */}
+          {record.status === "REJECTED" && record.plasma_remaining > 0 && (
+            <Popconfirm
+              title={<div style={{ maxWidth: 260 }}><div>确认重做此样本？</div><div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>剩余血浆: <b>{record.plasma_remaining}</b> 份<br/>失败原因: {record.rejection_reason}</div></div>}
+              onConfirm={() => handleRedo(record.id)}
+              okText="重做"
+            >
+              <Button size="small" type="primary" ghost icon={<ReloadOutlined />}>重做</Button>
+            </Popconfirm>
+          )}
+          {/* 🆕 重采 */}
+          {record.status === "REJECTED" && (
+            <Popconfirm
+              title={<div style={{ maxWidth: 260 }}><div>确认重采？</div><div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>失败原因: {record.rejection_reason}<br/>剩余血浆: {record.plasma_remaining ?? "-"} 份<br/>样本将标记为完成</div></div>}
+              onConfirm={() => handleRecollect(record.id)}
+              okText="确认重采"
+            >
+              <Button size="small" style={{ borderColor: "#722ed1", color: "#722ed1" }}>🩸 重采</Button>
+            </Popconfirm>
+          )}
+          <Popconfirm title={t("nipt.samples.delete")} onConfirm={() => handleDelete(record.id)}>
+            <Button size="small" danger icon={<DeleteOutlined />} />
+          </Popconfirm>
+        </Space>
       ),
     },
   ];
@@ -274,6 +319,7 @@ export default function NiptSamples() {
     balance: values.balance || "",
     gender_info: values.gender_info || "",
     report_due_date: values.report_due_date || "",
+    recollected_from_vg_id: values.recollected_from_vg_id || "",
   });
 
   const handleFileImport = async () => {
@@ -449,6 +495,26 @@ export default function NiptSamples() {
     try { await samplesApi.update(id, { [field]: value }); } catch { message.error("Save failed"); }
   };
 
+  const handleRedo = async (id: string) => {
+    try {
+      const res = await samplesApi.redo(id, {});
+      message.success(res.data.message || "重做成功");
+      fetchData();
+    } catch (err: any) {
+      message.error(err?.response?.data?.error || "重做失败");
+    }
+  };
+
+  const handleRecollect = async (id: string) => {
+    try {
+      const res = await samplesApi.recollect(id, {});
+      message.success(res.data.message || "已标记为重采");
+      fetchData();
+    } catch (err: any) {
+      message.error(err?.response?.data?.error || "操作失败");
+    }
+  };
+
   const handleDelete = async (id: string) => {
     try { await samplesApi.delete(id); message.success(t("nipt.common.deleted")); fetchData(); } catch { message.error(t("nipt.common.failed")); }
   };
@@ -506,6 +572,10 @@ export default function NiptSamples() {
           </Space>
           <Space style={{ display: "flex" }} wrap>
             <Form.Item name="vg_id" label={t("nipt.sequencing.vgId")}><Input style={{ width: 160 }} /></Form.Item>
+            {/* 🆕 重采来源 */}
+            <Form.Item name="recollected_from_vg_id" label="Recollected From">
+              <Input placeholder="重采时填写原样本 VG-ID（如 HN1111）" style={{ width: 200 }} />
+            </Form.Item>
             <Form.Item name="id_card" label={t("nipt.samples.patientIdLabel")}><Input style={{ width: 200 }} /></Form.Item>
             <Form.Item name="patient_name" label={t("nipt.samples.nameLabel")} rules={[{ required: true }]}><Input style={{ width: 160 }} /></Form.Item>
             <Form.Item name="patient_dob" label={t("nipt.samples.dobLabel")}><DatePicker style={{ width: 160 }} /></Form.Item>

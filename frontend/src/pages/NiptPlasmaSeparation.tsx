@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Table, Button, Tag, Space, Typography, Modal, Form,
-  Input, TimePicker, DatePicker, message, Card, Empty, Row, Col,
+  Input, InputNumber, TimePicker, DatePicker, message, Card, Empty, Row, Col,
   Upload, Popconfirm, Image,
 } from "antd";
 import {
@@ -44,6 +44,7 @@ export default function NiptPlasmaSeparation() {
   const [qcLoading, setQcLoading] = useState(false);
   const [qcNote, setQcNote] = useState("");
   const [qcReasons, setQcReasons] = useState<{ code: string; label: string }[]>([]);
+  const [plasmaCounts, setPlasmaCounts] = useState<Record<string, number>>({});
 
   // Signature modal
   const [signOpen, setSignOpen] = useState(false);
@@ -95,6 +96,17 @@ export default function NiptPlasmaSeparation() {
       .then(r => setQcReasons(r.data))
       .catch(() => {});
   }, []);
+
+  // Load plasma counts from batch detail
+  useEffect(() => {
+    if (batchDetail?.batch_samples) {
+      const map: Record<string, number> = {};
+      batchDetail.batch_samples.forEach((ps: any) => {
+        if (ps.plasma_count) map[ps.sample] = ps.plasma_count;
+      });
+      setPlasmaCounts(map);
+    }
+  }, [batchDetail]);
 
   useEffect(() => {
     if (createOpen) {
@@ -448,6 +460,27 @@ export default function NiptPlasmaSeparation() {
                     },
                   },
                   { title: t("nipt.receiving.patient"), dataIndex: "patient_name", key: "patient_name", width: 110 },
+                  {
+                    title: "Plasma", dataIndex: "plasma_count", key: "plasma_count", width: 70,
+                    render: (v: number, r: any) => {
+                      const key = r.sample || r.id;
+                      const val = plasmaCounts[key] ?? v ?? 3;
+                      return (
+                        <InputNumber size="small" min={1} max={10} value={val}
+                          onChange={(nv) => {
+                            const newVal = nv ?? 3;
+                            setPlasmaCounts(prev => ({ ...prev, [key]: newVal }));
+                            api.patch(
+                              `/plasma-separation/${selectedBatch.id}/samples/${key}/qc/`,
+                              { plasma_count: newVal }
+                            ).catch(() => {});
+                          }}
+                          style={{ width: 55 }}
+                          disabled={batchDetail.status === "COMPLETED"}
+                        />
+                      );
+                    },
+                  },
                   {
                     title: "QC", dataIndex: "qc_result", key: "qc_result", width: 100,
                     render: (v: string) => <Tag color={QC_RESULT_MAP_TL[v]?.color}>{QC_RESULT_MAP_TL[v]?.label || v}</Tag>,

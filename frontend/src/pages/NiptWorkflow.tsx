@@ -266,11 +266,15 @@ export default function NiptWorkflow() {
                 <Card size="small" title={`Samples (${batchDetail.samples.length})`} style={{ marginTop: 16 }}>
                   <Table rowKey="id" size="small" dataSource={batchDetail.samples}
                     columns={[
-                      { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", width: 160 },
+                      { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", width: 150 },
                       { title: "VG ID", dataIndex: "vg_id", width: 80, render: (v: string) => v || "-" },
-                      { title: t("nipt.samples.name"), dataIndex: "patient_name", width: 130 },
-                      { title: t("nipt.samples.age"), dataIndex: "age", width: 50 },
-                      { title: t("nipt.samples.sampleType"), dataIndex: "sample_type_code", width: 130 },
+                      { title: t("nipt.samples.name"), dataIndex: "patient_name", width: 100 },
+                      { title: "Plasma", dataIndex: "plasma_remaining", width: 55,
+                        render: (v: number) => <Text type={v <= 1 ? "danger" : undefined} strong={v <= 1}>{v ?? "-"}</Text>
+                      },
+                      { title: "R", dataIndex: "retest_flag", width: 40,
+                        render: (v: string) => v ? <Tag color="orange" style={{ fontSize: 10, margin: 0 }}>{v}</Tag> : null
+                      },
                       { title: t("nipt.workflow.status"), dataIndex: "status", width: 100, render: (v: string) => <Tag>{v}</Tag> },
                     ]}
                     pagination={false}
