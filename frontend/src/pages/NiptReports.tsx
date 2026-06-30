@@ -61,6 +61,27 @@ export default function NiptReports() {
       });
       const data = (res.data as any)?.results || res.data || [];
       setReports(data);
+
+      // Auto-fill Brazil send_report_id from external_id on load
+      const brazilEmpty = data.filter((r: any) =>
+        (r.sample_source === "巴西万基" || r.sample_source === "巴西") &&
+        !r.send_report_id &&
+        r.external_id
+      );
+      if (brazilEmpty.length > 0) {
+        const updates = brazilEmpty.map((r: any) => ({
+          sample_id: r.sample,
+          send_report_id: r.external_id,
+        }));
+        api.post("/reports/batch-update-send-report-id/", { updates })
+          .then((res: any) => {
+            const updateMap = new Map(updates.map((u: any) => [u.sample_id, u.send_report_id]));
+            setReports((prev: any[]) => prev.map(r =>
+              updateMap.has(r.sample) ? { ...r, send_report_id: updateMap.get(r.sample) } : r
+            ));
+          })
+          .catch(() => {}); // fail silently — user can retry via refresh
+      }
     } catch { message.error("Failed to load reports"); }
     finally { setLoading(false); }
   };
