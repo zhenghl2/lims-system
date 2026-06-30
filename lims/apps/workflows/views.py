@@ -168,16 +168,17 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         sample_assignments = data.get("sample_assignments", {})
         run_samples = []
         for sid in sample_ids:
-            # 🆕 Plasma validation and deduction
-            sample = Sample.objects.select_for_update().get(id=sid)
+            # 🆕 Plasma validation and deduction (atomic via F() expression)
+            sample = Sample.objects.get(id=sid)
             if sample.plasma_remaining <= 0:
-                raise serializers.ValidationError(
+                raise ValidationError(
                     f"样本 {sample.vg_id or sample.sample_id}: "
                     f"无剩余血浆 (剩余 {sample.plasma_remaining} 份)，无法加入批次"
                 )
-            sample.plasma_remaining -= 1
-            sample.status = "EXTRACTION"
-            sample.save(update_fields=["plasma_remaining", "status"])
+            Sample.objects.filter(id=sid, plasma_remaining__gt=0).update(
+                plasma_remaining=models.F("plasma_remaining") - 1,
+                status="EXTRACTION",
+            )
 
             asgn = sample_assignments.get(str(sid), {})
             rs, _ = RunSample.objects.get_or_create(run=run, sample_id=sid)
