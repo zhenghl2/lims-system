@@ -112,9 +112,10 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   }, [batch.region]);
   const edata = useMemo(() => batch.library_data || {}, [batch.library_data]);
   // Reload sampleResults when batch changes
+  const sampleResultsKey = JSON.stringify(batch.library_data?.sample_results || {});
   useEffect(() => {
     setSampleResults((batch.library_data?.sample_results as any) || {});
-  }, [batch.library_data?.sample_results]);
+  }, [sampleResultsKey]);
   const defaultsFetchedRef = useRef(false);
   // Reset prefetch flag when batch changes
   useEffect(() => { defaultsFetchedRef.current = false; }, [batch.id]);

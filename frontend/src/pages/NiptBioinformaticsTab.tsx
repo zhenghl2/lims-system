@@ -184,8 +184,36 @@ function EditableCell({ value, onChange, type, options, placeholder, min, max, s
 // ── Main Component ─────────────────────────────────────────
 export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Props) {
   const { t } = useTranslation();
-  // Exclude REJECTED samples from bioinformatics
-  const activeSamples = useMemo(() => samples.filter((s: any) => s.status !== "REJECTED"), [samples]);
+  // Exclude samples that failed in previous steps from bioinformatics
+  const activeSamples = useMemo(() => {
+    const extFails = batch.extraction_data?.sample_results || {};
+    const libFails = batch.library_data?.sample_results || {};
+    const poolSamples = batch.pooling_data?.samples || [];
+    const runSamples = batch.run_samples || [];
+    // Build index→vgId map
+    const idxToVgId: Record<number, string> = {};
+    runSamples.forEach((rs: any, i: number) => {
+      if (rs.sample_vg_id) idxToVgId[i] = rs.sample_vg_id;
+    });
+    // Build fail vgId set from all 3 steps
+    const failVgIds = new Set<string>();
+    for (const [idxStr, r] of Object.entries(extFails)) {
+      if ((r as any).status === "fail") {
+        const vg = idxToVgId[parseInt(idxStr)];
+        if (vg) failVgIds.add(vg);
+      }
+    }
+    for (const [idxStr, r] of Object.entries(libFails)) {
+      if ((r as any).status === "fail") {
+        const vg = idxToVgId[parseInt(idxStr)];
+        if (vg) failVgIds.add(vg);
+      }
+    }
+    for (const s of poolSamples) {
+      if (s.qc === "FAIL" && s.vgId) failVgIds.add(s.vgId);
+    }
+    return samples.filter((s: any) => !failVgIds.has(s.sample_vg_id));
+  }, [samples, batch.extraction_data, batch.library_data, batch.pooling_data]);
   const [bioData, setBioData] = useState<Record<string, BioData>>({});
   const [saving, setSaving] = useState(false);
   const initialized = useRef(false);
