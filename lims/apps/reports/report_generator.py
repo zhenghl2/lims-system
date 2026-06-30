@@ -311,7 +311,12 @@ def generate_report(report):
         # Output path
         output_dir = os.path.join(settings.MEDIA_ROOT, "reports")
         os.makedirs(output_dir, exist_ok=True)
-        report_file_name = f"{report.report_number}.docx"
+        # File name: VG-ID_sendReportID.docx
+        vg = (sample.vg_id or "").strip()
+        srid = (sample.send_report_id or "").strip()
+        name_parts = [p for p in [vg, srid] if p]
+        base_name = "_".join(name_parts) if name_parts else report.report_number
+        report_file_name = f"{base_name}.docx"
         output_path = os.path.join(output_dir, report_file_name)
         tpl.save(output_path)
 
@@ -320,7 +325,7 @@ def generate_report(report):
         report.save(update_fields=["pdf_file_path"])
 
         # Also generate PDF version via LibreOffice
-        pdf_name = report_file_name.replace('.docx', '.pdf')
+        pdf_name = f"{base_name}.pdf"
         pdf_path = os.path.join(output_dir, pdf_name)
         try:
             import subprocess
@@ -359,7 +364,12 @@ def generate_gender_report(report):
 
         output_dir = os.path.join(settings.MEDIA_ROOT, "reports")
         os.makedirs(output_dir, exist_ok=True)
-        file_name = f"{report.report_number}_SexagemFetal.docx"
+        # File name: VG-ID_sendReportID_SexagemFetal.docx
+        vg = (sample.vg_id or "").strip()
+        srid = (sample.send_report_id or "").strip()
+        name_parts = [p for p in [vg, srid] if p]
+        base_name = "_".join(name_parts) if name_parts else report.report_number
+        file_name = f"{base_name}_SexagemFetal.docx"
         output_path = os.path.join(output_dir, file_name)
         tpl.save(output_path)
 
