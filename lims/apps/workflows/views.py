@@ -475,6 +475,11 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         run.library_data = current
         run.save(update_fields=["library_data", "library_method", "updated_at"])
 
+        # Sync library failures
+        sample_results = library_data.get("sample_results", {})
+        if sample_results:
+            _sync_sample_failures(run, "library", sample_results)
+
         return Response({
             "library_method": run.library_method,
             "library_data": run.library_data,
@@ -530,6 +535,27 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         current.update(pooling_data)
         run.pooling_data = current
         run.save(update_fields=["pooling_data", "updated_at"])
+
+        # Sync pooling QC failures
+        samples = pooling_data.get("samples", [])
+        failed_vg_ids = [s.get("vgId", "") for s in samples if s.get("qc") == "FAIL"]
+        if failed_vg_ids:
+            from lims.apps.samples.models import Sample
+            Sample.objects.filter(
+                vg_id__in=failed_vg_ids,
+                run_samples__run=run,
+            ).update(
+                status="REJECTED",
+                rejection_reason="[文库定量] QC不合格",
+            )
+        # Revert PASS samples previously REJECTED by pooling
+        passed_vg_ids = [s.get("vgId", "") for s in samples if s.get("qc") == "PASS"]
+        if passed_vg_ids:
+            Sample.objects.filter(
+                vg_id__in=passed_vg_ids,
+                status="REJECTED",
+                rejection_reason__startswith="[文库定量]",
+            ).update(status="POOLING", rejection_reason="")
 
         return Response({"pooling_data": run.pooling_data})
 

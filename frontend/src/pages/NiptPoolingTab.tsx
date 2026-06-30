@@ -35,6 +35,7 @@ interface SampleRow {
   poolingAmount: number;
   poolingVolume: number;
   eliminated: boolean;
+  qc?: string;
 }
 
 // getSignStatus imported from ../utils/sign
@@ -106,6 +107,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
         poolingAmount: pa,
         poolingVolume: pv,
         eliminated: y > 0 && y < YIELD_THRESHOLD,
+        qc: saved.qc ?? "PASS",
       };
     });
   };
@@ -141,7 +143,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
     }));
   }, [globalElutionVol]);
 
-  const updateCell = (rowIdx: number, field: string, value: number | null) => {
+  const updateCell = (rowIdx: number, field: string, value: any) => {
     setRows(prev => {
       const next = prev.map(r => ({ ...r }));
       const row = { ...next[rowIdx] };
@@ -189,6 +191,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
         poolingAmount: r.poolingAmount,
         poolingVolume: r.poolingVolume,
         eliminated: r.eliminated,
+        qc: r.qc || "PASS",
       }));
       await api.post(`/runs/${batch.id}/save_pooling/`, {
         pooling_data: {
@@ -322,6 +325,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
               <th style={th} rowSpan={2}>产量<br/>ng</th>
               <th style={th} rowSpan={2}>pooling<br/>投入量 ng</th>
               <th style={th} rowSpan={2}>pooling<br/>{t("nipt.pooling.poolingVolume")}</th>
+              <th style={th} rowSpan={2}>QC</th>
               <th style={th} colSpan={2}>{t("nipt.pooling.poolingSummary")}</th>
             </tr>
             <tr>
@@ -332,7 +336,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
           <tbody>
             {rows.map((r, i) => (
               <tr key={i} className={r.eliminated ? "eliminated" : ""}
-                style={{ background: r.eliminated ? "#fffbe6" : i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                style={{ background: r.qc === "FAIL" ? "#fff1f0" : r.eliminated ? "#fffbe6" : i % 2 === 0 ? "#fff" : "#fafafa" }}>
                 <td style={td}>{r.idx}</td>
                 <td style={{ ...td, background: r.badge.bg || "#e8f5e9", fontWeight: r.badge.bg && r.badge.bg !== "#e8f5e9" ? 600 : 400 }}>
                   {r.badge.text ? r.badge.text + " " : ""}{r.vgId}
@@ -358,6 +362,16 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
                     style={{ width: 70 }} />
                 </td>
                 <td style={{ ...td, fontFamily: "monospace" }}>{r.poolingVolume > 0 ? r.poolingVolume.toFixed(2) : "-"}</td>
+                <td style={{ ...td, background: r.qc === "FAIL" ? "#fff1f0" : undefined }}>
+                  <select
+                    value={r.qc || "PASS"}
+                    onChange={e => updateCell(i, "qc", e.target.value)}
+                    style={{ border: "1px solid #d9d9d9", borderRadius: 4, padding: "2px 4px", fontSize: 11 }}
+                  >
+                    <option value="PASS">PASS</option>
+                    <option value="FAIL">FAIL</option>
+                  </select>
+                </td>
                 {/* Summary cells — merged for first row only */}
                 {i === 0 ? (
                   <>

@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { Form, Input, Upload, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber } from "antd";
+import { Form, Input, Upload, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Popover, Radio } from "antd";
 import { PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import api from "../api/client";
@@ -75,6 +75,7 @@ const KITS_BY_REGION: Record<string, RegionKits> = {
 interface PlateCell {
   vgId: string;
   index: string;
+  sampleIdx?: number;
 }
 
 // getSignStatus imported from ../utils/sign
@@ -110,6 +111,10 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     if (batch.region) setRegion(batch.region);
   }, [batch.region]);
   const edata = useMemo(() => batch.library_data || {}, [batch.library_data]);
+  // Reload sampleResults when batch changes
+  useEffect(() => {
+    setSampleResults((batch.library_data?.sample_results as any) || {});
+  }, [batch.id]);
   const defaultsFetchedRef = useRef(false);
   // Reset prefetch flag when batch changes
   useEffect(() => { defaultsFetchedRef.current = false; }, [batch.id]);
@@ -118,6 +123,11 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
 
   // ── Plate state: 8×12 cells, each with {vgId, index} ──
   const [plate, setPlate] = useState<PlateCell[][]>([]);
+
+  // ── Sample pass/fail results ──
+  const [sampleResults, setSampleResults] = useState<Record<string, { status: string; note: string }>>(
+    () => (batch.library_data?.sample_results as any) || {}
+  );
 
   // Parse coordinate like "D2" -> { row: 3, col: 1 }
   const parseCoord = (coord: string): { row: number; col: number } | null => {
@@ -164,7 +174,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
         const rowStart = (c === coord.col) ? coord.row : 0;
         for (let r = rowStart; r < 8; r++) {
           if (idx < sortedSamples.length) {
-            p[r][c] = { vgId: getVgId(sortedSamples[idx]), index: "" };
+            const s = sortedSamples[idx];
+            p[r][c] = { vgId: getVgId(s), index: "", sampleIdx: samples.indexOf(s) };
             idx++;
           }
         }
@@ -177,7 +188,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       for (let c = startCol; c < startCol + numCols; c++) {
         for (let r = 0; r < 8; r++) {
           if (idx < sortedSamples.length) {
-            p[r][c] = { vgId: getVgId(sortedSamples[idx]), index: "" };
+            const s = sortedSamples[idx];
+            p[r][c] = { vgId: getVgId(s), index: "", sampleIdx: samples.indexOf(s) };
             idx++;
           }
         }
@@ -194,7 +206,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       for (let c = startCol; c < startCol + numCols; c++) {
         for (let r = 0; r < 8; r++) {
           if (idx < sortedSamples.length) {
-            p[r][c] = { vgId: getVgId(sortedSamples[idx]), index: "" };
+            const s = sortedSamples[idx];
+            p[r][c] = { vgId: getVgId(s), index: "", sampleIdx: samples.indexOf(s) };
             idx++;
           }
         }
@@ -377,6 +390,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
           step_confirmations: steps,
           photos,
           library_plate: plateData,
+          sample_results: sampleResults,
           start_coord: startCoord,
           positive_control: positiveControl,
           negative_control: negativeControl,
@@ -560,21 +574,60 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
                   <td style={rowLabelStyle}>{label}</td>
                   {Array.from({ length: COL_COUNT }, (_, col) => {
                     const cell = plate[row]?.[col] || { vgId: "", index: "" };
-                    const bg = getCellBg(cell.vgId);
+                    const sr = cell.sampleIdx !== undefined ? sampleResults[String(cell.sampleIdx)] : undefined;
+                    const failBg = sr?.status === "fail" ? "#fff1f0" : undefined;
+                    const passBg = sr?.status === "pass" ? "#f6ffed" : undefined;
+                    const resultBg = failBg || passBg;
+                    const baseBg = getCellBg(cell.vgId);
+                    const bg = resultBg || baseBg;
                     return (
-                      <td key={col} style={{ ...cellStyle, background: bg }}>
-                        <div style={{ display: "flex", alignItems: "stretch", minHeight: 30 }}>
-                          <input
-                            type="text"
-                            value={cell.index}
-                            onChange={e => updateIndex(row, col, e.target.value)}
-                            style={inputStyle}
-                            placeholder="ix"
-                          />
-                          <div style={{ ...vgIdStyle, flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                            {cell.vgId || ""}
+                      <td key={col} style={{ ...cellStyle, background: bg, cursor: cell.vgId ? "pointer" : "default" }}>
+                        <Popover
+                          trigger="click"
+                          content={
+                            <div style={{ minWidth: 180 }}>
+                              <Radio.Group
+                                value={sr?.status || ""}
+                                onChange={e => {
+                                  const v = e.target.value;
+                                  setSampleResults(prev => ({
+                                    ...prev,
+                                    [String(cell.sampleIdx)]: { status: v, note: v === "fail" ? (prev[String(cell.sampleIdx)]?.note || "") : "" }
+                                  }));
+                                }}
+                              >
+                                <Radio value="pass" style={{ color: "#52c41a" }}>Pass</Radio>
+                                <Radio value="fail" style={{ color: "#ff4d4f" }}>Fail</Radio>
+                              </Radio.Group>
+                              {sr?.status === "fail" && (
+                                <Input.TextArea
+                                  size="small"
+                                  rows={2}
+                                  placeholder="失败原因..."
+                                  value={sr?.note || ""}
+                                  onChange={e => setSampleResults(prev => ({
+                                    ...prev,
+                                    [String(cell.sampleIdx)]: { status: "fail", note: e.target.value }
+                                  }))}
+                                  style={{ marginTop: 8 }}
+                                />
+                              )}
+                            </div>
+                          }
+                        >
+                          <div style={{ display: "flex", alignItems: "stretch", minHeight: 30 }}>
+                            <input
+                              type="text"
+                              value={cell.index}
+                              onChange={e => updateIndex(row, col, e.target.value)}
+                              style={inputStyle}
+                              placeholder="ix"
+                            />
+                            <div style={{ ...vgIdStyle, flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              {cell.vgId || ""}
+                            </div>
                           </div>
-                        </div>
+                        </Popover>
                       </td>
                     );
                   })}
@@ -585,6 +638,34 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
         </div>
       </Card>
       
+
+      {/* ── Failed Samples Summary ── */}
+      {Object.values(sampleResults).some((r: any) => r?.status === "fail") && (
+        <Card size="small" title="失败样本" style={{ marginBottom: 16 }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <thead>
+              <tr>
+                <th style={{ border: "1px solid #ddd", padding: "4px 8px", textAlign: "left" }}>#</th>
+                <th style={{ border: "1px solid #ddd", padding: "4px 8px", textAlign: "left" }}>VG ID</th>
+                <th style={{ border: "1px solid #ddd", padding: "4px 8px", textAlign: "left" }}>失败原因</th>
+              </tr>
+            </thead>
+            <tbody>
+              {Object.entries(sampleResults).filter(([_, r]: any) => r?.status === "fail").map(([idx, r]: any) => {
+                const s = samples[parseInt(idx)];
+                return (
+                  <tr key={idx} style={{ background: "#fff1f0" }}>
+                    <td style={{ border: "1px solid #ddd", padding: "4px 8px" }}>{parseInt(idx) + 1}</td>
+                    <td style={{ border: "1px solid #ddd", padding: "4px 8px" }}>{s ? (s.sample_vg_id || s.vg_id || "-") : "-"}</td>
+                    <td style={{ border: "1px solid #ddd", padding: "4px 8px" }}>{r.note || "—"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
       {/* ── Photos ── */}
       <Card size="small" title="实验照片" style={{ marginBottom: 16 }}>
         <Upload
