@@ -329,6 +329,9 @@ class SampleRunViewSet(viewsets.ModelViewSet):
             from datetime import date
             for rs in run.run_samples.select_related("sample"):
                 sample = rs.sample
+                # Skip REJECTED samples EXCEPT bioinformatics failures (they get reports)
+                if sample.status == "REJECTED" and sample.rejection_reason != "生物信息分析失败":
+                    continue
                 if Report.objects.filter(sample=sample, run_sample=rs).exists():
                     continue
                 template = ReportTemplate.objects.filter(panel=run.panel, is_active=True).first()
@@ -671,6 +674,28 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         current.update(bio_data)
         run.bioinformatics_data = current
         run.save(update_fields=["bioinformatics_data", "updated_at"])
+
+        # Sync bioinformatics QC failures → REJECTED (but still allowed in reports)
+        QC_FAIL_VALUES = {"浓度低", "高GC", "数据量不足", "多条染色体临界", "其他"}
+        run_samples_map = {str(rs.id): rs for rs in run.run_samples.all()}
+        from lims.apps.samples.models import Sample
+        for rs_id, data in bio_data.items():
+            qc = (data.get("qc_status") or "").strip()
+            if qc in QC_FAIL_VALUES:
+                rs = run_samples_map.get(rs_id)
+                if rs:
+                    Sample.objects.filter(id=rs.sample_id).update(
+                        status="REJECTED",
+                        rejection_reason="生物信息分析失败",
+                    )
+            elif qc == "PASS":
+                rs = run_samples_map.get(rs_id)
+                if rs:
+                    Sample.objects.filter(
+                        id=rs.sample_id,
+                        status="REJECTED",
+                        rejection_reason="生物信息分析失败",
+                    ).update(status="BIOINFORMATICS", rejection_reason="")
 
         return Response({"bioinformatics_data": run.bioinformatics_data})
 
