@@ -648,7 +648,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         run.save(update_fields=["bioinformatics_data", "updated_at"])
 
         # Sync QC failures: non-PASS qc_status → REJECTED
-        QC_FAIL_VALUES = {"低浓度", "高GC", "数据量不足", "多条染色体临界", "其他"}
+        QC_FAIL_VALUES = {"浓度低", "高GC", "数据量不足", "多条染色体临界", "其他"}
         run_samples_map = {str(rs.id): rs for rs in run.run_samples.all()}
         from lims.apps.samples.models import Sample
         for rs_id, data in bio_data.items():

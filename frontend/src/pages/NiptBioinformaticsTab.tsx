@@ -414,11 +414,11 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
           type="select"
           options={[
             { value: "PASS", label: "PASS" },
-            { value: "低浓度", label: "浓度低 (low FF)" },
-            { value: "高GC", label: "高GC (High GC)" },
-            { value: "数据量不足", label: "数据量不足 (low data)" },
-            { value: "多条染色体临界", label: "多条染色体临界 (multi chromosome borderline risk)" },
-            { value: "其他", label: "其他 (other)" },
+            { value: "浓度低", label: "浓度低" },
+            { value: "高GC", label: "高GC" },
+            { value: "数据量不足", label: "数据量不足" },
+            { value: "多条染色体临界", label: "多条染色体临界" },
+            { value: "其他", label: "其他" },
           ]}
           placeholder="QC"
         />
