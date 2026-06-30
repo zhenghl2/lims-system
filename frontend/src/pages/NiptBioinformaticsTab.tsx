@@ -36,6 +36,7 @@ interface BioData {
   uniq_reads?: number;
   gc?: number;
   dup?: number;
+  qc_status?: string;  // QC: PASS / 低浓度 / 高GC / 数据量不足 / 多条染色体临界 / 其他
   result?: string;
   z21?: number;
   z18?: number;
@@ -403,6 +404,25 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       title: "Diagnosis", dataIndex: "sample_diagnosis", key: "diagnosis",
       width: 120, ellipsis: true,
       render: (v: string) => v || "—",
+    },
+    {
+      title: "QC", key: "qc_status", width: 150,
+      render: (_: any, record: RunSample) => (
+        <EditableCell
+          value={bioData[record.id]?.qc_status}
+          onChange={v => updateCell(record.id, "qc_status", v)}
+          type="select"
+          options={[
+            { value: "PASS", label: "PASS" },
+            { value: "低浓度", label: "浓度低 (low FF)" },
+            { value: "高GC", label: "高GC (High GC)" },
+            { value: "数据量不足", label: "数据量不足 (low data)" },
+            { value: "多条染色体临界", label: "多条染色体临界 (multi chromosome borderline risk)" },
+            { value: "其他", label: "其他 (other)" },
+          ]}
+          placeholder="QC"
+        />
+      ),
     },
     {
       title: "raw-reads", key: "raw_reads", width: 110, align: "center" as const,

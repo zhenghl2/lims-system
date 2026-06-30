@@ -17,6 +17,53 @@ from .serializers import (
 )
 
 
+# ── Sample failure sync helper ────────────────────────────────────
+
+STEP_LABELS = {
+    "extraction": "核酸提取",
+    "library": "文库构建",
+    "pooling": "文库定量",
+    "sequencing": "上机测序",
+    "bioinformatics": "生信分析",
+}
+
+def _sync_sample_failures(run, step_key, sample_results):
+    """
+    Sync Sample.status based on per-sample pass/fail in sample_results.
+    - fail → REJECTED with rejection_reason="[步骤名] 备注"
+    - pass → revert if previously REJECTED by this same step
+    """
+    from lims.apps.samples.models import Sample
+    label = STEP_LABELS.get(step_key, step_key)
+    run_samples = list(run.run_samples.all().order_by("created_at"))
+
+    for idx_str, result in sample_results.items():
+        try:
+            idx = int(idx_str)
+        except (ValueError, TypeError):
+            continue
+        if idx < 0 or idx >= len(run_samples):
+            continue
+
+        sample_id = run_samples[idx].sample_id
+        status = result.get("status", "")
+
+        if status == "fail":
+            note = (result.get("note") or "").strip()
+            reason = f"[{label}] {note}" if note else f"[{label}] 不合格"
+            Sample.objects.filter(id=sample_id).update(
+                status="REJECTED",
+                rejection_reason=reason,
+            )
+        elif status == "pass":
+            # If previously REJECTED by this same step, revert to EXTRACTION
+            Sample.objects.filter(
+                id=sample_id,
+                status="REJECTED",
+                rejection_reason__startswith=f"[{label}]",
+            ).update(status="EXTRACTION", rejection_reason="")
+
+
 class WorkflowProtocolViewSet(viewsets.ModelViewSet):
     """Manage workflow protocols."""
     permission_classes = [permissions.IsAuthenticated]
@@ -268,7 +315,10 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         }
         sample_status = STEP_TO_SAMPLE_STATUS.get(new_status)
         if sample_status:
-            sample_ids = run.run_samples.values_list("sample_id", flat=True)
+            # Exclude REJECTED samples from advancement (they stay frozen)
+            sample_ids = run.run_samples.exclude(
+                sample__status="REJECTED"
+            ).values_list("sample_id", flat=True)
             Sample.objects.filter(id__in=sample_ids).update(status=sample_status)
 
         if new_status == "COMPLETED":
@@ -358,6 +408,11 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         current.update(extraction_data)
         run.extraction_data = current
         run.save(update_fields=["extraction_data", "extraction_method", "region", "updated_at"])
+
+        # Sync sample status: mark failed samples as REJECTED
+        sample_results = extraction_data.get("sample_results", {})
+        if sample_results:
+            _sync_sample_failures(run, "extraction", sample_results)
 
         return Response({
             "extraction_method": run.extraction_method,
@@ -591,6 +646,29 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         current.update(bio_data)
         run.bioinformatics_data = current
         run.save(update_fields=["bioinformatics_data", "updated_at"])
+
+        # Sync QC failures: non-PASS qc_status → REJECTED
+        QC_FAIL_VALUES = {"低浓度", "高GC", "数据量不足", "多条染色体临界", "其他"}
+        run_samples_map = {str(rs.id): rs for rs in run.run_samples.all()}
+        from lims.apps.samples.models import Sample
+        for rs_id, data in bio_data.items():
+            qc = (data.get("qc_status") or "").strip()
+            if qc in QC_FAIL_VALUES:
+                rs = run_samples_map.get(rs_id)
+                if rs:
+                    Sample.objects.filter(id=rs.sample_id).update(
+                        status="REJECTED",
+                        rejection_reason=f"[生信分析] {qc}",
+                    )
+            elif qc == "PASS":
+                # Revert if previously REJECTED by bioinformatics step
+                rs = run_samples_map.get(rs_id)
+                if rs:
+                    Sample.objects.filter(
+                        id=rs.sample_id,
+                        status="REJECTED",
+                        rejection_reason__startswith="[生信分析]",
+                    ).update(status="BIOINFORMATICS", rejection_reason="")
 
         return Response({"bioinformatics_data": run.bioinformatics_data})
 
