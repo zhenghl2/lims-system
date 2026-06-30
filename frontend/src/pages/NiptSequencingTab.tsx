@@ -148,7 +148,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData}:Pro
   // ── Build index table from pooling data ──
   const poolSamples: any[] = useMemo(() => {
     const pdata = batch.pooling_data || {};
-    return pdata.samples || [];
+    return (pdata.samples || []).filter((s: any) => s.qc !== "FAIL");
   }, [batch.pooling_data]);
 
   const indexRows: IndexRow[] = useMemo(() => {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import {
   Table, Button, Space, Tag, Typography, Input, InputNumber,
   Select, AutoComplete, message, Tooltip
@@ -184,6 +184,8 @@ function EditableCell({ value, onChange, type, options, placeholder, min, max, s
 // ── Main Component ─────────────────────────────────────────
 export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Props) {
   const { t } = useTranslation();
+  // Exclude REJECTED samples from bioinformatics
+  const activeSamples = useMemo(() => samples.filter((s: any) => s.status !== "REJECTED"), [samples]);
   const [bioData, setBioData] = useState<Record<string, BioData>>({});
   const [saving, setSaving] = useState(false);
   const initialized = useRef(false);
@@ -239,7 +241,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
 
         // Build VG ID → runSampleId map
         const vgMap = new Map<string, string>();
-        for (const s of samples) {
+        for (const s of activeSamples) {
           if (s.sample_vg_id) vgMap.set(s.sample_vg_id.trim(), s.id);
         }
         console.log("[import] vgMap:", [...vgMap.entries()]);
@@ -646,9 +648,9 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
         <Space>
           <Text strong style={{ fontSize: 13 }}>
-            {t("nipt.bioinformatics.sampleCount")}: {samples.length}
+            {t("nipt.bioinformatics.sampleCount")}: {activeSamples.length}
           </Text>
-          {samples.length > 0 && (
+          {activeSamples.length > 0 && (
             <Text type="secondary" style={{ fontSize: 12 }}>
               | {t("nipt.bioinformatics.filledCount")}: {Object.keys(bioData).filter(k => bioData[k] && Object.keys(bioData[k]).length > 0).length}
             </Text>
@@ -683,7 +685,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
       <div style={{ overflowX: "auto" }}>
         <Table
           rowKey="id"
-          dataSource={samples}
+          dataSource={activeSamples}
           columns={columns}
           size="small"
           pagination={false}
