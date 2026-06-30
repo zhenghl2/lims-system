@@ -49,8 +49,7 @@ def _sync_sample_failures(run, step_key, sample_results):
         status = result.get("status", "")
 
         if status == "fail":
-            note = (result.get("note") or "").strip()
-            reason = f"[{label}] {note}" if note else f"[{label}] 不合格"
+            reason = f"{label}失败"
             Sample.objects.filter(id=sample_id).update(
                 status="REJECTED",
                 rejection_reason=reason,
@@ -60,7 +59,7 @@ def _sync_sample_failures(run, step_key, sample_results):
             Sample.objects.filter(
                 id=sample_id,
                 status="REJECTED",
-                rejection_reason__startswith=f"[{label}]",
+                rejection_reason=f"{label}失败",
             ).update(status="EXTRACTION", rejection_reason="")
 
 
@@ -546,7 +545,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
                 run_samples__run=run,
             ).update(
                 status="REJECTED",
-                rejection_reason="[文库定量] QC不合格",
+                rejection_reason="文库定量失败",
             )
         # Revert PASS samples previously REJECTED by pooling
         passed_vg_ids = [s.get("vgId", "") for s in samples if s.get("qc") == "PASS"]
@@ -554,7 +553,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
             Sample.objects.filter(
                 vg_id__in=passed_vg_ids,
                 status="REJECTED",
-                rejection_reason__startswith="[文库定量]",
+                rejection_reason__startswith="文库定量失败",
             ).update(status="POOLING", rejection_reason="")
 
         return Response({"pooling_data": run.pooling_data})
@@ -672,29 +671,6 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         current.update(bio_data)
         run.bioinformatics_data = current
         run.save(update_fields=["bioinformatics_data", "updated_at"])
-
-        # Sync QC failures: non-PASS qc_status → REJECTED
-        QC_FAIL_VALUES = {"浓度低", "高GC", "数据量不足", "多条染色体临界", "其他"}
-        run_samples_map = {str(rs.id): rs for rs in run.run_samples.all()}
-        from lims.apps.samples.models import Sample
-        for rs_id, data in bio_data.items():
-            qc = (data.get("qc_status") or "").strip()
-            if qc in QC_FAIL_VALUES:
-                rs = run_samples_map.get(rs_id)
-                if rs:
-                    Sample.objects.filter(id=rs.sample_id).update(
-                        status="REJECTED",
-                        rejection_reason=f"[生信分析] {qc}",
-                    )
-            elif qc == "PASS":
-                # Revert if previously REJECTED by bioinformatics step
-                rs = run_samples_map.get(rs_id)
-                if rs:
-                    Sample.objects.filter(
-                        id=rs.sample_id,
-                        status="REJECTED",
-                        rejection_reason__startswith="[生信分析]",
-                    ).update(status="BIOINFORMATICS", rejection_reason="")
 
         return Response({"bioinformatics_data": run.bioinformatics_data})
 

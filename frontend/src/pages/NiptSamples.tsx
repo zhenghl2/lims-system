@@ -169,7 +169,7 @@ export default function NiptSamples() {
       return (
         <span>
           <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABEL_TL[v] || v}</Tag>
-          {v === "REJECTED" && reason ? <Tag color="red" style={{ fontSize: 10, maxWidth: 120 }} title={reason}>{reason.replace(/^\[.+\]\s*/, "")}</Tag> : null}
+          {v === "REJECTED" && reason ? <Tag color="red" style={{ fontSize: 10, maxWidth: 150 }} title={reason}>{reason}</Tag> : null}
         </span>
       );
     } },
