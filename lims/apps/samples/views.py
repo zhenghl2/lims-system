@@ -451,6 +451,110 @@ class SampleViewSet(viewsets.ModelViewSet):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+
+    # =====================================================
+    # 🆕 Action: redo — retest using remaining plasma
+    # =====================================================
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def redo(self, request, pk=None):
+        """
+        Retest a rejected sample using remaining plasma.
+        POST /api/samples/{id}/redo/
+        Body: { "reason": "文库构建失败" }  // optional
+        """
+        sample = Sample.objects.select_for_update().get(id=pk)
+
+        if sample.status != "REJECTED":
+            return Response(
+                {"error": f"当前状态为 {sample.status}，只有已拒收的样本可以重做"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if sample.plasma_remaining <= 0:
+            return Response(
+                {"error": "无剩余血浆，无法重做。请使用 recollect 进行重采"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reason = request.data.get("reason", "") or sample.rejection_reason or ""
+
+        # Calculate retest count
+        current_r = 0
+        if sample.retest_flag and sample.retest_flag.startswith("R"):
+            try:
+                current_r = int(sample.retest_flag[1:])
+            except ValueError:
+                pass
+
+        new_flag = f"R{current_r + 1}"
+
+        # Append to experiment history
+        history = list(sample.experiment_history or [])
+        history.append({
+            "action": "RETEST",
+            "retest_flag": new_flag,
+            "previous_rejection_reason": sample.rejection_reason,
+            "retest_reason": reason,
+            "plasma_remaining_at_retest": sample.plasma_remaining,
+            "timestamp": timezone.now().isoformat(),
+        })
+
+        sample.status = "PLASMA_SEPARATED"
+        sample.rejection_reason = ""
+        sample.retest_flag = new_flag
+        sample.retest_reason = reason
+        sample.experiment_history = history
+        sample.save()
+
+        return Response({
+            "status": "PLASMA_SEPARATED",
+            "retest_flag": new_flag,
+            "plasma_remaining": sample.plasma_remaining,
+            "message": f"样本已恢复为血浆已分离状态，剩余血浆 {sample.plasma_remaining} 份",
+        })
+
+    # =====================================================
+    # 🆕 Action: recollect — mark old sample as completed for recollection
+    # =====================================================
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def recollect(self, request, pk=None):
+        """
+        Mark a sample as recollected (new blood draw).
+        POST /api/samples/{id}/recollect/
+        Body: { "reason": "浓度低重新采血" }  // optional
+        """
+        sample = Sample.objects.select_for_update().get(id=pk)
+
+        if sample.status == "COMPLETED":
+            return Response(
+                {"error": "样本已完成，无需重复操作"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        reason = request.data.get("reason", "") or sample.rejection_reason or "重采"
+
+        # Append to experiment history
+        history = list(sample.experiment_history or [])
+        history.append({
+            "action": "RECOLLECTED",
+            "reason": reason,
+            "timestamp": timezone.now().isoformat(),
+        })
+
+        sample.status = "COMPLETED"
+        sample.rejection_reason = ""
+        sample.retest_reason = reason
+        sample.experiment_history = history
+        sample.save()
+
+        return Response({
+            "status": "COMPLETED",
+            "vg_id": sample.vg_id,
+            "message": f"样本 {sample.vg_id or sample.sample_id} 已标记为重采完成。新样本登记时请填写 recollected_from_vg_id",
+        })
+
 class SampleTypeViewSet(viewsets.ReadOnlyModelViewSet):
     """List sample types."""
     permission_classes = [IsAuthenticated]

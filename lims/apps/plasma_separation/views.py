@@ -103,6 +103,7 @@ class PlasmaSeparationBatchViewSet(viewsets.ModelViewSet):
                     batch=batch,
                     sample=sample,
                     qc_result="PENDING",
+                    plasma_count=data.get(f"plasma_count_{sid}", 3),
                 )
                 sample.status = "PRE_PROCESSING"
                 sample.save(update_fields=["status"])
@@ -126,9 +127,13 @@ class PlasmaSeparationBatchViewSet(viewsets.ModelViewSet):
                 {"error": "Cannot delete a completed batch."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        # Revert sample statuses back to RECEIVED
+        # Revert sample statuses back to RECEIVED, reset plasma
         for ps in batch.batch_samples.all():
-            Sample.objects.filter(id=ps.sample_id).update(status="RECEIVED")
+            Sample.objects.filter(id=ps.sample_id).update(
+                status="RECEIVED",
+                plasma_count=3,
+                plasma_remaining=3,
+            )
         batch.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -173,12 +178,18 @@ class PlasmaSeparationBatchViewSet(viewsets.ModelViewSet):
         # Process each sample
         for ps in batch.batch_samples.select_related("sample").all():
             if ps.qc_result == "PASS":
-                Sample.objects.filter(id=ps.sample_id).update(status="PLASMA_SEPARATED")
+                Sample.objects.filter(id=ps.sample_id).update(
+                    status="PLASMA_SEPARATED",
+                    plasma_count=ps.plasma_count,
+                    plasma_remaining=ps.plasma_count,
+                )
             elif ps.qc_result == "FAIL":
                 reason_display = dict(QC_REASON_CHOICES).get(ps.qc_reason, ps.qc_reason)
                 Sample.objects.filter(id=ps.sample_id).update(
                     status="REJECTED",
                     rejection_reason=f"血浆分离不合格: {reason_display}",
+                    plasma_count=ps.plasma_count,
+                    plasma_remaining=0,
                 )
 
         batch.status = "COMPLETED"

@@ -50,9 +50,23 @@ def _sync_sample_failures(run, step_key, sample_results):
 
         if status == "fail":
             reason = f"{label}失败"
+            # 🆕 Append to experiment_history
+            from django.utils import timezone
+            sample = Sample.objects.get(id=sample_id)
+            history = list(sample.experiment_history or [])
+            history.append({
+                "run_number": run.run_number,
+                "status": "REJECTED",
+                "rejection_reason": reason,
+                "step": step_key,
+                "step_label": label,
+                "timestamp": timezone.now().isoformat(),
+                "retest_flag_at_time": sample.retest_flag or "",
+            })
             Sample.objects.filter(id=sample_id).update(
                 status="REJECTED",
                 rejection_reason=reason,
+                experiment_history=history,
             )
         elif status == "pass":
             # If previously REJECTED by this same step, revert to EXTRACTION
@@ -154,6 +168,17 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         sample_assignments = data.get("sample_assignments", {})
         run_samples = []
         for sid in sample_ids:
+            # 🆕 Plasma validation and deduction
+            sample = Sample.objects.select_for_update().get(id=sid)
+            if sample.plasma_remaining <= 0:
+                raise serializers.ValidationError(
+                    f"样本 {sample.vg_id or sample.sample_id}: "
+                    f"无剩余血浆 (剩余 {sample.plasma_remaining} 份)，无法加入批次"
+                )
+            sample.plasma_remaining -= 1
+            sample.status = "EXTRACTION"
+            sample.save(update_fields=["plasma_remaining", "status"])
+
             asgn = sample_assignments.get(str(sid), {})
             rs, _ = RunSample.objects.get_or_create(run=run, sample_id=sid)
             if asgn.get("well_position"):
@@ -167,8 +192,6 @@ class SampleRunViewSet(viewsets.ModelViewSet):
             if any([asgn.get("well_position"), asgn.get("index_sequence"), asgn.get("pool_group"), asgn.get("barcode")]):
                 rs.save(update_fields=["well_position", "index_sequence", "pool_group", "barcode"])
             run_samples.append(rs)
-            # Update sample status to IN_PROCESS
-            Sample.objects.filter(id=sid).update(status="EXTRACTION")
 
         # Create workflow steps per sample from protocol or defaults
         # Resolve protocol: find active protocol for this panel, or auto-create default
