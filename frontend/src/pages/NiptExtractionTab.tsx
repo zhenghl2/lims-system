@@ -256,7 +256,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     if (!s) return "-";
     const badge = getSampleBadgeLocal(idx);
     const vgId = s.sample_vg_id || s.sample_barcode || s.vg_id || s.sample_id || "-";
-    return badge.text ? badge.text + vgId : vgId;
+    const qcSuffix = s.is_qc ? "QC" : "";
+    return badge.text ? badge.text + vgId + qcSuffix : vgId + qcSuffix;
   };
   const getSampleBadgeLocal = (idx: number) => getSampleBadge(samples[idx]);
   const getCellBgLocal = (idx?: number) => getCellBg(idx, samples);

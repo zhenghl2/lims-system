@@ -176,7 +176,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
         for (let r = rowStart; r < 8; r++) {
           if (idx < sortedSamples.length) {
             const s = sortedSamples[idx];
-            p[r][c] = { vgId: getVgId(s), index: "", sampleIdx: samples.indexOf(s) };
+            p[r][c] = { vgId: getVgId(s) + (s.is_qc ? "QC" : ""), index: "", sampleIdx: samples.indexOf(s) };
             idx++;
           }
         }
@@ -190,7 +190,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
         for (let r = 0; r < 8; r++) {
           if (idx < sortedSamples.length) {
             const s = sortedSamples[idx];
-            p[r][c] = { vgId: getVgId(s), index: "", sampleIdx: samples.indexOf(s) };
+            p[r][c] = { vgId: getVgId(s) + (s.is_qc ? "QC" : ""), index: "", sampleIdx: samples.indexOf(s) };
             idx++;
           }
         }
@@ -208,7 +208,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
         for (let r = 0; r < 8; r++) {
           if (idx < sortedSamples.length) {
             const s = sortedSamples[idx];
-            p[r][c] = { vgId: getVgId(s), index: "", sampleIdx: samples.indexOf(s) };
+            p[r][c] = { vgId: getVgId(s) + (s.is_qc ? "QC" : ""), index: "", sampleIdx: samples.indexOf(s) };
             idx++;
           }
         }
@@ -626,6 +626,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
                             />
                             <div style={{ ...vgIdStyle, flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
                               {cell.vgId || ""}
+                              {cell.sampleIdx !== undefined && (samples[cell.sampleIdx] as any)?.is_qc && <span style={{ color: "#13c2c2", fontWeight: 600, marginLeft: 1 }}>QC</span>}
                             </div>
                           </div>
                         </Popover>
