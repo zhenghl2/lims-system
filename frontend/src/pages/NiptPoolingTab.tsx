@@ -362,9 +362,12 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
                 <td style={td}>
                   <InputNumber size="small" min={0} step={0.01} value={r.concentration}
                     onChange={v => updateCell(i, "concentration", v)}
-                    onPressEnter={() => {
-                      const next = concRefs.current[i + 1];
-                      if (next?.focus) next.focus();
+                    onKeyDown={(e: any) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const next = concRefs.current[i + 1];
+                        if (next?.focus) next.focus();
+                      }
                     }}
                     ref={(el: any) => { concRefs.current[i] = el; }}
                     style={{ width: 80 }} placeholder="0" />
