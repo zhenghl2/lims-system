@@ -340,7 +340,7 @@ export default function NiptWorkflow() {
             dataSource={samples.filter((s: any) => {
               if (!sampleSearch) return true;
               const q = sampleSearch.toLowerCase();
-              return (s.sample_id || "").toLowerCase().includes(q) || (s.patient_name || "").toLowerCase().includes(q);
+              return (s.sample_id || "").toLowerCase().includes(q) || (s.patient_name || "").toLowerCase().includes(q) || (s.vg_id || "").toLowerCase().includes(q);
             })}
             rowSelection={{
               selectedRowKeys: selectedIds,
