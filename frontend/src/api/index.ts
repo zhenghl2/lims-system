@@ -45,10 +45,11 @@ export const samplesApi = {
     }),
   accept: (id: string, data?: Record<string, unknown>) =>
     api.post(`/samples/${id}/accept/`, data || {}),
-  uploadImage: (id: string, file: File) =>
-    api.post(`/samples/${id}/upload_image/`, file, {
-      headers: { "Content-Type": "multipart/form-data" },
-    }),
+  uploadImage: (id: string, file: File) => {
+    const formData = new FormData();
+    formData.append("image", file);
+    return api.post(`/samples/${id}/upload-image/`, formData);
+  },
   statsByPanel: () => api.get("/samples/stats_by_panel/"),
   urgent: (params?: { days?: number }) =>
     api.get<UrgentSample[]>("/samples/urgent/", { params }),
