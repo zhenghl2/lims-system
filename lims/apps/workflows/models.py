@@ -115,6 +115,7 @@ class RunSample(models.Model):
         db_index=True,
     )
     result_summary = models.JSONField(default=dict, blank=True)
+    is_qc = models.BooleanField(default=False, db_index=True, help_text="是否为质控品重做")
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

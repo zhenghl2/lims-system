@@ -587,6 +587,37 @@ class SampleViewSet(viewsets.ModelViewSet):
             "message": f"样本 {sample.vg_id or sample.sample_id} 已标记为重采完成。新样本登记时请填写 recollected_from_vg_id",
         })
 
+    # =====================================================
+    # 🆕 Action: qc_redo — use completed sample as QC control
+    # =====================================================
+    @action(detail=True, methods=["post"])
+    @transaction.atomic
+    def qc_redo(self, request, pk=None):
+        sample = Sample.objects.select_for_update().get(id=pk)
+        if sample.status != "COMPLETED":
+            return Response(
+                {"error": f"当前状态为 {sample.status}，只有已完成的样本可以做质控品"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if sample.plasma_remaining <= 0:
+            return Response(
+                {"error": "无剩余血浆，无法作为质控品使用"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        history = list(sample.experiment_history or [])
+        history.append({
+            "action": "QC_REDO",
+            "plasma_remaining": sample.plasma_remaining,
+            "timestamp": timezone.now().isoformat(),
+        })
+        sample.experiment_history = history
+        sample.save(update_fields=["experiment_history"])
+        return Response({
+            "status": sample.status,
+            "plasma_remaining": sample.plasma_remaining,
+            "message": f"样本 {sample.vg_id or sample.sample_id} 已标记为质控品，新建批次时可选择",
+        })
+
 class SampleTypeViewSet(viewsets.ReadOnlyModelViewSet):
     """List sample types."""
     permission_classes = [IsAuthenticated]

@@ -65,7 +65,7 @@ class RunSampleSerializer(serializers.ModelSerializer):
             "sample_patient_name", "sample_multiple_gestation", "sample_gestational_weeks",
             "sample_test_option", "sample_source", "sample_ivf", "sample_pregnancy_history",
             "sample_diagnosis", "sample_fetal_fraction", "sample_report_code", "sample_status",
-            "sample_plasma_remaining", "sample_retest_flag",
+            "sample_plasma_remaining", "sample_retest_flag", "is_qc",
             "well_position", "plate_number", "index_sequence", "index_combo_id",
             "pool_group", "barcode", "status", "result_summary", "created_at",
         ]

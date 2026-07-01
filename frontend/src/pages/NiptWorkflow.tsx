@@ -63,6 +63,7 @@ export default function NiptWorkflow() {
 
   const [samples, setSamples] = useState<any[]>([]);
   const [sampleSearch, setSampleSearch] = useState("");
+  const [qcMode, setQcMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const fetchBatches = useCallback(async () => {
@@ -92,18 +93,29 @@ export default function NiptWorkflow() {
     fetchDetail(batch.id);
   };
   useEffect(() => {
-    if (createOpen) samplesApi.list({ status: "IN_PROCESS,PLASMA_SEPARATED", page_size: 200 }).then(r => {
-      const list = (r.data as any).results || [];
-      setSamples(list);
-      setSelectedIds(list.map((s: any) => s.id));
-    }).catch(() => {});
-  }, [createOpen]);
+    if (createOpen) {
+      if (qcMode) {
+        samplesApi.list({ status: "COMPLETED", plasma_remaining__gt: 0, page_size: 200 }).then(r => {
+          const list = (r.data as any).results || [];
+          setSamples(list);
+          setSelectedIds([]);
+        }).catch(() => {});
+      } else {
+        samplesApi.list({ status: "IN_PROCESS,PLASMA_SEPARATED", page_size: 200 }).then(r => {
+          const list = (r.data as any).results || [];
+          setSamples(list);
+          setSelectedIds(list.map((s: any) => s.id));
+        }).catch(() => {});
+      }
+    }
+  }, [createOpen, qcMode]);
 
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
       setCreateLoading(true);
       const payload: any = { panel_code: "NIPT", samples: selectedIds, notes: values.batch_number || "" };
+      if (qcMode) payload.qc_sample_ids = selectedIds;
       if (values.batch_number) payload.notes = "Batch: " + values.batch_number;
       await runsApi.create(payload);
       message.success(t("workflow.batchCreated"));
@@ -275,7 +287,14 @@ export default function NiptWorkflow() {
                       { title: "R", dataIndex: "retest_flag", width: 40,
                         render: (v: string) => v ? <Tag color="orange" style={{ fontSize: 10, margin: 0 }}>{v}</Tag> : null
                       },
-                      { title: t("nipt.workflow.status"), dataIndex: "status", width: 100, render: (v: string) => <Tag>{v}</Tag> },
+                      { title: t("nipt.workflow.status"), dataIndex: "status", width: 100,
+                        render: (v: string, r: any) => (
+                          <span>
+                            <Tag>{v}</Tag>
+                            {r.is_qc && <Tag color="cyan" style={{ fontSize: 10 }}>QC</Tag>}
+                          </span>
+                        ),
+                      },
                     ]}
                     pagination={false}
                   />
@@ -296,6 +315,11 @@ export default function NiptWorkflow() {
           </Form.Item>
           <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
             <Text strong>{t("nipt.workflow.selectSamples")}</Text>
+            <Switch
+              checkedChildren="QC样本" unCheckedChildren="普通样本"
+              checked={qcMode} onChange={setQcMode}
+              style={{ marginLeft: 8 }}
+            />
             <Tag color="blue" style={{ fontSize: 13, padding: "2px 10px" }}>{samples.length} 待处理</Tag>
             <Tag color="green" style={{ fontSize: 13, padding: "2px 10px" }}>{selectedIds.length} selected</Tag>
             {selectedIds.length !== samples.length && (

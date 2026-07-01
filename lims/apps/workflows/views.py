@@ -48,6 +48,10 @@ def _sync_sample_failures(run, step_key, sample_results):
         sample_id = run_samples[idx].sample_id
         status = result.get("status", "")
 
+        # 🆕 Skip QC samples — don't modify Sample status
+        if run_samples[idx].is_qc:
+            continue
+
         if status == "fail":
             reason = f"{label}失败"
             # 🆕 Append to experiment_history
@@ -167,7 +171,12 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         sample_ids = data.get("samples", [])
         sample_assignments = data.get("sample_assignments", {})
         run_samples = []
+        # 🆕 QC sample IDs from frontend
+        qc_sample_ids = set(data.get("qc_sample_ids", []))
+        
         for sid in sample_ids:
+            is_qc = str(sid) in {str(x) for x in qc_sample_ids}
+            
             # 🆕 Plasma validation and deduction (atomic via F() expression)
             sample = Sample.objects.get(id=sid)
             if sample.plasma_remaining <= 0:
@@ -175,13 +184,28 @@ class SampleRunViewSet(viewsets.ModelViewSet):
                     f"样本 {sample.vg_id or sample.sample_id}: "
                     f"无剩余血浆 (剩余 {sample.plasma_remaining} 份)，无法加入批次"
                 )
-            Sample.objects.filter(id=sid, plasma_remaining__gt=0).update(
-                plasma_remaining=models.F("plasma_remaining") - 1,
-                status="EXTRACTION",
-            )
+            
+            if is_qc:
+                # QC sample: only deduct plasma, don't change status
+                Sample.objects.filter(id=sid, plasma_remaining__gt=0).update(
+                    plasma_remaining=models.F("plasma_remaining") - 1,
+                )
+            else:
+                # Normal sample: deduct plasma + update status
+                Sample.objects.filter(id=sid, plasma_remaining__gt=0).update(
+                    plasma_remaining=models.F("plasma_remaining") - 1,
+                    status="EXTRACTION",
+                )
 
             asgn = sample_assignments.get(str(sid), {})
-            rs, _ = RunSample.objects.get_or_create(run=run, sample_id=sid)
+            rs, created = RunSample.objects.get_or_create(run=run, sample_id=sid)
+            # 🆕 Mark QC samples
+            if is_qc and not rs.is_qc:
+                rs.is_qc = True
+                rs.save(update_fields=["is_qc"])
+            elif not is_qc and rs.is_qc:
+                rs.is_qc = False
+                rs.save(update_fields=["is_qc"])
             if asgn.get("well_position"):
                 rs.well_position = asgn["well_position"]
             if asgn.get("index_sequence"):
@@ -336,10 +360,10 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         }
         sample_status = STEP_TO_SAMPLE_STATUS.get(new_status)
         if sample_status:
-            # Exclude REJECTED samples from advancement (they stay frozen)
+            # Exclude REJECTED and QC samples from advancement
             sample_ids = run.run_samples.exclude(
                 sample__status="REJECTED"
-            ).values_list("sample_id", flat=True)
+            ).filter(is_qc=False).values_list("sample_id", flat=True)
             Sample.objects.filter(id__in=sample_ids).update(status=sample_status)
 
         if new_status == "COMPLETED":
@@ -351,6 +375,9 @@ class SampleRunViewSet(viewsets.ModelViewSet):
             from datetime import date
             for rs in run.run_samples.select_related("sample"):
                 sample = rs.sample
+                # 🆕 Skip QC samples — no reports for QC controls
+                if rs.is_qc:
+                    continue
                 # Skip REJECTED samples EXCEPT bioinformatics failures (they get reports)
                 if sample.status == "REJECTED" and sample.rejection_reason != "生物信息分析失败":
                     continue
