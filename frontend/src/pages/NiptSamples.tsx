@@ -222,16 +222,7 @@ export default function NiptSamples() {
               <Button size="small" style={{ borderColor: "#722ed1", color: "#722ed1" }}>🩸 重采</Button>
             </Popconfirm>
           )}
-          {/* 🆕 QC重做 — 已完成样本作为质控品 */}
-          {record.status === "COMPLETED" && record.plasma_remaining > 0 && (
-            <Popconfirm
-              title={<div style={{ maxWidth: 260 }}><div>作为质控品使用？</div><div style={{ fontSize: 12, color: "#666", marginTop: 6 }}>血浆剩余: {record.plasma_remaining} 份<br/>状态不变，不进报告</div></div>}
-              onConfirm={() => handleQcRedo(record.id)}
-              okText="QC重做"
-            >
-              <Button size="small" style={{ borderColor: "#13c2c2", color: "#13c2c2" }}>🔬 QC</Button>
-            </Popconfirm>
-          )}
+
           <Popconfirm title={t("nipt.samples.delete")} onConfirm={() => handleDelete(record.id)}>
             <Button size="small" danger icon={<DeleteOutlined />} />
           </Popconfirm>
@@ -513,16 +504,6 @@ export default function NiptSamples() {
       fetchData();
     } catch (err: any) {
       message.error(err?.response?.data?.error || "重做失败");
-    }
-  };
-
-  const handleQcRedo = async (id: string) => {
-    try {
-      const res = await samplesApi.qcRedo(id, {});
-      message.success(res.data.message || "已标记为质控品");
-      fetchData();
-    } catch (err: any) {
-      message.error(err?.response?.data?.error || "操作失败");
     }
   };
 

@@ -63,8 +63,6 @@ export const samplesApi = {
     api.post(`/samples/${id}/redo/`, data || {}),
   recollect: (id: string, data?: Record<string, unknown>) =>
     api.post(`/samples/${id}/recollect/`, data || {}),
-  qcRedo: (id: string, data?: Record<string, unknown>) =>
-    api.post(`/samples/${id}/qc_redo/`, data || {}),
 };
 
 // ── Runs ──────────────────────────────────────────────────────

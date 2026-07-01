@@ -190,6 +190,15 @@ class SampleRunViewSet(viewsets.ModelViewSet):
                 Sample.objects.filter(id=sid, plasma_remaining__gt=0).update(
                     plasma_remaining=models.F("plasma_remaining") - 1,
                 )
+                # 🆕 Append QC_REDO to experiment_history
+                from django.utils import timezone as tz
+                history = list(sample.experiment_history or [])
+                history.append({
+                    "action": "QC_REDO",
+                    "run_number": run_number,
+                    "timestamp": tz.now().isoformat(),
+                })
+                Sample.objects.filter(id=sid).update(experiment_history=history)
             else:
                 # Normal sample: deduct plasma + update status
                 Sample.objects.filter(id=sid, plasma_remaining__gt=0).update(
