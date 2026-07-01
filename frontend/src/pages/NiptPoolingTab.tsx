@@ -133,6 +133,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
   const [poolingBase, setPoolingBase] = useState(pdata.poolingBase ?? DEFAULT_POOLING_AMOUNT);
   const [globalElutionVol, setGlobalElutionVol] = useState(pdata.globalElutionVol ?? DEFAULT_ELUTION_VOL);
   const printRef = useRef<HTMLDivElement>(null);
+  const concRefs = useRef<Record<number, any>>({});
   // Ref to capture latest poolingBase for buildRows without stale closure
   const poolingBaseRef = useRef(poolingBase);
   poolingBaseRef.current = poolingBase;
@@ -361,6 +362,11 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
                 <td style={td}>
                   <InputNumber size="small" min={0} step={0.01} value={r.concentration}
                     onChange={v => updateCell(i, "concentration", v)}
+                    onPressEnter={() => {
+                      const next = concRefs.current[i + 1];
+                      if (next?.focus) next.focus();
+                    }}
+                    ref={(el: any) => { concRefs.current[i] = el; }}
                     style={{ width: 80 }} placeholder="0" />
                 </td>
                 <td style={td}>
