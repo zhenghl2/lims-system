@@ -919,7 +919,8 @@
       "sinal": "Sinal",
       "balance": "Balance",
       "genderInfo": "Gender",
-      "reportDueDate": "Report Due Date"
+      "reportDueDate": "Report Due Date",
+      "image": "Image"
     },
     "receiving": {
       "title": "NIPT Sample Receiving",
@@ -959,7 +960,12 @@
       },
       "receiptDate": "Receipt Date",
       "selectedCount": "{count} sample(s) selected",
-      "batchVgTitle": "Batch Receive — VG IDs ({count} samples)"
+      "batchVgTitle": "Batch Receive — VG IDs ({count} samples)",
+      "photo": "Photo",
+      "batchFillVgId": "Batch Fill VG ID",
+      "batchVgIdTitle": "Batch Fill VG ID ({count} samples)",
+      "vgIdSaved": "Saved VG IDs for {count} samples",
+      "selectSamples": "Select samples first"
     },
     "plasmaSeparation": {
       "title": "Plasma Separation",

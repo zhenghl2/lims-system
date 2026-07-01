@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Switch, Popover, Checkbox } from "antd";
+import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Switch, Popover, Checkbox, Image } from "antd";
 import { PlusOutlined, DeleteOutlined, ReloadOutlined, UploadOutlined, SettingOutlined, DownloadOutlined } from "@ant-design/icons";
 import { Upload } from "antd";
 import * as XLSX from "xlsx";
@@ -73,6 +73,7 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "preg_history", title: "Preg. History", dataIndex: "pregnancy_history", visible: true, width: 100, render: (_v: string, r: any) => r.pregnancy_history || r.clinical_diagnosis || "-" },
   { key: "diagnosis", title: "Diagnosis", dataIndex: "clinical_diagnosis", visible: true, width: 130, render: (v: string) => v || "-" },
   { key: "registration_time", title: "Registration Time", dataIndex: "created_at", visible: true, width: 150, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "-" },
+  { key: "image", title: "Image", dataIndex: "image", visible: true, width: 70, render: (v: string) => v ? <Image src={v} width={50} height={50} style={{ objectFit: "cover", borderRadius: 4 }} preview /> : "-" },
   { key: "fedex", title: "FedEx No.", dataIndex: "fedex_no", visible: true, width: 120, render: (v: string) => v || "-" },
   { key: "price", title: "Price", dataIndex: "price", visible: true, width: 80, render: (v: string) => v || "-" },
   { key: "sinal", title: "Sinal", dataIndex: "sinal", visible: true, width: 80, render: (v: string) => v || "-" },
@@ -175,7 +176,7 @@ export default function NiptSamples() {
     lmp: "lastMenstrualPeriod", hospital: "hospital", twins: "twin",
     ivf: "ivf", pregnancy_history: "pregHistory", diagnosis: "diagnosis",
     fedex: "fedexNo", price: "price", sinal: "sinal", balance: "balance", gender_info: "genderInfo", report_due_date: "reportDueDate", all_chrom: "allChrom", fetal_fraction: "ffPercent",
-    gender: "sex", other: "other", registration_time: "registrationTime",
+    gender: "sex", other: "other", registration_time: "registrationTime", image: "image",
   };
   const visibleCols = colConfig.filter(c => c.visible).map(c => ({
     ...c,

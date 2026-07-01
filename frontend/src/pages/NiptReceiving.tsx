@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Table, Button, Tag, Modal, Form, Select, Input, Space, Typography, message, Card, Row, Col, Tabs } from "antd";
+import { Table, Button, Tag, Modal, Form, Select, Input, Space, Typography, message, Card, Row, Col, Tabs, Image } from "antd";
 import { CheckOutlined, CloseOutlined, CameraOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
@@ -127,8 +127,8 @@ export default function NiptReceiving() {
     }
   };
 
-  const handleBatchReceive = async () => {
-    if (selectedRowKeys.length === 0) { message.warning("Select samples to receive"); return; }
+  const handleBatchFillVg = async () => {
+    if (selectedRowKeys.length === 0) { message.warning(t("nipt.receiving.selectSamples")); return; }
     const selected = data.filter((s: any) => selectedRowKeys.includes(s.id));
     const list = selected.map((s: any, i: number) => ({
       id: s.id, sample_id: s.sample_id,
@@ -138,7 +138,7 @@ export default function NiptReceiving() {
     setBatchVgModal(true);
   };
 
-  const confirmBatchReceive = async () => {
+  const confirmBatchFillVg = async () => {
     const filled = batchVgList.map((item, i) => {
       if (!item.vg_id && i > 0) {
         const first = batchVgList[0].vg_id;
@@ -164,14 +164,13 @@ export default function NiptReceiving() {
     let success = 0;
     for (const item of filled) {
       try {
-        await samplesApi.accept(item.id);
-        try { await api.patch(`/samples/${item.id}/`, { vg_id: item.vg_id.trim() }); } catch {}
+        await api.patch(`/samples/${item.id}/`, { vg_id: item.vg_id.trim() });
         success++;
       } catch { /* skip */ }
     }
     setBatchLoading(false);
     setBatchVgModal(false);
-    message.success(`Received ${success}/${filled.length} samples`);
+    message.success(t("nipt.receiving.vgIdSaved").replace("{count}", String(success)));
     setSelectedRowKeys([]);
     fetchData();
     fetchTabCounts();
@@ -224,8 +223,12 @@ export default function NiptReceiving() {
     { title: t("nipt.samples.sampleSource"), dataIndex: "sample_source", key: "sample_source", width: 160, ellipsis: true },
     { title: t("nipt.samples.status"), dataIndex: "status", key: "status", width: 100,
       render: (v: string) => <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABELS_TL[v] || v}</Tag> },
-    { title: "", key: "photo", width: 60,
-      render: (_: any, r: any) => <Button type="link" icon={<CameraOutlined />} size="small" onClick={() => handlePhotoUpload(r)} title={t("nipt.receiving.takePhoto")} /> },
+    { title: t("nipt.receiving.photo"), key: "photo", width: 80,
+      render: (_: any, r: any) => r.image
+        ? <div onClick={(e: any) => { e.stopPropagation(); handlePhotoUpload(r); }} style={{ cursor: "pointer" }}>
+            <Image src={r.image} width={50} height={50} style={{ objectFit: "cover", borderRadius: 4 }} preview={false} />
+          </div>
+        : <Button type="link" icon={<CameraOutlined />} size="small" onClick={(e: any) => { e.stopPropagation(); handlePhotoUpload(r); }} title={t("nipt.receiving.takePhoto")} /> },
     { title: t("nipt.receiving.action"), key: "action", width: 180,
       render: (_: any, r: any) => (
         <Space size="small">
@@ -246,6 +249,10 @@ export default function NiptReceiving() {
     { title: t("nipt.receiving.receiptDate"), dataIndex: "receipt_date", key: "receipt_date", width: 120, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : "-" },
     { title: t("nipt.samples.status"), dataIndex: "status", key: "status", width: 100,
       render: (v: string) => <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABELS_TL[v] || v}</Tag> },
+    { title: t("nipt.receiving.photo"), key: "photo", width: 80,
+      render: (_: any, r: any) => r.image
+        ? <Image src={r.image} width={50} height={50} style={{ objectFit: "cover", borderRadius: 4 }} preview />
+        : <Text type="secondary">-</Text> },
   ];
 
   const rowSelection = activeTab === "pending" ? {
@@ -268,7 +275,7 @@ export default function NiptReceiving() {
         <Card size="small" style={{ marginBottom: 16, background: "#e6f7ff", border: "1px solid #91d5ff" }}>
           <Space>
             <Text strong>{t("nipt.receiving.selectedCount").replace("{count}", String(selectedRowKeys.length))}</Text>
-            <Button type="primary" icon={<CheckOutlined />} loading={batchLoading} onClick={handleBatchReceive}>{t("nipt.receiving.batchReceive")}</Button>
+            <Button type="primary" loading={batchLoading} onClick={handleBatchFillVg}>{t("nipt.receiving.batchFillVgId")}</Button>
           </Space>
         </Card>
       )}
@@ -305,8 +312,8 @@ export default function NiptReceiving() {
       </Modal>
 
       <Modal
-        title={t("nipt.receiving.batchVgTitle").replace("{count}", String(batchVgList.length))}
-        open={batchVgModal} onOk={confirmBatchReceive} onCancel={() => setBatchVgModal(false)}
+        title={t("nipt.receiving.batchVgIdTitle").replace("{count}", String(batchVgList.length))}
+        open={batchVgModal} onOk={confirmBatchFillVg} onCancel={() => setBatchVgModal(false)}
         confirmLoading={batchLoading} width={550} destroyOnClose
       >
         <Table rowKey="id" size="small" pagination={false} dataSource={batchVgList}

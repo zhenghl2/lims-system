@@ -919,7 +919,8 @@
       "sinal": "Sinal",
       "balance": "Balance",
       "genderInfo": "额外信息",
-      "reportDueDate": "报告截止日期"
+      "reportDueDate": "报告截止日期",
+      "image": "图片"
     },
     "receiving": {
       "title": "NIPT 样本签收",
@@ -959,7 +960,12 @@
       },
       "receiptDate": "签收日期",
       "selectedCount": "{count} 个样本已选择",
-      "batchVgTitle": "批量签收 — VG IDs ({count} 个样本)"
+      "batchVgTitle": "批量签收 — VG IDs ({count} 个样本)",
+      "photo": "图片",
+      "batchFillVgId": "批量填写VG ID",
+      "batchVgIdTitle": "批量填写 VG ID ({count} 个样本)",
+      "vgIdSaved": "已保存 {count} 个样本的 VG ID",
+      "selectSamples": "请先选择样本"
     },
     "plasmaSeparation": {
       "title": "血浆分离",
