@@ -95,7 +95,7 @@ export default function NiptWorkflow() {
   useEffect(() => {
     if (createOpen) {
       if (qcMode) {
-        samplesApi.list({ status: "COMPLETED", plasma_remaining__gt: 0, panel: "NIPT,NIPT_PLUS,NIPT_FULL", page_size: 200 }).then(r => {
+        samplesApi.list({ status: "COMPLETED", plasma_remaining__gt: 0, page_size: 200 }).then(r => {
           const list = (r.data as any).results || [];
           setSamples(list);
           setSelectedIds([]);
