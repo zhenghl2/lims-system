@@ -67,6 +67,13 @@ class SampleViewSet(viewsets.ModelViewSet):
                     qs = qs.filter(status=status_param)
             else:
                 qs = qs.exclude(status__in=["ARCHIVED", "DISPOSED"])
+            # 🆕 Filter by plasma_remaining
+            plasma_gt = self.request.query_params.get("plasma_remaining__gt")
+            if plasma_gt:
+                try:
+                    qs = qs.filter(plasma_remaining__gt=int(plasma_gt))
+                except (ValueError, TypeError):
+                    pass
         if self.request.user.site_id:
             qs = qs.filter(site=self.request.user.site)
         # Date range filters
