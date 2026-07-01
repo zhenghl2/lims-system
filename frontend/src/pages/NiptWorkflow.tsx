@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Table, Button, Tag, Space, Typography, Modal, Form, Input, message, Popconfirm, Card, Empty, Tabs } from "antd";
+import { Table, Button, Tag, Space, Typography, Modal, Form, Input, message, Popconfirm, Card, Empty, Tabs, Switch } from "antd";
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { runsApi, samplesApi } from "../api";
