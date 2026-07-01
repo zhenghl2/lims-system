@@ -65,6 +65,7 @@ export default function NiptWorkflow() {
   const [sampleSearch, setSampleSearch] = useState("");
   const [qcMode, setQcMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [qcSelectedIds, setQcSelectedIds] = useState<string[]>([]);
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -98,13 +99,15 @@ export default function NiptWorkflow() {
         samplesApi.list({ status: "COMPLETED", plasma_remaining__gt: 0, page_size: 200 }).then(r => {
           const list = (r.data as any).results || [];
           setSamples(list);
-          setSelectedIds([]);
         }).catch(() => {});
       } else {
         samplesApi.list({ status: "IN_PROCESS,PLASMA_SEPARATED", page_size: 200 }).then(r => {
           const list = (r.data as any).results || [];
           setSamples(list);
-          setSelectedIds(list.map((s: any) => s.id));
+          // Auto-select all only on first open, not on mode switch
+          if (selectedIds.length === 0 && qcSelectedIds.length === 0) {
+            setSelectedIds(list.map((s: any) => s.id));
+          }
         }).catch(() => {});
       }
     }
@@ -114,8 +117,9 @@ export default function NiptWorkflow() {
     try {
       const values = await form.validateFields();
       setCreateLoading(true);
-      const payload: any = { panel_code: "NIPT", samples: selectedIds, notes: values.batch_number || "" };
-      if (qcMode) payload.qc_sample_ids = selectedIds;
+      const allIds = [...selectedIds, ...qcSelectedIds];
+      const payload: any = { panel_code: "NIPT", samples: allIds, notes: values.batch_number || "" };
+      if (qcSelectedIds.length > 0) payload.qc_sample_ids = qcSelectedIds;
       if (values.batch_number) payload.notes = "Batch: " + values.batch_number;
       await runsApi.create(payload);
       message.success(t("workflow.batchCreated"));
@@ -305,9 +309,9 @@ export default function NiptWorkflow() {
         </Card>
       </div>
 
-      <Modal title={t("nipt.workflow.createTitle")} open={createOpen} onOk={handleCreate} onCancel={() => { setCreateOpen(false); setSelectedIds([]); }} confirmLoading={createLoading} width={650} destroyOnClose
-        okText={`Create (${selectedIds.length} samples)`}
-        okButtonProps={{ disabled: selectedIds.length === 0 }}
+      <Modal title={t("nipt.workflow.createTitle")} open={createOpen} onOk={handleCreate} onCancel={() => { setCreateOpen(false); setSelectedIds([]); setQcSelectedIds([]); setQcMode(false); }} confirmLoading={createLoading} width={650} destroyOnClose
+        okText={`Create (${selectedIds.length + qcSelectedIds.length} samples)`}
+        okButtonProps={{ disabled: selectedIds.length === 0 && qcSelectedIds.length === 0 }}
       >
         <Form form={form} layout="vertical">
           <Form.Item name="batch_number" label={t("nipt.workflow.batchNumber")} rules={[{ required: true }]}>
@@ -321,12 +325,12 @@ export default function NiptWorkflow() {
               style={{ marginLeft: 8 }}
             />
             <Tag color="blue" style={{ fontSize: 13, padding: "2px 10px" }}>{samples.length} 待处理</Tag>
-            <Tag color="green" style={{ fontSize: 13, padding: "2px 10px" }}>{selectedIds.length} selected</Tag>
+            <Tag color="green" style={{ fontSize: 13, padding: "2px 10px" }}>{selectedIds.length + qcSelectedIds.length} selected</Tag>
             {selectedIds.length !== samples.length && (
-              <Button type="link" size="small" onClick={() => setSelectedIds(samples.map((s: any) => s.id))}>{t("nipt.workflow.selectAll")}</Button>
+              <Button type="link" size="small" onClick={() => { if (qcMode) setQcSelectedIds(samples.map((s: any) => s.id)); else setSelectedIds(samples.map((s: any) => s.id)); }}>{t("nipt.workflow.selectAll")}</Button>
             )}
             {selectedIds.length > 0 && selectedIds.length === samples.length && (
-              <Button type="link" size="small" onClick={() => setSelectedIds([])}>{t("nipt.workflow.deselectAll")}</Button>
+              <Button type="link" size="small" onClick={() => { if (qcMode) setQcSelectedIds([]); else setSelectedIds([]); }}>{t("nipt.workflow.deselectAll")}</Button>
             )}
             <Input.Search
               placeholder={t("nipt.workflow.searchPlaceholder")}
@@ -343,8 +347,8 @@ export default function NiptWorkflow() {
               return (s.sample_id || "").toLowerCase().includes(q) || (s.patient_name || "").toLowerCase().includes(q) || (s.vg_id || "").toLowerCase().includes(q);
             })}
             rowSelection={{
-              selectedRowKeys: selectedIds,
-              onChange: (keys) => setSelectedIds(keys as string[]),
+              selectedRowKeys: qcMode ? qcSelectedIds : selectedIds,
+              onChange: (keys) => { if (qcMode) setQcSelectedIds(keys as string[]); else setSelectedIds(keys as string[]); },
               preserveSelectedRowKeys: true,
             }}
             columns={[
