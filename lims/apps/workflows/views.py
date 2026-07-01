@@ -175,7 +175,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         qc_sample_ids = set(data.get("qc_sample_ids", []))
         
         for sid in sample_ids:
-            is_qc = str(sid) in {str(x) for x in qc_sample_ids}
+            is_qc = str(sid) in {str(x) for x in qc_sample_ids} or sample.status == "COMPLETED"
             
             # 🆕 Plasma validation and deduction (atomic via F() expression)
             sample = Sample.objects.get(id=sid)
