@@ -346,6 +346,19 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     setTimeout(() => { const s = document.getElementById("print-fix"); if (s) s.remove(); }, 100);
   };
 
+  // Print only the plate table
+  const handlePrintTable = () => {
+    const tableEl = document.getElementById("library-plate-table");
+    if (!tableEl) return;
+    const w = window.open("", "_blank", "width=1200,height=800");
+    if (!w) return;
+    w.document.write("<!DOCTYPE html><html><head><title>Library Plate</title><style>body{margin:20px;font-family:sans-serif}table{border-collapse:collapse;margin:0 auto}@media print{body{margin:0}}</style></head><body>" + tableEl.outerHTML + "</body></html>");
+    w.document.close();
+    w.focus();
+    w.print();
+    w.close();
+  };
+
   // Photo upload handlers
   const beforeUpload = (file: File) => {
     const reader = new FileReader();
@@ -556,11 +569,11 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       <Card
         size="small"
         className="no-print-break"
-        title={<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}><span>{t("nipt.library.plateLayout")} — 96-{t("nipt.library.wellPlate")}（{samples.length} samples）<Input size="small" placeholder="起始坐标如 D2" value={startCoord} onChange={e => { const v = e.target.value.toUpperCase().replace(/[^A-H0-9]/g, ""); setStartCoord(v.length <= 3 ? v : v.slice(0,3)); }} style={{ width: 85, marginLeft: 10 }} maxLength={3} /></span><Button size="small" onClick={handlePrint} >{t("nipt.pooling.print")}</Button></div>}
+        title={<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}><span>{t("nipt.library.plateLayout")} — 96-{t("nipt.library.wellPlate")}（{samples.length} samples）<Input size="small" placeholder="起始坐标如 D2" value={startCoord} onChange={e => { const v = e.target.value.toUpperCase().replace(/[^A-H0-9]/g, ""); setStartCoord(v.length <= 3 ? v : v.slice(0,3)); }} style={{ width: 85, marginLeft: 10 }} maxLength={3} /></span><Space><Button size="small" onClick={handlePrintTable}>{t("nipt.library.printTable")}</Button><Button size="small" onClick={handlePrint}>{t("nipt.library.printFullPage")}</Button></Space></div>}
         style={{ marginBottom: 16 }}
       >
         <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", fontSize: 12 }}>
+          <table id="library-plate-table" style={{ borderCollapse: "collapse", fontSize: 12 }}>
             <thead>
               <tr>
                 <th style={rowLabelStyle}></th>

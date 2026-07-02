@@ -1113,7 +1113,8 @@
       "samplePositions": "positions",
       "magneticNotes": "Notes",
       "wells": "wells",
-      "automatedTitle": "Automated Workstation"
+      "automatedTitle": "Automated Workstation",
+      "printTable": "Print"
     },
     "library": {
       "method": "Library Method",
@@ -1159,7 +1160,9 @@
       "wellPlate": "Well Plate",
       "signature": "Electronic Signature",
       "selectReagent": "Select",
-      "centerCols": "Center {cols} cols ({range})"
+      "centerCols": "Center {cols} cols ({range})",
+      "printFullPage": "Print Full Page",
+      "printTable": "Print"
     },
     "pooling": {
       "title": "Library Quantification & Pooling",

@@ -1115,7 +1115,8 @@
       "samplePositions": "个样本位",
       "magneticNotes": "备注",
       "wells": "孔",
-      "automatedTitle": "自动化工作站"
+      "automatedTitle": "自动化工作站",
+      "printTable": "打印"
     },
     "library": {
       "method": "建库方法",
@@ -1161,7 +1162,9 @@
       "wellPlate": "孔板",
       "signature": "电子签名",
       "selectReagent": "选择",
-      "centerCols": "居中{cols}列({range})"
+      "centerCols": "居中{cols}列({range})",
+      "printFullPage": "打印整页",
+      "printTable": "打印"
     },
     "pooling": {
       "title": "文库定量及Pooling",

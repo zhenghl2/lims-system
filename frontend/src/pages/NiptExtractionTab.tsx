@@ -179,6 +179,30 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   };
   const removePhoto = (uid: string) => setPhotos(prev => prev.filter((_, i) => String(i) !== uid));
 
+  // Print table only
+  const handlePrintTable = () => {
+    let tableHTML = "";
+    let title = "Extraction Plate";
+    if (method === "MANUAL") {
+      const el = document.getElementById("extraction-manual-table");
+      if (el) { tableHTML = el.outerHTML; title = "Manual Extraction"; }
+    } else if (method === "MAGNETIC_ROD") {
+      const el = document.getElementById("extraction-magnetic-plates");
+      if (el) { tableHTML = el.innerHTML; title = "Magnetic Rod Extraction"; }
+    } else if (method === "AUTOMATED") {
+      const el = document.getElementById("extraction-automated-table");
+      if (el) { tableHTML = el.outerHTML; title = "Automated Extraction"; }
+    }
+    if (!tableHTML) return;
+    const w = window.open("", "_blank", "width=1200,height=800");
+    if (!w) return;
+    w.document.write("<!DOCTYPE html><html><head><title>" + title + "</title><style>body{margin:20px;font-family:sans-serif}table{border-collapse:collapse;margin:16px auto}@media print{body{margin:0}}</style></head><body>" + tableHTML + "</body></html>");
+    w.document.close();
+    w.focus();
+    w.print();
+    w.close();
+  };
+
   const save = async () => {
     try {
       const vals = await form.validateFields();
@@ -335,10 +359,10 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
         return (
           <Card
             title={`${t("nipt.extraction.manualTitle")} (${totalSamples} samples, 48 ${t("nipt.extraction.samplePositions")})`}
-            extra={<Input.TextArea placeholder={t("nipt.extraction.manualNotes")} value={manualNotes} onChange={e => setManualNotes(e.target.value)} autoSize={{ minRows: 1, maxRows: 3 }} style={{ width: 320, fontSize: 12 }} allowClear />}
+            extra={<div style={{display:"flex",alignItems:"flex-start",gap:8}}><Button size="small" onClick={handlePrintTable}>{t("nipt.extraction.printTable")}</Button><Input.TextArea placeholder={t("nipt.extraction.manualNotes")} value={manualNotes} onChange={e => setManualNotes(e.target.value)} autoSize={{ minRows: 1, maxRows: 3 }} style={{ width: 320, fontSize: 12 }} allowClear /></div>}
             size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: 0 }}
           >
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <table id="extraction-manual-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
               <colgroup>
                 <col style={{ width: "11%" }} /><col style={{ width: "22.33%" }} />
                 <col style={{ width: "11%" }} /><col style={{ width: "22.33%" }} />
@@ -395,7 +419,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
         }
         const totalPlates = plates.length;
         return (
-          <>
+          <div id="extraction-magnetic-plates">
             {plates.map((plate, pIdx) => {
               const skips = plateSkipCoords[pIdx] || "";
               const skipSet = new Set(skips.split(",").map((s: string) => s.trim().toUpperCase()).filter((s: string) => /^[A-H](1[0-2]|[1-9])$/.test(s)));
@@ -453,9 +477,10 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                 </div>
               );
             })}
-          </>
+          </div>
         );
       })()}
+      <div style={{textAlign:"right",marginBottom:8}}><Button size="small" onClick={handlePrintTable}>{t("nipt.extraction.printTable")}</Button></div>
 
       {/* ═══ AUTOMATED ═══ */}
       {method === "AUTOMATED" && (() => {
@@ -474,9 +499,9 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
         for (let c = startCol; c < startCol + numCols; c++) { for (let row=0;row<ROWS;row++) { cellMap[`${ROWS_8[row]}${c}`]=sortedIndices[sortedPos]; sortedPos++; } }
         return (
           <Card title={`${t("nipt.extraction.automatedTitle")} (${samples.length} samples, ${totalCells} ${t("nipt.extraction.wells")})`} size="small" style={{marginBottom:8}} bodyStyle={{padding:"4px 8px"}}
-            extra={<Input.TextArea placeholder={t("nipt.extraction.automatedNotes")} defaultValue={magneticNotesRef.current["auto"]||""} onChange={e=>{magneticNotesRef.current["auto"]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:260,fontSize:11}} allowClear />}
+            extra={<div style={{display:"flex",alignItems:"flex-start",gap:8}}><Button size="small" onClick={handlePrintTable}>{t("nipt.extraction.printTable")}</Button><Input.TextArea placeholder={t("nipt.extraction.automatedNotes")} defaultValue={magneticNotesRef.current["auto"]||""} onChange={e=>{magneticNotesRef.current["auto"]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:260,fontSize:11}} allowClear /></div>}
           >
-            <table style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
+            <table id="extraction-automated-table" style={{width:"100%",borderCollapse:"collapse",fontSize:11}}>
               <colgroup><col style={{width:"3%"}} />{COLS_12.map(c=><col key={c} style={{width:"8.08%"}} />)}</colgroup>
               <thead><tr style={{background:"#e8e8e8"}}><th style={{border:"1px solid #bbb",padding:"2px 4px",fontSize:11}}></th>{COLS_12.map(c=><th key={c} style={{border:"1px solid #bbb",padding:"2px 4px",textAlign:"center",fontSize:11,fontWeight:700}}>{c}</th>)}</tr></thead>
               <tbody>

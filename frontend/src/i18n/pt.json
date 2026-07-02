@@ -1113,7 +1113,8 @@
       "samplePositions": "posições",
       "magneticNotes": "Notas",
       "wells": "poços",
-      "automatedTitle": "Estação Automatizada"
+      "automatedTitle": "Estação Automatizada",
+      "printTable": "Imprimir"
     },
     "library": {
       "method": "Método de Biblioteca",
@@ -1159,7 +1160,9 @@
       "wellPlate": "Placa de Poços",
       "signature": "Assinatura Eletrônica",
       "selectReagent": "Selecionar",
-      "centerCols": "Central {cols} col ({range})"
+      "centerCols": "Central {cols} col ({range})",
+      "printFullPage": "Imprimir Página Inteira",
+      "printTable": "Imprimir"
     },
     "pooling": {
       "title": "Quantificação e Pooling",
