@@ -75,6 +75,11 @@ class SampleViewSet(viewsets.ModelViewSet):
             qs = qs.filter(receipt_date__gte=params["receipt_date__from"])
         if "receipt_date__to" in params:
             qs = qs.filter(receipt_date__lte=params["receipt_date__to"])
+        if "plasma_remaining__gt" in params:
+            try:
+                qs = qs.filter(plasma_remaining__gt=int(params["plasma_remaining__gt"]))
+            except (ValueError, TypeError):
+                pass
         return qs.select_related("sample_type", "site").prefetch_related("movements", "run_samples")
     def get_serializer_class(self):
         if self.action == "list":
