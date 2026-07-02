@@ -10,7 +10,7 @@ from datetime import date
 from .models import WorkflowProtocol, SampleRun, RunSample, WorkflowStep
 from lims.apps.samples.models import Sample
 from lims.apps.users.models import User
-from lims.apps.plasma_separation.views import NIPT_SIGNERS, NIPT_SIGNER_PASSWORD
+from lims.apps.plasma_separation.views import NIPT_SIGNERS, NIPT_SIGNER_PASSWORDS
 from .serializers import (
     WorkflowProtocolSerializer, RunSampleSerializer,
     SampleRunSerializer, SampleRunCreateSerializer, SampleRunDetailSerializer,
@@ -480,37 +480,59 @@ class SampleRunViewSet(viewsets.ModelViewSet):
             "extraction_data": run.extraction_data,
         })
 
+    @staticmethod
+    def _resolve_workflow_signers(request_data):
+        """Resolve signer names + validate passwords. Returns (sig_list, error_response).
+        
+        Multi-operator mode: request sends signers=[...] + passwords={name: pwd}
+        Single mode (backward compat): request sends signer + password
+        """
+        from django.utils import timezone
+        timestamp = timezone.now().isoformat()
+
+        signers = request_data.get("signers")
+        passwords_map = request_data.get("passwords", {})
+
+        if signers and isinstance(signers, list) and len(signers) > 0:
+            sig_list = []
+            for name in signers:
+                name = name.strip()
+                if not name:
+                    return None, Response({"error": "签名人姓名不能为空"}, status=400)
+                if name not in NIPT_SIGNERS:
+                    return None, Response({"error": f"无效的签名人: {name}"}, status=400)
+                pwd = passwords_map.get(name, "").strip()
+                expected = NIPT_SIGNER_PASSWORDS.get(name, "")
+                if not pwd or pwd != expected:
+                    return None, Response({"error": f"{name} 密码错误"}, status=400)
+                sig_list.append({"username": name, "signed_at": timestamp})
+            return sig_list, None
+        else:
+            signer_name = request_data.get("signer", "").strip()
+            password = request_data.get("password", "").strip()
+            if not signer_name:
+                return None, Response({"error": "请选择签名人"}, status=400)
+            if signer_name not in NIPT_SIGNERS:
+                return None, Response({"error": f"无效的签名人: {signer_name}"}, status=400)
+            expected = NIPT_SIGNER_PASSWORDS.get(signer_name, "")
+            if not password or password != expected:
+                return None, Response({"error": "密码错误"}, status=400)
+            return [{"username": signer_name, "signed_at": timestamp}], None
+
     @action(detail=True, methods=["post"], url_path="extraction/sign")
     def sign_extraction(self, request, pk=None):
         """Record electronic signature for extraction step."""
         run = self.get_object()
         role = request.data.get("role", "")
-        signer_name = request.data.get("signer", "").strip()
-        password = request.data.get("password", "").strip()
 
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password:
-            return Response({"error": "密码错误"}, status=400)
 
-        # Validate signer name against NIPT signers or Django users
-        if signer_name in NIPT_SIGNERS:
-            if password != NIPT_SIGNER_PASSWORD:
-                return Response({"error": "密码错误"}, status=400)
-        else:
-            try:
-                signer_user = User.objects.get(
-                    models.Q(first_name=signer_name) | models.Q(username=signer_name),
-                    is_active=True,
-                )
-                if not signer_user.check_password(password):
-                    return Response({"error": "密码错误"}, status=400)
-            except User.DoesNotExist:
-                return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
+        sig_list, err = self._resolve_workflow_signers(request.data)
+        if err:
+            return err
 
-        from django.utils import timezone
-        timestamp = timezone.now().isoformat()
-        sig_data = {"username": signer_name, "signed_at": timestamp}
+        sig_data = sig_list if (role == "operator" and len(sig_list) > 1) else sig_list[0]
 
         current = run.extraction_data or {}
         key = "operator_signature" if role == "operator" else "reviewer_signature"
@@ -519,7 +541,6 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         run.save(update_fields=["extraction_data", "updated_at"])
 
         return Response(current)
-
     @action(detail=True, methods=["post"], url_path="save_library")
     def save_library(self, request, pk=None):
         """Save NIPT library prep data."""
@@ -547,35 +568,18 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="library/sign")
     def sign_library(self, request, pk=None):
-        """Record electronic signature for library prep step."""
+        """Record electronic signature for library step."""
         run = self.get_object()
         role = request.data.get("role", "")
-        signer_name = request.data.get("signer", "").strip()
-        password = request.data.get("password", "").strip()
 
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password:
-            return Response({"error": "密码错误"}, status=400)
 
-        # Validate signer name against NIPT signers or Django users
-        if signer_name in NIPT_SIGNERS:
-            if password != NIPT_SIGNER_PASSWORD:
-                return Response({"error": "密码错误"}, status=400)
-        else:
-            try:
-                signer_user = User.objects.get(
-                    models.Q(first_name=signer_name) | models.Q(username=signer_name),
-                    is_active=True,
-                )
-                if not signer_user.check_password(password):
-                    return Response({"error": "密码错误"}, status=400)
-            except User.DoesNotExist:
-                return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
+        sig_list, err = self._resolve_workflow_signers(request.data)
+        if err:
+            return err
 
-        from django.utils import timezone
-        timestamp = timezone.now().isoformat()
-        sig_data = {"username": signer_name, "signed_at": timestamp}
+        sig_data = sig_list if (role == "operator" and len(sig_list) > 1) else sig_list[0]
 
         current = run.library_data or {}
         key = "operator_signature" if role == "operator" else "reviewer_signature"
@@ -584,7 +588,6 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         run.save(update_fields=["library_data", "updated_at"])
 
         return Response(current)
-
     @action(detail=True, methods=["post"], url_path="save_pooling")
     def save_pooling(self, request, pk=None):
         """Save NIPT library quantification & pooling data."""
@@ -623,32 +626,15 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         """Record electronic signature for pooling step."""
         run = self.get_object()
         role = request.data.get("role", "")
-        signer_name = request.data.get("signer", "").strip()
-        password = request.data.get("password", "").strip()
 
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password:
-            return Response({"error": "密码错误"}, status=400)
 
-        # Validate signer name against NIPT signers or Django users
-        if signer_name in NIPT_SIGNERS:
-            if password != NIPT_SIGNER_PASSWORD:
-                return Response({"error": "密码错误"}, status=400)
-        else:
-            try:
-                signer_user = User.objects.get(
-                    models.Q(first_name=signer_name) | models.Q(username=signer_name),
-                    is_active=True,
-                )
-                if not signer_user.check_password(password):
-                    return Response({"error": "密码错误"}, status=400)
-            except User.DoesNotExist:
-                return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
+        sig_list, err = self._resolve_workflow_signers(request.data)
+        if err:
+            return err
 
-        from django.utils import timezone
-        timestamp = timezone.now().isoformat()
-        sig_data = {"username": signer_name, "signed_at": timestamp}
+        sig_data = sig_list if (role == "operator" and len(sig_list) > 1) else sig_list[0]
 
         current = run.pooling_data or {}
         key = "operator_signature" if role == "operator" else "reviewer_signature"
@@ -657,7 +643,6 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         run.save(update_fields=["pooling_data", "updated_at"])
 
         return Response(current)
-
     @action(detail=True, methods=["post"], url_path="save_sequencing")
     def save_sequencing(self, request, pk=None):
         run = self.get_object()
@@ -687,39 +672,26 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="sequencing/sign")
     def sign_sequencing(self, request, pk=None):
+        """Record electronic signature for sequencing step."""
         run = self.get_object()
         role = request.data.get("role", "")
-        signer_name = request.data.get("signer", "").strip()
-        password = request.data.get("password", "").strip()
+
         if role not in ["operator", "reviewer"]:
             return Response({"error": "role must be 'operator' or 'reviewer'."}, status=400)
-        if not password:
-            return Response({"error": "密码错误"}, status=400)
 
-        # Validate signer name against NIPT signers or Django users
-        if signer_name in NIPT_SIGNERS:
-            if password != NIPT_SIGNER_PASSWORD:
-                return Response({"error": "密码错误"}, status=400)
-        else:
-            try:
-                signer_user = User.objects.get(
-                    models.Q(first_name=signer_name) | models.Q(username=signer_name),
-                    is_active=True,
-                )
-                if not signer_user.check_password(password):
-                    return Response({"error": "密码错误"}, status=400)
-            except User.DoesNotExist:
-                return Response({"error": f"未找到签名人: {signer_name}"}, status=400)
-        from django.utils import timezone
-        timestamp = timezone.now().isoformat()
-        sig_data = {"username": signer_name, "signed_at": timestamp}
+        sig_list, err = self._resolve_workflow_signers(request.data)
+        if err:
+            return err
+
+        sig_data = sig_list if (role == "operator" and len(sig_list) > 1) else sig_list[0]
+
         current = run.sequencing_data or {}
         key = "operator_signature" if role == "operator" else "reviewer_signature"
         current[key] = sig_data
         run.sequencing_data = current
         run.save(update_fields=["sequencing_data", "updated_at"])
-        return Response(current)
 
+        return Response(current)
     @action(detail=True, methods=["post"], url_path="save_bioinformatics")
     def save_bioinformatics(self, request, pk=None):
         """Save NIPT bioinformatics analysis results."""

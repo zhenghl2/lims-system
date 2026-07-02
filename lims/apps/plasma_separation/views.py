@@ -44,7 +44,11 @@ NIPT_SIGNERS = [
     "林琦", "吴书凌", "叶丽婷", "付慧珠",
     "何家宇", "胡煜敏",
 ]
-NIPT_SIGNER_PASSWORD="123456"
+NIPT_SIGNER_PASSWORDS = {
+    "杜兴琼": "123456", "龙雨青": "123456", "张斯栋": "123456", "郭爽洁": "123456",
+    "林琦": "123456", "吴书凌": "123456", "叶丽婷": "123456", "付慧珠": "123456",
+    "何家宇": "123456", "胡煜敏": "123456",
+}
 
 class PlasmaSeparationBatchViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
@@ -291,10 +295,49 @@ class PlasmaSeparationBatchViewSet(viewsets.ModelViewSet):
 
         return Response(PlasmaSeparationSampleSerializer(ps).data)
 
+    @staticmethod
+    def _resolve_signers(request_data):
+        """Resolve signer names + validate passwords. Returns (sig_list, error_response).
+        
+        Multi-operator mode: request sends signers=[...] + passwords={name: pwd}
+        Single mode (backward compat): request sends signer + password
+        """
+        from django.utils import timezone
+        timestamp = timezone.now().isoformat()
+
+        signers = request_data.get("signers")
+        passwords_map = request_data.get("passwords", {})
+
+        if signers and isinstance(signers, list) and len(signers) > 0:
+            sig_list = []
+            for name in signers:
+                name = name.strip()
+                if not name:
+                    return None, Response({"error": "签名人姓名不能为空"}, status=status.HTTP_400_BAD_REQUEST)
+                if name not in NIPT_SIGNERS:
+                    return None, Response({"error": f"无效的签名人: {name}"}, status=status.HTTP_400_BAD_REQUEST)
+                pwd = passwords_map.get(name, "").strip()
+                expected = NIPT_SIGNER_PASSWORDS.get(name, "")
+                if not pwd or pwd != expected:
+                    return None, Response({"error": f"{name} 密码错误"}, status=status.HTTP_400_BAD_REQUEST)
+                sig_list.append({"username": name, "signed_at": timestamp})
+            return sig_list, None
+        else:
+            signer_name = request_data.get("signer", "").strip()
+            password = request_data.get("password", "").strip()
+            if not signer_name:
+                return None, Response({"error": "请选择签名人"}, status=status.HTTP_400_BAD_REQUEST)
+            if signer_name not in NIPT_SIGNERS:
+                return None, Response({"error": f"无效的签名人: {signer_name}"}, status=status.HTTP_400_BAD_REQUEST)
+            expected = NIPT_SIGNER_PASSWORDS.get(signer_name, "")
+            if not password or password != expected:
+                return None, Response({"error": "密码错误"}, status=status.HTTP_400_BAD_REQUEST)
+            return [{"username": signer_name, "signed_at": timestamp}], None
+
     @action(detail=True, methods=["post"], url_path="sign")
     @transaction.atomic
     def sign(self, request, pk=None):
-        """Record electronic signature — supports name+password mode."""
+        """Record electronic signature - supports multi-operator + individual passwords."""
         batch = self.get_object()
         if batch.status == "COMPLETED":
             return Response(
@@ -302,31 +345,19 @@ class PlasmaSeparationBatchViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        role = request.data.get("role")  # "operator" or "reviewer"
-        signer_name = request.data.get("signer", "").strip()
-        password = request.data.get("password", "").strip()
-
+        role = request.data.get("role")
         if role not in ["operator", "reviewer"]:
             return Response(
                 {"error": "role must be 'operator' or 'reviewer'."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Password verification
-        if not password or password != NIPT_SIGNER_PASSWORD:
-            return Response({"error": "密码错误"}, status=status.HTTP_400_BAD_REQUEST)
+        sig_list, err = self._resolve_signers(request.data)
+        if err:
+            return err
 
-        # Validate signer name
-        if not signer_name:
-            return Response({"error": "请选择签名人"}, status=status.HTTP_400_BAD_REQUEST)
-        if signer_name not in NIPT_SIGNERS:
-            return Response({"error": f"无效的签名人: {signer_name}"}, status=status.HTTP_400_BAD_REQUEST)
+        sig_data = sig_list if (role == "operator" and len(sig_list) > 1) else sig_list[0]
 
-        from django.utils import timezone
-        timestamp = timezone.now().isoformat()
-        sig_data = {"username": signer_name, "signed_at": timestamp}
-
-        # Support both name+password mode and image upload mode
         signature_file = request.FILES.get("signature")
         update_fields = ["updated_at"]
 
@@ -336,35 +367,12 @@ class PlasmaSeparationBatchViewSet(viewsets.ModelViewSet):
             if signature_file:
                 batch.operator_signature = signature_file
                 update_fields.append("operator_signature")
-            # Match to Django user if exists
-            from django.contrib.auth import get_user_model
-            User = get_user_model()
-            try:
-                batch.operator = User.objects.get(username=signer_name)
-            except User.DoesNotExist:
-                try:
-                    batch.operator = User.objects.filter(first_name=signer_name).first()
-                except Exception:
-                    pass
-            if batch.operator:
-                update_fields.append("operator")
         else:
             batch.reviewer_signature_data = sig_data
             update_fields.append("reviewer_signature_data")
             if signature_file:
                 batch.reviewer_signature = signature_file
                 update_fields.append("reviewer_signature")
-            from django.contrib.auth import get_user_model
-            User = get_user_model()
-            try:
-                batch.reviewer = User.objects.get(username=signer_name)
-            except User.DoesNotExist:
-                try:
-                    batch.reviewer = User.objects.filter(first_name=signer_name).first()
-                except Exception:
-                    pass
-            if batch.reviewer:
-                update_fields.append("reviewer")
 
         batch.save(update_fields=update_fields)
         return Response(PlasmaSeparationBatchDetailSerializer(batch).data)
