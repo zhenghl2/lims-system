@@ -356,7 +356,7 @@ class PlasmaSeparationBatchViewSet(viewsets.ModelViewSet):
         if err:
             return err
 
-        sig_data = sig_list if (role == "operator" and len(sig_list) > 1) else sig_list[0]
+        sig_data = sig_list if len(sig_list) > 1 else sig_list[0]
 
         signature_file = request.FILES.get("signature")
         update_fields = ["updated_at"]

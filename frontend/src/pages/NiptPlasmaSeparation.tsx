@@ -295,7 +295,7 @@ export default function NiptPlasmaSeparation() {
 
   const allQcDone = batchDetail?.batch_samples?.every((s: any) => s.qc_result !== "PENDING");
   const opSigned = batchDetail?.operator_signature_data && (Array.isArray(batchDetail.operator_signature_data) ? batchDetail.operator_signature_data.length > 0 : batchDetail.operator_signature_data.username) || batchDetail?.operator_signature;
-  const rvSigned = (batchDetail?.reviewer_signature_data && batchDetail.reviewer_signature_data.username) || batchDetail?.reviewer_signature;
+  const rvSigned = batchDetail?.reviewer_signature_data && (Array.isArray(batchDetail.reviewer_signature_data) ? batchDetail.reviewer_signature_data.length > 0 : batchDetail.reviewer_signature_data.username) || batchDetail?.reviewer_signature;
   const canComplete = allQcDone && opSigned && rvSigned && batchDetail?.photos?.length > 0;
 
   return (
@@ -527,9 +527,9 @@ export default function NiptPlasmaSeparation() {
                 </div>
                 <div>
                   <Text type="secondary">{t("nipt.extraction.reviewerLabel")}: </Text>
-                  {(batchDetail.reviewer_signature_data && batchDetail.reviewer_signature_data.username) || batchDetail.reviewer_signature ? (
+                  {rvSigned ? (
                     <Space>
-                      <Text strong>{batchDetail.reviewer_signature_data?.username || batchDetail.reviewer_name}</Text>
+                      <Text strong>{Array.isArray(batchDetail.reviewer_signature_data) ? batchDetail.reviewer_signature_data.map((s: any) => s.username).join(", ") : batchDetail.reviewer_signature_data?.username || batchDetail.reviewer_name}</Text>
                       <Tag color="green">✓</Tag>
                     </Space>
                   ) : (
@@ -700,7 +700,7 @@ export default function NiptPlasmaSeparation() {
         currentSigner={
           signRole === "operator"
             ? (Array.isArray(batchDetail?.operator_signature_data) ? batchDetail?.operator_signature_data.map((s: any) => s.username).join(", ") : batchDetail?.operator_signature_data?.username) || null
-            : batchDetail?.reviewer_signature_data?.username || null
+            : (Array.isArray(batchDetail?.reviewer_signature_data) ? batchDetail?.reviewer_signature_data.map((s: any) => s.username).join(", ") : batchDetail?.reviewer_signature_data?.username) || null
         }
         onDone={() => { setSignOpen(false); fetchDetail(selectedBatch.id); }}
         onCancel={() => setSignOpen(false)}

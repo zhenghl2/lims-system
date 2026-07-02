@@ -532,7 +532,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         if err:
             return err
 
-        sig_data = sig_list if (role == "operator" and len(sig_list) > 1) else sig_list[0]
+        sig_data = sig_list if len(sig_list) > 1 else sig_list[0]
 
         current = run.extraction_data or {}
         key = "operator_signature" if role == "operator" else "reviewer_signature"
@@ -579,7 +579,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         if err:
             return err
 
-        sig_data = sig_list if (role == "operator" and len(sig_list) > 1) else sig_list[0]
+        sig_data = sig_list if len(sig_list) > 1 else sig_list[0]
 
         current = run.library_data or {}
         key = "operator_signature" if role == "operator" else "reviewer_signature"
@@ -634,7 +634,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         if err:
             return err
 
-        sig_data = sig_list if (role == "operator" and len(sig_list) > 1) else sig_list[0]
+        sig_data = sig_list if len(sig_list) > 1 else sig_list[0]
 
         current = run.pooling_data or {}
         key = "operator_signature" if role == "operator" else "reviewer_signature"
@@ -683,7 +683,7 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         if err:
             return err
 
-        sig_data = sig_list if (role == "operator" and len(sig_list) > 1) else sig_list[0]
+        sig_data = sig_list if len(sig_list) > 1 else sig_list[0]
 
         current = run.sequencing_data or {}
         key = "operator_signature" if role == "operator" else "reviewer_signature"

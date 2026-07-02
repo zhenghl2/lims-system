@@ -26,7 +26,7 @@ export default function NiptSignerModal({ open, role, roleLabel, batchId, curren
   const [passwords, setPasswords] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
 
-  const isMulti = role === "operator";
+  const isMulti = true;
 
   useEffect(() => {
     if (open) {
