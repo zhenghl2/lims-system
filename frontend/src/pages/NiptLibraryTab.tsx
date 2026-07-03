@@ -38,10 +38,10 @@ const KITS_BY_REGION: Record<string, RegionKits> = {
   XIAMEN: {
     libKit: [{ value: "ND607-02", label: "VAHTS Universal DNA Library Prep Kit - Cat#ND607-02" }],
     indexKit: [
-      { value: "N34201-01", label: "VAHTS Maxi UDI Adapters Set1 - Cat#N34201-01" },
-      { value: "N34202-01", label: "VAHTS Maxi UDI Adapters Set2 - Cat#N34202-01" },
-      { value: "N34203-01", label: "VAHTS Maxi UDI Adapters Set3 - Cat#N34203-01" },
-      { value: "N34204-01", label: "VAHTS Maxi UDI Adapters Set4 - Cat#N34204-01" },
+      { value: "N34201-01", label: "VAHTS Maxi UDI Adapters Set1 (1-96) - Cat#N34201-01" },
+      { value: "N34202-01", label: "VAHTS Maxi UDI Adapters Set2 (97-192) - Cat#N34202-01" },
+      { value: "N34203-01", label: "VAHTS Maxi UDI Adapters Set3 (193-288) - Cat#N34203-01" },
+      { value: "N34204-01", label: "VAHTS Maxi UDI Adapters Set4 (289-384) - Cat#N34204-01" },
     ],
     quantKit: [{ value: "EQ121-02", label: "Equalbit 1×dsDNA HS Assay Kit - Cat#EQ121-02" }],
     beadKit: [{ value: "ZB401", label: "ZHIXUAN DNA Clean Beads - Cat#ZB401" }],
@@ -49,10 +49,10 @@ const KITS_BY_REGION: Record<string, RegionKits> = {
   HONGKONG: {
     libKit: [{ value: "ND607-02", label: "VAHTS Universal DNA Library Prep Kit - Cat#ND607-02" }],
     indexKit: [
-      { value: "N34201-01", label: "VAHTS Maxi UDI Adapters Set1 - Cat#N34201-01" },
-      { value: "N34202-01", label: "VAHTS Maxi UDI Adapters Set2 - Cat#N34202-01" },
-      { value: "N34203-01", label: "VAHTS Maxi UDI Adapters Set3 - Cat#N34203-01" },
-      { value: "N34204-01", label: "VAHTS Maxi UDI Adapters Set4 - Cat#N34204-01" },
+      { value: "N34201-01", label: "VAHTS Maxi UDI Adapters Set1 (1-96) - Cat#N34201-01" },
+      { value: "N34202-01", label: "VAHTS Maxi UDI Adapters Set2 (97-192) - Cat#N34202-01" },
+      { value: "N34203-01", label: "VAHTS Maxi UDI Adapters Set3 (193-288) - Cat#N34203-01" },
+      { value: "N34204-01", label: "VAHTS Maxi UDI Adapters Set4 (289-384) - Cat#N34204-01" },
     ],
     quantKit: [{ value: "EQ121-02", label: "Equalbit 1×dsDNA HS Assay Kit - Cat#EQ121-02" }],
     beadKit: [{ value: "ZB401", label: "ZHIXUAN DNA Clean Beads - Cat#ZB401" }],
@@ -105,12 +105,18 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   const [region, setRegion] = useState(batch.region || "");
   const [photos, setPhotos] = useState<string[]>((batch.library_data?.photos as string[]) || []);
   const [startCoord, setStartCoord] = useState(batch.library_data?.start_coord || "");
+  const [selectedKits, setSelectedKits] = useState<string[]>([]);
+  const [kitDetails, setKitDetails] = useState<Record<string, {lot: string, expiry: string}>>({});
 
   // Sync region when batch is updated (e.g. after extraction tab saves a different region)
   useEffect(() => {
     if (batch.region) setRegion(batch.region);
   }, [batch.region]);
   const edata = useMemo(() => batch.library_data || {}, [batch.library_data]);
+  // Initialize index kits from saved data
+  useEffect(() => {
+    initIndexKits(edata);
+  }, [batch.id]);
   // Reload sampleResults when batch changes
   const sampleResultsKey = JSON.stringify(batch.library_data?.sample_results || {});
   useEffect(() => {
@@ -234,6 +240,26 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     }
   }, [buildPlate, edata.library_plate]);
 
+  // Initialize index kit selections from saved data (supports both old string and new array format)
+  const initIndexKits = (data: any) => {
+    if (Array.isArray(data.index_kits) && data.index_kits.length > 0) {
+      setSelectedKits(data.index_kits.map((k: any) => k.kit));
+      const details: Record<string, {lot: string, expiry: string}> = {};
+      data.index_kits.forEach((k: any) => {
+        details[k.kit] = { lot: k.lot || "", expiry: k.expiry || "" };
+      });
+      setKitDetails(details);
+    } else if (typeof data.index_kit === "string" && data.index_kit) {
+      // Old format: convert to new
+      setSelectedKits([data.index_kit]);
+      setKitDetails({
+        [data.index_kit]: {
+          lot: data.index_kit_lot || "",
+          expiry: data.index_kit_expiry || "",
+        }
+      });
+    }
+  };
   // Load saved form data (only when batch has existing library_data)
   useEffect(() => {
     if (!edata.lib_kit && !(edata.equipment || []).length) {
@@ -256,13 +282,10 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       lib_time: edata.lib_time || dayjs().format("HH:mm"),
       equipment: edata.equipment || [],
       lib_kit: edata.lib_kit || undefined,
-      index_kit: edata.index_kit || undefined,
       quant_kit: edata.quant_kit || undefined,
       bead_kit: edata.bead_kit || undefined,
       lib_kit_lot: edata.lib_kit_lot || "",
       lib_kit_expiry: edata.lib_kit_expiry ? dayjs(edata.lib_kit_expiry) : undefined,
-      index_kit_lot: edata.index_kit_lot || "",
-      index_kit_expiry: edata.index_kit_expiry ? dayjs(edata.index_kit_expiry) : undefined,
       quant_kit_lot: edata.quant_kit_lot || "",
       quant_kit_expiry: edata.quant_kit_expiry ? dayjs(edata.quant_kit_expiry) : undefined,
       bead_kit_lot: edata.bead_kit_lot || "",
@@ -294,9 +317,6 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       lib_kit: lib.lib_kit || undefined,
       lib_kit_lot: lib.lib_kit_lot || "",
       lib_kit_expiry: lib.lib_kit_expiry ? dayjs(lib.lib_kit_expiry) : undefined,
-      index_kit: lib.index_kit || undefined,
-      index_kit_lot: lib.index_kit_lot || "",
-      index_kit_expiry: lib.index_kit_expiry ? dayjs(lib.index_kit_expiry) : undefined,
       quant_kit: lib.quant_kit || undefined,
       quant_kit_lot: lib.quant_kit_lot || "",
       quant_kit_expiry: lib.quant_kit_expiry ? dayjs(lib.quant_kit_expiry) : undefined,
@@ -304,6 +324,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       bead_kit_lot: lib.bead_kit_lot || "",
       bead_kit_expiry: lib.bead_kit_expiry ? dayjs(lib.bead_kit_expiry) : undefined,
     });
+    // Initialize index kits from last batch
+    initIndexKits(lib);
   }, [batch.id, lastBatchLibData]);
 
   const toggleStep = (key: string) => setSteps(prev => ({ ...prev, [key]: !prev[key] }));
@@ -371,6 +393,9 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   const save = async () => {
     const missingIndex = plate.some(row => row.some(cell => cell.vgId && !cell.index));
     if (missingIndex) { message.warning("Please fill index"); return; }
+    if (selectedKits.length === 0) { message.warning(t("nipt.library.selectReagent") + " " + t("nipt.library.indexKit")); return; }
+    const missingKitDetail = selectedKits.some(k => !kitDetails[k]?.lot?.trim());
+    if (missingKitDetail) { message.warning("Please fill lot number for each Index kit"); return; }
     try {
       const vals = await form.validateFields();
       setSaving(true);
@@ -387,9 +412,11 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
           lib_kit: vals.lib_kit,
           lib_kit_lot: vals.lib_kit_lot,
           lib_kit_expiry: vals.lib_kit_expiry?.format("YYYY-MM") || "",
-          index_kit: vals.index_kit,
-          index_kit_lot: vals.index_kit_lot,
-          index_kit_expiry: vals.index_kit_expiry?.format("YYYY-MM") || "",
+          index_kits: selectedKits.map(kit => ({
+            kit,
+            lot: kitDetails[kit]?.lot || "",
+            expiry: kitDetails[kit]?.expiry || "",
+          })),
           quant_kit: vals.quant_kit,
           quant_kit_lot: vals.quant_kit_lot,
           quant_kit_expiry: vals.quant_kit_expiry?.format("YYYY-MM") || "",
@@ -548,7 +575,87 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
         {/* Reagent kits - 4 rows */}
         <Card size="small" title={t("nipt.library.buildKit")} style={{ marginBottom: 12 }}>
           <ReagentRow name="lib_kit" label={t("nipt.library.libraryKit")} kitOptions={kits.libKit} lotName="lib_kit_lot" expiryName="lib_kit_expiry" />
-          <ReagentRow name="index_kit" label={t("nipt.library.indexKit")} kitOptions={kits.indexKit} lotName="index_kit_lot" expiryName="index_kit_expiry" />
+          {/* Index 接头: multi-select + dynamic rows */}
+          <div style={{ marginBottom: 8 }}>
+            <Row gutter={12}>
+              <Col span={13}>
+                <div style={{ marginBottom: 4, fontSize: 14, color: "rgba(0,0,0,0.88)" }}>
+                  {t("nipt.library.indexKit")}
+                </div>
+                <Select
+                  mode="multiple"
+                  options={kits.indexKit}
+                  value={selectedKits}
+                  onChange={(values: string[]) => {
+                    setSelectedKits(values);
+                    setKitDetails(prev => {
+                      const next = { ...prev };
+                      Object.keys(next).forEach(k => {
+                        if (!values.includes(k)) delete next[k];
+                      });
+                      values.forEach(v => {
+                        if (!next[v]) next[v] = { lot: "", expiry: "" };
+                      });
+                      return next;
+                    });
+                  }}
+                  placeholder={t("nipt.library.selectReagent") + " " + t("nipt.library.indexKit")}
+                  showSearch
+                  optionFilterProp="label"
+                  style={{ width: "100%" }}
+                  maxTagCount={2}
+                />
+              </Col>
+              <Col span={4} />
+              <Col span={5} />
+            </Row>
+            {selectedKits.map(kitValue => {
+              const kitLabel = kits.indexKit.find((k: any) => k.value === kitValue)?.label || kitValue;
+              return (
+                <Row key={kitValue} gutter={12} style={{ marginTop: 8 }}>
+                  <Col span={13}>
+                    <div style={{
+                      padding: "4px 11px", lineHeight: "30px",
+                      border: "1px solid #d9d9d9", borderRadius: 6,
+                      background: "#f5f5f5", color: "#1677ff", fontWeight: 500,
+                      fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+                    }}>
+                      {kitLabel}
+                    </div>
+                  </Col>
+                  <Col span={4}>
+                    <div style={{ marginBottom: 4, fontSize: 14, color: "rgba(0,0,0,0.88)" }}>
+                      {t("nipt.library.reagentLot")}
+                    </div>
+                    <Input
+                      placeholder={t("nipt.library.lotPlaceholder")}
+                      value={kitDetails[kitValue]?.lot || ""}
+                      onChange={e => setKitDetails(prev => ({
+                        ...prev,
+                        [kitValue]: { ...prev[kitValue], lot: e.target.value }
+                      }))}
+                    />
+                  </Col>
+                  <Col span={5}>
+                    <div style={{ marginBottom: 4, fontSize: 14, color: "rgba(0,0,0,0.88)" }}>
+                      {t("nipt.extraction.expiry")}
+                    </div>
+                    <DatePicker
+                      picker="month"
+                      placeholder={t("nipt.extraction.expiryPlaceholder")}
+                      style={{ width: "100%" }}
+                      format="YYYY-MM"
+                      value={kitDetails[kitValue]?.expiry ? dayjs(kitDetails[kitValue].expiry) : null}
+                      onChange={(d: any) => setKitDetails(prev => ({
+                        ...prev,
+                        [kitValue]: { ...prev[kitValue], expiry: d ? d.format("YYYY-MM") : "" }
+                      }))}
+                    />
+                  </Col>
+                </Row>
+              );
+            })}
+          </div>
           <ReagentRow name="quant_kit" label={t("nipt.library.quantKit")} kitOptions={kits.quantKit} lotName="quant_kit_lot" expiryName="quant_kit_expiry" />
           <ReagentRow name="bead_kit" label={t("nipt.library.beadKit")} kitOptions={kits.beadKit} lotName="bead_kit_lot" expiryName="bead_kit_expiry" />
         </Card>
