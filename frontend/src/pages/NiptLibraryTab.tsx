@@ -577,11 +577,27 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
           <ReagentRow name="lib_kit" label={t("nipt.library.libraryKit")} kitOptions={kits.libKit} lotName="lib_kit_lot" expiryName="lib_kit_expiry" />
           {/* Index 接头: multi-select + dynamic rows */}
           <div style={{ marginBottom: 8 }}>
-            <Row gutter={12}>
+            {/* Column labels — matches ReagentRow column layout */}
+            <Row gutter={12} style={{ marginBottom: 4 }}>
               <Col span={13}>
-                <div style={{ marginBottom: 4, fontSize: 14, color: "rgba(0,0,0,0.88)" }}>
+                <span style={{ fontSize: 14, color: "rgba(0,0,0,0.88)" }}>
                   {t("nipt.library.indexKit")}
-                </div>
+                </span>
+              </Col>
+              <Col span={4}>
+                <span style={{ fontSize: 14, color: "rgba(0,0,0,0.88)" }}>
+                  {t("nipt.library.reagentLot")}
+                </span>
+              </Col>
+              <Col span={5}>
+                <span style={{ fontSize: 14, color: "rgba(0,0,0,0.88)" }}>
+                  {t("nipt.extraction.expiry")}
+                </span>
+              </Col>
+            </Row>
+            {/* Multi-select row */}
+            <Row gutter={12} style={{ marginBottom: selectedKits.length > 0 ? 4 : 0 }}>
+              <Col span={13}>
                 <Select
                   mode="multiple"
                   options={kits.indexKit}
@@ -609,10 +625,11 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
               <Col span={4} />
               <Col span={5} />
             </Row>
+            {/* Per-set rows — inputs only, no repeated labels */}
             {selectedKits.map(kitValue => {
               const kitLabel = kits.indexKit.find((k: any) => k.value === kitValue)?.label || kitValue;
               return (
-                <Row key={kitValue} gutter={12} style={{ marginTop: 8 }}>
+                <Row key={kitValue} gutter={12} style={{ marginBottom: 8 }}>
                   <Col span={13}>
                     <div style={{
                       padding: "4px 11px", lineHeight: "30px",
@@ -624,9 +641,6 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
                     </div>
                   </Col>
                   <Col span={4}>
-                    <div style={{ marginBottom: 4, fontSize: 14, color: "rgba(0,0,0,0.88)" }}>
-                      {t("nipt.library.reagentLot")}
-                    </div>
                     <Input
                       placeholder={t("nipt.library.lotPlaceholder")}
                       value={kitDetails[kitValue]?.lot || ""}
@@ -637,9 +651,6 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
                     />
                   </Col>
                   <Col span={5}>
-                    <div style={{ marginBottom: 4, fontSize: 14, color: "rgba(0,0,0,0.88)" }}>
-                      {t("nipt.extraction.expiry")}
-                    </div>
                     <DatePicker
                       picker="month"
                       placeholder={t("nipt.extraction.expiryPlaceholder")}
