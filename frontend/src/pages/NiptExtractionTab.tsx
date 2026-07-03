@@ -111,6 +111,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const [manualNotes, setManualNotes] = useState("");
   const [photos, setPhotos] = useState<string[]>((batch.extraction_data?.photos as string[]) || []);
   const [plateSkipCoords, setPlateSkipCoords] = useState<Record<number, string>>((batch.extraction_data?.plate_skip_coords as any) || {});
+  const [plateKitTypes, setPlateKitTypes] = useState<Record<number, string>>((batch.extraction_data?.plate_kit_types as any) || {});
   const [region, setRegion] = useState(batch.region || "");
   const magneticNotesRef = useRef<Record<string, string>>({});
   const edata = useMemo(() => batch.extraction_data || {}, [batch.extraction_data]);
@@ -225,6 +226,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
           manual_notes: manualNotes,
           magnetic_notes: magneticNotesRef.current,
           plate_skip_coords: plateSkipCoords,
+          plate_kit_types: plateKitTypes,
           sample_results: sampleResults,
           photos,
         },
@@ -439,7 +441,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                       style={{ width: 160 }}
                     />
                   </div>
-                <Card key={pIdx} title={`${plateNo} ${t("nipt.extraction.magneticRod")} Plate ${pIdx+1}/${totalPlates} (${plate.cells.length} samples)`} size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: "4px 8px" }}
+                <Card key={pIdx} title={<div style={{ display: "flex", alignItems: "center", gap: 12 }}><span>{plateNo} {t("nipt.extraction.magneticRod")} Plate {pIdx+1}/{totalPlates} ({plate.cells.length} samples)</span>{batch.region === "HONGKONG" && <Select size="small" style={{ width: 90 }} placeholder="板型" value={plateKitTypes[pIdx] || undefined} onChange={(v: string) => setPlateKitTypes(prev => ({...prev, [pIdx]: v}))} options={[{ value: "round", label: "圆底" }, { value: "conical", label: "锥底" }]} allowClear />}</div>} size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: "4px 8px" }}
                   extra={<Input.TextArea placeholder={`${plateNo} ${t("nipt.extraction.magneticNotes")}`} defaultValue={magneticNotesRef.current[pIdx]||""} onChange={e=>{magneticNotesRef.current[pIdx]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:240,fontSize:11}} allowClear />}
                 >
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>

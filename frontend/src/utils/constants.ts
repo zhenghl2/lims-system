@@ -36,6 +36,7 @@ export const EXTRACTION_KITS: Record<string, { value: string; label: string }[]>
   HONGKONG: [
     { value: "MD5432-RB", label: "磁珠法游离DNA提取试剂盒 (圆底) - MD5432-TL-06C" },
     { value: "MD5432-CB", label: "磁珠法游离DNA提取试剂盒 (锥底) - MD5432-TL-06C" },
+    { value: "MD5432-RB-CB", label: "磁珠法游离DNA提取试剂盒 (圆底+锥底) - MD5432-TL-06C" },
   ],
   BRAZIL: [{ value: "TBD", label: "待定" }],
 };
