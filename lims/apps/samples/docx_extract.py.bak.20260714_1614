@@ -61,7 +61,7 @@ def extract_brazil_docx(file_path, source="巴西万基"):
 
     # Client name
     if len(table13) > 9:
-        client_name = _format_brazil_name(_safe_get(table13, 9))
+        client_name = _safe_get(table13, 9).replace(" De ", " de ").replace(" Dos ", " dos ").replace(" Da ", " da ")
     else:
         client_name = ""
 
@@ -84,10 +84,8 @@ def extract_brazil_docx(file_path, source="巴西万基"):
                     for cell in row.cells:
                         table2.append(cell.text.strip() if cell.text.strip() else "")
 
-    fe_name = _safe_get(table2, 0) if table2 else ""
-    fe_name = fe_name.replace("+", " / ")  # 特殊字符先处理
-    fe_name = _format_brazil_name(fe_name)
-    fe_name = fe_name.replace("Fta", "FTA")  # .title() 后恢复 FTA
+    fe_name = _safe_get(table2, 0).replace(" De ", " de ").replace(" Dos ", " dos ").replace(" Da ", " da ") if table2 else ""
+    fe_name = fe_name.replace("+", " / ").replace(" fta", " FTA")
     rg_f = _safe_get(table2, 1)
     date_of_birth = _safe_get(table2, 2)
 
@@ -254,19 +252,6 @@ def _parse_date_br(date_str):
     return None
 
 
-
-def _format_brazil_name(name):
-    """格式化巴西葡语姓名：每个词首字母大写，介词/冠词小写。
-
-    de, do, da, dos, das, e → 保持小写
-    其余词 → 首字母大写
-    """
-    if not name:
-        return name
-    name = name.strip().title()
-    for prep in ['De', 'Do', 'Da', 'Dos', 'Das', 'E']:
-        name = re.sub(r'\b' + prep + r'\b', prep.lower(), name)
-    return name
 def _parse_int(val):
     """Safely parse an integer from strings like '12 SEMANAS'."""
     if not val:
