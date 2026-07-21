@@ -176,6 +176,8 @@ class CaseCreateSerializer(serializers.ModelSerializer):
     male_arrival_dates = serializers.ListField(
         child=serializers.DateField(), write_only=True, required=False, default=list
     )
+    last_menstrual_period = serializers.DateField(write_only=True, required=False,
+                                                   help_text="末次月经")
 
     class Meta:
         model = Case
