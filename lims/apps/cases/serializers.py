@@ -229,8 +229,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             created_by=request.user,
             **validated_data,
         )
-        case.assign_pt_number()
-        case.save(update_fields=["pt_number"])
+        # PT number assigned later during sample receipt confirmation
 
         sample_type, _ = SampleType.objects.get_or_create(
             code="PERIPHERAL_BLOOD",

@@ -96,7 +96,9 @@ class CaseViewSet(viewsets.ModelViewSet):
 
         if case.all_samples_received:
             case.status = Case.Status.IN_PROCESS
-            case.save(update_fields=["status", "updated_at"])
+            # Assign PT number on receipt confirmation (not at registration)
+            case.assign_pt_number()
+            case.save(update_fields=["status", "updated_at", "pt_number"])
 
             # Auto-create Run with NIPPT workflow protocol
             from lims.apps.workflows.models import SampleRun, WorkflowStep, WorkflowProtocol, RunSample
