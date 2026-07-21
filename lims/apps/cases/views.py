@@ -11,6 +11,7 @@ from .models import Case, CaseSample
 from .serializers import (
     CaseListSerializer, CaseDetailSerializer, CaseCreateSerializer,
     CaseSampleSerializer, PublicRegistrationSerializer,
+    SupplementSerializer,
 )
 from lims.apps.samples.models import Sample, SampleType
 from lims.apps.organizations.models import Site
@@ -184,6 +185,15 @@ class CaseViewSet(viewsets.ModelViewSet):
         return Response(CaseSampleSerializer(cs).data)
 
     @action(detail=True, methods=["post"])
+    def supplement(self, request, pk=None):
+        """补充样本：给已有 Case 添加新的 CaseSample (母亲或父亲补采)."""
+        case = self.get_object()
+        serializer = SupplementSerializer(data=request.data, context={"case": case, "request": request})
+        serializer.is_valid(raise_exception=True)
+        new_cs = serializer.save()
+        return Response(CaseSampleSerializer(new_cs).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
     def resample(self, request, pk=None):
         """Create a resample for a rejected CaseSample."""
         from django.db.models import Max
@@ -227,6 +237,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                 receipt_time=timezone.now().time(),
             )
 
+            arrival_date = request.data.get("arrival_date")
             new_cs = CaseSample.objects.create(
                 case=case,
                 sample=new_sample,
@@ -235,6 +246,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                 ethnicity=original_cs.ethnicity,
                 resample_of=original_cs,
                 resample_number=next_num,
+                arrival_date=arrival_date,
             )
             new_cs.test_sample_id = case.generate_test_sample_id(new_cs)
             new_cs.save(update_fields=["test_sample_id"])

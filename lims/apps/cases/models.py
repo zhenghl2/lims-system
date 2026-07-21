@@ -44,6 +44,14 @@ class Case(models.Model):
     is_urgent = models.BooleanField(default=False)
     expected_completion = models.DateField(null=True, blank=True)
 
+    # Registration metadata
+    multiple_gestation = models.BooleanField(default=False, help_text="单双胎: False=单胎, True=双胎")
+    applicant = models.CharField(max_length=200, blank=True, default="", help_text="申请方")
+    phone = models.CharField(max_length=30, blank=True, default="", help_text="联系电话")
+    email = models.EmailField(max_length=200, blank=True, default="", help_text="邮箱")
+    risk_warnings = models.JSONField(default=list, blank=True, help_text="影响结果的风险提示")
+    registration_type = models.CharField(max_length=20, default="FIRST", choices=[("FIRST","首次检测"),("SUPPLEMENT","补充样本"),("RESAMPLE","重采样本")])
+
     # Public registration token
     registration_token = models.CharField(
         max_length=64, unique=True, null=True, blank=True, db_index=True
@@ -159,6 +167,9 @@ class CaseSample(models.Model):
     # Collection info (may differ per sample in a case)
     collection_site = models.CharField(max_length=100, blank=True)
     collection_notes = models.TextField(blank=True)
+
+    # Arrival tracking
+    arrival_date = models.DateField(null=True, blank=True, help_text="到样日期")
 
     # Dual-ID system
     test_sample_id = models.CharField(
