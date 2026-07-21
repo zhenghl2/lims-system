@@ -174,41 +174,24 @@ export default function NipptRegistration() {
         const res = await (casesApi as any).create(payload);
         message.success(`Case ${res.data.case_number} created`);
       } else if (regType === "SUPPLEMENT" && selectedCase) {
-        // Supplement: add new CaseSample to existing case
-        const males = values.males || [];
-        let created = 0;
-        for (const male of males) {
-          if (!male.name) continue;
-          await (casesApi as any).supplement?.(selectedCase.id, {
-            role: "ALLEGED_FATHER",
-            patient_name: male.name,
-            sample_source: male.sample_type || "BLOOD",
-            arrival_date: male.arrival_date
-              ? dayjs(male.arrival_date).format("YYYY-MM-DD") : undefined,
-            external_id: values.external_id || "",
-          });
-          created++;
-        }
-        // Also add mother if filled
-        if (values.mother_name) {
-          await (casesApi as any).supplement?.(selectedCase.id, {
-            role: "MOTHER",
-            patient_name: values.mother_name,
-            sample_source: "BLOOD",
-            arrival_date: values.female_arrival_date
-              ? dayjs(values.female_arrival_date).format("YYYY-MM-DD") : undefined,
-            external_id: values.external_id || "",
-          });
-          created++;
-        }
-        message.success(`补充了 ${created} 个样本`);
+        // 补充样本：极简表单一键提交
+        await (casesApi as any).supplement?.(selectedCase.id, {
+          role: values.supp_role,
+          patient_name: values.supp_name,
+          sample_source: values.supp_sample_type || "BLOOD",
+          arrival_date: values.supp_arrival_date
+            ? dayjs(values.supp_arrival_date).format("YYYY-MM-DD") : undefined,
+        });
+        message.success(`补充样本成功`);
       } else if (regType === "RESAMPLE" && selectedCase && resampleTarget) {
+        // 重采样本：直接用原信息 + 新到样日期
+        const cs = selectedCase.case_samples?.find((s: any) => s.id === resampleTarget);
         const res = await (casesApi as any).resample?.(selectedCase.id, {
           case_sample_id: resampleTarget,
-          patient_name: values.resample_name,
-          sample_source: values.resample_sample_type || "BLOOD",
-          arrival_date: values.resample_arrival_date
-            ? dayjs(values.resample_arrival_date).format("YYYY-MM-DD") : undefined,
+          patient_name: cs?.patient_name || "",
+          sample_source: cs?.sample_source || "BLOOD",
+          arrival_date: values.supp_arrival_date
+            ? dayjs(values.supp_arrival_date).format("YYYY-MM-DD") : undefined,
         });
         message.success(`重采样本已创建: ${res.data?.test_sample_id || ""}`);
       }
@@ -301,195 +284,255 @@ export default function NipptRegistration() {
         )}
       </Card>
 
-      {/* Registration Form */}
-      <Card size="small">
-        <Form form={form} layout="vertical" size="small">
-          {/* Section 1: Basic Info */}
-          <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>基本信息</Divider>
-          <Row gutter={12}>
-            <Col xs={24} sm={8}>
-              <Form.Item name="sample_source" label="来源">
-                <Select options={SOURCE_OPTIONS} placeholder="选择来源" allowClear />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Form.Item name="sales_person" label="销售/代理">
-                <Input placeholder="销售或代理名称" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={8}>
-              <Form.Item name="applicant" label="申请方">
-                <Input placeholder="申请人姓名" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={12}>
-            <Col xs={24} sm={6}>
-              <Form.Item name="external_id" label="样本编号(外部)">
-                <Input placeholder="外部样本编号" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={6}>
-              <Form.Item name="collection_date" label="申请日期">
-                <DatePicker style={{ width: "100%" }} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={6}>
-              <Form.Item name="fedex_no" label="快递单号">
-                <Input placeholder="FedEx/USPS..." />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={6}>
-              {/* PT number display in resample/supplement mode */}
-              {selectedCase && (
-                <Form.Item label="实验室编号(PT号)">
-                  <Input value={selectedCase.pt_number} disabled />
+      {/* === 首次检测：完整登记表单 === */}
+      {regType === "FIRST" && (
+        <Card size="small">
+          <Form form={form} layout="vertical" size="small">
+            <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>基本信息</Divider>
+            <Row gutter={12}>
+              <Col xs={24} sm={8}>
+                <Form.Item name="sample_source" label="来源">
+                  <Select options={SOURCE_OPTIONS} placeholder="选择来源" allowClear />
                 </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item name="sales_person" label="销售/代理">
+                  <Input placeholder="销售或代理名称" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item name="applicant" label="申请方">
+                  <Input placeholder="申请人姓名" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={12}>
+              <Col xs={24} sm={6}>
+                <Form.Item name="external_id" label="样本编号(外部)">
+                  <Input placeholder="外部样本编号" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="collection_date" label="申请日期">
+                  <DatePicker style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="fedex_no" label="快递单号">
+                  <Input placeholder="FedEx/USPS..." />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>孕妇信息</Divider>
+            <Row gutter={12}>
+              <Col xs={24} sm={6}>
+                <Form.Item name="mother_name" label="孕妇姓名"
+                  rules={[{ required: true, message: "请输入孕妇姓名" }]}>
+                  <Input placeholder="孕妇姓名" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="last_menstrual_period" label="末次月经">
+                  <DatePicker style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={4}>
+                <Form.Item name="multiple_gestation" label="单双胎" valuePropName="checked">
+                  <Switch checkedChildren="双胎" unCheckedChildren="单胎" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={4}>
+                <Form.Item name="phone" label="电话">
+                  <Input placeholder="联系电话" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={4}>
+                <Form.Item name="email" label="邮箱">
+                  <Input placeholder="邮箱地址" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={12}>
+              <Col xs={24} sm={8}>
+                <Form.Item name="female_arrival_date" label="女性到样日期">
+                  <DatePicker style={{ width: "100%" }} placeholder="母亲样本到达日期" />
+                </Form.Item>
+              </Col>
+            </Row>
+
+            <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>男性信息</Divider>
+            <Form.List name="males">
+              {(fields, { add, remove }) => (
+                <>
+                  {fields.map(({ key, name, ...rest }) => (
+                    <Row key={key} gutter={12} style={{ marginBottom: 8 }} align="middle">
+                      <Col flex="1">
+                        <Form.Item {...rest} name={[name, "name"]} label="男性姓名" style={{ marginBottom: 0 }}>
+                          <Input placeholder="男性姓名" />
+                        </Form.Item>
+                      </Col>
+                      <Col style={{ width: 160 }}>
+                        <Form.Item {...rest} name={[name, "sample_type"]} label="样本类型" style={{ marginBottom: 0 }}
+                          initialValue="BLOOD">
+                          <Select options={SAMPLE_TYPE_OPTIONS} />
+                        </Form.Item>
+                      </Col>
+                      <Col style={{ width: 180 }}>
+                        <Form.Item {...rest} name={[name, "arrival_date"]} label="到样日期" style={{ marginBottom: 0 }}>
+                          <DatePicker style={{ width: "100%" }} placeholder="男性到样日期" />
+                        </Form.Item>
+                      </Col>
+                      <Col style={{ width: 40, paddingTop: 22 }}>
+                        <Button type="text" danger icon={<span>✕</span>} onClick={() => remove(name)} size="small" />
+                      </Col>
+                    </Row>
+                  ))}
+                  <Button type="dashed" onClick={() => add({ sample_type: "BLOOD" })} block
+                    icon={<PlusOutlined />} style={{ marginBottom: 8 }}>
+                    添加男性
+                  </Button>
+                </>
               )}
-            </Col>
-          </Row>
+            </Form.List>
 
-          {/* Section 2: Mother Info */}
-          <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>孕妇信息</Divider>
-          <Row gutter={12}>
-            <Col xs={24} sm={6}>
-              <Form.Item name="mother_name" label="孕妇姓名"
-                rules={regType === "FIRST" ? [{ required: true, message: "请输入孕妇姓名" }] : []}>
-                <Input placeholder="孕妇姓名" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={6}>
-              <Form.Item name="last_menstrual_period" label="末次月经">
-                <DatePicker style={{ width: "100%" }} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={4}>
-              <Form.Item name="multiple_gestation" label="单双胎" valuePropName="checked">
-                <Switch checkedChildren="双胎" unCheckedChildren="单胎" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={4}>
-              <Form.Item name="phone" label="电话">
-                <Input placeholder="联系电话" />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={4}>
-              <Form.Item name="email" label="邮箱">
-                <Input placeholder="邮箱地址" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={12}>
-            <Col xs={24} sm={8}>
-              <Form.Item name="female_arrival_date" label="女性到样日期">
-                <DatePicker style={{ width: "100%" }} placeholder="母亲样本到达日期" />
-              </Form.Item>
-            </Col>
-          </Row>
+            <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>其他信息</Divider>
+            <Row gutter={12}>
+              <Col xs={24} sm={12}>
+                <Form.Item name="risk_warnings" label="影响结果的风险提示">
+                  <Checkbox.Group options={RISK_WARNING_OPTIONS} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={12}>
+                <Form.Item name="clinic_name" label="诊所/医院">
+                  <Input placeholder="诊所或医院名称" />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={12}>
+              <Col span={24}>
+                <Form.Item name="notes" label="备注">
+                  <Input.TextArea rows={2} placeholder="内部备注" />
+                </Form.Item>
+              </Col>
+            </Row>
 
-          {/* Section 3: Male Info (dynamic) */}
-          <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>男性信息</Divider>
-          <Form.List name="males">
-            {(fields, { add, remove }) => (
-              <>
-                {fields.map(({ key, name, ...rest }) => (
-                  <Row key={key} gutter={12} style={{ marginBottom: 8 }} align="middle">
-                    <Col flex="1">
-                      <Form.Item {...rest} name={[name, "name"]} label="男性姓名" style={{ marginBottom: 0 }}>
-                        <Input placeholder="男性姓名" />
-                      </Form.Item>
-                    </Col>
-                    <Col style={{ width: 160 }}>
-                      <Form.Item {...rest} name={[name, "sample_type"]} label="样本类型" style={{ marginBottom: 0 }}
-                        initialValue="BLOOD">
-                        <Select options={SAMPLE_TYPE_OPTIONS} />
-                      </Form.Item>
-                    </Col>
-                    <Col style={{ width: 180 }}>
-                      <Form.Item {...rest} name={[name, "arrival_date"]} label="到样日期" style={{ marginBottom: 0 }}>
-                        <DatePicker style={{ width: "100%" }} placeholder="男性到样日期" />
-                      </Form.Item>
-                    </Col>
-                    <Col style={{ width: 40, paddingTop: 22 }}>
-                      <Button type="text" danger icon={<span>✕</span>} onClick={() => remove(name)} size="small" />
-                    </Col>
-                  </Row>
-                ))}
-                <Button type="dashed" onClick={() => add({ sample_type: "BLOOD" })} block
-                  icon={<PlusOutlined />} style={{ marginBottom: 8 }}>
-                  添加男性
-                </Button>
-              </>
-            )}
-          </Form.List>
+            <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
+              <Button type="primary" icon={<PlusOutlined />} loading={loading}
+                onClick={handleSubmit} size="large">
+                提交登记
+              </Button>
+              <Button icon={<UploadOutlined />} disabled title="批量导入功能开发中">
+                批量导入 (开发中)
+              </Button>
+              <Button icon={<UploadOutlined />} disabled title="从文件登记功能开发中">
+                从文件登记 (开发中)
+              </Button>
+            </div>
+          </Form>
+        </Card>
+      )}
 
-          {/* Section 4: Resample specific fields */}
-          {regType === "RESAMPLE" && selectedCase && resampleTarget && (
-            <>
-              <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>重采信息</Divider>
-              <Row gutter={12}>
-                <Col xs={24} sm={8}>
-                  <Form.Item name="resample_name" label="重采姓名">
-                    <Input placeholder="重采样本姓名" />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={8}>
-                  <Form.Item name="resample_arrival_date" label="到样日期">
-                    <DatePicker style={{ width: "100%" }} />
-                  </Form.Item>
-                </Col>
-                <Col xs={24} sm={8}>
-                  <Form.Item name="resample_sample_type" label="样本类型" initialValue="BLOOD">
-                    <Select options={SAMPLE_TYPE_OPTIONS} />
-                  </Form.Item>
-                </Col>
-              </Row>
-            </>
-          )}
+      {/* === 补充样本：极简表单 === */}
+      {regType === "SUPPLEMENT" && selectedCase && (
+        <Card size="small">
+          <Form form={form} layout="vertical" size="small">
+            <div style={{ marginBottom: 12 }}>
+              <Tag color="blue">PT: {selectedCase.pt_number}</Tag>
+              <Tag>{selectedCase.case_number}</Tag>
+            </div>
+            <Row gutter={12}>
+              <Col xs={24} sm={6}>
+                <Form.Item name="supp_role" label="补样对象" rules={[{ required: true }]} initialValue="ALLEGED_FATHER">
+                  <Select options={[
+                    { value: "MOTHER", label: "孕妇" },
+                    { value: "ALLEGED_FATHER", label: "疑父" },
+                  ]} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="supp_name" label="姓名" rules={[{ required: true }]}>
+                  <Input placeholder="姓名" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="supp_sample_type" label="样本类型" initialValue="BLOOD">
+                  <Select options={SAMPLE_TYPE_OPTIONS} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="supp_arrival_date" label="到样日期">
+                  <DatePicker style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
+            </Row>
+            <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+              <Button type="primary" icon={<PlusOutlined />} loading={loading}
+                onClick={handleSubmit} size="large">
+                补充样本
+              </Button>
+            </div>
+          </Form>
+        </Card>
+      )}
 
-          {/* Section 5: Other Info */}
-          <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>其他信息</Divider>
-          <Row gutter={12}>
-            <Col xs={24} sm={12}>
-              <Form.Item name="risk_warnings" label="影响结果的风险提示">
-                <Checkbox.Group options={RISK_WARNING_OPTIONS} />
-              </Form.Item>
-            </Col>
-            <Col xs={24} sm={12}>
-              <Form.Item name="clinic_name" label="诊所/医院">
-                <Input placeholder="诊所或医院名称" />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={12}>
-            <Col span={24}>
-              <Form.Item name="notes" label="备注">
-                <Input.TextArea rows={2} placeholder="内部备注" />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          {/* Buttons */}
-          <div style={{ display: "flex", gap: 12, marginTop: 16 }}>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              loading={loading}
-              onClick={handleSubmit}
-              size="large"
-              disabled={regType === "RESAMPLE" && (!selectedCase || !resampleTarget)}
-            >
-              {regType === "FIRST" ? "提交登记" : regType === "SUPPLEMENT" ? "补充样本" : "重采样本"}
-            </Button>
-            <Button icon={<UploadOutlined />} disabled title="批量导入功能开发中">
-              批量导入 (开发中)
-            </Button>
-            <Button icon={<UploadOutlined />} disabled title="从文件登记功能开发中">
-              从文件登记 (开发中)
-            </Button>
-          </div>
-        </Form>
-      </Card>
+      {/* === 重采样本：极简表单 === */}
+      {regType === "RESAMPLE" && selectedCase && resampleTarget && (
+        <Card size="small">
+          <Form form={form} layout="vertical" size="small">
+            <div style={{ marginBottom: 12 }}>
+              <Tag color="blue">PT: {selectedCase.pt_number}</Tag>
+              <Tag>{selectedCase.case_number}</Tag>
+              <Tag color="purple">
+                重采 →{" "}
+                {(() => {
+                  const cs = selectedCase.case_samples?.find((s: any) => s.id === resampleTarget);
+                  if (!cs) return "";
+                  const baseId = cs.test_sample_id || "";
+                  const existingResamples = selectedCase.case_samples?.filter(
+                    (s: any) => s.resample_of === cs.id
+                  ).length || 0;
+                  return `${baseId}-R${existingResamples + 1}`;
+                })()}
+              </Tag>
+            </div>
+            <Row gutter={12}>
+              <Col xs={24} sm={6}>
+                <Form.Item label="原编号">
+                  <Input disabled value={
+                    selectedCase.case_samples?.find((s: any) => s.id === resampleTarget)?.test_sample_id || ""
+                  } />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item label="原姓名">
+                  <Input disabled value={
+                    selectedCase.case_samples?.find((s: any) => s.id === resampleTarget)?.patient_name || ""
+                  } />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item label="身份">
+                  <Input disabled value={
+                    selectedCase.case_samples?.find((s: any) => s.id === resampleTarget)?.role === "MOTHER" ? "孕妇" : "疑父"
+                  } />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="supp_arrival_date" label="新到样日期">
+                  <DatePicker style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
+            </Row>
+            <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
+              <Button type="primary" icon={<PlusOutlined />} loading={loading}
+                onClick={handleSubmit} size="large">
+                确认重采
+              </Button>
+            </div>
+          </Form>
+        </Card>
+      )}
 
       {/* Recent Cases (collapsible) */}
       <Collapse style={{ marginTop: 16 }} ghost items={[{
