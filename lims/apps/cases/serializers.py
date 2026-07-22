@@ -46,6 +46,7 @@ class CaseListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     mother_name = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
+    case_samples = CaseSampleSerializer(many=True, read_only=True)
 
     class Meta:
         model = Case
@@ -57,6 +58,7 @@ class CaseListSerializer(serializers.ModelSerializer):
             "clinic_name", "sales_person",
             "applicant", "registration_type",
             "expected_completion", "created_at",
+            "case_samples",
         ]
 
     def get_mother_name(self, obj):
