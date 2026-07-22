@@ -22,7 +22,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
             "receipt_condition", "received_at", "received_by",
             "collection_site", "collection_notes",
             "test_sample_id", "resample_of", "resample_number",
-            "arrival_date",
+            "arrival_date", "actual_sample_type", "preservation_method",
             "rejection_reason", "rejection_note", "external_id",
             "receipt_photo_url",
             "created_at", "updated_at",

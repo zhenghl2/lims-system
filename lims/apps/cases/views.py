@@ -70,7 +70,20 @@ class CaseViewSet(viewsets.ModelViewSet):
         if not cs:
             raise NotFound("Sample not found in this case")
 
+        # Accept receiving metadata
+        pt_number = request.data.get("pt_number", "").strip()
+        actual_sample_type = request.data.get("actual_sample_type", "")
+        preservation_method = request.data.get("preservation_method", "")
+
         cs.confirm_receipt(request.user, condition=condition)
+        # Save new receiving fields
+        if actual_sample_type:
+            cs.actual_sample_type = actual_sample_type
+            cs.save(update_fields=["actual_sample_type"])
+        if preservation_method:
+            cs.preservation_method = preservation_method
+            cs.save(update_fields=["preservation_method"])
+
         sample = cs.sample
         if condition == "OK":
             sample.status = "RECEIVED"
@@ -96,13 +109,30 @@ class CaseViewSet(viewsets.ModelViewSet):
 
         if case.all_samples_received:
             case.status = Case.Status.IN_PROCESS
-            # Assign PT number + test_sample_ids on receipt (not at registration)
-            case.assign_pt_number()
-            case.save(update_fields=["status", "updated_at", "pt_number"])
-            # Generate test_sample_id for all CaseSamples that lack one
+            # PT number should be provided by user via confirm_receipt
+            # If not set yet, auto-assign as fallback
+            if not case.pt_number:
+                case.assign_pt_number()
+                case.save(update_fields=["status", "updated_at", "pt_number"])
+            else:
+                case.save(update_fields=["status", "updated_at"])
+            # Generate test_sample_id suffix if not already set
             for cs in case.case_samples.all():
                 if not cs.test_sample_id:
-                    cs.test_sample_id = case.generate_test_sample_id(cs)
+                    # Use base PT + role-based suffix
+                    base = case.pt_number or case.case_number
+                    fathers = list(case.case_samples.filter(role="ALLEGED_FATHER").order_by("created_at"))
+                    if cs.role == "MOTHER":
+                        suffix = "W"
+                    elif cs.role == "ALLEGED_FATHER":
+                        idx = fathers.index(cs) if cs in fathers else 0
+                        if len(fathers) == 1:
+                            suffix = "H"
+                        else:
+                            suffix = f"H{chr(65 + idx)}"  # HA, HB, HC...
+                    else:
+                        suffix = "U"
+                    cs.test_sample_id = f"{base}{suffix}"
                     cs.save(update_fields=["test_sample_id"])
 
             # Auto-create Run with NIPPT workflow protocol

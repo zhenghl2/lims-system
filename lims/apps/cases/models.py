@@ -171,6 +171,16 @@ class CaseSample(models.Model):
     # Arrival tracking
     arrival_date = models.DateField(null=True, blank=True, help_text="到样日期")
 
+    # Receiving metadata
+    actual_sample_type = models.CharField(
+        max_length=10, blank=True, default="",
+        help_text="实际收到的样本类型（可能与登记不同）"
+    )
+    preservation_method = models.CharField(
+        max_length=20, blank=True, default="",
+        help_text="保温措施: 无/冰袋/暖宝宝"
+    )
+
     # Dual-ID system
     test_sample_id = models.CharField(
         max_length=40, unique=True, null=True, blank=True, db_index=True,

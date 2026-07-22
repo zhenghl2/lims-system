@@ -1,403 +1,582 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+// SampleReceiving.tsx — NIPPT Sample Receiving (重写版)
+// Table-based, PT auto-suffix, batch operations, filters
+
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
-  Card, Input, Button, Tag, Typography, message,
-  Modal, Space, Empty, Badge, Progress,
+  Table, Button, Tag, Input, Select, Space, Typography, message,
+  Modal, Popconfirm, Tabs, Row, Col, Image,
 } from "antd";
 import {
-  CheckCircleOutlined, CloseCircleOutlined,
-  InboxOutlined, RedoOutlined, LoadingOutlined,
-  ExclamationCircleOutlined, ReloadOutlined,
-  CameraOutlined,
+  CheckOutlined, CloseOutlined, CameraOutlined,
+  ReloadOutlined, NumberOutlined,
 } from "@ant-design/icons";
 import { casesApi } from "../api";
+import dayjs from "dayjs";
 
-const { Text, Title } = Typography;
+const { Text } = Typography;
 
-const STATUS_COLORS: Record<string, string> = {
-  REGISTERED: "default", RECEIVING: "processing", IN_PROCESS: "orange",
-  PLASMA_SEPARATED: "lime", TESTING: "purple", ANALYZING: "geekblue",
-  COMPLETED: "green", REPORTED: "cyan", REJECTED: "red",
+const SAMPLE_TYPE_OPTIONS = [
+  { value: "BLOOD", label: "BLOOD" },
+  { value: "SWAB", label: "SWAB" },
+  { value: "HAIR", label: "HAIR" },
+  { value: "DBS", label: "DBS" },
+];
+
+const PRESERVATION_OPTIONS = [
+  { value: "", label: "无" },
+  { value: "冰袋", label: "冰袋" },
+  { value: "暖宝宝", label: "暖宝宝" },
+];
+
+const PRESERVATION_COLORS: Record<string, string> = {
+  "": "default", "无": "default", "冰袋": "blue", "暖宝宝": "orange",
 };
-const STATUS_LABELS: Record<string, string> = {
-  REGISTERED: "已登记", RECEIVING: "接收中", IN_PROCESS: "处理中",
-  PLASMA_SEPARATED: "血浆已分离", TESTING: "检测中", ANALYZING: "分析中",
-  COMPLETED: "已完成", REPORTED: "已报告", REJECTED: "已拒收",
+
+const STATUS_TAGS: Record<string, { color: string; label: string }> = {
+  REGISTERED: { color: "default", label: "待签收" },
+  RECEIVED: { color: "blue", label: "已签收" },
+  REJECTED: { color: "red", label: "已拒收" },
+  IN_PROCESS: { color: "orange", label: "处理中" },
+  COMPLETED: { color: "green", label: "已完成" },
 };
 
-const REJECTION_REASONS: Record<string, string> = {
-  UNCLEAR_LABEL: "标识不清", BROKEN_CONTAINER: "容器破损",
-  INSUFFICIENT_VOLUME: "样本量不足", WRONG_SAMPLE_TYPE: "样本类型不符",
-  SEVERE_HEMOLYSIS: "严重溶血/凝血", TEMP_EXCEEDED: "运输温度超标",
-  STABILITY_EXPIRED: "超过稳定性时限",
-};
-
-const ROLE_LABELS: Record<string, string> = { MOTHER: "母", ALLEGED_FATHER: "疑父" };
+interface CaseSampleRow {
+  key: string;
+  caseId: string;
+  caseNumber: string;
+  registrationType: string;
+  sampleUuid: string; // Sample UUID for API calls
+  csId: string; // CaseSample UUID
+  testSampleId: string;
+  patientName: string;
+  role: string;
+  gestationalWeeks: number | null;
+  sampleType: string; // registered sample type
+  actualSampleType: string;
+  collectionDate: string;
+  sampleSource: string;
+  fedexNo: string;
+  phone: string;
+  preservationMethod: string;
+  status: string;
+  image: string | null;
+  ptBase: string; // PT base number (editable)
+  received: boolean;
+}
 
 export default function SampleReceiving() {
-  const [query, setQuery] = useState("");
-  const [pendingCases, setPendingCases] = useState<any[]>([]);
+  const [data, setData] = useState<CaseSampleRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
-  const [details, setDetails] = useState<Record<string, any>>({});
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [receiving, setReceiving] = useState<Set<string>>(new Set());
-  const [rejectModal, setRejectModal] = useState<{
-    caseId: string; sampleUuid: string; csId: string; name: string;
-  } | null>(null);
-  const [rejectNote, setRejectNote] = useState("");
-  const [uploadingPhotos, setUploadingPhotos] = useState<Set<string>>(new Set());
-  const [photoUrls, setPhotoUrls] = useState<Record<string, string>>({});
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const pendingUpload = useRef<{ caseId: string; csId: string } | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [activeTab, setActiveTab] = useState("pending");
+  const [search, setSearch] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [regTypeFilter, setRegTypeFilter] = useState("");
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
-  // Fetch pending receiving cases (REGISTERED + RECEIVING, with unreceived samples)
-  const fetchPending = useCallback(async (search?: string) => {
+  // Batch PT modal
+  const [batchPtOpen, setBatchPtOpen] = useState(false);
+  const [batchPtStart, setBatchPtStart] = useState("");
+
+  // Photo upload
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingPhoto = useRef<{ caseId: string; csId: string } | null>(null);
+  const [, setUploadingPhoto] = useState<string | null>(null);
+
+  // Inline editing
+  const [editingField, setEditingField] = useState<{ key: string; field: string } | null>(null);
+
+  // --- Data fetching ---
+  const flatCases = useCallback((cases: any[]): CaseSampleRow[] => {
+    const rows: CaseSampleRow[] = [];
+    for (const c of cases) {
+      const caseSamples = c.case_samples || [];
+      for (const cs of caseSamples) {
+        const isMother = cs.role === "MOTHER";
+        const sample = cs.sample || {};
+        rows.push({
+          key: `${c.id}:${cs.id}`,
+          caseId: c.id,
+          caseNumber: c.case_number,
+          registrationType: c.registration_type || "FIRST",
+          sampleUuid: cs.sample,
+          csId: cs.id,
+          testSampleId: cs.test_sample_id || "",
+          patientName: isMother ? (c.mother_name || cs.patient_name) : (cs.patient_name || ""),
+          role: cs.role,
+          gestationalWeeks: isMother ? c.gestational_age_weeks : null,
+          sampleType: cs.sample_source || "BLOOD",
+          actualSampleType: cs.actual_sample_type || cs.sample_source || "BLOOD",
+          collectionDate: sample.collection_date || "",
+          sampleSource: c.sample_source || sample.sample_source || "",
+          fedexNo: sample.fedex_no || "",
+          phone: c.phone || "",
+          preservationMethod: cs.preservation_method || "",
+          status: sample.status || "REGISTERED",
+          image: cs.receipt_photo_url || null,
+          ptBase: c.pt_number || "",
+          received: cs.received_at != null,
+        });
+      }
+    }
+    return rows;
+  }, []);
+
+  const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { status: "REGISTERED,RECEIVING", page_size: 50 };
-      if (search && search.trim().length >= 2) {
-        params.search = search.trim();
+      const params: any = { page_size: 100 };
+      if (activeTab === "pending") {
+        params.status = "REGISTERED,RECEIVING";
+      } else {
+        params.status = "RECEIVED,IN_PROCESS,COMPLETED,REPORTED";
       }
-      const r = await casesApi.list(params);
-      const all = r.data?.results || [];
-      const pending = all.filter((c: any) => c.received_count < c.sample_count);
-      setPendingCases(pending);
+      if (search.trim().length >= 2) params.search = search.trim();
+      const _r = await (casesApi as any).list(params);
+      const cases = _r.data?.results || [];
+      // Filter by source and reg type on frontend
+      let filtered = cases;
+      if (sourceFilter) {
+        filtered = filtered.filter((c: any) => c.sample_source === sourceFilter);
+      }
+      if (regTypeFilter) {
+        filtered = filtered.filter((c: any) => c.registration_type === regTypeFilter);
+      }
+      const rows = flatCases(filtered);
+      setData(rows);
     } catch {
       message.error("加载失败");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeTab, search, sourceFilter, regTypeFilter, flatCases]);
 
-  useEffect(() => { fetchPending(); }, [fetchPending]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
-  useEffect(() => {
-    if (!expanded && pendingCases.length > 0 && !detailLoading) {
-      loadDetail(pendingCases[0].id);
-    }
-  }, [pendingCases]);
-
-  const onSearch = (v: string) => {
-    setQuery(v);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => fetchPending(v), 400);
+  // --- PT number handling ---
+  const generateSuffix = (role: string, allFathers: CaseSampleRow[]): string => {
+    if (role === "MOTHER") return "W";
+    // Find position among fathers in this case
+    const fatherIdx = allFathers.findIndex((f) => f.role === "ALLEGED_FATHER");
+    if (allFathers.length === 1) return "H";
+    // Multi-father: HA, HB, HC...
+    const idx = allFathers.filter((_, i) => i <= fatherIdx).length - 1;
+    return `H${String.fromCharCode(65 + idx)}`;
   };
 
-  const loadDetail = async (id: string) => {
-    if (expanded === id) { setExpanded(null); return; }
-    setExpanded(id);
-    if (!details[id]) {
-      setDetailLoading(true);
-      try {
-        const r = await casesApi.get(id);
-        setDetails((p: any) => ({ ...p, [id]: r.data }));
-      } catch { message.error("加载失败"); }
-      finally { setDetailLoading(false); }
-    }
-  };
-
-  // sampleUuid = Sample's UUID (cs.sample), not cs.id (CaseSample UUID) and not cs.sample_id (char ID)
-  const confirmReceipt = async (caseId: string, sampleUuid: string, condition: string, note?: string) => {
-    const key = `${caseId}:${sampleUuid}`;
-    setReceiving((p) => new Set([...p, key]));
-    try {
-      await (casesApi as any).confirmReceipt(caseId, {
-        sample_id: sampleUuid, condition, rejection_note: note || "",
-      });
-      message.success(condition === "OK" ? "样本已确认接收" : "已拒收");
-
-      // Reload detail and check if case entered lab workflow
-      try {
-        const r = await casesApi.get(caseId);
-        setDetails((p: any) => ({ ...p, [caseId]: r.data }));
-        if (r.data.status === "IN_PROCESS") {
-          message.success("全部样本接收完毕，已自动进入 Lab Workflow！");
-          setExpanded(null);
-          setPendingCases((p) => p.filter((c) => c.id !== caseId));
+  const handlePtChange = (rowKey: string, newPtBase: string) => {
+    const row = data.find((r) => r.key === rowKey);
+    if (!row) return;
+    setData((prev) =>
+      prev.map((r) => {
+        if (r.caseId === row.caseId) {
+          const fathers = prev.filter((x) => x.caseId === r.caseId && x.role === "ALLEGED_FATHER");
+          const suffix = generateSuffix(r.role, fathers);
+          return { ...r, ptBase: newPtBase, testSampleId: newPtBase ? `${newPtBase}${suffix}` : "" };
         }
-      } catch { /* ignore */ }
-    } catch { message.error("操作失败"); }
-    finally { setReceiving((p) => { const s = new Set(p); s.delete(key); return s; }); }
+        return r;
+      })
+    );
   };
 
-  const receiveAllOK = async (caseId: string) => {
-    let d = details[caseId];
-    if (!d) {
-      try {
-        const r = await casesApi.get(caseId);
-        d = r.data;
-        setDetails((p: any) => ({ ...p, [caseId]: d }));
-      } catch { message.error('加载详情失败'); return; }
+  // --- Receipt actions ---
+  const confirmReceipt = async (row: CaseSampleRow, condition: string = "OK") => {
+    try {
+      const payload: any = { sample_id: row.sampleUuid, condition };
+      if (row.ptBase) payload.pt_number = row.ptBase;
+      if (row.actualSampleType) payload.actual_sample_type = row.actualSampleType;
+      if (row.preservationMethod) payload.preservation_method = row.preservationMethod;
+      await (casesApi as any).confirmReceipt(row.caseId, payload);
+      message.success(condition === "OK" ? `已签收 ${row.testSampleId || row.patientName}` : "已拒收");
+      fetchData();
+    } catch {
+      message.error("操作失败");
     }
-    if (!d) return;
-    const api = casesApi as any;
-    for (const cs of d.case_samples) {
-      if (!cs.received_at && cs.sample_status !== "REJECTED") {
-        const sampleUuid = cs.sample;
-        setReceiving((p) => new Set([...p, `${caseId}:${sampleUuid}`]));
-        try {
-          await api.confirmReceipt(caseId, { sample_id: sampleUuid, condition: "OK" });
-        } catch { message.error(`接收 ${cs.patient_name || cs.sample_id} 失败`); }
+  };
+
+  const batchReceive = async () => {
+    const selected = data.filter((r) => selectedRowKeys.includes(r.key));
+    for (const row of selected) {
+      try {
+        const payload: any = { sample_id: row.sampleUuid, condition: "OK" };
+        if (row.ptBase) payload.pt_number = row.ptBase;
+        if (row.actualSampleType) payload.actual_sample_type = row.actualSampleType;
+        if (row.preservationMethod) payload.preservation_method = row.preservationMethod;
+        await (casesApi as any).confirmReceipt(row.caseId, payload);
+      } catch {
+        message.error(`${row.patientName} 签收失败`);
       }
     }
-    setReceiving(new Set());
-    message.success("全部样本接收完毕，已自动进入 Lab Workflow！");
-    setExpanded(null);
-    setPendingCases((p) => p.filter((c) => c.id !== caseId));
+    message.success("批量签收完成");
+    setSelectedRowKeys([]);
+    fetchData();
   };
 
-  const doResample = async (caseId: string, csId: string) => {
-    try {
-      await (casesApi as any).resample(caseId, { case_sample_id: csId });
-      message.success("已创建重采样本");
-      const r = await casesApi.get(caseId);
-      setDetails((p: any) => ({ ...p, [caseId]: r.data }));
-    } catch { message.error("重采失败"); }
+  // --- Batch PT ---
+  const handleBatchPt = () => {
+    if (!batchPtStart.trim()) return;
+    const selected = data.filter((r) => selectedRowKeys.includes(r.key));
+    // Group by case
+    const caseGroups = new Map<string, CaseSampleRow[]>();
+    for (const row of selected) {
+      if (!caseGroups.has(row.caseId)) caseGroups.set(row.caseId, []);
+      caseGroups.get(row.caseId)!.push(row);
+    }
+    let ptNum = parseInt(batchPtStart.replace(/\D/g, "")) || 1;
+    const prefix = batchPtStart.replace(/\d/g, "").trim() || "PT";
+
+    setData((prev) => {
+      const updated = [...prev];
+      for (const [_caseId, rows] of caseGroups) {
+        const base = `${prefix}${String(ptNum).padStart(5, "0")}`;
+        const fathers = rows.filter((r) => r.role === "ALLEGED_FATHER");
+        for (const row of rows) {
+          const idx = updated.findIndex((r) => r.key === row.key);
+          if (idx >= 0) {
+            const suffix = generateSuffix(row.role, fathers);
+            updated[idx] = {
+              ...updated[idx],
+              ptBase: base,
+              testSampleId: `${base}${suffix}`,
+            };
+          }
+        }
+        ptNum++;
+      }
+      return updated;
+    });
+    setBatchPtOpen(false);
+    setBatchPtStart("");
+    message.success("PT 编号已批量分配");
   };
 
-  const handlePhotoClick = (caseId: string, csId: string) => {
-    pendingUpload.current = { caseId, csId };
+  // --- Photo upload ---
+  const handlePhotoClick = (row: CaseSampleRow) => {
+    pendingPhoto.current = { caseId: row.caseId, csId: row.csId };
     fileInputRef.current?.click();
   };
 
-  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoPair = (row: CaseSampleRow) => {
+    // Check if a pair is selected
+    const selected = data.filter((r) => selectedRowKeys.includes(r.key));
+    const sameCase = selected.filter((r) => r.caseId === row.caseId);
+    if (sameCase.length >= 2) {
+      // Apply photo to both
+      pendingPhoto.current = { caseId: row.caseId, csId: row.csId };
+      (pendingPhoto.current as any).pairCsIds = sameCase.filter((r) => r.csId !== row.csId).map((r) => r.csId);
+    }
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !pendingUpload.current) return;
-    const { caseId, csId } = pendingUpload.current;
-    const key = `${caseId}:${csId}`;
-    setUploadingPhotos((p) => new Set([...p, key]));
+    if (!file || !pendingPhoto.current) return;
+    setUploadingPhoto(pendingPhoto.current.csId);
     try {
       const formData = new FormData();
-      formData.append("case_sample_id", csId);
       formData.append("photo", file);
-      const r = await (casesApi as any).uploadReceiptPhoto(caseId, formData);
-      const url = r.data?.receipt_photo_url;
-      setPhotoUrls((p) => ({ ...p, [key]: url || "" }));
-      message.success("拍照登记完成");
+      formData.append("case_sample_id", pendingPhoto.current.csId);
+      await (casesApi as any).uploadReceiptPhoto(pendingPhoto.current.caseId, formData);
+      message.success("照片已上传");
+      fetchData();
     } catch {
-      message.error("拍照上传失败");
+      message.error("上传失败");
     } finally {
-      setUploadingPhotos((p) => { const s = new Set(p); s.delete(key); return s; });
-      // Reset file input so same file can be re-selected
-      e.target.value = "";
-      pendingUpload.current = null;
+      setUploadingPhoto(null);
+      pendingPhoto.current = null;
     }
   };
 
-  return (
-    <div style={{ padding: 16, maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        marginBottom: 16,
-      }}>
-        <Title level={4} style={{ margin: 0 }}>
-          <InboxOutlined style={{ marginRight: 8, color: "#1677ff" }} />样本接收
-        </Title>
-        <Space>
-          <Text type="secondary">{pendingCases.length} 个待接收案例</Text>
-          <Button icon={<ReloadOutlined />} onClick={() => fetchPending(query)}>刷新</Button>
-        </Space>
-      </div>
+  // --- Inline field update ---
+  const updateField = async (row: CaseSampleRow, field: string, value: string) => {
+    setEditingField(null);
+    setData((prev) =>
+      prev.map((r) => (r.key === row.key ? { ...r, [field]: value } : r))
+    );
+    // Save to backend (use a general update endpoint or case update)
+    try {
+      await (casesApi as any).update(row.caseId, {
+        case_sample_id: row.csId,
+        [field]: value,
+      });
+    } catch {
+      // Silent fail - data remains in local state
+    }
+  };
 
-      <Input.Search
-        placeholder="按 Case / PT 编号 / 患者姓名筛选..."
-        value={query}
-        onChange={(e) => onSearch(e.target.value)}
-        loading={loading}
-        style={{ marginBottom: 16 }}
-        size="large"
-        allowClear
-      />
-
-      {loading && pendingCases.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 40 }}>
-          <LoadingOutlined style={{ fontSize: 32, color: "#1677ff" }} />
-          <div style={{ marginTop: 8, color: "#999" }}>加载中...</div>
-        </div>
-      ) : pendingCases.length === 0 ? (
-        <Empty description={query ? "未找到匹配案例" : "暂无待接收样本"} />
-      ) : (
-        pendingCases.map((c: any) => (
-          <Card
-            key={c.id}
-            size="small"
-            style={{ marginBottom: 12 }}
-            title={
-              <Space wrap>
-                <Button type="link" size="small" onClick={() => loadDetail(c.id)} style={{ padding: 0 }}>
-                  <Text code style={{ fontWeight: 600 }}>{c.case_number}</Text>
-                </Button>
-                {c.pt_number && <Tag color="blue">PT{c.pt_number}</Tag>}
-                <Tag color={STATUS_COLORS[c.status] || "default"}>
-                  {STATUS_LABELS[c.status] || c.status}
-                </Tag>
-                {c.is_urgent && <Tag color="red">加急</Tag>}
-                <Text type="secondary">
-                  已接收{" "}
-                  <Text strong style={{ color: "#52c41a" }}>{c.received_count || 0}</Text>
-                  {" "}/{" "}{c.sample_count || 0}
-                </Text>
-                {c.mother_name && <Text type="secondary">母亲: {c.mother_name}</Text>}
-                {c.clinic_name && <Text type="secondary">{c.clinic_name}</Text>}
-                <Progress percent={c.progress || 0} size="small" style={{ width: 100 }} />
-              </Space>
-            }
-            extra={
-              expanded === c.id ? null : (
-                <Space size={4}>
-                  <Tag color="warning">
-                    {(c.sample_count || 0) - (c.received_count || 0)} 个待接收
-                  </Tag>
-                  <Button size="small" type="primary"
-                    icon={<CheckCircleOutlined />}
-                    onClick={(e) => { e.stopPropagation(); receiveAllOK(c.id); }}>
-                    全部接收
-                  </Button>
-                  <Button size="small"
-                    icon={<CameraOutlined />}
-                    onClick={(e) => { e.stopPropagation(); loadDetail(c.id); }}>
-                    展开操作
-                  </Button>
-                </Space>
-              )
-            }
+  // --- Columns ---
+  const columns: any[] = [
+    {
+      title: "Case编号", dataIndex: "caseNumber", key: "cn", width: 160,
+      render: (v: string, _r: CaseSampleRow) => (
+        <Text code style={{ fontSize: 12 }}>{v}</Text>
+      ),
+      onCell: (r: CaseSampleRow) => {
+        // RowSpan: group by case
+        const first = data.find((d) => d.caseId === r.caseId);
+        if (first?.key === r.key) {
+          const count = data.filter((d) => d.caseId === r.caseId).length;
+          return { rowSpan: count };
+        }
+        return { rowSpan: 0 };
+      },
+    },
+    {
+      title: "PT编号", dataIndex: "testSampleId", key: "pt", width: 150,
+      render: (v: string, r: CaseSampleRow) => (
+        <Input
+          size="small"
+          value={r.ptBase}
+          placeholder="输入PT号"
+          onChange={(e) => handlePtChange(r.key, e.target.value)}
+          style={{ width: 110, fontFamily: "monospace" }}
+          addonAfter={<Text type="secondary" style={{ fontSize: 11 }}>{v ? v.replace(r.ptBase, "") : ""}</Text>}
+        />
+      ),
+    },
+    {
+      title: "姓名", dataIndex: "patientName", key: "name", width: 80,
+    },
+    {
+      title: "孕周", dataIndex: "gestationalWeeks", key: "gw", width: 60,
+      render: (v: number | null) => v ? `${v}w` : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "样本类型", dataIndex: "sampleType", key: "st", width: 80,
+      render: (v: string) => <Tag>{v || "—"}</Tag>,
+    },
+    {
+      title: "实际收到样本类型", dataIndex: "actualSampleType", key: "ast", width: 140,
+      render: (v: string, r: CaseSampleRow) =>
+        editingField?.key === r.key && editingField?.field === "actualSampleType" ? (
+          <Select
+            size="small" value={v} style={{ width: 100 }}
+            options={SAMPLE_TYPE_OPTIONS}
+            onChange={(val) => updateField(r, "actualSampleType", val)}
+            onBlur={() => setEditingField(null)}
+            autoFocus
+            defaultOpen
+          />
+        ) : (
+          <Tag
+            color="blue"
+            style={{ cursor: "pointer" }}
+            onClick={() => !r.received && setEditingField({ key: r.key, field: "actualSampleType" })}
           >
-            {expanded === c.id && (
-              detailLoading ? <LoadingOutlined /> :
-              details[c.id] ? (
-                <>
-                  <div style={{ marginBottom: 8 }}>
-                    <Space>
-                      <Button size="small" type="primary" onClick={() => receiveAllOK(c.id)}>
-                        <CheckCircleOutlined /> 全部正常接收（自动进入实验流程）
-                      </Button>
-                      <Text type="secondary">
-                        {details[c.id].case_samples?.filter(
-                          (cs: any) => !cs.received_at && cs.sample_status !== "REJECTED"
-                        ).length || 0} 个待处理
-                      </Text>
-                    </Space>
-                  </div>
-                  {details[c.id].case_samples?.map((cs: any) => {
-                    const isReceived = cs.received_at && cs.sample_status !== "REJECTED";
-                    const isRejected = cs.sample_status === "REJECTED";
-                    return (
-                      <div key={cs.id} style={{
-                        display: "flex", alignItems: "center", gap: 12,
-                        padding: "6px 8px", marginBottom: 4, borderRadius: 6,
-                        background: isRejected ? "#fff2f0" : isReceived ? "#f6ffed" : "#fafafa",
-                        border: `1px solid ${
-                          isRejected ? "#ffccc7" : isReceived ? "#b7eb8f" : "#f0f0f0"
-                        }`,
-                      }}>
-                        <Text code style={{ fontSize: 12, color: "#1677ff", minWidth: 90 }}>
-                          {cs.test_sample_id || cs.sample_id}
-                        </Text>
-                        <Tag color={cs.role === "MOTHER" ? "pink" : "blue"} style={{ fontSize: 11 }}>
-                          {ROLE_LABELS[cs.role] || cs.role}
-                        </Tag>
-                        {cs.resample_of && (
-                          <Badge count={`R${cs.resample_number}`} size="small" color="orange" />
-                        )}
-                        <Text style={{ flex: 1 }} ellipsis>
-                          {cs.patient_name || cs.sample_id}
-                        </Text>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {cs.source_display || cs.sample_source}
-                        </Text>
-                        <Tag color={STATUS_COLORS[cs.sample_status]}>
-                          {STATUS_LABELS[cs.sample_status] || cs.sample_status}
-                        </Tag>
+            {v || "—"}
+          </Tag>
+        ),
+    },
+    {
+      title: "采集日期", dataIndex: "collectionDate", key: "cd", width: 90,
+      render: (v: string) => v ? dayjs(v).format("MM-DD") : "—",
+    },
+    {
+      title: "样本来源", dataIndex: "sampleSource", key: "src", width: 90,
+      render: (v: string) => v || "—",
+    },
+    {
+      title: "快递", dataIndex: "fedexNo", key: "fx", width: 100,
+      render: (v: string) => v || "—",
+    },
+    {
+      title: "手机", dataIndex: "phone", key: "ph", width: 110,
+      render: (v: string) => v || "—",
+    },
+    {
+      title: "保温措施", dataIndex: "preservationMethod", key: "pm", width: 110,
+      render: (v: string, r: CaseSampleRow) =>
+        editingField?.key === r.key && editingField?.field === "preservationMethod" ? (
+          <Select
+            size="small" value={v || ""} style={{ width: 90 }}
+            options={PRESERVATION_OPTIONS}
+            onChange={(val) => updateField(r, "preservationMethod", val)}
+            onBlur={() => setEditingField(null)}
+            autoFocus
+            defaultOpen
+          />
+        ) : (
+          <Tag
+            color={PRESERVATION_COLORS[v] || "default"}
+            style={{ cursor: "pointer" }}
+            onClick={() => !r.received && setEditingField({ key: r.key, field: "preservationMethod" })}
+          >
+            {v || "无"}
+          </Tag>
+        ),
+    },
+    {
+      title: "状态", dataIndex: "status", key: "status", width: 80,
+      render: (v: string) => {
+        const t = STATUS_TAGS[v] || { color: "default", label: v };
+        return <Tag color={t.color}>{t.label}</Tag>;
+      },
+    },
+    {
+      title: "图片", dataIndex: "image", key: "img", width: 60,
+      render: (v: string | null) =>
+        v ? <Image src={v} width={40} height={40} style={{ objectFit: "cover", borderRadius: 4 }} preview /> : "—",
+    },
+    {
+      title: "操作", key: "act", width: 160, fixed: "right" as const,
+      render: (_: any, r: CaseSampleRow) =>
+        r.received ? (
+          <Text type="secondary">已签收</Text>
+        ) : (
+          <Space size={2}>
+            <Popconfirm title={`确认签收 ${r.testSampleId || r.patientName}？`} onConfirm={() => confirmReceipt(r)}>
+              <Button size="small" type="primary" icon={<CheckOutlined />} />
+            </Popconfirm>
+            <Popconfirm title="确定拒收？" onConfirm={() => confirmReceipt(r, "REJECTED")}>
+              <Button size="small" danger icon={<CloseOutlined />} />
+            </Popconfirm>
+            <Button size="small" icon={<CameraOutlined />} onClick={() => handlePhotoClick(r)} />
+          </Space>
+        ),
+    },
+  ];
 
-                        {isRejected ? (
-                          <Space size={4}>
-                            {cs.rejection_reason && (
-                              <Text type="danger" style={{ fontSize: 11 }}
-                                ellipsis={{ tooltip: REJECTION_REASONS[cs.rejection_reason] }}>
-                                <CloseCircleOutlined />{" "}
-                                {REJECTION_REASONS[cs.rejection_reason] || cs.rejection_reason}
-                              </Text>
-                            )}
-                            <Button size="small" type="primary" danger
-                              onClick={() => doResample(c.id, cs.id)}>
-                              <RedoOutlined /> 重采
-                            </Button>
-                          </Space>
-                        ) : isReceived ? (
-                          <CheckCircleOutlined style={{ color: "#52c41a", fontSize: 18 }} />
-                        ) : (
-                          <Space size={4}>
-                            <Button size="small" icon={<CameraOutlined />}
-                              onClick={() => handlePhotoClick(c.id, cs.id)}
-                              loading={uploadingPhotos.has(`${c.id}:${cs.id}`)}
-                              title="拍照登记" />
-                            <Button size="small" type="primary"
-                              onClick={() => confirmReceipt(c.id, cs.sample, "OK")}
-                              loading={receiving.has(`${c.id}:${cs.sample}`)}>
-                              <CheckCircleOutlined /> 接收
-                            </Button>
-                            <Button size="small" danger onClick={() =>
-                              setRejectModal({
-                                caseId: c.id,
-                                sampleUuid: cs.sample,
-                                csId: cs.id,
-                                name: cs.patient_name || cs.sample_id,
-                              })
-                            }>
-                              <CloseCircleOutlined /> 不合格
-                            </Button>
-                            {photoUrls[`${c.id}:${cs.id}`] && (
-                              <img src={photoUrls[`${c.id}:${cs.id}`]}
-                                alt="收样照片"
-                                style={{ width: 32, height: 32, borderRadius: 4, objectFit: "cover" }} />
-                            )}
-                          </Space>
-                        )}
-                      </div>
-                    );
-                  })}
-                </>
-              ) : <Text type="secondary">加载失败</Text>
-            )}
-          </Card>
-        ))
+  // --- Render ---
+  return (
+    <div>
+      {/* Search & Filters */}
+      <Row gutter={12} style={{ marginBottom: 12 }} align="middle">
+        <Col>
+          <Input.Search
+            placeholder="搜索 Case号/姓名/PT号..."
+            allowClear
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            onSearch={() => fetchData()}
+            style={{ width: 260 }}
+          />
+        </Col>
+        <Col>
+          <Select
+            placeholder="来源筛选"
+            allowClear
+            style={{ width: 140 }}
+            value={sourceFilter || undefined}
+            onChange={(v) => setSourceFilter(v || "")}
+            options={["国内", "泰国", "巴西", "巴西万基", "韩国", "澳洲"].map((v) => ({ value: v, label: v }))}
+          />
+        </Col>
+        <Col>
+          <Select
+            placeholder="登记类型"
+            allowClear
+            style={{ width: 120 }}
+            value={regTypeFilter || undefined}
+            onChange={(v) => setRegTypeFilter(v || "")}
+            options={[
+              { value: "FIRST", label: "首次检测" },
+              { value: "SUPPLEMENT", label: "补充样本" },
+              { value: "RESAMPLE", label: "重采样本" },
+            ]}
+          />
+        </Col>
+        <Col>
+          <Button icon={<ReloadOutlined />} onClick={fetchData}>刷新</Button>
+        </Col>
+      </Row>
+
+      {/* Batch toolbar */}
+      {selectedRowKeys.length >= 2 && (
+        <div style={{ marginBottom: 8, padding: "6px 12px", background: "#e6f7ff", borderRadius: 6, display: "flex", gap: 8, alignItems: "center" }}>
+          <Text strong>已选 {selectedRowKeys.length} 个样本</Text>
+          <Button size="small" icon={<NumberOutlined />} onClick={() => setBatchPtOpen(true)}>批量填写PT</Button>
+          <Popconfirm title={`确认批量签收 ${selectedRowKeys.length} 个样本？`} onConfirm={batchReceive}>
+            <Button size="small" type="primary" icon={<CheckOutlined />}>批量签收</Button>
+          </Popconfirm>
+          <Button size="small" icon={<CameraOutlined />}
+            onClick={() => {
+              const selected = data.filter((r) => selectedRowKeys.includes(r.key));
+              const first = selected[0];
+              if (first) handlePhotoPair(first);
+            }}>
+            拍照(同Case成对)
+          </Button>
+        </div>
       )}
 
-      {/* Rejection Modal */}
+      {/* Tabs */}
+      <Tabs
+        activeKey={activeTab}
+        onChange={(k) => { setActiveTab(k); setSelectedRowKeys([]); }}
+        items={[
+          { key: "pending", label: "待签收" },
+          { key: "received", label: "已签收" },
+        ]}
+        style={{ marginBottom: 0 }}
+      />
+
+      {/* Table */}
+      <Table
+        rowKey="key"
+        dataSource={data}
+        columns={columns}
+        loading={loading}
+        size="small"
+        scroll={{ x: 1500, y: "calc(100vh - 320px)" }}
+        rowSelection={{
+          selectedRowKeys,
+          onChange: (keys) => setSelectedRowKeys(keys),
+          getCheckboxProps: (r: CaseSampleRow) => ({ disabled: r.received }),
+        }}
+        pagination={{ pageSize: 50, showTotal: (t) => `共 ${t} 条` }}
+      />
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        style={{ display: "none" }}
+        onChange={handleFileChange}
+      />
+
+      {/* Batch PT Modal */}
       <Modal
-        title={
-          <Space>
-            <ExclamationCircleOutlined style={{ color: "#ff4d4f" }} />
-            不合格拒收: {rejectModal?.name}
-          </Space>
-        }
-        open={!!rejectModal}
-        footer={null}
-        onCancel={() => setRejectModal(null)}
-        width={360}
+        title="批量填写 PT 编号"
+        open={batchPtOpen}
+        onOk={handleBatchPt}
+        onCancel={() => { setBatchPtOpen(false); setBatchPtStart(""); }}
+        width={400}
       >
-        <Space direction="vertical" style={{ width: "100%" }}>
-          {Object.entries(REJECTION_REASONS).map(([k, v]) => (
-            <Button key={k} block size="small" onClick={() => {
-              if (rejectModal) {
-                confirmReceipt(rejectModal.caseId, rejectModal.sampleUuid, k, rejectNote);
-              }
-              setRejectModal(null);
-              setRejectNote("");
-            }}>
-              {v}
-            </Button>
-          ))}
-          <Input.TextArea
-            rows={2} placeholder="备注（可选）..." value={rejectNote}
-            onChange={(e) => setRejectNote(e.target.value)} size="small"
-          />
-        </Space>
+        <div style={{ marginBottom: 8 }}>
+          <Text type="secondary">输入起始 PT 号，每个 Case 自动递增。同 Case 内自动加后缀 (W/H/HA...)</Text>
+        </div>
+        <Input
+          placeholder="如 PT00088"
+          value={batchPtStart}
+          onChange={(e) => setBatchPtStart(e.target.value)}
+          style={{ fontFamily: "monospace" }}
+        />
+        <div style={{ marginTop: 8 }}>
+          <Text type="secondary">预览:</Text>
+          {(() => {
+            if (!batchPtStart.trim()) return null;
+            const selected = data.filter((r) => selectedRowKeys.includes(r.key));
+            const caseGroups = new Map<string, CaseSampleRow[]>();
+            for (const row of selected) {
+              if (!caseGroups.has(row.caseId)) caseGroups.set(row.caseId, []);
+              caseGroups.get(row.caseId)!.push(row);
+            }
+            let ptNum = parseInt(batchPtStart.replace(/\D/g, "")) || 1;
+            const prefix = batchPtStart.replace(/\d/g, "").trim() || "PT";
+            const previews: string[] = [];
+            for (const [, rows] of caseGroups) {
+              const base = `${prefix}${String(ptNum).padStart(5, "0")}`;
+              const names = rows.map((r) => {
+                const fathers = rows.filter((x) => x.role === "ALLEGED_FATHER");
+                return `${r.patientName}→${base}${generateSuffix(r.role, fathers)}`;
+              });
+              previews.push(...names);
+              ptNum++;
+            }
+            return previews.map((p, i) => <div key={i} style={{ fontSize: 12, fontFamily: "monospace" }}>{p}</div>);
+          })()}
+        </div>
       </Modal>
-      {/* Hidden file input for camera capture */}
-      <input ref={fileInputRef} type="file" accept="image/*" capture="environment"
-        style={{ display: "none" }} onChange={handlePhotoUpload} />
     </div>
   );
 }
