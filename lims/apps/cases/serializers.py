@@ -258,8 +258,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             case=case, sample=mother_sample, role=CaseSample.Role.MOTHER,
             arrival_date=female_arrival,
         )
-        mother_cs.test_sample_id = case.generate_test_sample_id(mother_cs)
-        mother_cs.save(update_fields=["test_sample_id"])
+        # test_sample_id assigned later during receipt confirmation
 
         # Create father samples
         for i, name in enumerate(father_names, 1):
@@ -283,8 +282,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
                 sample_source=father_sample_type,
                 arrival_date=arrival,
             )
-            father_cs.test_sample_id = case.generate_test_sample_id(father_cs)
-            father_cs.save(update_fields=["test_sample_id"])
+            # test_sample_id assigned later during receipt confirmation
 
         return case
 
@@ -351,8 +349,7 @@ class SupplementSerializer(serializers.Serializer):
             ethnicity=ethnicity,
             relationship_to_mother=relationship,
         )
-        cs.test_sample_id = case.generate_test_sample_id(cs)
-        cs.save(update_fields=["test_sample_id"])
+        # test_sample_id assigned during receipt confirmation
 
         return cs
 

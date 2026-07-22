@@ -96,9 +96,14 @@ class CaseViewSet(viewsets.ModelViewSet):
 
         if case.all_samples_received:
             case.status = Case.Status.IN_PROCESS
-            # Assign PT number on receipt confirmation (not at registration)
+            # Assign PT number + test_sample_ids on receipt (not at registration)
             case.assign_pt_number()
             case.save(update_fields=["status", "updated_at", "pt_number"])
+            # Generate test_sample_id for all CaseSamples that lack one
+            for cs in case.case_samples.all():
+                if not cs.test_sample_id:
+                    cs.test_sample_id = case.generate_test_sample_id(cs)
+                    cs.save(update_fields=["test_sample_id"])
 
             # Auto-create Run with NIPPT workflow protocol
             from lims.apps.workflows.models import SampleRun, WorkflowStep, WorkflowProtocol, RunSample
