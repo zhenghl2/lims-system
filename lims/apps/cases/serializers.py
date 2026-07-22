@@ -2,7 +2,7 @@
 from rest_framework import serializers
 from django.utils import timezone
 import datetime
-from .models import Case, CaseSample
+from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample
 
 
 class CaseSampleSerializer(serializers.ModelSerializer):
@@ -163,10 +163,12 @@ class CaseCreateSerializer(serializers.ModelSerializer):
     father_names = serializers.ListField(
         child=serializers.CharField(), write_only=True, required=False, default=list
     )
-    father_sample_type = serializers.ChoiceField(
-        choices=CaseSample.SampleSource.choices,
-        default=CaseSample.SampleSource.PERIPHERAL_BLOOD,
-        write_only=True,
+    father_sample_types = serializers.ListField(
+        child=serializers.ListField(
+            child=serializers.ChoiceField(choices=CaseSample.SampleSource.choices)
+        ),
+        write_only=True, required=False, default=list,
+        help_text='每个父亲的样本类型列表，如 [["BLOOD","HAIR"], ["SWAB"]]'
     )
     # New fields
     external_id = serializers.CharField(write_only=True, required=False, allow_blank=True, 
@@ -191,7 +193,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             "last_menstrual_period",
             "notes", "is_urgent", "expected_completion",
             "mother_name", "mother_dob", "father_names",
-            "father_sample_type",
+            "father_sample_types",
             "external_id", "sample_source", "fedex_no",
             "female_arrival_date", "male_arrival_dates",
         ]
@@ -204,7 +206,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         mother_name = validated_data.pop("mother_name")
         mother_dob = validated_data.pop("mother_dob", None)
         father_names = validated_data.pop("father_names", [])
-        father_sample_type = validated_data.pop("father_sample_type", CaseSample.SampleSource.PERIPHERAL_BLOOD)
+        father_sample_types = validated_data.pop("father_sample_types", [])
         external_id = validated_data.pop("external_id", "") or ""
         sample_source = validated_data.pop("sample_source", "") or ""
         fedex_no = validated_data.pop("fedex_no", "") or ""
@@ -262,29 +264,32 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         )
         # test_sample_id assigned later during receipt confirmation
 
-        # Create father samples
+        # Create father samples (one CaseSample per sample type)
         for i, name in enumerate(father_names, 1):
-            father_sample = Sample.objects.create(
-                sample_id=f"{case_number}-AF{i}",
-                sample_type=sample_type,
-                panel=panel,
-                patient_name=name,
-                sample_source=sample_source,
-                collection_date=today,
-                receipt_date=today,
-                receipt_time=now.time(),
-                status="REGISTERED",
-                site=request.user.site,
-                created_by=request.user,
-            )
+            # 获取该父亲的样本类型列表，默认["BLOOD"]
+            types = father_sample_types[i-1] if i-1 < len(father_sample_types) else ["BLOOD"]
             arrival = male_arrivals[i-1] if i-1 < len(male_arrivals) else None
-            father_cs = CaseSample.objects.create(
-                case=case, sample=father_sample,
-                role=CaseSample.Role.ALLEGED_FATHER,
-                sample_source=father_sample_type,
-                arrival_date=arrival,
-            )
-            # test_sample_id assigned later during receipt confirmation
+            for j, st in enumerate(types, 1):
+                father_sample = Sample.objects.create(
+                    sample_id=f"{case_number}-AF{i}-{j}",
+                    sample_type=sample_type,
+                    panel=panel,
+                    patient_name=name,
+                    sample_source=sample_source,
+                    collection_date=today,
+                    receipt_date=today,
+                    receipt_time=now.time(),
+                    status="REGISTERED",
+                    site=request.user.site,
+                    created_by=request.user,
+                )
+                father_cs = CaseSample.objects.create(
+                    case=case, sample=father_sample,
+                    role=CaseSample.Role.ALLEGED_FATHER,
+                    sample_source=st,
+                    arrival_date=arrival,
+                )
+                # test_sample_id assigned later during receipt confirmation
 
         return case
 
@@ -293,9 +298,10 @@ class SupplementSerializer(serializers.Serializer):
     """补充样本：给已有 Case 添加新的 CaseSample (母亲或父亲)."""
     role = serializers.ChoiceField(choices=[("MOTHER", "Mother"), ("ALLEGED_FATHER", "Alleged Father")])
     patient_name = serializers.CharField(max_length=200)
-    sample_source = serializers.ChoiceField(
-        choices=CaseSample.SampleSource.choices,
-        default=CaseSample.SampleSource.PERIPHERAL_BLOOD,
+    sample_types = serializers.ListField(
+        child=serializers.ChoiceField(choices=CaseSample.SampleSource.choices),
+        required=False, default=list,
+        help_text="样本类型列表，男性可多选"
     )
     arrival_date = serializers.DateField(required=False)
     external_id = serializers.CharField(max_length=100, required=False, allow_blank=True)
@@ -309,7 +315,9 @@ class SupplementSerializer(serializers.Serializer):
 
         role = validated_data["role"]
         patient_name = validated_data["patient_name"]
-        sample_source_val = validated_data.get("sample_source", "BLOOD")
+        sample_types = validated_data.get("sample_types", ["BLOOD"])
+        if isinstance(sample_types, str):
+            sample_types = [sample_types]  # 兼容旧格式
         arrival_date = validated_data.get("arrival_date")
         external_id = validated_data.get("external_id", "")
         ethnicity = validated_data.get("ethnicity", "")
@@ -327,33 +335,36 @@ class SupplementSerializer(serializers.Serializer):
         role_prefix = "M" if role == "MOTHER" else f"AF{case.case_samples.filter(role='ALLEGED_FATHER').count() + 1}"
         sample_id = external_id or f"{case.case_number}-{role_prefix}-SUP"
 
-        sample = Sample.objects.create(
-            sample_id=sample_id,
-            sample_type=sample_type,
-            panel=case.panel,
-            patient_name=patient_name,
-            external_id=external_id,
-            patient_sex="F" if role == "MOTHER" else "M",
-            collection_date=today,
-            receipt_date=today,
-            receipt_time=now.time(),
-            status="REGISTERED",
-            site=case.site,
-            created_by=request.user,
-        )
-
-        cs = CaseSample.objects.create(
-            case=case,
-            sample=sample,
-            role=role,
-            sample_source=sample_source_val,
-            arrival_date=arrival_date,
-            ethnicity=ethnicity,
-            relationship_to_mother=relationship,
-        )
+        css = []
+        for st in sample_types:
+            # 每个类型创建独立的 Sample + CaseSample
+            s = Sample.objects.create(
+                sample_id=f"{case.case_number}-SUP-{role[0]}-{len(css)+1}",
+                sample_type=sample_type,
+                panel=case.panel,
+                patient_name=patient_name,
+                external_id=external_id,
+                patient_sex="F" if role == "MOTHER" else "M",
+                collection_date=today,
+                receipt_date=today,
+                receipt_time=now.time(),
+                status="REGISTERED",
+                site=case.site,
+                created_by=request.user,
+            )
+            cs_obj = CaseSample.objects.create(
+                case=case,
+                sample=s,
+                role=role,
+                sample_source=st,
+                arrival_date=arrival_date,
+                ethnicity=ethnicity,
+                relationship_to_mother=relationship,
+            )
+            css.append(cs_obj)
         # test_sample_id assigned during receipt confirmation
 
-        return cs
+        return css[0] if css else None
 
 
 class PublicRegistrationSerializer(serializers.Serializer):
@@ -380,3 +391,194 @@ class PublicRegistrationSerializer(serializers.Serializer):
     collection_date = serializers.DateField(required=False)
     is_urgent = serializers.BooleanField(default=False)
     notes = serializers.CharField(max_length=1000, required=False, allow_blank=True)
+
+
+
+# ============================================================
+# NIPPT Pre-Processing Serializers
+# ============================================================
+
+class NipptPreProcessingSampleSerializer(serializers.ModelSerializer):
+    """单个前处理样本条目"""
+    received_sample_types = serializers.ListField(read_only=True)
+    remaining_sample_types = serializers.ListField(read_only=True)
+    test_sample_id = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NipptPreProcessingSample
+        fields = [
+            "id", "batch", "case", "patient_name", "role", "category",
+            "case_sample_ids",
+            "sample_condition", "aliquot_tubes", "plasma_volume",
+            "experiment_sample_type", "elution_volume", "dna_concentration",
+            "qc_status", "qc_note", "operator", "processed_at",
+            "received_sample_types", "remaining_sample_types",
+            "test_sample_id", "created_at",
+        ]
+        read_only_fields = ["id", "created_at", "received_sample_types", "remaining_sample_types"]
+
+    def get_test_sample_id(self, obj):
+        """Get the test_sample_id from the first CaseSample."""
+        if obj.case_sample_ids:
+            from .models import CaseSample
+            cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
+            if cs:
+                return cs.test_sample_id
+        return None
+
+
+class NipptPreProcessingBatchListSerializer(serializers.ModelSerializer):
+    """批次列表"""
+    sample_count = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    female_count = serializers.SerializerMethodField()
+    male_blood_count = serializers.SerializerMethodField()
+    male_other_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NipptPreProcessingBatch
+        fields = [
+            "id", "batch_number", "status", "status_display",
+            "sample_count", "female_count", "male_blood_count", "male_other_count",
+            "created_by", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
+
+    def get_sample_count(self, obj):
+        return obj.samples.count()
+
+    def get_female_count(self, obj):
+        return obj.samples.filter(category="FEMALE_BLOOD").count()
+
+    def get_male_blood_count(self, obj):
+        return obj.samples.filter(category="MALE_BLOOD").count()
+
+    def get_male_other_count(self, obj):
+        return obj.samples.filter(category="MALE_OTHER").count()
+
+
+class NipptPreProcessingBatchDetailSerializer(serializers.ModelSerializer):
+    """批次详情（含样本分组）"""
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    female_count = serializers.SerializerMethodField()
+    male_blood_count = serializers.SerializerMethodField()
+    male_other_count = serializers.SerializerMethodField()
+    sample_count = serializers.SerializerMethodField()
+    female_samples = serializers.SerializerMethodField()
+    male_blood_samples = serializers.SerializerMethodField()
+    male_other_samples = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NipptPreProcessingBatch
+        fields = [
+            "id", "batch_number", "status", "status_display",
+            "sample_count", "female_count", "male_blood_count", "male_other_count",
+            "female_samples", "male_blood_samples", "male_other_samples",
+            "processing_data", "created_by", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
+
+    def get_sample_count(self, obj):
+        return obj.samples.count()
+
+    def get_female_count(self, obj):
+        return obj.samples.filter(category="FEMALE_BLOOD").count()
+
+    def get_male_blood_count(self, obj):
+        return obj.samples.filter(category="MALE_BLOOD").count()
+
+    def get_male_other_count(self, obj):
+        return obj.samples.filter(category="MALE_OTHER").count()
+
+    def get_female_samples(self, obj):
+        qs = obj.samples.filter(category="FEMALE_BLOOD")
+        return NipptPreProcessingSampleSerializer(qs, many=True).data
+
+    def get_male_blood_samples(self, obj):
+        qs = obj.samples.filter(category="MALE_BLOOD")
+        return NipptPreProcessingSampleSerializer(qs, many=True).data
+
+    def get_male_other_samples(self, obj):
+        qs = obj.samples.filter(category="MALE_OTHER")
+        return NipptPreProcessingSampleSerializer(qs, many=True).data
+
+
+class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
+    """创建批次"""
+    case_sample_ids = serializers.ListField(
+        child=serializers.CharField(), write_only=True,
+        help_text="要加入批次的 CaseSample UUID 列表"
+    )
+
+    class Meta:
+        model = NipptPreProcessingBatch
+        fields = ["id", "batch_number", "status", "case_sample_ids"]
+        read_only_fields = ["id", "batch_number"]
+
+    def create(self, validated_data):
+        from .models import CaseSample
+        from django.db import transaction
+
+        request = self.context["request"]
+        case_sample_ids = validated_data.pop("case_sample_ids", [])
+
+        with transaction.atomic():
+            # Generate batch number with row lock to prevent duplicates
+            batch_number = NipptPreProcessingBatch.generate_batch_number()
+
+            batch = NipptPreProcessingBatch.objects.create(
+                batch_number=batch_number,
+                status=NipptPreProcessingBatch.Status.DRAFT,
+                created_by=request.user,
+            )
+
+            # Group CaseSamples by (case, patient_name, category)
+            css = CaseSample.objects.filter(
+                id__in=case_sample_ids
+            ).select_related("case", "sample")
+
+            groups = {}  # key: (case_id, patient_name, category)
+            for cs in css:
+                # Determine category
+                if cs.role == "MOTHER":
+                    cat = "FEMALE_BLOOD"
+                elif cs.sample_source in ("BLOOD", "DBS"):
+                    cat = "MALE_BLOOD"
+                else:
+                    cat = "MALE_OTHER"
+
+                key = (str(cs.case_id), cs.sample.patient_name, cat)
+                if key not in groups:
+                    groups[key] = {"case": cs.case, "ids": [], "role": cs.role}
+                groups[key]["ids"].append(str(cs.id))
+
+            # Create one NipptPreProcessingSample per group
+            for (case_id, name, cat), gdata in groups.items():
+                aliquot_default = 2 if cat == "MALE_BLOOD" else 3
+                kwargs = {
+                    "batch": batch,
+                    "case": gdata["case"],
+                    "patient_name": name,
+                    "role": gdata["role"],
+                    "category": cat,
+                    "case_sample_ids": gdata["ids"],
+                    "aliquot_tubes": aliquot_default,
+                }
+                # Male blood samples: default plasma volume 30mL
+                if cat == "MALE_BLOOD":
+                    kwargs["plasma_volume"] = 30.0
+                NipptPreProcessingSample.objects.create(**kwargs)
+
+        return batch
+
+
+class PendingEntrySerializer(serializers.Serializer):
+    """待前处理队列条目 — 按人分组"""
+    case_id = serializers.CharField()
+    case_number = serializers.CharField()
+    patient_name = serializers.CharField()
+    role = serializers.CharField()
+    category = serializers.CharField()
+    sample_types = serializers.ListField(child=serializers.CharField())
+    case_sample_ids = serializers.ListField(child=serializers.CharField())
+    test_sample_id = serializers.CharField(allow_null=True)

@@ -1,18 +1,22 @@
 """Case URLs."""
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
-from .views import CaseViewSet, public_register, public_register_info
+from rest_framework.routers import DefaultRouter, SimpleRouter
+from .views import CaseViewSet, public_register, public_register_info, NipptPreProcessingViewSet
 
-router = DefaultRouter()
-router.register("", CaseViewSet, basename="case")
+# SimpleRouter avoids api-root conflict with CaseViewSet list
+case_router = SimpleRouter()
+case_router.register("", CaseViewSet, basename="case")
+
+preprocessing_router = DefaultRouter()
+preprocessing_router.include_root_view = False  # avoid api-root shadowing case-list
+preprocessing_router.register("preprocessing", NipptPreProcessingViewSet, basename="nippt-preprocessing")
 
 app_name = "cases"
 
-urlpatterns = [
-    path("", include(router.urls)),
+urlpatterns = preprocessing_router.urls + [
+    path("", include(case_router.urls)),
 ]
 
-# Public registration endpoints
 urlpatterns += [
     path("public/register/<str:token>/", public_register, name="public-register"),
     path("public/info/<str:token>/", public_register_info, name="public-register-info"),

@@ -1,3 +1,4 @@
+// NipptRouter.tsx
 import { Routes, Route, Navigate } from "react-router-dom";
 import { lazy, Suspense } from "react";
 import { Spin } from "antd";
@@ -11,6 +12,7 @@ const SampleReceiving  = lazy(() => import("./SampleReceiving"));
 const LabWorkflow      = lazy(() => import("./LabWorkflow"));
 const NipptReports     = lazy(() => import("./NipptReports"));
 const PublicRegister   = lazy(() => import("./PublicRegister"));
+const NipptPreProcessing = lazy(() => import("./NipptPreProcessing"));
 
 const PageLoading = () => (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 200 }}>
@@ -34,17 +36,17 @@ export default function NipptRouter() {
         <Route path="/register/:token" element={<PublicRegister />} />
 
         {/* Protected NIPPT routes */}
-        <Route path="/nippt/dashboard"    element={<Protected><NipptLayout><NipptDashboard /></NipptLayout></Protected>} />
-        <Route path="/nippt/cases"        element={<Protected><NipptLayout><Cases /></NipptLayout></Protected>} />
-        <Route path="/nippt/cases/:id"    element={<Protected><NipptLayout><Cases /></NipptLayout></Protected>} />
+        <Route path="/nippt/dashboard"     element={<Protected><NipptLayout><NipptDashboard /></NipptLayout></Protected>} />
+        <Route path="/nippt/cases"         element={<Protected><NipptLayout><Cases /></NipptLayout></Protected>} />
+        <Route path="/nippt/cases/:id"     element={<Protected><NipptLayout><Cases /></NipptLayout></Protected>} />
         <Route path="/nippt/registration"  element={<Protected><NipptLayout header="Sample Registration"><NipptRegistration /></NipptLayout></Protected>} />
+        <Route path="/nippt/preprocessing" element={<Protected><NipptLayout header="Pre-Processing"><NipptPreProcessing /></NipptLayout></Protected>} />
         <Route path="/nippt/receiving"     element={<Protected><NipptLayout><SampleReceiving /></NipptLayout></Protected>} />
         <Route path="/nippt/workflow"      element={<Protected><NipptLayout><LabWorkflow /></NipptLayout></Protected>} />
         <Route path="/nippt/reports"       element={<Protected><NipptLayout><NipptReports /></NipptLayout></Protected>} />
 
-        {/* Redirect */}
-        <Route path="/nippt" element={<Navigate to="/nippt/dashboard" replace />} />
-        <Route path="/nippt/*" element={<Navigate to="/nippt/dashboard" replace />} />
+        {/* Fallback */}
+        <Route path="*" element={<Navigate to="/nippt/dashboard" replace />} />
       </Routes>
     </Suspense>
   );

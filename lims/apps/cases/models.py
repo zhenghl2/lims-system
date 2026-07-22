@@ -97,22 +97,36 @@ class Case(models.Model):
         return self.pt_number
 
     def generate_test_sample_id(self, case_sample, resample_num=None):
-        """Generate a PT test sample ID for a CaseSample."""
+        """Generate a PT test sample ID for a CaseSample.
+        
+        test_sample_id is per PERSON (not per physical sample).
+        Same father's multiple sample types share the same ID.
+        """
         if not self.pt_number:
             self.assign_pt_number()
         base = self.pt_number
         if case_sample.role == "MOTHER":
-            suffix = "M"
+            suffix = "W"
         elif case_sample.role == "ALLEGED_FATHER":
-            existing = self.case_samples.filter(
+            # Group by patient_name, assign same suffix to same father
+            father_names = []
+            for cs in self.case_samples.filter(
                 role="ALLEGED_FATHER"
-            ).exclude(id=case_sample.id).count()
-            suffix = f"F{chr(97 + existing)}"  # a, b, c ...
+            ).order_by("created_at").select_related("sample"):
+                name = cs.sample.patient_name
+                if name not in father_names:
+                    father_names.append(name)
+            my_name = case_sample.sample.patient_name
+            idx = father_names.index(my_name) if my_name in father_names else 0
+            if len(father_names) == 1:
+                suffix = "H"
+            else:
+                suffix = f"H{chr(65 + idx)}"  # HA, HB, HC...
         else:
             suffix = "U"
         tid = f"{base}{suffix}"
         if resample_num:
-            tid += f"R{resample_num}"
+            tid += f"{resample_num}"
         return tid
 
     @property
@@ -139,10 +153,15 @@ class CaseSample(models.Model):
         ALLEGED_FATHER = "ALLEGED_FATHER", "Alleged Father"
 
     class SampleSource(models.TextChoices):
-        PERIPHERAL_BLOOD = "BLOOD", "Peripheral Blood"
-        BUCCAL_SWAB = "SWAB", "Buccal Swab"
-        HAIR_FOLLICLE = "HAIR", "Hair Follicle"
-        DRIED_BLOOD_SPOT = "DBS", "Dried Blood Spot"
+        PERIPHERAL_BLOOD = "BLOOD",       "血液"
+        DRIED_BLOOD      = "DBS",         "血痕"
+        HAIR_FOLLICLE    = "HAIR",        "毛发"
+        BUCCAL_SWAB      = "SWAB",        "口拭子"
+        NAIL             = "NAIL",        "指甲"
+        SEMEN            = "SEMEN",       "精液"
+        TOOTHBRUSH       = "TOOTHBRUSH",  "牙刷"
+        CIGARETTE_BUTT   = "CIGARETTE",   "烟头"
+        WATER_BOTTLE     = "BOTTLE",      "水瓶"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="case_samples")
@@ -183,7 +202,7 @@ class CaseSample(models.Model):
 
     # Dual-ID system
     test_sample_id = models.CharField(
-        max_length=40, unique=True, null=True, blank=True, db_index=True,
+        max_length=40, null=True, blank=True, db_index=True,
         help_text="PT test sample ID, e.g. PT00123M, PT00123Fa"
     )
     resample_of = models.ForeignKey(
@@ -218,3 +237,119 @@ class CaseSample(models.Model):
             "receipt_condition", "received_at", "received_by",
             "receipt_photo", "updated_at",
         ])
+
+
+# ============================================================
+# NIPPT Pre-Processing (前处理)
+# ============================================================
+
+class NipptPreProcessingBatch(models.Model):
+    """NIPPT 前处理批次 — 签收后、实验前的样本处理"""
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "待处理"
+        IN_PROGRESS = "IN_PROGRESS", "处理中"
+        COMPLETED = "COMPLETED", "已完成"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch_number = models.CharField(
+        max_length=30, unique=True, db_index=True,
+        help_text="Auto-generated: YYYYMMDD-HH-NNN"
+    )
+    status = models.CharField(
+        max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True
+    )
+    processing_data = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+"
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "nippt_preprocessing_batches"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.batch_number
+
+    @classmethod
+    def generate_batch_number(cls):
+        """Generate batch number: YYYYMMDD-HH-NNN"""
+        from django.utils import timezone
+        now = timezone.now()
+        prefix = now.strftime("%Y%m%d-%H")
+        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        return f"{prefix}-{count:03d}"
+
+
+class NipptPreProcessingSample(models.Model):
+    """前处理批次中的处理单元 — 按人分组（非按单个样本）"""
+
+    class SampleCategory(models.TextChoices):
+        FEMALE_BLOOD = "FEMALE_BLOOD", "女性血液"
+        MALE_BLOOD = "MALE_BLOOD", "男性血液"
+        MALE_OTHER = "MALE_OTHER", "男性其他"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(
+        NipptPreProcessingBatch, on_delete=models.CASCADE, related_name="samples"
+    )
+    case = models.ForeignKey(
+        Case, on_delete=models.CASCADE, related_name="preprocessing_samples"
+    )
+    patient_name = models.CharField(max_length=200)
+    role = models.CharField(max_length=20, choices=CaseSample.Role.choices, db_index=True)
+    category = models.CharField(max_length=20, choices=SampleCategory.choices, db_index=True)
+
+    # CaseSample IDs included in this processing unit (JSON array of UUID strings)
+    case_sample_ids = models.JSONField(default=list)
+
+    # === Blood sample fields (FEMALE_BLOOD / MALE_BLOOD) ===
+    sample_condition = models.CharField(max_length=20, blank=True, default="OK",
+        help_text="样本情况: OK / HEMOLYZED / LOW_VOLUME / OTHER")
+    aliquot_tubes = models.PositiveSmallIntegerField(default=3,
+        help_text="分装管数: 女默认3, 男默认2")
+    plasma_volume = models.FloatField(null=True, blank=True,
+        help_text="血浆体积 (mL)")
+
+    # === Male other sample fields (MALE_OTHER) ===
+    experiment_sample_type = models.CharField(max_length=10, blank=True, default="",
+        help_text="操作员选择的实验样本类型")
+    elution_volume = models.FloatField(default=30, null=True, blank=True,
+        help_text="洗脱体积 (uL)")
+    dna_concentration = models.FloatField(null=True, blank=True,
+        help_text="DNA浓度 (ng/uL)")
+
+    # === QC ===
+    qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
+        choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
+    qc_note = models.TextField(blank=True, default="")
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="+"
+    )
+    processed_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "nippt_preprocessing_samples"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.batch.batch_number} / {self.patient_name} ({self.category})"
+
+    @property
+    def received_sample_types(self):
+        """Get all received sample types from included CaseSamples."""
+        css = CaseSample.objects.filter(id__in=self.case_sample_ids)
+        return list(css.values_list("sample_source", flat=True))
+
+    @property
+    def remaining_sample_types(self):
+        """Received types minus experiment type."""
+        received = self.received_sample_types
+        if self.experiment_sample_type and self.experiment_sample_type in received:
+            received = [t for t in received if t != self.experiment_sample_type]
+        return received

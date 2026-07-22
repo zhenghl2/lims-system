@@ -5,7 +5,7 @@ import { Layout, Menu, Typography, Avatar, Dropdown, Space, theme as antdTheme }
 import {
   DashboardOutlined, ProfileOutlined, LinkOutlined,
   InboxOutlined, ExperimentOutlined, FileTextOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, ContainerOutlined,
   UserOutlined, LogoutOutlined, SettingOutlined,
 } from "@ant-design/icons";
 import { useAuthStore } from "../store/auth";
@@ -17,6 +17,7 @@ const MENU_ITEMS = [
   { key: "/nippt/cases",        icon: <ProfileOutlined />,     label: "Case Management" },
   { key: "/nippt/registration", icon: <LinkOutlined />,        label: "Sample Registration" },
   { key: "/nippt/receiving",    icon: <InboxOutlined />,       label: "Sample Receiving" },
+  { key: "/nippt/preprocessing", icon: <ContainerOutlined />,   label: "Pre-Processing" },
   { key: "/nippt/workflow",     icon: <ExperimentOutlined />,  label: "Lab Workflow" },
   { key: "/nippt/reports",      icon: <FileTextOutlined />,    label: "Reports" },
 ];

@@ -205,6 +205,20 @@ export const casesApi = {
     api.post(`/cases/${id}/reject/`, data),
   resample: (id: string, data: { case_sample_id: string; patient_name?: string; sample_source?: string }) =>
     api.post(`/cases/${id}/resample/`, data),
+  // NIPPT Pre-Processing
+  listPreprocessingBatches: (params?: Record<string, unknown>) =>
+    api.get("/cases/preprocessing/", { params }),
+  getPreprocessingBatch: (id: string) =>
+    api.get(`/cases/preprocessing/${id}/`),
+  createPreprocessingBatch: (data: Record<string, unknown>) =>
+    api.post("/cases/preprocessing/", data),
+  pendingPreprocessing: () =>
+    api.get("/cases/preprocessing/pending/"),
+  savePreprocessing: (id: string, data: Record<string, unknown>) =>
+    api.post(`/cases/preprocessing/${id}/save_processing/`, data),
+  completePreprocessing: (id: string) =>
+    api.post(`/cases/preprocessing/${id}/complete/`),
+
   uploadReceiptPhoto: (id: string, formData: FormData) =>
     api.post(`/cases/${id}/upload-receipt-photo/`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
@@ -233,3 +247,7 @@ export const workflowStepsApi = {
     api.post<WorkflowStep>(`/runs/steps/${id}/skip/`),
   deleteStep: (id: string) => api.post(`/runs/steps/${id}/delete_step/`),
 };
+
+// ============ NIPPT Pre-Processing ============
+
+

@@ -16,10 +16,15 @@ import dayjs from "dayjs";
 const { Text } = Typography;
 
 const SAMPLE_TYPE_OPTIONS = [
-  { value: "BLOOD", label: "BLOOD" },
-  { value: "SWAB", label: "SWAB" },
-  { value: "HAIR", label: "HAIR" },
-  { value: "DBS", label: "DBS" },
+  { value: "BLOOD",      label: "血液" },
+  { value: "DBS",        label: "血痕" },
+  { value: "HAIR",       label: "毛发" },
+  { value: "NAIL",       label: "指甲" },
+  { value: "SWAB",       label: "口拭子" },
+  { value: "SEMEN",      label: "精液" },
+  { value: "TOOTHBRUSH", label: "牙刷" },
+  { value: "CIGARETTE",  label: "烟头" },
+  { value: "BOTTLE",     label: "水瓶" },
 ];
 
 const PRESERVATION_OPTIONS = [
@@ -153,14 +158,19 @@ export default function SampleReceiving() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // --- PT number handling ---
-  const generateSuffix = (role: string, allFathers: CaseSampleRow[]): string => {
+  const generateSuffix = (role: string, allFathers: CaseSampleRow[], fatherName?: string): string => {
     if (role === "MOTHER") return "W";
-    // Find position among fathers in this case
-    const fatherIdx = allFathers.findIndex((f) => f.role === "ALLEGED_FATHER");
-    if (allFathers.length === 1) return "H";
-    // Multi-father: HA, HB, HC...
-    const idx = allFathers.filter((_, i) => i <= fatherIdx).length - 1;
-    return `H${String.fromCharCode(65 + idx)}`;
+    // 按 patientName 去重父亲（同一父亲多样本共用后缀）
+    const uniqueFathers: string[] = [];
+    for (const f of allFathers) {
+      if (f.role === "ALLEGED_FATHER" && f.patientName && !uniqueFathers.includes(f.patientName)) {
+        uniqueFathers.push(f.patientName);
+      }
+    }
+    if (uniqueFathers.length === 0) return "H";
+    if (uniqueFathers.length === 1) return "H";
+    const idx = fatherName ? uniqueFathers.indexOf(fatherName) : 0;
+    return `H${String.fromCharCode(65 + Math.max(0, idx))}`;
   };
 
   const handlePtChange = (rowKey: string, newPtBase: string) => {
@@ -170,7 +180,7 @@ export default function SampleReceiving() {
       prev.map((r) => {
         if (r.caseId === row.caseId) {
           const fathers = prev.filter((x) => x.caseId === r.caseId && x.role === "ALLEGED_FATHER");
-          const suffix = generateSuffix(r.role, fathers);
+          const suffix = generateSuffix(r.role, fathers, r.patientName);
           return { ...r, ptBase: newPtBase, testSampleId: newPtBase ? `${newPtBase}${suffix}` : "" };
         }
         return r;
@@ -232,7 +242,7 @@ export default function SampleReceiving() {
         for (const row of rows) {
           const idx = updated.findIndex((r) => r.key === row.key);
           if (idx >= 0) {
-            const suffix = generateSuffix(row.role, fathers);
+            const suffix = generateSuffix(row.role, fathers, row.patientName);
             updated[idx] = {
               ...updated[idx],
               ptBase: base,
@@ -311,10 +321,11 @@ export default function SampleReceiving() {
         <Text code style={{ fontSize: 12 }}>{v}</Text>
       ),
       onCell: (r: CaseSampleRow) => {
-        // RowSpan: group by case
-        const first = data.find((d) => d.caseId === r.caseId);
+        // RowSpan: group by caseId + patientName (同一父亲多样本同组)
+        const groupKey = `${r.caseId}:${r.patientName}`;
+        const first = data.find((d) => `${d.caseId}:${d.patientName}` === groupKey);
         if (first?.key === r.key) {
-          const count = data.filter((d) => d.caseId === r.caseId).length;
+          const count = data.filter((d) => `${d.caseId}:${d.patientName}` === groupKey).length;
           return { rowSpan: count };
         }
         return { rowSpan: 0 };
@@ -342,7 +353,10 @@ export default function SampleReceiving() {
     },
     {
       title: "样本类型", dataIndex: "sampleType", key: "st", width: 80,
-      render: (v: string) => <Tag>{v || "—"}</Tag>,
+      render: (v: string) => {
+        const opt = SAMPLE_TYPE_OPTIONS.find(o => o.value === v);
+        return <Tag>{opt?.label || v || "—"}</Tag>;
+      },
     },
     {
       title: "实际收到样本类型", dataIndex: "actualSampleType", key: "ast", width: 140,
@@ -362,7 +376,7 @@ export default function SampleReceiving() {
             style={{ cursor: "pointer" }}
             onClick={() => !r.received && setEditingField({ key: r.key, field: "actualSampleType" })}
           >
-            {v || "—"}
+            {(() => { const opt = SAMPLE_TYPE_OPTIONS.find(o => o.value === v); return opt?.label || v || "—"; })()}
           </Tag>
         ),
     },
@@ -568,7 +582,7 @@ export default function SampleReceiving() {
               const base = `${prefix}${String(ptNum).padStart(5, "0")}`;
               const names = rows.map((r) => {
                 const fathers = rows.filter((x) => x.role === "ALLEGED_FATHER");
-                return `${r.patientName}→${base}${generateSuffix(r.role, fathers)}`;
+                return `${r.patientName}→${base}${generateSuffix(r.role, fathers, r.patientName)}`;
               });
               previews.push(...names);
               ptNum++;

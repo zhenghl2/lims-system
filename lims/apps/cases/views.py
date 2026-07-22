@@ -7,10 +7,13 @@ from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError, NotFound
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
-from .models import Case, CaseSample
+from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample
 from .serializers import (
     CaseListSerializer, CaseDetailSerializer, CaseCreateSerializer,
     CaseSampleSerializer, PublicRegistrationSerializer,
+    NipptPreProcessingBatchListSerializer, NipptPreProcessingBatchDetailSerializer,
+    NipptPreProcessingBatchCreateSerializer, NipptPreProcessingSampleSerializer,
+    PendingEntrySerializer,
     SupplementSerializer,
 )
 from lims.apps.samples.models import Sample, SampleType
@@ -117,16 +120,25 @@ class CaseViewSet(viewsets.ModelViewSet):
             else:
                 case.save(update_fields=["status", "updated_at"])
             # Generate test_sample_id suffix if not already set
+            # 按 patient_name 分組父亲，同一父亲多样本共用后缀
+            father_css = list(case.case_samples.filter(
+                role="ALLEGED_FATHER"
+            ).order_by("created_at").select_related("sample"))
+            father_names = []
+            for fcs in father_css:
+                name = fcs.sample.patient_name
+                if name not in father_names:
+                    father_names.append(name)
+
             for cs in case.case_samples.all():
                 if not cs.test_sample_id:
-                    # Use base PT + role-based suffix
-                    base = case.pt_number or case.case_number
-                    fathers = list(case.case_samples.filter(role="ALLEGED_FATHER").order_by("created_at"))
+                    base = case.pt_number
                     if cs.role == "MOTHER":
                         suffix = "W"
                     elif cs.role == "ALLEGED_FATHER":
-                        idx = fathers.index(cs) if cs in fathers else 0
-                        if len(fathers) == 1:
+                        my_name = cs.sample.patient_name
+                        idx = father_names.index(my_name) if my_name in father_names else 0
+                        if len(father_names) == 1:
                             suffix = "H"
                         else:
                             suffix = f"H{chr(65 + idx)}"  # HA, HB, HC...
@@ -626,3 +638,151 @@ def public_register_info(request, token):
         "panel_name": case.panel.name,
         "expires": case.registration_token_expires,
     })
+
+
+
+# ============================================================
+# NIPPT Pre-Processing ViewSet
+# ============================================================
+
+class NipptPreProcessingViewSet(viewsets.ModelViewSet):
+    """NIPPT 前处理批次管理"""
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
+    search_fields = ["batch_number"]
+    ordering_fields = ["created_at", "batch_number"]
+
+    def get_queryset(self):
+        return NipptPreProcessingBatch.objects.prefetch_related("samples").all()
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return NipptPreProcessingBatchListSerializer
+        if self.action == "create":
+            return NipptPreProcessingBatchCreateSerializer
+        return NipptPreProcessingBatchDetailSerializer
+
+    @action(detail=False, methods=["get"])
+    def pending(self, request):
+        """Return samples waiting for pre-processing, grouped by person."""
+        # Collect case_sample_ids that should be excluded:
+        # - DRAFT/IN_PROGRESS: exclude ALL (being actively processed)
+        # - COMPLETED+PASS: exclude (successfully processed)
+        # - COMPLETED+FAIL: NOT excluded (allow re-processing)
+        excluded_ids = set()
+        all_batches = NipptPreProcessingBatch.objects.all().prefetch_related("samples")
+        for b in all_batches:
+            for sp in b.samples.all():
+                if not sp.case_sample_ids:
+                    continue
+                if b.status in ("DRAFT", "IN_PROGRESS"):
+                    excluded_ids.update(sp.case_sample_ids)
+                elif b.status == "COMPLETED" and sp.qc_status == "PASS":
+                    excluded_ids.update(sp.case_sample_ids)
+
+        qs = CaseSample.objects.filter(
+            sample__status="RECEIVED"
+        ).exclude(
+            id__in=list(excluded_ids)[:10000] if excluded_ids else []
+        ).select_related("case", "sample").order_by("case__case_number", "sample__patient_name")
+
+        # Group by (case_id, patient_name, category)
+        groups = {}
+        for cs in qs:
+            if cs.role == "MOTHER":
+                cat = "FEMALE_BLOOD"
+            elif cs.sample_source in ("BLOOD", "DBS"):
+                cat = "MALE_BLOOD"
+            else:
+                cat = "MALE_OTHER"
+
+            key = (str(cs.case_id), cs.sample.patient_name, cat)
+            if key not in groups:
+                groups[key] = {
+                    "case_id": str(cs.case_id),
+                    "case_number": cs.case.case_number,
+                    "patient_name": cs.sample.patient_name,
+                    "role": cs.role,
+                    "category": cat,
+                    "sample_types": [],
+                    "case_sample_ids": [],
+                    "test_sample_id": cs.test_sample_id,
+                }
+            g = groups[key]
+            if cs.sample_source not in g["sample_types"]:
+                g["sample_types"].append(cs.sample_source)
+            g["case_sample_ids"].append(str(cs.id))
+            if not g["test_sample_id"]:
+                g["test_sample_id"] = cs.test_sample_id
+
+        entries = list(groups.values())
+        female_count = sum(1 for e in entries if e["category"] == "FEMALE_BLOOD")
+        male_blood_count = sum(1 for e in entries if e["category"] == "MALE_BLOOD")
+        male_other_count = sum(1 for e in entries if e["category"] == "MALE_OTHER")
+
+        serializer = PendingEntrySerializer(entries, many=True)
+        return Response({
+            "female_count": female_count,
+            "male_blood_count": male_blood_count,
+            "male_other_count": male_other_count,
+            "total_pending": len(entries),
+            "entries": serializer.data,
+        })
+
+    @action(detail=True, methods=["post"])
+    def save_processing(self, request, pk=None):
+        """Save processing data for all samples in the batch."""
+        batch = self.get_object()
+        samples_data = request.data.get("samples", [])
+
+        for sd in samples_data:
+            sample_id = sd.get("id")
+            if not sample_id:
+                continue
+            sp = batch.samples.filter(id=sample_id).first()
+            if not sp:
+                continue
+            for field in ["sample_condition", "aliquot_tubes", "plasma_volume",
+                          "experiment_sample_type", "elution_volume",
+                          "dna_concentration", "qc_status", "qc_note"]:
+                if field in sd:
+                    setattr(sp, field, sd[field])
+            sp.operator = request.user
+            sp.processed_at = timezone.now()
+            sp.save()
+
+        # Save batch processing_data
+        if "processing_data" in request.data:
+            batch.processing_data = request.data["processing_data"]
+        if batch.status == NipptPreProcessingBatch.Status.DRAFT:
+            batch.status = NipptPreProcessingBatch.Status.IN_PROGRESS
+        batch.save()
+
+        return Response(NipptPreProcessingBatchDetailSerializer(batch).data)
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        """Mark batch as complete. PASS samples advance to lab workflow."""
+        from django.db import transaction as db_transaction
+
+        batch = self.get_object()
+        if batch.status == NipptPreProcessingBatch.Status.COMPLETED:
+            raise ValidationError("Batch already completed")
+
+        with db_transaction.atomic():
+            batch.status = NipptPreProcessingBatch.Status.COMPLETED
+            batch.save(update_fields=["status", "updated_at"])
+
+            # For PASS samples, update CaseSample/Sample status
+            for sp in batch.samples.filter(qc_status="PASS"):
+                # Update the linked CaseSamples to mark them as pre-processed
+                if sp.case_sample_ids:
+                    CaseSample.objects.filter(id__in=sp.case_sample_ids).update(
+                        updated_at=timezone.now()
+                    )
+                    # Update associated Samples
+                    Sample.objects.filter(
+                        case_sample__id__in=sp.case_sample_ids
+                    ).update(status="PRE_PROCESSED", updated_at=timezone.now())
+
+        return Response({"message": f"Batch {batch.batch_number} completed"})

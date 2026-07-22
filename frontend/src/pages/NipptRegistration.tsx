@@ -18,10 +18,15 @@ import dayjs from "dayjs";
 const { Text } = Typography;
 
 const SAMPLE_TYPE_OPTIONS = [
-  { value: "BLOOD", label: "Peripheral Blood" },
-  { value: "SWAB", label: "Buccal Swab" },
-  { value: "HAIR", label: "Hair Follicle" },
-  { value: "DBS", label: "Dried Blood Spot" },
+  { value: "BLOOD",      label: "血液" },
+  { value: "DBS",        label: "血痕" },
+  { value: "HAIR",       label: "毛发" },
+  { value: "NAIL",       label: "指甲" },
+  { value: "SWAB",       label: "口拭子" },
+  { value: "SEMEN",      label: "精液" },
+  { value: "TOOTHBRUSH", label: "牙刷" },
+  { value: "CIGARETTE",  label: "烟头" },
+  { value: "BOTTLE",     label: "水瓶" },
 ];
 
 const SOURCE_OPTIONS = [
@@ -146,7 +151,7 @@ export default function NipptRegistration() {
           mother_name: values.mother_name,
           mother_dob: values.mother_dob ? dayjs(values.mother_dob).format("YYYY-MM-DD") : undefined,
           father_names: (values.males || []).map((m: any) => m.name).filter(Boolean),
-          father_sample_type: (values.males?.[0] as any)?.sample_type || "BLOOD",
+          father_sample_types: (values.males || []).map((m: any) => m.sample_type || ["BLOOD"]),
           gestational_age_weeks: values.gestational_age_weeks,
           gestational_age_days: values.gestational_age_days,
           clinic_name: values.clinic_name,
@@ -178,7 +183,7 @@ export default function NipptRegistration() {
         await (casesApi as any).supplement?.(selectedCase.id, {
           role: values.supp_role,
           patient_name: values.supp_name,
-          sample_source: values.supp_sample_type || "BLOOD",
+          sample_types: values.supp_sample_type || ["BLOOD"],
           arrival_date: values.supp_arrival_date
             ? dayjs(values.supp_arrival_date).format("YYYY-MM-DD") : undefined,
         });
@@ -374,8 +379,9 @@ export default function NipptRegistration() {
                       </Col>
                       <Col style={{ width: 160 }}>
                         <Form.Item {...rest} name={[name, "sample_type"]} label="样本类型" style={{ marginBottom: 0 }}
-                          initialValue="BLOOD">
-                          <Select options={SAMPLE_TYPE_OPTIONS} />
+                          initialValue={["BLOOD"]}>
+                          <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
+                            placeholder="选择样本类型" maxTagCount={2} />
                         </Form.Item>
                       </Col>
                       <Col style={{ width: 180 }}>
@@ -388,7 +394,7 @@ export default function NipptRegistration() {
                       </Col>
                     </Row>
                   ))}
-                  <Button type="dashed" onClick={() => add({ sample_type: "BLOOD" })} block
+                  <Button type="dashed" onClick={() => add({ sample_type: ["BLOOD"] })} block
                     icon={<PlusOutlined />} style={{ marginBottom: 8 }}>
                     添加男性
                   </Button>
@@ -456,8 +462,9 @@ export default function NipptRegistration() {
                 </Form.Item>
               </Col>
               <Col xs={24} sm={6}>
-                <Form.Item name="supp_sample_type" label="样本类型" initialValue="BLOOD">
-                  <Select options={SAMPLE_TYPE_OPTIONS} />
+                <Form.Item name="supp_sample_type" label="样本类型" initialValue={["BLOOD"]}>
+                  <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
+                    placeholder="选择样本类型" maxTagCount={2} />
                 </Form.Item>
               </Col>
               <Col xs={24} sm={6}>
