@@ -59,6 +59,8 @@ export default function NipptLibrary() {
   const [region, setRegion] = useState("XIAMEN");
   const [femaleStartCoord, setFemaleStartCoord] = useState("");
   const [maleStartCoord, setMaleStartCoord] = useState("");
+  const [hkFemaleStart, setHkFemaleStart] = useState("");
+  const [hkMaleStart, setHkMaleStart] = useState("");
   const [femaleLibKit, setFemaleLibKit] = useState("");
   const [maleLibKit, setMaleLibKit] = useState("");
   const [indexKit, setIndexKit] = useState("");
@@ -83,7 +85,7 @@ export default function NipptLibrary() {
       const d = r.data; setSelectedBatch(d);
       const ld = d.library_data || {};
       setRegion(ld.region||"XIAMEN"); setFemaleStartCoord(ld.female_start_coord||"");
-      setMaleStartCoord(ld.male_start_coord||""); setFemaleLibKit(ld.female_lib_kit||"");
+      setMaleStartCoord(ld.male_start_coord||""); setHkFemaleStart(ld.hk_female_start||""); setHkMaleStart(ld.hk_male_start||""); setFemaleLibKit(ld.female_lib_kit||"");
       setMaleLibKit(ld.male_lib_kit||""); setIndexKit(ld.index_kit||""); setQuantKit(ld.quant_kit||"");
       setBeadKit(ld.bead_kit||""); setStepConfirmations(ld.step_confirmations||{});
       setPhotos(ld.photos||[]); setSampleResults(ld.sample_results||{});
@@ -121,7 +123,7 @@ export default function NipptLibrary() {
     try {
       const all = [...selectedBatch.female_samples,...selectedBatch.male_blood_samples,...selectedBatch.male_other_samples]
         .map(s=>({id:s.id,qc_status:s.qc_status,qc_note:s.qc_note}));
-      const ld = {region,female_start_coord:femaleStartCoord,male_start_coord:maleStartCoord,
+      const ld = {region,female_start_coord:femaleStartCoord,male_start_coord:maleStartCoord,hk_female_start:hkFemaleStart,hk_male_start:hkMaleStart,
         female_lib_kit:femaleLibKit,male_lib_kit:maleLibKit,index_kit:indexKit,quant_kit:quantKit,bead_kit:beadKit,
         ...libForm.getFieldsValue(),step_confirmations:stepConfirmations,sample_results:sampleResults,photos};
       await (casesApi as any).saveLibrary(selectedBatch.id,{samples:all,library_data:ld});
@@ -179,12 +181,30 @@ export default function NipptLibrary() {
   };
 
 
-  const indexToCoord = (i:number) => `${ROWS[Math.floor(i/12)]}${(i%12)+1}`;
-
   // ── Build full plate (Hong Kong) ──
-  const buildFullPlateMap = (samples:ExtractionSample[]) => {
+  const buildHKPlate = (samples:ExtractionSample[], startCoord: string) => {
     const map:Record<string,ExtractionSample> = {};
-    samples.forEach((s,i)=>{ if(i<96) map[indexToCoord(i)]=s; });
+    if (!startCoord) {
+      const total = samples.length;
+      const numCols = Math.min(Math.ceil(total / 8), 12);
+      let startCol = Math.floor((12 - numCols) / 2);
+      if (startCol % 2 === 1) startCol -= 1;
+      let idx = 0;
+      for (let c = startCol; c < startCol + numCols; c++) {
+        for (let r = 0; r < 8; r++) {
+          if (idx < total) { map[`${ROWS[r]}${c+1}`] = samples[idx]; idx++; }
+        }
+      }
+      return map;
+    }
+    const sr = ROWS.indexOf(startCoord[0]), sc = parseInt(startCoord.slice(1)) - 1;
+    let idx = 0;
+    for (let c = sc; c < 12 && idx < samples.length; c++) {
+      const rowStart = (c === sc) ? sr : 0;
+      for (let r = rowStart; r < 8 && idx < samples.length; r++) {
+        map[`${ROWS[r]}${c+1}`] = samples[idx]; idx++;
+      }
+    }
     return map;
   };
 
@@ -292,27 +312,30 @@ export default function NipptLibrary() {
             {/* Plate(s) */}
             {region==="XIAMEN" ? (
               <div>
-                <Space style={{marginBottom:8}}>
-                  <span>👩 女性起始:</span>
-                  <Input size="small" style={{width:60}} value={femaleStartCoord}
-                    onChange={e=>setFemaleStartCoord(e.target.value.toUpperCase())} placeholder="默认居中"/>
-                  <span>👨 男性起始:</span>
-                  <Input size="small" style={{width:60}} value={maleStartCoord}
-                    onChange={e=>setMaleStartCoord(e.target.value.toUpperCase())} placeholder="默认居中"/>
-                  <Text type="secondary" style={{fontSize:11}}>（留空=居中填入，先女后男）</Text>
-                </Space>
-                <Card size="small" title={`🧬 96孔板 — 👩${selectedBatch.female_count}+👨${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`}>
+                <Card size="small" title={
+                  <Space>
+                    {`🧬 96孔板 — 👩${selectedBatch.female_count}+👨${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`}
+                    <Text type="secondary" style={{fontSize:11}}>女起:</Text>
+                    <Input size="small" style={{width:50}} value={femaleStartCoord} onChange={e=>setFemaleStartCoord(e.target.value.toUpperCase())} placeholder="居中"/>
+                    <Text type="secondary" style={{fontSize:11}}>男起:</Text>
+                    <Input size="small" style={{width:50}} value={maleStartCoord} onChange={e=>setMaleStartCoord(e.target.value.toUpperCase())} placeholder="居中"/>
+                  </Space>
+                }>
                   {renderPlate(buildXiamenPlate(selectedBatch.female_samples, [...selectedBatch.male_blood_samples,...selectedBatch.male_other_samples]))}
                 </Card>
               </div>
             ) : (
               <Space direction="vertical" style={{width:"100%"}}>
-                <Card size="small" title={`👩 女性板 — ${selectedBatch.female_count} 样本`} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
-                  {renderPlate(buildFullPlateMap(selectedBatch.female_samples))}
-                </Card>
-                <Card size="small" title={`👨 男性板 — ${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
-                  {renderPlate(buildFullPlateMap([...selectedBatch.male_blood_samples,...selectedBatch.male_other_samples]))}
-                </Card>
+                <div>
+                  <Card size="small" title={<Space>{`👩 女性板 — ${selectedBatch.female_count} 样本`}<Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkFemaleStart} onChange={e=>setHkFemaleStart(e.target.value.toUpperCase())} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
+                    {renderPlate(buildHKPlate(selectedBatch.female_samples, hkFemaleStart))}
+                  </Card>
+                </div>
+                <div>
+                  <Card size="small" title={<Space>{`👨 男性板 — ${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`}<Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkMaleStart} onChange={e=>setHkMaleStart(e.target.value.toUpperCase())} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
+                    {renderPlate(buildHKPlate([...selectedBatch.male_blood_samples,...selectedBatch.male_other_samples], hkMaleStart))}
+                  </Card>
+                </div>
               </Space>
             )}
 
