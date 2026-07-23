@@ -1,7 +1,7 @@
 """Case URLs."""
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter, SimpleRouter
-from .views import CaseViewSet, public_register, public_register_info, NipptPreProcessingViewSet, NipptExtractionViewSet
+from .views import CaseViewSet, public_register, public_register_info, NipptPreProcessingViewSet, NipptExtractionViewSet, NipptLibraryViewSet
 
 case_router = SimpleRouter()
 case_router.register("", CaseViewSet, basename="case")
@@ -14,12 +14,17 @@ extraction_router = DefaultRouter()
 extraction_router.include_root_view = False
 extraction_router.register("extraction", NipptExtractionViewSet, basename="nippt-extraction")
 
+library_router = DefaultRouter()
+library_router.include_root_view = False
+library_router.register("library", NipptLibraryViewSet, basename="nippt-library")
+
 app_name = "cases"
 
 # Module routers BEFORE case_router to avoid pk conflict
 urlpatterns = (
     preprocessing_router.urls +
     extraction_router.urls +
+    library_router.urls +
     [path("", include(case_router.urls))]
 )
 

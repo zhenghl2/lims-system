@@ -712,3 +712,100 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                         source_preprocessing_sample_id=qc.id, aliquot_tubes=qc.aliquot_tubes, is_qc=True)
                     NipptPreProcessingSample.objects.filter(id=qc.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
         return batch
+
+
+# ══════════════════════════════════════════
+# NIPPT Library Prep (文库构建)
+# ══════════════════════════════════════════
+
+from .models import NipptLibraryBatch, NipptLibrarySample
+
+class NipptLibrarySampleSerializer(serializers.ModelSerializer):
+    test_sample_id = serializers.SerializerMethodField()
+    experiment_sample_type = serializers.SerializerMethodField()
+    class Meta:
+        model = NipptLibrarySample
+        fields = "__all__"
+        read_only_fields = ["id", "created_at"]
+    def get_test_sample_id(self, obj):
+        if obj.case_sample_ids:
+            cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
+            if cs: return cs.test_sample_id
+        return None
+    def get_experiment_sample_type(self, obj):
+        if obj.source_extraction_sample_id:
+            es = NipptExtractionSample.objects.filter(id=obj.source_extraction_sample_id).first()
+            if es:
+                if "BLOOD" in obj.category: return "BLOOD"
+                return getattr(es, 'experiment_sample_type', '') or ''
+        return ''
+
+class NipptLibraryBatchListSerializer(serializers.ModelSerializer):
+    sample_count = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    female_count = serializers.SerializerMethodField()
+    male_blood_count = serializers.SerializerMethodField()
+    male_other_count = serializers.SerializerMethodField()
+    class Meta:
+        model = NipptLibraryBatch
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by","created_at","updated_at"]
+        read_only_fields = ["id","batch_number","created_at","updated_at"]
+    def get_sample_count(self,obj): return obj.samples.count()
+    def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
+    def get_male_blood_count(self,obj): return obj.samples.filter(category="MALE_BLOOD").count()
+    def get_male_other_count(self,obj): return obj.samples.filter(category="MALE_OTHER").count()
+
+class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    female_count = serializers.SerializerMethodField()
+    male_blood_count = serializers.SerializerMethodField()
+    male_other_count = serializers.SerializerMethodField()
+    sample_count = serializers.SerializerMethodField()
+    female_samples = serializers.SerializerMethodField()
+    male_blood_samples = serializers.SerializerMethodField()
+    male_other_samples = serializers.SerializerMethodField()
+    class Meta:
+        model = NipptLibraryBatch
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","library_data","created_by","created_at","updated_at"]
+        read_only_fields = ["id","batch_number","created_at","updated_at"]
+    def get_sample_count(self,obj): return obj.samples.count()
+    def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
+    def get_male_blood_count(self,obj): return obj.samples.filter(category="MALE_BLOOD").count()
+    def get_male_other_count(self,obj): return obj.samples.filter(category="MALE_OTHER").count()
+    def get_female_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="FEMALE_BLOOD"), many=True).data
+    def get_male_blood_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="MALE_BLOOD"), many=True).data
+    def get_male_other_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="MALE_OTHER"), many=True).data
+
+class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
+    case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
+    class Meta:
+        model = NipptLibraryBatch
+        fields = ["id","batch_number","status","case_sample_ids"]
+        read_only_fields = ["id","batch_number"]
+    def create(self, validated_data):
+        request = self.context["request"]
+        case_sample_ids = validated_data.pop("case_sample_ids",[])
+        with transaction.atomic():
+            batch_number = NipptLibraryBatch.generate_batch_number()
+            batch = NipptLibraryBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
+            css = CaseSample.objects.filter(id__in=case_sample_ids).select_related("case","sample")
+            es_map = {}
+            for es in NipptExtractionSample.objects.filter(batch__status="COMPLETED", qc_status="PASS"):
+                if es.case_sample_ids:
+                    for cid in es.case_sample_ids: es_map[cid] = es
+            groups = {}
+            for cs in css:
+                if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
+                elif cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+                else: cat = "MALE_OTHER"
+                key = (str(cs.case_id), cs.sample.patient_name, cat)
+                if key not in groups: groups[key] = {"case":cs.case,"ids":[],"role":cs.role}
+                groups[key]["ids"].append(str(cs.id))
+            for (_,name,cat), gdata in groups.items():
+                es = None
+                for cid in gdata["ids"]:
+                    if cid in es_map: es = es_map[cid]; break
+                kwargs = {"batch":batch,"case":gdata["case"],"patient_name":name,"role":gdata["role"],"category":cat,"case_sample_ids":gdata["ids"]}
+                if es: kwargs["source_extraction_sample_id"] = es.id
+                NipptLibrarySample.objects.create(**kwargs)
+        return batch
