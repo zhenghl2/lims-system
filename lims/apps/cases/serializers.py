@@ -994,15 +994,38 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
             batch = NipptHybSeqBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
             batch.hyb_seq_data = {"pooling_batch_id": pooling_batch_id, "mix_ids": mix_ids, "chip_number": chip}
             batch.save(update_fields=["hyb_seq_data"])
-            # Create samples from pooling samples
-            pool_samples = NipptPoolingSample.objects.filter(
-                batch__status="COMPLETED", qc_status="PASS"
-            ).select_related("batch")
-            for ps in pool_samples:
-                NipptHybSeqSample.objects.create(
-                    batch=batch, case=ps.case, patient_name=ps.patient_name,
-                    role=ps.role, category=ps.category,
-                    case_sample_ids=ps.case_sample_ids,
-                    source_pooling_sample_id=ps.id,
-                )
+            # Create samples only for selected mixes
+            # Parse mix_ids: {pooling_batch_id}_{group_index}
+            used_f_ids = set()
+            used_m_ids = set()
+            for mix_id in mix_ids:
+                try:
+                    pb_id, gi_str = mix_id.rsplit("_", 1)
+                    gi = int(gi_str)
+                    pb = NipptPoolingBatch.objects.get(id=pb_id, status="COMPLETED")
+                    pd = pb.pooling_data or {}
+                    groups = pd.get("manual_alloc") or []
+                    f_all = pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS").count()
+                    m_all = pb.samples.filter(qc_status="PASS").count() - f_all
+                    if not groups:
+                        groups = [{"female":f_all//2,"male":m_all//2},{"female":f_all-f_all//2,"male":m_all-m_all//2}]
+                    if gi >= len(groups): continue
+                    grp = groups[gi]
+                    f_take = grp.get("female", 0)
+                    m_take = grp.get("male", 0)
+                    # Get all available samples, skip already assigned ones
+                    f_pool = list(pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS").exclude(id__in=used_f_ids).order_by("patient_name")[:f_take])
+                    m_pool = list(pb.samples.filter(category__in=["MALE_BLOOD","MALE_OTHER"], qc_status="PASS").exclude(id__in=used_m_ids).order_by("patient_name")[:m_take])
+                    used_f_ids.update(ps.id for ps in f_pool)
+                    used_m_ids.update(ps.id for ps in m_pool)
+                    for ps in f_pool + m_pool:
+                        if not NipptHybSeqSample.objects.filter(batch=batch, source_pooling_sample_id=ps.id).exists():
+                            NipptHybSeqSample.objects.create(
+                                batch=batch, case=ps.case, patient_name=ps.patient_name,
+                                role=ps.role, category=ps.category,
+                                case_sample_ids=ps.case_sample_ids,
+                                source_pooling_sample_id=ps.id,
+                            )
+                except (ValueError, NipptPoolingBatch.DoesNotExist):
+                    continue
         return batch

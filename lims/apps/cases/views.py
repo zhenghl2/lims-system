@@ -1076,12 +1076,12 @@ class NipptHybSeqViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def pending_mixes(self, request):
-        used_pooling_ids = set()
+        used_mix_ids = set()
         for hb in NipptHybSeqBatch.objects.all():
-            if hb.hyb_seq_data.get("pooling_batch_id"):
-                used_pooling_ids.add(hb.hyb_seq_data["pooling_batch_id"])
+            for mid in hb.hyb_seq_data.get("mix_ids", []):
+                used_mix_ids.add(mid)
         mixes = []
-        for pb in NipptPoolingBatch.objects.filter(status="COMPLETED").exclude(id__in=used_pooling_ids).prefetch_related("samples"):
+        for pb in NipptPoolingBatch.objects.filter(status="COMPLETED").prefetch_related("samples"):
             if not pb.pooling_data: continue
             pd = pb.pooling_data
             rows = pd.get("rows",[])
@@ -1091,8 +1091,10 @@ class NipptHybSeqViewSet(viewsets.ModelViewSet):
             if not groups:
                 groups = [{"female":f_samples//2,"male":m_samples//2},{"female":f_samples-f_samples//2,"male":m_samples-m_samples//2}]
             for gi, grp in enumerate(groups):
+                mid = f"{pb.id}_{gi}"
+                if mid in used_mix_ids: continue
                 mixes.append({
-                    "id": f"{pb.id}_{gi}",
+                    "id": mid,
                     "pooling_batch_id": str(pb.id),
                     "pooling_batch_number": pb.batch_number,
                     "mix_name": f"{pb.batch_number}-mix{gi+1}",

@@ -60,7 +60,14 @@ export default function NipptHybSeq() {
       const d=r.data; setSelectedBatch(d);
       const sd=d.hyb_seq_data||{};
       setPlatform(sd.platform||""); setStepConfirmations(sd.step_confirmations||{});
-      setMixRows(sd.mix_rows||[]); setFinalConc(sd.final_conc??0.783);
+      // Auto-init mix rows from saved or from mix_ids
+      let rows = sd.mix_rows||[];
+      if (rows.length===0 && sd.mix_ids && sd.mix_ids.length>0) {
+        rows = sd.mix_ids.map((_:string,i:number)=>{
+          return {mix_name:`mix${i+1}`,library_conc:null,input_amount:10,input_vol:0,expected_conc:0.8,water_added:0};
+        });
+      }
+      setMixRows(rows); setFinalConc(sd.final_conc??0.783);
       form.setFieldsValue({
         seq_date:sd.seq_date?dayjs(sd.seq_date):dayjs(), seq_time:sd.seq_time?dayjs(sd.seq_time,"HH:mm"):dayjs(),
         equipment:sd.equipment||"", chip:sd.chip||"", read_type:sd.read_type||"",
@@ -154,7 +161,7 @@ export default function NipptHybSeq() {
               </>}
             </Space>}>
             {/* Mix dilution table — ON TOP */}
-            {mixRows.length > 0 && (
+            {(
               <Card size="small" title="🧪 Mix 稀释表" style={{marginBottom:12}}>
                 <div style={{overflowX:"auto"}}>
                   <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,tableLayout:"fixed"}}>
