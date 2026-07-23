@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError, NotFound
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
-from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample, NipptLibraryBatch, NipptLibrarySample, NipptPoolingBatch, NipptPoolingSample
+from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample, NipptLibraryBatch, NipptLibrarySample, NipptPoolingBatch, NipptPoolingSample, NipptHybSeqBatch, NipptHybSeqSample
 from .serializers import (
     CaseListSerializer, CaseDetailSerializer, CaseCreateSerializer,
     CaseSampleSerializer, PublicRegistrationSerializer,
@@ -902,6 +902,8 @@ from .serializers import (
     NipptLibraryBatchCreateSerializer, NipptLibrarySampleSerializer,
     NipptPoolingBatchListSerializer, NipptPoolingBatchDetailSerializer,
     NipptPoolingBatchCreateSerializer, NipptPoolingSampleSerializer,
+    NipptHybSeqBatchListSerializer, NipptHybSeqBatchDetailSerializer,
+    NipptHybSeqBatchCreateSerializer, NipptHybSeqSampleSerializer,
 )
 
 class NipptLibraryViewSet(viewsets.ModelViewSet):
@@ -1051,6 +1053,68 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
         return Response({"message":f"Completed {batch.samples.count()} samples"})
+
+    def destroy(self, request, *args, **kwargs):
+        batch = self.get_object()
+        if batch.status == "COMPLETED": return Response({"detail":"Cannot delete"}, status=400)
+        batch.delete(); return Response({"message":"Deleted"})
+
+
+class NipptHybSeqViewSet(viewsets.ModelViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
+    search_fields = ["batch_number"]
+    ordering_fields = ["created_at", "batch_number"]
+
+    def get_queryset(self):
+        return NipptHybSeqBatch.objects.prefetch_related("samples").all()
+
+    def get_serializer_class(self):
+        if self.action == "list": return NipptHybSeqBatchListSerializer
+        if self.action == "create": return NipptHybSeqBatchCreateSerializer
+        return NipptHybSeqBatchDetailSerializer
+
+    @action(detail=False, methods=["get"])
+    def pending_mixes(self, request):
+        used_pooling_ids = set()
+        for hb in NipptHybSeqBatch.objects.all():
+            if hb.hyb_seq_data.get("pooling_batch_id"):
+                used_pooling_ids.add(hb.hyb_seq_data["pooling_batch_id"])
+        mixes = []
+        for pb in NipptPoolingBatch.objects.filter(status="COMPLETED").exclude(id__in=used_pooling_ids).prefetch_related("samples"):
+            if not pb.pooling_data: continue
+            pd = pb.pooling_data
+            rows = pd.get("rows",[])
+            groups = pd.get("manual_alloc") or []
+            f_samples = pb.samples.filter(category="FEMALE_BLOOD").count()
+            m_samples = pb.samples.count() - f_samples
+            if not groups:
+                groups = [{"female":f_samples//2,"male":m_samples//2},{"female":f_samples-f_samples//2,"male":m_samples-m_samples//2}]
+            for gi, grp in enumerate(groups):
+                mixes.append({
+                    "id": f"{pb.id}_{gi}",
+                    "pooling_batch_id": str(pb.id),
+                    "pooling_batch_number": pb.batch_number,
+                    "mix_name": f"{pb.batch_number}-mix{gi+1}",
+                    "female": grp.get("female",0),
+                    "male": grp.get("male",0),
+                    "data_amount": (grp.get("female",0)*2 + grp.get("male",0)*1),
+                })
+        return Response({"mixes": mixes})
+
+    @action(detail=True, methods=["post"])
+    def save_processing(self, request, pk=None):
+        batch = self.get_object()
+        sd = request.data.get("hyb_seq_data", {})
+        if sd: batch.hyb_seq_data = sd; batch.save(update_fields=["hyb_seq_data","updated_at"])
+        return Response({"message":"Saved"})
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        batch = self.get_object()
+        if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
+        batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
+        return Response({"message":"Completed"})
 
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()
