@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError, NotFound
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
-from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample
+from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample
 from .serializers import (
     CaseListSerializer, CaseDetailSerializer, CaseCreateSerializer,
     CaseSampleSerializer, PublicRegistrationSerializer,
@@ -786,3 +786,108 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
                     ).update(status="PRE_PROCESSED", updated_at=timezone.now())
 
         return Response({"message": f"Batch {batch.batch_number} completed"})
+
+
+# ══════════════════════════════════════════
+# NIPPT Extraction ViewSet (核酸提取)
+# ══════════════════════════════════════════
+
+from .serializers import (
+    NipptExtractionBatchListSerializer, NipptExtractionBatchDetailSerializer,
+    NipptExtractionBatchCreateSerializer, NipptExtractionSampleSerializer,
+)
+
+class NipptExtractionViewSet(viewsets.ModelViewSet):
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
+    search_fields = ["batch_number"]
+    ordering_fields = ["created_at", "batch_number"]
+
+    def get_queryset(self):
+        return NipptExtractionBatch.objects.prefetch_related("samples").all()
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return NipptExtractionBatchListSerializer
+        if self.action == "create":
+            return NipptExtractionBatchCreateSerializer
+        return NipptExtractionBatchDetailSerializer
+
+    @action(detail=False, methods=["get"])
+    def pending(self, request):
+        from .models import NipptExtractionBatch, NipptExtractionSample
+        passed_ids = set()
+        for pp in NipptPreProcessingSample.objects.filter(batch__status="COMPLETED", qc_status="PASS", aliquot_tubes__gte=1):
+            if pp.case_sample_ids:
+                passed_ids.update(pp.case_sample_ids)
+        excluded_ids = set()
+        for b in NipptExtractionBatch.objects.all().prefetch_related("samples"):
+            for sp in b.samples.all():
+                if not sp.case_sample_ids: continue
+                if b.status in ("DRAFT", "IN_PROGRESS"): excluded_ids.update(sp.case_sample_ids)
+                elif b.status == "COMPLETED" and sp.qc_status == "PASS": excluded_ids.update(sp.case_sample_ids)
+        valid_ids = passed_ids - excluded_ids
+        if not valid_ids:
+            return Response({"female_count":0,"male_blood_count":0,"male_other_count":0,"total_pending":0,"entries":[]})
+        qs = CaseSample.objects.filter(id__in=valid_ids).select_related("case","sample").order_by("case__case_number","sample__patient_name")
+        groups = {}
+        for cs in qs:
+            if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
+            elif cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+            else: cat = "MALE_OTHER"
+            key = (str(cs.case_id), cs.sample.patient_name, cat)
+            if key not in groups:
+                groups[key] = {"case_id":str(cs.case_id),"case_number":cs.case.case_number,
+                    "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,
+                    "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id}
+            g = groups[key]
+            if cs.sample_source not in g["sample_types"]: g["sample_types"].append(cs.sample_source)
+            g["case_sample_ids"].append(str(cs.id))
+            if not g["test_sample_id"]: g["test_sample_id"] = cs.test_sample_id
+        entries = list(groups.values())
+        return Response({"female_count":sum(1 for e in entries if e["category"]=="FEMALE_BLOOD"),
+            "male_blood_count":sum(1 for e in entries if e["category"]=="MALE_BLOOD"),
+            "male_other_count":sum(1 for e in entries if e["category"]=="MALE_OTHER"),
+            "total_pending":len(entries),"entries":entries})
+
+    @action(detail=False, methods=["get"])
+    def qc_candidates(self, request):
+        search = request.query_params.get("search", "")
+        qs = NipptPreProcessingSample.objects.filter(batch__status="COMPLETED", qc_status="PASS", category="FEMALE_BLOOD", aliquot_tubes__gte=1)
+        if search:
+            qs = qs.filter(models.Q(patient_name__icontains=search) | models.Q(case__case_number__icontains=search))
+        results = [{"id":str(pp.id),"patient_name":pp.patient_name,"case_number":pp.case.case_number,
+            "test_sample_id":CaseSample.objects.filter(id__in=pp.case_sample_ids).first().test_sample_id if pp.case_sample_ids else None,
+            "aliquot_tubes":pp.aliquot_tubes} for pp in qs[:20]]
+        return Response({"results":results})
+
+    @action(detail=True, methods=["post"])
+    def save_processing(self, request, pk=None):
+        batch = self.get_object()
+        ed = request.data.get("extraction_data", {})
+        if ed:
+            batch.extraction_data = ed
+            batch.save(update_fields=["extraction_data","updated_at"])
+        for sd in request.data.get("samples", []):
+            NipptExtractionSample.objects.filter(id=sd.get("id")).update(
+                qc_status=sd.get("qc_status","PASS"), qc_note=sd.get("qc_note",""),
+                dna_concentration=sd.get("dna_concentration"), elution_volume=sd.get("elution_volume"),
+                plasma_volume=sd.get("plasma_volume"), well_position=sd.get("well_position",""),
+                extraction_method=sd.get("extraction_method",""), processed_at=timezone.now(), operator=request.user)
+        return Response({"message":"Saved"})
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        batch = self.get_object()
+        if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
+        batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
+        return Response({"message":f"Completed {batch.samples.count()} samples"})
+
+    def destroy(self, request, *args, **kwargs):
+        batch = self.get_object()
+        if batch.status == "COMPLETED": return Response({"detail":"Cannot delete completed batch"}, status=400)
+        for sp in batch.samples.all():
+            if sp.source_preprocessing_sample_id:
+                NipptPreProcessingSample.objects.filter(id=sp.source_preprocessing_sample_id).update(aliquot_tubes=F('aliquot_tubes')+1)
+        batch.delete()
+        return Response({"message":"Deleted"})

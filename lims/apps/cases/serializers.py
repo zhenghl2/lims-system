@@ -1,4 +1,6 @@
 """Case serializers — NIPPT."""
+from django.db import transaction
+from django.db.models import F
 from rest_framework import serializers
 from django.utils import timezone
 import datetime
@@ -582,3 +584,131 @@ class PendingEntrySerializer(serializers.Serializer):
     sample_types = serializers.ListField(child=serializers.CharField())
     case_sample_ids = serializers.ListField(child=serializers.CharField())
     test_sample_id = serializers.CharField(allow_null=True)
+
+
+# ══════════════════════════════════════════
+# NIPPT Extraction (核酸提取)
+# ══════════════════════════════════════════
+
+from .models import NipptExtractionBatch, NipptExtractionSample
+
+class NipptExtractionSampleSerializer(serializers.ModelSerializer):
+    test_sample_id = serializers.SerializerMethodField()
+    experiment_sample_type = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NipptExtractionSample
+        fields = "__all__"
+        read_only_fields = ["id", "created_at"]
+
+    def get_test_sample_id(self, obj):
+        if obj.case_sample_ids:
+            cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
+            if cs:
+                return cs.test_sample_id
+        return None
+
+    def get_experiment_sample_type(self, obj):
+        if obj.source_preprocessing_sample_id:
+            pp = NipptPreProcessingSample.objects.filter(id=obj.source_preprocessing_sample_id).first()
+            if pp:
+                if "BLOOD" in obj.category:
+                    return "BLOOD"
+                return pp.experiment_sample_type or ""
+        return ""
+
+
+class NipptExtractionBatchListSerializer(serializers.ModelSerializer):
+    sample_count = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    female_count = serializers.SerializerMethodField()
+    male_blood_count = serializers.SerializerMethodField()
+    male_other_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NipptExtractionBatch
+        fields = ["id", "batch_number", "status", "status_display", "sample_count",
+                  "female_count", "male_blood_count", "male_other_count",
+                  "created_by", "created_at", "updated_at"]
+        read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
+
+    def get_sample_count(self, obj): return obj.samples.count()
+    def get_female_count(self, obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
+    def get_male_blood_count(self, obj): return obj.samples.filter(category="MALE_BLOOD").count()
+    def get_male_other_count(self, obj): return obj.samples.filter(category="MALE_OTHER").count()
+
+
+class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    female_count = serializers.SerializerMethodField()
+    male_blood_count = serializers.SerializerMethodField()
+    male_other_count = serializers.SerializerMethodField()
+    sample_count = serializers.SerializerMethodField()
+    female_samples = serializers.SerializerMethodField()
+    male_blood_samples = serializers.SerializerMethodField()
+    male_other_samples = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NipptExtractionBatch
+        fields = ["id", "batch_number", "status", "status_display",
+                  "sample_count", "female_count", "male_blood_count", "male_other_count",
+                  "female_samples", "male_blood_samples", "male_other_samples",
+                  "extraction_data", "created_by", "created_at", "updated_at"]
+        read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
+
+    def get_sample_count(self, obj): return obj.samples.count()
+    def get_female_count(self, obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
+    def get_male_blood_count(self, obj): return obj.samples.filter(category="MALE_BLOOD").count()
+    def get_male_other_count(self, obj): return obj.samples.filter(category="MALE_OTHER").count()
+    def get_female_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="FEMALE_BLOOD"), many=True).data
+    def get_male_blood_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="MALE_BLOOD"), many=True).data
+    def get_male_other_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="MALE_OTHER"), many=True).data
+
+
+class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
+    case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
+    qc_sample_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
+
+    class Meta:
+        model = NipptExtractionBatch
+        fields = ["id", "batch_number", "status", "case_sample_ids", "qc_sample_id"]
+        read_only_fields = ["id", "batch_number"]
+
+    def create(self, validated_data):
+        request = self.context["request"]
+        case_sample_ids = validated_data.pop("case_sample_ids", [])
+        qc_sample_id = validated_data.pop("qc_sample_id", None)
+        with transaction.atomic():
+            batch_number = NipptExtractionBatch.generate_batch_number()
+            batch = NipptExtractionBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
+            css = CaseSample.objects.filter(id__in=case_sample_ids).select_related("case", "sample")
+            groups = {}
+            for cs in css:
+                if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
+                elif cs.sample_source in ("BLOOD", "DBS"): cat = "MALE_BLOOD"
+                else: cat = "MALE_OTHER"
+                key = (str(cs.case_id), cs.sample.patient_name, cat)
+                if key not in groups: groups[key] = {"case": cs.case, "ids": [], "role": cs.role}
+                groups[key]["ids"].append(str(cs.id))
+            for (_, name, cat), gdata in groups.items():
+                pp_sample = None
+                for pp in NipptPreProcessingSample.objects.filter(batch__status="COMPLETED", qc_status="PASS", category=cat):
+                    if pp.case_sample_ids and any(cid in pp.case_sample_ids for cid in gdata["ids"]):
+                        pp_sample = pp; break
+                kwargs = {"batch": batch, "case": gdata["case"], "patient_name": name,
+                          "role": gdata["role"], "category": cat, "case_sample_ids": gdata["ids"]}
+                if pp_sample:
+                    if pp_sample.plasma_volume: kwargs["plasma_volume"] = pp_sample.plasma_volume
+                    kwargs["aliquot_tubes"] = pp_sample.aliquot_tubes
+                    kwargs["source_preprocessing_sample_id"] = pp_sample.id
+                NipptExtractionSample.objects.create(**kwargs)
+                if pp_sample:
+                    NipptPreProcessingSample.objects.filter(id=pp_sample.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
+            if qc_sample_id:
+                qc = NipptPreProcessingSample.objects.filter(id=qc_sample_id).first()
+                if qc:
+                    NipptExtractionSample.objects.create(batch=batch, case=qc.case, patient_name=qc.patient_name+" (QC)",
+                        role="MOTHER", category="FEMALE_BLOOD", case_sample_ids=qc.case_sample_ids,
+                        source_preprocessing_sample_id=qc.id, aliquot_tubes=qc.aliquot_tubes, is_qc=True)
+                    NipptPreProcessingSample.objects.filter(id=qc.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
+        return batch
