@@ -809,3 +809,112 @@ class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
                 if es: kwargs["source_extraction_sample_id"] = es.id
                 NipptLibrarySample.objects.create(**kwargs)
         return batch
+
+
+from .models import NipptPoolingBatch, NipptPoolingSample
+
+class NipptPoolingSampleSerializer(serializers.ModelSerializer):
+    test_sample_id = serializers.SerializerMethodField()
+    experiment_sample_type = serializers.SerializerMethodField()
+    class Meta:
+        model = NipptPoolingSample
+        fields = "__all__"
+        read_only_fields = ["id", "created_at"]
+    def get_test_sample_id(self, obj):
+        if obj.case_sample_ids:
+            cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
+            if cs: return cs.test_sample_id
+        return None
+    def get_experiment_sample_type(self, obj):
+        if "BLOOD" in obj.category: return "BLOOD"
+        if obj.source_library_sample_id:
+            ls = NipptLibrarySample.objects.filter(id=obj.source_library_sample_id).first()
+            if ls and ls.source_extraction_sample_id:
+                es = NipptExtractionSample.objects.filter(id=ls.source_extraction_sample_id).first()
+                if es:
+                    if es.source_preprocessing_sample_id:
+                        pp = NipptPreProcessingSample.objects.filter(id=es.source_preprocessing_sample_id).first()
+                        if pp and pp.experiment_sample_type: return pp.experiment_sample_type
+                    if es.experiment_sample_type: return es.experiment_sample_type
+        return ''
+
+class NipptPoolingBatchListSerializer(serializers.ModelSerializer):
+    sample_count = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    female_count = serializers.SerializerMethodField()
+    male_blood_count = serializers.SerializerMethodField()
+    male_other_count = serializers.SerializerMethodField()
+    class Meta:
+        model = NipptPoolingBatch
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by","created_at","updated_at"]
+        read_only_fields = ["id","batch_number","created_at","updated_at"]
+    def get_sample_count(self,obj): return obj.samples.count()
+    def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
+    def get_male_blood_count(self,obj): return obj.samples.filter(category="MALE_BLOOD").count()
+    def get_male_other_count(self,obj): return obj.samples.filter(category="MALE_OTHER").count()
+
+class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
+    library_plate = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    female_count = serializers.SerializerMethodField()
+    male_blood_count = serializers.SerializerMethodField()
+    male_other_count = serializers.SerializerMethodField()
+    sample_count = serializers.SerializerMethodField()
+    female_samples = serializers.SerializerMethodField()
+    male_blood_samples = serializers.SerializerMethodField()
+    male_other_samples = serializers.SerializerMethodField()
+    class Meta:
+        model = NipptPoolingBatch
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","created_by","created_at","updated_at"]
+        read_only_fields = ["id","batch_number","created_at","updated_at"]
+    def get_sample_count(self,obj): return obj.samples.count()
+    def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
+    def get_male_blood_count(self,obj): return obj.samples.filter(category="MALE_BLOOD").count()
+    def get_male_other_count(self,obj): return obj.samples.filter(category="MALE_OTHER").count()
+    def get_female_samples(self,obj): return NipptPoolingSampleSerializer(obj.samples.filter(category="FEMALE_BLOOD"), many=True).data
+    def get_male_blood_samples(self,obj): return NipptPoolingSampleSerializer(obj.samples.filter(category="MALE_BLOOD"), many=True).data
+    def get_male_other_samples(self,obj): return NipptPoolingSampleSerializer(obj.samples.filter(category="MALE_OTHER"), many=True).data
+    def get_library_plate(self, obj):
+        first = obj.samples.first()
+        if first and first.source_library_sample_id:
+            ls = NipptLibrarySample.objects.filter(id=first.source_library_sample_id).first()
+            if ls and ls.batch.library_data:
+                ld = ls.batch.library_data
+                if ld.get("xiamen_plate"): return ld["xiamen_plate"]
+                if ld.get("female_plate"): return ld["female_plate"]
+                if ld.get("male_plate"): return ld["male_plate"]
+        return []
+
+class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
+    case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
+    class Meta:
+        model = NipptPoolingBatch
+        fields = ["id","batch_number","status","case_sample_ids"]
+        read_only_fields = ["id","batch_number"]
+    def create(self, validated_data):
+        request = self.context["request"]
+        case_sample_ids = validated_data.pop("case_sample_ids",[])
+        with transaction.atomic():
+            batch_number = NipptPoolingBatch.generate_batch_number()
+            batch = NipptPoolingBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
+            css = CaseSample.objects.filter(id__in=case_sample_ids).select_related("case","sample")
+            ls_map = {}
+            for ls in NipptLibrarySample.objects.filter(batch__status="COMPLETED", qc_status="PASS"):
+                if ls.case_sample_ids:
+                    for cid in ls.case_sample_ids: ls_map[cid] = ls
+            groups = {}
+            for cs in css:
+                if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
+                elif cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+                else: cat = "MALE_OTHER"
+                key = (str(cs.case_id), cs.sample.patient_name, cat)
+                if key not in groups: groups[key] = {"case":cs.case,"ids":[],"role":cs.role}
+                groups[key]["ids"].append(str(cs.id))
+            for (_,name,cat), gdata in groups.items():
+                ls = None
+                for cid in gdata["ids"]:
+                    if cid in ls_map: ls = ls_map[cid]; break
+                kwargs = {"batch":batch,"case":gdata["case"],"patient_name":name,"role":gdata["role"],"category":cat,"case_sample_ids":gdata["ids"]}
+                if ls: kwargs["source_library_sample_id"] = ls.id
+                NipptPoolingSample.objects.create(**kwargs)
+        return batch

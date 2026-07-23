@@ -234,6 +234,7 @@ export const casesApi = {
   pendingLibrary: () => api.get("/cases/library/pending/"),
   saveLibrary: (id: string, data: any) => api.post(`/cases/library/${id}/save_processing/`, data),
   completeLibrary: (id: string) => api.post(`/cases/library/${id}/complete/`),
+  deleteLibraryBatch: (id: string) => api.delete(`/cases/library/${id}/`),
 
   listPoolingBatches: (params?: Record<string, unknown>) => api.get("/cases/pooling/", { params }),
   getPoolingBatch: (id: string) => api.get(`/cases/pooling/${id}/`),
@@ -241,6 +242,7 @@ export const casesApi = {
   pendingPooling: () => api.get("/cases/pooling/pending/"),
   savePooling: (id: string, data: any) => api.post(`/cases/pooling/${id}/save_processing/`, data),
   completePooling: (id: string) => api.post(`/cases/pooling/${id}/complete/`),
+  deletePoolingBatch: (id: string) => api.delete(`/cases/pooling/${id}/`),
 
   listHybSeqBatches: (params?: Record<string, unknown>) => api.get("/cases/hyb-seq/", { params }),
   getHybSeqBatch: (id: string) => api.get(`/cases/hyb-seq/${id}/`),

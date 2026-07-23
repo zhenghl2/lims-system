@@ -90,9 +90,10 @@ export default function NipptLibrary() {
     if (startCol%2===1) startCol-=1;
     let idx=0;
     for(let c=startCol;c<startCol+numCols&&idx<total;c++)
-      for(let r=0;r<8&&idx<total;r++)
+      for(let r=0;r<8&&idx<total;r++) {
         p[r][c] = {vgId:samples[idx].test_sample_id||"?",index:"",sampleIdx:idx,isQC:samples[idx].is_qc};
         idx++;
+      }
     return p;
   };
 
