@@ -353,3 +353,373 @@ class NipptPreProcessingSample(models.Model):
         if self.experiment_sample_type and self.experiment_sample_type in received:
             received = [t for t in received if t != self.experiment_sample_type]
         return received
+
+
+# ============================================================
+# NIPPT 实验模块独立化 — 5 个模块的 Batch + Sample 模型
+# ============================================================
+
+# ── DNA Extraction (核酸提取) ──
+
+class NipptExtractionBatch(models.Model):
+    """核酸提取批次"""
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "待处理"
+        IN_PROGRESS = "IN_PROGRESS", "处理中"
+        COMPLETED = "COMPLETED", "已完成"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch_number = models.CharField(max_length=30, unique=True, db_index=True)
+    status = models.CharField(max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True)
+    extraction_data = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "nippt_extraction_batches"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.batch_number
+
+    @classmethod
+    def generate_batch_number(cls):
+        from django.utils import timezone
+        now = timezone.now()
+        prefix = now.strftime("%Y%m%d-%H")
+        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        return f"{prefix}-{count:03d}"
+
+
+class NipptExtractionSample(models.Model):
+    """核酸提取批次中的样本条目"""
+
+    class SampleCategory(models.TextChoices):
+        FEMALE_BLOOD = "FEMALE_BLOOD", "女性血液"
+        MALE_BLOOD = "MALE_BLOOD", "男性血液"
+        MALE_OTHER = "MALE_OTHER", "男性其他"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(NipptExtractionBatch, on_delete=models.CASCADE, related_name="samples")
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="extraction_samples")
+    patient_name = models.CharField(max_length=200)
+    role = models.CharField(max_length=20, choices=CaseSample.Role.choices, db_index=True)
+    category = models.CharField(max_length=20, choices=SampleCategory.choices, db_index=True)
+    case_sample_ids = models.JSONField(default=list)
+    source_preprocessing_sample_id = models.UUIDField(null=True, blank=True)
+    aliquot_tubes = models.PositiveSmallIntegerField(default=0, help_text="当前剩余管数")
+    is_qc = models.BooleanField(default=False, help_text="是否质控样本")
+
+    # 提取特有字段
+    extraction_method = models.CharField(max_length=20, blank=True, default="")
+    well_position = models.CharField(max_length=4, blank=True, default="")
+    plasma_volume = models.FloatField(null=True, blank=True)
+    elution_volume = models.FloatField(default=30, null=True, blank=True)
+    dna_concentration = models.FloatField(null=True, blank=True)
+    experiment_sample_type = models.CharField(max_length=20, blank=True, default="", help_text="来源前处理的实验样本类型")
+
+    # QC
+    qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
+        choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
+    qc_note = models.TextField(blank=True, default="")
+    operator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    processed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "nippt_extraction_samples"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.batch.batch_number} / {self.patient_name} ({self.category})"
+
+
+# ── Library Preparation (文库构建) ──
+
+class NipptLibraryBatch(models.Model):
+    """文库构建批次"""
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "待处理"
+        IN_PROGRESS = "IN_PROGRESS", "处理中"
+        COMPLETED = "COMPLETED", "已完成"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch_number = models.CharField(max_length=30, unique=True, db_index=True)
+    status = models.CharField(max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True)
+    library_data = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "nippt_library_batches"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.batch_number
+
+    @classmethod
+    def generate_batch_number(cls):
+        from django.utils import timezone
+        now = timezone.now()
+        prefix = now.strftime("%Y%m%d-%H")
+        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        return f"{prefix}-{count:03d}"
+
+
+class NipptLibrarySample(models.Model):
+    """文库构建批次中的样本条目"""
+
+    class SampleCategory(models.TextChoices):
+        FEMALE_BLOOD = "FEMALE_BLOOD", "女性血液"
+        MALE_BLOOD = "MALE_BLOOD", "男性血液"
+        MALE_OTHER = "MALE_OTHER", "男性其他"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(NipptLibraryBatch, on_delete=models.CASCADE, related_name="samples")
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="library_samples")
+    patient_name = models.CharField(max_length=200)
+    role = models.CharField(max_length=20, choices=CaseSample.Role.choices, db_index=True)
+    category = models.CharField(max_length=20, choices=SampleCategory.choices, db_index=True)
+    case_sample_ids = models.JSONField(default=list)
+    source_extraction_sample_id = models.UUIDField(null=True, blank=True)
+
+    # 文库特有字段
+    library_method = models.CharField(max_length=20, blank=True, default="")
+    adapter_type = models.CharField(max_length=50, blank=True, default="")
+    pcr_cycles = models.PositiveSmallIntegerField(null=True, blank=True)
+    library_concentration = models.FloatField(null=True, blank=True)
+
+    qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
+        choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
+    qc_note = models.TextField(blank=True, default="")
+    operator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    processed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "nippt_library_samples"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.batch.batch_number} / {self.patient_name} ({self.category})"
+
+
+# ── Library QC & Pooling (文库定量及Pooling) ──
+
+class NipptPoolingBatch(models.Model):
+    """文库定量及Pooling批次"""
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "待处理"
+        IN_PROGRESS = "IN_PROGRESS", "处理中"
+        COMPLETED = "COMPLETED", "已完成"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch_number = models.CharField(max_length=30, unique=True, db_index=True)
+    status = models.CharField(max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True)
+    pooling_data = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "nippt_pooling_batches"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.batch_number
+
+    @classmethod
+    def generate_batch_number(cls):
+        from django.utils import timezone
+        now = timezone.now()
+        prefix = now.strftime("%Y%m%d-%H")
+        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        return f"{prefix}-{count:03d}"
+
+
+class NipptPoolingSample(models.Model):
+    """文库定量及Pooling批次中的样本条目"""
+
+    class SampleCategory(models.TextChoices):
+        FEMALE_BLOOD = "FEMALE_BLOOD", "女性血液"
+        MALE_BLOOD = "MALE_BLOOD", "男性血液"
+        MALE_OTHER = "MALE_OTHER", "男性其他"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(NipptPoolingBatch, on_delete=models.CASCADE, related_name="samples")
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="pooling_samples")
+    patient_name = models.CharField(max_length=200)
+    role = models.CharField(max_length=20, choices=CaseSample.Role.choices, db_index=True)
+    category = models.CharField(max_length=20, choices=SampleCategory.choices, db_index=True)
+    case_sample_ids = models.JSONField(default=list)
+    source_library_sample_id = models.UUIDField(null=True, blank=True)
+
+    # Pooling特有字段
+    library_concentration = models.FloatField(null=True, blank=True)
+    molar_concentration = models.FloatField(null=True, blank=True)
+    pooling_volume = models.FloatField(null=True, blank=True)
+    pool_barcode = models.CharField(max_length=50, blank=True, default="")
+
+    qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
+        choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
+    qc_note = models.TextField(blank=True, default="")
+    operator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    processed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "nippt_pooling_samples"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.batch.batch_number} / {self.patient_name} ({self.category})"
+
+
+# ── Hybridization & Sequencing (杂交及测序) ──
+
+class NipptHybSeqBatch(models.Model):
+    """杂交及测序批次"""
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "待处理"
+        IN_PROGRESS = "IN_PROGRESS", "处理中"
+        COMPLETED = "COMPLETED", "已完成"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch_number = models.CharField(max_length=30, unique=True, db_index=True)
+    status = models.CharField(max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True)
+    hyb_seq_data = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "nippt_hybseq_batches"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.batch_number
+
+    @classmethod
+    def generate_batch_number(cls):
+        from django.utils import timezone
+        now = timezone.now()
+        prefix = now.strftime("%Y%m%d-%H")
+        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        return f"{prefix}-{count:03d}"
+
+
+class NipptHybSeqSample(models.Model):
+    """杂交及测序批次中的样本条目"""
+
+    class SampleCategory(models.TextChoices):
+        FEMALE_BLOOD = "FEMALE_BLOOD", "女性血液"
+        MALE_BLOOD = "MALE_BLOOD", "男性血液"
+        MALE_OTHER = "MALE_OTHER", "男性其他"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(NipptHybSeqBatch, on_delete=models.CASCADE, related_name="samples")
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="hybseq_samples")
+    patient_name = models.CharField(max_length=200)
+    role = models.CharField(max_length=20, choices=CaseSample.Role.choices, db_index=True)
+    category = models.CharField(max_length=20, choices=SampleCategory.choices, db_index=True)
+    case_sample_ids = models.JSONField(default=list)
+    source_pooling_sample_id = models.UUIDField(null=True, blank=True)
+
+    # 测序特有字段
+    sequencer = models.CharField(max_length=50, blank=True, default="")
+    chip_type = models.CharField(max_length=50, blank=True, default="")
+    read_length = models.PositiveSmallIntegerField(null=True, blank=True)
+    reads_count = models.BigIntegerField(null=True, blank=True)
+    q30_score = models.FloatField(null=True, blank=True)
+
+    qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
+        choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
+    qc_note = models.TextField(blank=True, default="")
+    operator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    processed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "nippt_hybseq_samples"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.batch.batch_number} / {self.patient_name} ({self.category})"
+
+
+# ── Bioinformatics (生物信息分析) ──
+
+class NipptBioinfoBatch(models.Model):
+    """生物信息分析批次"""
+
+    class Status(models.TextChoices):
+        DRAFT = "DRAFT", "待处理"
+        IN_PROGRESS = "IN_PROGRESS", "处理中"
+        COMPLETED = "COMPLETED", "已完成"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch_number = models.CharField(max_length=30, unique=True, db_index=True)
+    status = models.CharField(max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True)
+    bioinfo_data = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "nippt_bioinfo_batches"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.batch_number
+
+    @classmethod
+    def generate_batch_number(cls):
+        from django.utils import timezone
+        now = timezone.now()
+        prefix = now.strftime("%Y%m%d-%H")
+        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        return f"{prefix}-{count:03d}"
+
+
+class NipptBioinfoSample(models.Model):
+    """生物信息分析批次中的样本条目"""
+
+    class SampleCategory(models.TextChoices):
+        FEMALE_BLOOD = "FEMALE_BLOOD", "女性血液"
+        MALE_BLOOD = "MALE_BLOOD", "男性血液"
+        MALE_OTHER = "MALE_OTHER", "男性其他"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(NipptBioinfoBatch, on_delete=models.CASCADE, related_name="samples")
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="bioinfo_samples")
+    patient_name = models.CharField(max_length=200)
+    role = models.CharField(max_length=20, choices=CaseSample.Role.choices, db_index=True)
+    category = models.CharField(max_length=20, choices=SampleCategory.choices, db_index=True)
+    case_sample_ids = models.JSONField(default=list)
+    source_hybseq_sample_id = models.UUIDField(null=True, blank=True)
+
+    # 生信特有字段
+    analysis_pipeline = models.CharField(max_length=50, blank=True, default="")
+    reference_genome = models.CharField(max_length=50, blank=True, default="")
+    result_file = models.CharField(max_length=200, blank=True, default="")
+    cpi_values = models.JSONField(default=dict, blank=True)
+
+    qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
+        choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
+    qc_note = models.TextField(blank=True, default="")
+    operator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    processed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "nippt_bioinfo_samples"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.batch.batch_number} / {self.patient_name} ({self.category})"

@@ -13,6 +13,11 @@ const LabWorkflow      = lazy(() => import("./LabWorkflow"));
 const NipptReports     = lazy(() => import("./NipptReports"));
 const PublicRegister   = lazy(() => import("./PublicRegister"));
 const NipptPreProcessing = lazy(() => import("./NipptPreProcessing"));
+const NipptExtraction    = lazy(() => import("./NipptExtraction"));
+const NipptLibrary       = lazy(() => import("./NipptLibrary"));
+const NipptPooling       = lazy(() => import("./NipptPooling"));
+const NipptHybSeq        = lazy(() => import("./NipptHybSeq"));
+const NipptBioinformatics = lazy(() => import("./NipptBioinformatics"));
 
 const PageLoading = () => (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 200 }}>
@@ -42,6 +47,11 @@ export default function NipptRouter() {
         <Route path="/nippt/registration"  element={<Protected><NipptLayout header="Sample Registration"><NipptRegistration /></NipptLayout></Protected>} />
         <Route path="/nippt/preprocessing" element={<Protected><NipptLayout header="Pre-Processing"><NipptPreProcessing /></NipptLayout></Protected>} />
         <Route path="/nippt/receiving"     element={<Protected><NipptLayout><SampleReceiving /></NipptLayout></Protected>} />
+        <Route path="/nippt/extraction"     element={<Protected><NipptLayout header="DNA Extraction"><NipptExtraction /></NipptLayout></Protected>} />
+        <Route path="/nippt/library"        element={<Protected><NipptLayout header="Library Prep"><NipptLibrary /></NipptLayout></Protected>} />
+        <Route path="/nippt/pooling"        element={<Protected><NipptLayout header="Library QC & Pool"><NipptPooling /></NipptLayout></Protected>} />
+        <Route path="/nippt/hyb-seq"        element={<Protected><NipptLayout header="Hyb & Sequencing"><NipptHybSeq /></NipptLayout></Protected>} />
+        <Route path="/nippt/bioinformatics" element={<Protected><NipptLayout header="Bioinformatics"><NipptBioinformatics /></NipptLayout></Protected>} />
         <Route path="/nippt/workflow"      element={<Protected><NipptLayout><LabWorkflow /></NipptLayout></Protected>} />
         <Route path="/nippt/reports"       element={<Protected><NipptLayout><NipptReports /></NipptLayout></Protected>} />
 

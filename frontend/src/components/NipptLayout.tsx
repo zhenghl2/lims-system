@@ -4,8 +4,9 @@ import { Link, useLocation } from "react-router-dom";
 import { Layout, Menu, Typography, Avatar, Dropdown, Space, theme as antdTheme } from "antd";
 import {
   DashboardOutlined, ProfileOutlined, LinkOutlined,
-  InboxOutlined, ExperimentOutlined, FileTextOutlined,
+  InboxOutlined, FileTextOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, ContainerOutlined,
+  ExperimentOutlined, BuildOutlined, MergeCellsOutlined, CloudUploadOutlined, BarChartOutlined,
   UserOutlined, LogoutOutlined, SettingOutlined,
 } from "@ant-design/icons";
 import { useAuthStore } from "../store/auth";
@@ -18,7 +19,11 @@ const MENU_ITEMS = [
   { key: "/nippt/registration", icon: <LinkOutlined />,        label: "Sample Registration" },
   { key: "/nippt/receiving",    icon: <InboxOutlined />,       label: "Sample Receiving" },
   { key: "/nippt/preprocessing", icon: <ContainerOutlined />,   label: "Pre-Processing" },
-  { key: "/nippt/workflow",     icon: <ExperimentOutlined />,  label: "Lab Workflow" },
+  { key: "/nippt/extraction",     icon: <ExperimentOutlined />,   label: "DNA Extraction" },
+  { key: "/nippt/library",        icon: <BuildOutlined />,        label: "Library Prep" },
+  { key: "/nippt/pooling",        icon: <MergeCellsOutlined />,   label: "Library QC & Pool" },
+  { key: "/nippt/hyb-seq",        icon: <CloudUploadOutlined />,  label: "Hyb & Sequencing" },
+  { key: "/nippt/bioinformatics", icon: <BarChartOutlined />,     label: "Bioinformatics" },
   { key: "/nippt/reports",      icon: <FileTextOutlined />,    label: "Reports" },
 ];
 

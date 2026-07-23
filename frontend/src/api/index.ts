@@ -219,6 +219,43 @@ export const casesApi = {
   completePreprocessing: (id: string) =>
     api.post(`/cases/preprocessing/${id}/complete/`),
 
+  listExtractionBatches: (params?: Record<string, unknown>) => api.get("/cases/extraction/", { params }),
+  getExtractionBatch: (id: string) => api.get(`/cases/extraction/${id}/`),
+  createExtractionBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/extraction/", data),
+  pendingExtraction: () => api.get("/cases/extraction/pending/"),
+  getQCandidates: (search: string) => api.get(`/cases/extraction/qc_candidates/?search=${encodeURIComponent(search)}`),
+  deleteExtractionBatch: (id: string) => api.delete(`/cases/extraction/${id}/`),
+  saveExtraction: (id: string, data: any) => api.post(`/cases/extraction/${id}/save_processing/`, data),
+  completeExtraction: (id: string) => api.post(`/cases/extraction/${id}/complete/`),
+
+  listLibraryBatches: (params?: Record<string, unknown>) => api.get("/cases/library/", { params }),
+  getLibraryBatch: (id: string) => api.get(`/cases/library/${id}/`),
+  createLibraryBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/library/", data),
+  pendingLibrary: () => api.get("/cases/library/pending/"),
+  saveLibrary: (id: string, data: any) => api.post(`/cases/library/${id}/save_processing/`, data),
+  completeLibrary: (id: string) => api.post(`/cases/library/${id}/complete/`),
+
+  listPoolingBatches: (params?: Record<string, unknown>) => api.get("/cases/pooling/", { params }),
+  getPoolingBatch: (id: string) => api.get(`/cases/pooling/${id}/`),
+  createPoolingBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/pooling/", data),
+  pendingPooling: () => api.get("/cases/pooling/pending/"),
+  savePooling: (id: string, data: any) => api.post(`/cases/pooling/${id}/save_processing/`, data),
+  completePooling: (id: string) => api.post(`/cases/pooling/${id}/complete/`),
+
+  listHybSeqBatches: (params?: Record<string, unknown>) => api.get("/cases/hyb-seq/", { params }),
+  getHybSeqBatch: (id: string) => api.get(`/cases/hyb-seq/${id}/`),
+  createHybSeqBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/hyb-seq/", data),
+  pendingHybSeq: () => api.get("/cases/hyb-seq/pending/"),
+  saveHybSeq: (id: string, data: any) => api.post(`/cases/hyb-seq/${id}/save_processing/`, data),
+  completeHybSeq: (id: string) => api.post(`/cases/hyb-seq/${id}/complete/`),
+
+  listBioinfoBatches: (params?: Record<string, unknown>) => api.get("/cases/bioinformatics/", { params }),
+  getBioinfoBatch: (id: string) => api.get(`/cases/bioinformatics/${id}/`),
+  createBioinfoBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/bioinformatics/", data),
+  pendingBioinfo: () => api.get("/cases/bioinformatics/pending/"),
+  saveBioinfo: (id: string, data: any) => api.post(`/cases/bioinformatics/${id}/save_processing/`, data),
+  completeBioinfo: (id: string) => api.post(`/cases/bioinformatics/${id}/complete/`),
+
   uploadReceiptPhoto: (id: string, formData: FormData) =>
     api.post(`/cases/${id}/upload-receipt-photo/`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
