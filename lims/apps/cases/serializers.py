@@ -419,6 +419,12 @@ class NipptPreProcessingSampleSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "created_at", "received_sample_types", "remaining_sample_types"]
 
+    def get_index(self, obj):
+        if obj.source_pooling_sample_id:
+            ps = NipptPoolingSample.objects.filter(id=obj.source_pooling_sample_id).first()
+            if ps and ps.batch.pooling_data:
+                return ps.batch.pooling_data.get("indexes", {}).get(str(obj.source_pooling_sample_id), "")
+        return ""
     def get_test_sample_id(self, obj):
         """Get the test_sample_id from the first CaseSample."""
         if obj.case_sample_ids:
@@ -601,6 +607,12 @@ class NipptExtractionSampleSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ["id", "created_at"]
 
+    def get_index(self, obj):
+        if obj.source_pooling_sample_id:
+            ps = NipptPoolingSample.objects.filter(id=obj.source_pooling_sample_id).first()
+            if ps and ps.batch.pooling_data:
+                return ps.batch.pooling_data.get("indexes", {}).get(str(obj.source_pooling_sample_id), "")
+        return ""
     def get_test_sample_id(self, obj):
         if obj.case_sample_ids:
             cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
@@ -727,6 +739,12 @@ class NipptLibrarySampleSerializer(serializers.ModelSerializer):
         model = NipptLibrarySample
         fields = "__all__"
         read_only_fields = ["id", "created_at"]
+    def get_index(self, obj):
+        if obj.source_pooling_sample_id:
+            ps = NipptPoolingSample.objects.filter(id=obj.source_pooling_sample_id).first()
+            if ps and ps.batch.pooling_data:
+                return ps.batch.pooling_data.get("indexes", {}).get(str(obj.source_pooling_sample_id), "")
+        return ""
     def get_test_sample_id(self, obj):
         if obj.case_sample_ids:
             cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
@@ -820,6 +838,12 @@ class NipptPoolingSampleSerializer(serializers.ModelSerializer):
         model = NipptPoolingSample
         fields = "__all__"
         read_only_fields = ["id", "created_at"]
+    def get_index(self, obj):
+        if obj.source_pooling_sample_id:
+            ps = NipptPoolingSample.objects.filter(id=obj.source_pooling_sample_id).first()
+            if ps and ps.batch.pooling_data:
+                return ps.batch.pooling_data.get("indexes", {}).get(str(obj.source_pooling_sample_id), "")
+        return ""
     def get_test_sample_id(self, obj):
         if obj.case_sample_ids:
             cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
@@ -924,10 +948,17 @@ from .models import NipptHybSeqBatch, NipptHybSeqSample
 class NipptHybSeqSampleSerializer(serializers.ModelSerializer):
     test_sample_id = serializers.SerializerMethodField()
     experiment_sample_type = serializers.SerializerMethodField()
+    index = serializers.SerializerMethodField()
     class Meta:
         model = NipptHybSeqSample
         fields = "__all__"
         read_only_fields = ["id", "created_at"]
+    def get_index(self, obj):
+        if obj.source_pooling_sample_id:
+            ps = NipptPoolingSample.objects.filter(id=obj.source_pooling_sample_id).first()
+            if ps and ps.batch.pooling_data:
+                return ps.batch.pooling_data.get("indexes", {}).get(str(obj.source_pooling_sample_id), "")
+        return ""
     def get_test_sample_id(self, obj):
         if obj.case_sample_ids:
             cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
