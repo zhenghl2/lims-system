@@ -1,5 +1,6 @@
 // NipptPooling.tsx — Library QC & Pooling (NIPT-style + grouping)
 import { useState, useEffect, useCallback, useMemo } from "react";
+import React from "react";
 import { Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
   Space, Popconfirm, Select, Checkbox } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined } from "@ant-design/icons";
@@ -7,10 +8,16 @@ import { casesApi } from "../api";
 const { Text, Title } = Typography;
 
 const SAMPLE_TYPE_LABELS:Record<string,string>={BLOOD:"血液",DBS:"血痕",HAIR:"毛发",NAIL:"指甲",SWAB:"口拭子",TOOTHBRUSH:"牙刷"};
-const DEFAULT_POOLING_AMOUNT=143;
+const DEFAULT_POOLING_AMOUNT=0;
 const YIELD_THRESHOLD=60;
 const DEFAULT_ELUTION=30;
 const MAX_PER_GROUP=34;
+const AMOUNT_MAP:Record<string,number>={BLOODSTAIN:250,HAIR:300,NAIL:160,SWAB:120,TOOTHBRUSH:450,CIGARETTE:120,BEARD:230};
+const getDefaultAmount=(category:string,sampleType:string):number=>{
+  if(category==="FEMALE_BLOOD")return 200;
+  if(category==="MALE_BLOOD")return 120;
+  return AMOUNT_MAP[sampleType]??120;
+};
 
 type PoolRow = { id:string; ptId:string; index:string; sampleType:string; category:string;
   concentration:number|null; elutionVolume:number; yield:number;
@@ -38,17 +45,46 @@ export default function NipptPooling() {
   const [groupBases, setGroupBases] = useState<Record<number,number>>({});
   const [groupElutions, setGroupElutions] = useState<Record<number,number>>({});
   const [rows, setRows] = useState<PoolRow[]>([]);
+  const [manualAlloc, setManualAlloc] = useState<{female:number;male:number}[]>([]);
+  const [pendingAlloc, setPendingAlloc] = useState<{female:number;male:number}[]>([]);
+  const [showAllocInputs, setShowAllocInputs] = useState(false);
+  const [customAmounts, setCustomAmounts] = useState<Record<string,number>>({});
+  const [useManualAlloc, setUseManualAlloc] = useState(false);
   const [savedIndexes, setSavedIndexes] = useState<Record<string,string>>({});
+
+  // ── Computed females/males for allocation UI
+  const females = rows.filter(r=>r.category==="FEMALE_BLOOD");
+  const males = rows.filter(r=>r.category!=="FEMALE_BLOOD");
 
   // ── Grouping ──
   const groups = useMemo(():PoolGroup[]=>{
-    const active = rows.filter(r=>!r.eliminated);
-    const total = active.length;
-    const numGroups = total > MAX_PER_GROUP ? Math.ceil(total / MAX_PER_GROUP) : 1;
-    // Distribute female/male evenly
+    const active = rows;
     const females = active.filter(r=>r.category==="FEMALE_BLOOD");
     const males = active.filter(r=>r.category!=="FEMALE_BLOOD");
     const result:PoolGroup[] = [];
+    
+    // Use manual allocation if enabled
+    const alloc = useManualAlloc && manualAlloc.length>0 ? manualAlloc : null;
+    if (alloc) {
+      let fi=0, mi=0;
+      for (let g=0; g<alloc.length; g++) {
+        const fTake = Math.min(alloc[g].female, females.length - fi);
+        const mTake = Math.min(alloc[g].male, males.length - mi);
+        const fSlice = females.slice(fi, fi+fTake);
+        const mSlice = males.slice(mi, mi+mTake);
+        fi += fTake; mi += mTake;
+        const groupRows = [...fSlice, ...mSlice];
+        const dataAmt = fSlice.length*2 + mSlice.length*1;
+        const totalMass = groupRows.reduce((s,r)=>s+r.poolingAmount,0);
+        const totalVol = groupRows.reduce((s,r)=>s+r.poolingVolume,0);
+        result.push({name:`mix${g+1}`,rows:groupRows,totalMass:Math.round(totalMass*100)/100,totalVol:Math.round(totalVol*100)/100,theoryConc:totalVol>0?Math.round(totalMass/totalVol*100)/100:0,dataAmount:dataAmt});
+      }
+      return result;
+    }
+    
+    // Auto: distribute female/male evenly (default)
+    const total = active.length;
+    const numGroups = total > MAX_PER_GROUP ? Math.ceil(total / MAX_PER_GROUP) : 1;
     let fi=0, mi=0;
     for (let g=0; g<numGroups; g++) {
       const fRemain = females.length - fi;
@@ -73,7 +109,7 @@ export default function NipptPooling() {
       });
     }
     return result;
-  }, [rows]);
+  }, [rows, useManualAlloc, manualAlloc]);
 
   // ── Fetch ──
   const fetchBatches = useCallback(async()=>{setLoading(true);try{const r=await(casesApi as any).listPoolingBatches();setBatches(r.data?.results||[])}catch{}finally{setLoading(false)}},[]);
@@ -90,6 +126,14 @@ export default function NipptPooling() {
       setGroupBases(pd.groupBases||{});
       setGroupElutions(pd.groupElutions||{});
       const allSamples = [...(d.female_samples||[]),...(d.male_blood_samples||[]),...(d.male_other_samples||[])];
+      // Init manual alloc from saved or default
+      const savedAlloc = pd.manual_alloc;
+      if (savedAlloc && savedAlloc.length > 0) {
+        setManualAlloc(savedAlloc); setUseManualAlloc(true);
+      setCustomAmounts(pd.customAmounts||{});
+      } else {
+        setManualAlloc([]); setUseManualAlloc(false);
+      }
       const savedRows = pd.rows||[];
       // Index from library plate or saved data
       const savedIdx = pd.indexes||{};
@@ -114,11 +158,11 @@ export default function NipptPooling() {
         const conc = sr.concentration??null;
         const elution = sr.elutionVolume??globalElutionVol??DEFAULT_ELUTION;
         const y = (conc??0)*elution;
-        const gIdx = 0; const pa = sr.poolingAmount??(pd.groupBases||{})[gIdx]??poolingBase??DEFAULT_POOLING_AMOUNT;
+        const sampleTp=s.experiment_sample_type||(s.category==="MALE_BLOOD"?"BLOOD":s.category==="FEMALE_BLOOD"?"BLOOD":"");const defaultPa=getDefaultAmount(s.category,sampleTp);const pa=sr.poolingAmount??defaultPa;
         const pv = (conc??0)>0?pa/conc:0;
-        const st = s.experiment_sample_type||(s.category==="FEMALE_BLOOD"||s.category==="MALE_BLOOD"?"BLOOD":"");
+        const sampleType2 = s.experiment_sample_type||(s.category==="FEMALE_BLOOD"||s.category==="MALE_BLOOD"?"BLOOD":"");
         return {
-          id:s.id, ptId:s.test_sample_id||"?", index:savedIdx[s.id]||"", sampleType:st, category:s.category,
+          id:s.id, ptId:s.test_sample_id||"?", index:savedIdx[s.id]||"", sampleType:sampleType2, category:s.category,
           concentration:conc, elutionVolume:elution, yield:Math.round(y*10)/10,
           poolingAmount:pa, poolingVolume:Math.round(pv*100)/100,
           eliminated:sr.eliminated||false, qc:sr.qc||"PASS",
@@ -153,8 +197,7 @@ export default function NipptPooling() {
         const conc=field==="concentration"?val:r.concentration;
         const ev=field==="elutionVolume"?val:r.elutionVolume;
         r.yield=Math.round((conc??0)*ev*10)/10;
-        if(r.yield<YIELD_THRESHOLD&&!r.eliminated) r.eliminated=true;
-        else if(r.yield>=YIELD_THRESHOLD&&r.eliminated) r.eliminated=false;
+        
       }
       if(field==="poolingAmount"||field==="concentration"){
         const pa=field==="poolingAmount"?val:r.poolingAmount;
@@ -171,7 +214,7 @@ export default function NipptPooling() {
     try{
       const samples = rows.map(r=>({id:r.id,qc_status:r.qc,qc_note:""}));
       const pd = {
-        poolingBase,globalElutionVol,groupBases,groupElutions,
+        poolingBase,globalElutionVol,groupBases,groupElutions,manual_alloc:manualAlloc,customAmounts,
         rows:rows.map(r=>({concentration:r.concentration,elutionVolume:r.elutionVolume,yield:r.yield,poolingAmount:r.poolingAmount,poolingVolume:r.poolingVolume,eliminated:r.eliminated,qc:r.qc})),
         indexes:savedIndexes,
       };
@@ -215,11 +258,71 @@ export default function NipptPooling() {
               </>}
             </Space>}>
             {/* Global info */}
-            <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:12,fontSize:12,flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:10,fontSize:12,flexWrap:"wrap"}}>
               <span style={{color:"#666"}}>样本数: {rows.length} | 淘汰阈值: &lt;{YIELD_THRESHOLD} ng | 组数: {groups.length}</span>
             </div>
 
-            {/* Grouped tables */}
+            {/* Manual allocation table */}
+            {rows.length > 0 && (
+              <div style={{marginBottom:12,padding:"6px 10px",border:"1px solid #e8e8e8",borderRadius:6,background:"#fafafa"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                  <Text strong style={{fontSize:12}}>📋 分组方案 <Text type="secondary" style={{fontSize:11}}>（可手动调整，留空=自动均分）</Text></Text>
+                  <Space size={4}>
+                    {!showAllocInputs && <Button size="small" onClick={()=>{const d=(_g:any)=>groups.map(g=>({female:g.rows.filter(r=>r.category==="FEMALE_BLOOD").length,male:g.rows.filter(r=>r.category!=="FEMALE_BLOOD").length}));setPendingAlloc(useManualAlloc&&manualAlloc.length>0?[...manualAlloc]:d(groups));setShowAllocInputs(true)}}>手动调整</Button>}
+                    {showAllocInputs && <>
+                      <Button size="small" onClick={()=>{setPendingAlloc(p=>p.length<2?p:[...p,{female:Math.ceil(females.length/(p.length+1)),male:Math.ceil(males.length/(p.length+1))}])}}>+组</Button>
+                      <Button size="small" type="primary" onClick={()=>{if(pendingAlloc.length>0){setManualAlloc([...pendingAlloc]);setUseManualAlloc(true)}setShowAllocInputs(false)}}>✓ 确定</Button>
+                      <Button size="small" onClick={()=>{setShowAllocInputs(false);setPendingAlloc([])}}>取消</Button>
+                      <Button size="small" onClick={()=>{setManualAlloc([]);setUseManualAlloc(false);setShowAllocInputs(false);setPendingAlloc([])}}>重置</Button>
+                    </>}
+                  </Space>
+                </div>
+                {(showAllocInputs||useManualAlloc) && (
+                <table style={{borderCollapse:"collapse",width:"100%",fontSize:12}}>
+                  <thead><tr>
+                    <th style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center",background:"#f5f5f5",fontSize:11}}>分组</th>
+                    <th style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center",background:"#fff0f6",fontSize:11}}>👩 女</th>
+                    <th style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center",background:"#e6f4ff",fontSize:11}}>👨 男</th>
+                    <th style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center",background:"#f5f5f5",fontSize:11,width:40}}></th>
+                  </tr></thead>
+                  <tbody>
+                    {(showAllocInputs ? pendingAlloc : manualAlloc).map((a:{female:number;male:number},i:number)=>{
+                      const fVal = a.female ?? 0;
+                      const mVal = a.male ?? 0;
+                      return (
+                        <tr key={i}>
+                          <td style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center",fontSize:12,fontWeight:600}}>mix{i+1}</td>
+                          <td style={{border:"1px solid #ddd",padding:1,textAlign:"center"}}>
+                            <InputNumber size="small" min={0} style={{width:60}} value={fVal}
+                              onChange={v=>{const val=v??0;const na=[...pendingAlloc];na[i]={...na[i],female:val};const diff=val-(a.female??0);if(na.length>1){const oIdx=i===0?1:0;na[oIdx]={...na[oIdx],female:Math.max(0,(na[oIdx].female??0)-diff)}}setPendingAlloc(na)}}/>
+                          </td>
+                          <td style={{border:"1px solid #ddd",padding:1,textAlign:"center"}}>
+                            <InputNumber size="small" min={0} style={{width:60}} value={mVal}
+                              onChange={v=>{const val=v??0;const na=[...pendingAlloc];na[i]={...na[i],male:val};const diff=val-(a.male??0);if(na.length>1){const oIdx=i===0?1:0;na[oIdx]={...na[oIdx],male:Math.max(0,(na[oIdx].male??0)-diff)}}setPendingAlloc(na)}}/>
+                          </td>
+                          <td style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center"}}>
+                            {pendingAlloc.length>1 && <Button size="small" danger type="text" style={{fontSize:11,padding:0,minWidth:16}} onClick={()=>{const na=pendingAlloc.filter((_,j)=>j!==i);setPendingAlloc(na.length===0?[]:na)}}>×</Button>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    <tr style={{fontWeight:600,background:"#f6ffed",fontSize:11}}>
+                      <td style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center"}}>合计</td>
+                      <td style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center",color:pendingAlloc.reduce((s,a)=>s+a.female,0)!==females.length?"#ff4d4f":undefined}}>
+                        {pendingAlloc.reduce((s,a)=>s+a.female,0)}/{females.length}
+                      </td>
+                      <td style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center",color:pendingAlloc.reduce((s,a)=>s+a.male,0)!==males.length?"#ff4d4f":undefined}}>
+                        {pendingAlloc.reduce((s,a)=>s+a.male,0)}/{males.length}
+                      </td>
+                      <td style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center"}}></td>
+                    </tr>
+                  </tbody>
+                </table>
+                )}
+              </div>
+            )}
+
+            {/* Grouped tables */}            {/* Grouped tables */}
             {groups.map((g,gi)=>(
               <div key={gi} style={{marginBottom:24}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:8}}>
@@ -227,19 +330,27 @@ export default function NipptPooling() {
                     <Tag color="blue" style={{fontSize:14,padding:"4px 16px"}}>{g.name}</Tag>
                     <Text type="secondary">女:{g.rows.filter(r=>r.category==="FEMALE_BLOOD").length} 男:{g.rows.filter(r=>r.category!=="FEMALE_BLOOD").length} 数据量:{g.dataAmount}</Text>
                   </div>
-                  <Space size={4}>
-                    <span style={{fontSize:11}}>投入量:</span>
-                    <InputNumber size="small" min={1} step={1} value={groupBases[gi]??poolingBase} onChange={v=>{if(v!==null){setGroupBases(p=>({...p,[gi]:v}));setRows(prev=>prev.map((r,i)=>{const rr=r;if(g.rows.find(gr=>gr.id===r.id)){rr.poolingAmount=v;rr.poolingVolume=(r.concentration??0)>0?Math.round(v/(r.concentration??1)*100)/100:0;}return i===rows.findIndex(rr=>rr.id===r.id)?rr:r}))}}}/>ng
-                    <span style={{fontSize:11}}>洗脱:</span>
-                    <InputNumber size="small" min={1} step={1} value={groupElutions[gi]??globalElutionVol} onChange={v=>{if(v!==null){setGroupElutions(p=>({...p,[gi]:v}));setRows(prev=>prev.map((r,i)=>{const rr=r;if(g.rows.find(gr=>gr.id===r.id)){rr.elutionVolume=v;rr.yield=Math.round((r.concentration??0)*v*10)/10;rr.eliminated=rr.yield<YIELD_THRESHOLD;}return i===rows.findIndex(rr=>rr.id===r.id)?rr:r}))}}}/>μL
+                  <Space size={2} style={{flexWrap:"wrap"}}>
+                    <Text style={{fontSize:11,color:"#999"}}>投入:</Text>
+                    <Text style={{color:"#ff4d8f",fontSize:11}}>♀</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["FEMALE_BLOOD"]??200} onChange={v=>{const val=v??200;setCustomAmounts(p=>({...p,FEMALE_BLOOD:val}));setRows(prev=>prev.map(r=>r.category==="FEMALE_BLOOD"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
+                    <Text style={{color:"#1677ff",fontSize:11}}>♂</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["MALE_BLOOD"]??120} onChange={v=>{const val=v??120;setCustomAmounts(p=>({...p,MALE_BLOOD:val}));setRows(prev=>prev.map(r=>r.category==="MALE_BLOOD"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
+                    <Text style={{color:"#666",fontSize:11}}>血痕</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["BLOODSTAIN"]??250} onChange={v=>{const val=v??250;setCustomAmounts(p=>({...p,BLOODSTAIN:val}));setRows(prev=>prev.map(r=>r.category==="MALE_OTHER"&&r.sampleType==="BLOODSTAIN"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
+                    <Text style={{color:"#666",fontSize:11}}>毛</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["HAIR"]??300} onChange={v=>{const val=v??300;setCustomAmounts(p=>({...p,HAIR:val}));setRows(prev=>prev.map(r=>r.category==="MALE_OTHER"&&r.sampleType==="HAIR"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
+                    <Text style={{color:"#666",fontSize:11}}>甲</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["NAIL"]??160} onChange={v=>{const val=v??160;setCustomAmounts(p=>({...p,NAIL:val}));setRows(prev=>prev.map(r=>r.category==="MALE_OTHER"&&r.sampleType==="NAIL"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
+                    <Text style={{color:"#666",fontSize:11}}>牙刷</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["TOOTHBRUSH"]??450} onChange={v=>{const val=v??450;setCustomAmounts(p=>({...p,TOOTHBRUSH:val}));setRows(prev=>prev.map(r=>r.category==="MALE_OTHER"&&r.sampleType==="TOOTHBRUSH"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
+                    <Text style={{color:"#666",fontSize:11}}>烟头</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["CIGARETTE"]??120} onChange={v=>{const val=v??120;setCustomAmounts(p=>({...p,CIGARETTE:val}));setRows(prev=>prev.map(r=>r.category==="MALE_OTHER"&&r.sampleType==="CIGARETTE"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
+                    <Text style={{color:"#666",fontSize:11}}>胡须</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["BEARD"]??230} onChange={v=>{const val=v??230;setCustomAmounts(p=>({...p,BEARD:val}));setRows(prev=>prev.map(r=>r.category==="MALE_OTHER"&&r.sampleType==="BEARD"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
+                    <Button size="small" style={{fontSize:11,padding:"0 4px"}} onClick={()=>{setCustomAmounts({});setRows(prev=>prev.map(r=>{const da=getDefaultAmount(r.category,r.sampleType);return{...r,poolingAmount:da,poolingVolume:(r.concentration??0)>0?Math.round(da/(r.concentration??1)*100)/100:0}}))}}>重置</Button>
+                    <Text style={{fontSize:11,color:"#999",marginLeft:4}}>洗脱:</Text>
+                    <InputNumber size="small" min={1} step={1} style={{width:50}} value={groupElutions[gi]??globalElutionVol} onChange={v=>{if(v!==null){setGroupElutions(p=>({...p,[gi]:v}));setRows(prev=>prev.map(r=>{if(g.rows.find(gr=>gr.id===r.id)){r.elutionVolume=v;r.yield=Math.round((r.concentration??0)*v*10)/10;r.eliminated=r.yield<YIELD_THRESHOLD;}return r}))}}}/>μL
                   </Space>
                 </div>
                 <div style={{overflowX:"auto"}}>
-                  <table style={{borderCollapse:"collapse",width:"100%",fontSize:12}}>
+                  <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,tableLayout:"fixed"}}>
                     <thead><tr>
-                      <th style={th}>#</th><th style={th}>PT编号</th><th style={th}>Index</th><th style={th}>类型</th>
-                      <th style={th}>浓度 ng/μL</th><th style={th}>洗脱 μL</th><th style={th}>产量 ng</th>
-                      <th style={th}>Pooling 投入 ng</th><th style={th}>Pooling 体积 μL</th><th style={th}>QC</th>
+                      <th style={{...th,width:36}}>#</th><th style={{...th,width:90}}>PT编号</th><th style={{...th,width:55}}>Index</th><th style={{...th,width:55}}>类型</th>
+                      <th style={{...th,width:85}}>浓度</th><th style={{...th,width:65}}>洗脱 μL</th><th style={{...th,width:70}}>产量 ng</th>
+                      <th style={{...th,width:75}}>投入 ng</th><th style={{...th,width:75}}>体积 μL</th><th style={{...th,width:90}}>QC</th>
                     </tr></thead>
                     <tbody>
                       {g.rows.map((r)=>{
@@ -256,16 +367,16 @@ export default function NipptPooling() {
                             <td style={{...td,fontWeight:r.yield>0?600:400,color:r.eliminated?"#faad14":"#333"}}>{r.yield>0?r.yield.toFixed(1):"-"}{r.eliminated&&<Tag color="gold" style={{marginLeft:4,fontSize:10}}>淘汰</Tag>}</td>
                             <td style={td}><InputNumber size="small" min={0} step={1} value={r.poolingAmount} onChange={v=>updateCell(ri,"poolingAmount",v)} style={{width:70}}/></td>
                             <td style={{...td,fontFamily:"monospace"}}>{r.poolingVolume>0?r.poolingVolume.toFixed(2):"-"}</td>
-                            <td style={td}><Select size="small" value={r.qc} onChange={v=>updateCell(ri,"qc",v)} style={{width:80}} options={[{value:"PASS",label:"✅ PASS"},{value:"FAIL",label:"❌ FAIL"}]}/></td>
+                            <td style={td}><Select size="small" value={r.qc} onChange={v=>updateCell(ri,"qc",v)} style={{width:90}} options={[{value:"PASS",label:"PASS"},{value:"FAIL",label:"FAIL"}]}/></td>
                           </tr>
                         );
                       })}
                       {/* Group summary */}
                       <tr style={{background:"#e6f7ff",fontWeight:700}}>
-                        <td style={{...td,textAlign:"left",paddingLeft:12}} colSpan={7}>📊 {g.name} 汇总 (Pooling总体积/理论浓度)</td>
-                        <td style={td}>总投入: {g.totalMass.toFixed(2)}</td>
-                        <td style={td}>总体积: {g.totalVol.toFixed(2)}</td>
+                        <td style={{...td,textAlign:"left",paddingLeft:12}} colSpan={7}>📊 {g.name} 汇总</td>
+                        <td style={td}>总体积: {g.totalVol.toFixed(2)} μL</td>
                         <td style={td}>理论浓度: {g.theoryConc.toFixed(2)} ng/μL</td>
+                        <td style={td}>总数据量: {g.dataAmount}M ({(()=>{const f=g.rows.filter(r=>r.category==="FEMALE_BLOOD").length;const m=g.rows.filter(r=>r.category!=="FEMALE_BLOOD").length;return`${f}×2M+${m}×1M`})()})</td>
                       </tr>
                     </tbody>
                   </table>
