@@ -110,8 +110,8 @@ export default function NipptPreProcessing() {
     try {
       await (casesApi as any).deletePreprocessingBatch(id);
       message.success(`批次 ${batchNumber} 已删除`);
+      setSelectedBatch(null);
       fetchBatches();
-      if (selectedBatch?.id === id) setSelectedBatch(null);
     } catch (e: any) {
       message.error(e?.response?.data?.detail || "删除失败");
     }
@@ -425,15 +425,6 @@ export default function NipptPreProcessing() {
               columns={[
                 { title: "批次号", dataIndex: "batch_number", key: "bn", width: 140,
                   render: (v: string) => <Text code style={{ fontSize: 12 }}>{v}</Text> },
-                {
-                  title: "操作", key: "act", width: 50,
-                  render: (_: any, r: BatchItem) =>
-                    r.status === "COMPLETED" ? null : (
-                      <Popconfirm title="删除此批次？样本将回到待处理" onConfirm={() => deleteBatch(r.id, r.batch_number)}>
-                        <Button type="link" danger size="small">删除</Button>
-                      </Popconfirm>
-                    ),
-                },
                 { title: "状态", dataIndex: "status", key: "st", width: 60,
                   render: (v: string) => {
                     const c: Record<string, string> = { DRAFT: "default", IN_PROGRESS: "blue", COMPLETED: "green" };
@@ -466,11 +457,14 @@ export default function NipptPreProcessing() {
                 onClick={() => fetchDetail(selectedBatch.id)}>刷新</Button>
               <Button type="primary" icon={<CheckOutlined />} size="small"
                 onClick={saveProcessing} loading={batchLoading}>保存</Button>
-              {selectedBatch.status !== "COMPLETED" && (
-                <Popconfirm title="确定完成该批次？合格样本将进入后续实验" onConfirm={completeBatch}>
-                  <Button type="primary" size="small" danger>完成批次</Button>
+              {selectedBatch.status !== "COMPLETED" && (<>
+                <Popconfirm title="确定删除该批次？样本将回到待处理" onConfirm={() => deleteBatch(selectedBatch.id, selectedBatch.batch_number)}>
+                  <Button type="primary" size="small" danger>删除批次</Button>
                 </Popconfirm>
-              )}
+                <Popconfirm title="确定完成该批次？合格样本将进入后续实验" onConfirm={completeBatch}>
+                  <Button type="primary" size="small">完成批次</Button>
+                </Popconfirm>
+              </>)}
             </Space>
           }>
             <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
