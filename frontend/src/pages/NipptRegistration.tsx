@@ -284,7 +284,11 @@ export default function NipptRegistration() {
       {regType === "FIRST" && (
         <Card size="small" style={{ borderRadius: 8 }}>
           <Form form={form} layout="vertical" size="small"
-            initialValues={{ males: [{ sample_type: ["BLOOD"] }, { sample_type: ["BLOOD"] }] }}>
+            initialValues={{
+              males: [{ sample_type: ["BLOOD"] }, { sample_type: ["BLOOD"] }],
+              mother_sample_type: ["BLOOD"],
+              female_arrival_date: dayjs(),
+            }}>
 
             {/* 1 样本来源 */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
@@ -310,117 +314,149 @@ export default function NipptRegistration() {
               <Text strong style={{ fontSize: 15 }}>样本信息</Text>
             </div>
 
+            {/* Mother row — outside Form.List, won't disappear */}
+            <Table
+              dataSource={[{ key: "mother" }]}
+              pagination={false}
+              size="small"
+              rowKey="key"
+              showHeader={false}
+              style={{ marginLeft: 32, marginBottom: 0 }}
+              columns={[
+                {
+                  title: "", width: 90,
+                  render: () => <Text strong style={{ fontSize: 13 }}>孕妇</Text>,
+                },
+                {
+                  title: "", width: 120,
+                  render: () => (
+                    <Form.Item name="mother_name" style={{ margin: 0 }}
+                      rules={[{ required: true, message: "必填" }]}>
+                      <Input placeholder="孕妇姓名" size="small" bordered={false}
+                        style={{ background: "#fafafa", borderRadius: 0 }} />
+                    </Form.Item>
+                  ),
+                },
+                {
+                  title: "", width: 100,
+                  render: () => (
+                    <Form.Item name="mother_ethnicity" style={{ margin: 0 }}>
+                      <Input placeholder="民族" size="small" bordered={false}
+                        style={{ background: "#fafafa", borderRadius: 0 }} />
+                    </Form.Item>
+                  ),
+                },
+                {
+                  title: "", width: 130,
+                  render: () => (
+                    <Tag color="blue" style={{ margin: 0, fontSize: 12 }}>血液</Tag>
+                  ),
+                },
+                {
+                  title: "", width: 140,
+                  render: () => (
+                    <Form.Item name="female_arrival_date" style={{ margin: 0 }}>
+                      <DatePicker size="small" bordered={false}
+                        style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
+                    </Form.Item>
+                  ),
+                },
+                { title: "", width: 60, render: () => null },
+              ] as any}
+              locale={{ emptyText: "" }}
+            />
+
+            {/* Male rows — inside Form.List */}
             <Form.List name="males">
-              {(fields, { add, remove }) => {
-                const rows = [
-                  { key: "mother", role: "孕妇" },
-                  ...fields.map((f, i) => ({
+              {(fields, { add, remove }) => (
+                <Table
+                  dataSource={fields.map((f, i) => ({
                     key: f.key,
                     role: fields.length > 1 ? `疑父${i + 1}` : "疑父",
                     maleIndex: i,
                     field: f,
-                  })),
-                ];
-                return (
-                <Table
-                  dataSource={rows}
+                  }))}
                   pagination={false}
                   size="small"
                   rowKey="key"
+                  showHeader={false}
                   style={{ marginLeft: 32 }}
                   columns={[
                     {
-                      title: "亲缘关系", dataIndex: "role", width: 90,
-                      render: (v: string) => <Text strong style={{ fontSize: 13 }}>{v}</Text>,
+                      title: "", width: 90,
+                      render: (_r: any, row: any) => <Text strong style={{ fontSize: 13 }}>{row.role}</Text>,
                     },
                     {
-                      title: "姓名", width: 120,
-                      render: (_r: any, row: any) =>
-                        row.maleIndex !== undefined ? (
-                          <Form.Item {...row.field} name={[row.field.name, "name"]} style={{ margin: 0 }}
-                            rules={[{ required: true, message: "必填" }]}>
-                            <Input placeholder="姓名" size="small" bordered={false}
-                              style={{ background: "#fafafa", borderRadius: 0 }} />
-                          </Form.Item>
-                        ) : (
-                          <Form.Item name="mother_name" style={{ margin: 0 }}
-                            rules={[{ required: true, message: "必填" }]}>
-                            <Input placeholder="孕妇姓名" size="small" bordered={false}
-                              style={{ background: "#fafafa", borderRadius: 0 }} />
-                          </Form.Item>
-                        ),
+                      title: "", width: 120,
+                      render: (_r: any, row: any) => (
+                        <Form.Item {...row.field} name={[row.field.name, "name"]} style={{ margin: 0 }}
+                          rules={[{ required: true, message: "必填" }]}>
+                          <Input placeholder="姓名" size="small" bordered={false}
+                            style={{ background: "#fafafa", borderRadius: 0 }} />
+                        </Form.Item>
+                      ),
                     },
                     {
-                      title: "民族", width: 100,
-                      render: (_r: any, row: any) =>
-                        row.maleIndex !== undefined ? (
-                          <Form.Item {...row.field} name={[row.field.name, "ethnicity"]} style={{ margin: 0 }}>
-                            <Input placeholder="民族" size="small" bordered={false}
-                              style={{ background: "#fafafa", borderRadius: 0 }} />
-                          </Form.Item>
-                        ) : (
-                          <Form.Item name="mother_ethnicity" style={{ margin: 0 }}>
-                            <Input placeholder="民族" size="small" bordered={false}
-                              style={{ background: "#fafafa", borderRadius: 0 }} />
-                          </Form.Item>
-                        ),
+                      title: "", width: 100,
+                      render: (_r: any, row: any) => (
+                        <Form.Item {...row.field} name={[row.field.name, "ethnicity"]} style={{ margin: 0 }}>
+                          <Input placeholder="民族" size="small" bordered={false}
+                            style={{ background: "#fafafa", borderRadius: 0 }} />
+                        </Form.Item>
+                      ),
                     },
                     {
-                      title: "样本类型", width: 130,
-                      render: (_r: any, row: any) =>
-                        row.maleIndex !== undefined ? (
-                          <Form.Item {...row.field} name={[row.field.name, "sample_type"]} style={{ margin: 0 }}
-                            initialValue={["BLOOD"]}>
-                            <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
-                              size="small" bordered={false}
-                              style={{ background: "#fafafa", minWidth: 90, borderRadius: 0 }}
-                              placeholder="类型" maxTagCount={1} />
-                          </Form.Item>
-                        ) : (
-                          <Form.Item name="mother_sample_type" style={{ margin: 0 }} initialValue={["BLOOD"]}>
-                            <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
-                              size="small" bordered={false}
-                              style={{ background: "#fafafa", minWidth: 90, borderRadius: 0 }}
-                              placeholder="类型" maxTagCount={1} />
-                          </Form.Item>
-                        ),
+                      title: "", width: 130,
+                      render: (_r: any, row: any) => (
+                        <Form.Item {...row.field} name={[row.field.name, "sample_type"]} style={{ margin: 0 }}
+                          initialValue={["BLOOD"]}>
+                          <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
+                            size="small" bordered={false}
+                            style={{ background: "#fafafa", minWidth: 90, borderRadius: 0 }}
+                            placeholder="类型" maxTagCount={1} />
+                        </Form.Item>
+                      ),
                     },
                     {
-                      title: "采集日期", width: 140,
-                      render: (_r: any, row: any) =>
-                        row.maleIndex !== undefined ? (
-                          <Form.Item {...row.field} name={[row.field.name, "arrival_date"]} style={{ margin: 0 }}>
-                            <DatePicker size="small" bordered={false}
-                              style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} placeholder="日期" />
-                          </Form.Item>
-                        ) : (
-                          <Form.Item name="female_arrival_date" style={{ margin: 0 }}>
-                            <DatePicker size="small" bordered={false}
-                              style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} placeholder="日期" />
-                          </Form.Item>
-                        ),
+                      title: "", width: 140,
+                      render: (_r: any, row: any) => (
+                        <Form.Item {...row.field} name={[row.field.name, "arrival_date"]} style={{ margin: 0 }}
+                          initialValue={dayjs()}>
+                          <DatePicker size="small" bordered={false}
+                            style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
+                        </Form.Item>
+                      ),
                     },
                     {
-                      title: "操作", width: 60,
-                      render: (_r: any, row: any) =>
-                        row.maleIndex !== undefined ? (
-                          <Button type="link" danger size="small"
-                            onClick={() => remove(row.field.name)}>删除</Button>
-                        ) : null,
+                      title: "", width: 60,
+                      render: (_r: any, row: any) => (
+                        <Button type="link" danger size="small"
+                          onClick={() => remove(row.field.name)}>删除</Button>
+                      ),
                     },
                   ] as any}
                   locale={{ emptyText: "" }}
                   footer={() => (
                     <div style={{ padding: "6px 8px" }}>
-                      <Button type="dashed" onClick={() => add({ sample_type: ["BLOOD"] })} block
+                      <Button type="dashed" onClick={() => add({ sample_type: ["BLOOD"], arrival_date: dayjs() })} block
                         icon={<PlusOutlined />} size="small">
                         添加疑父
                       </Button>
                     </div>
                   )}
                 />
-              )}}
+              )}
             </Form.List>
+
+            {/* Column headers row */}
+            <div style={{ marginLeft: 32, marginBottom: 4, display: "flex", fontSize: 12, color: "#999", borderTop: "1px solid #f0f0f0", paddingTop: 4 }}>
+              <span style={{ width: 90 }}>亲缘关系</span>
+              <span style={{ width: 120 }}>姓名</span>
+              <span style={{ width: 100 }}>民族</span>
+              <span style={{ width: 130 }}>样本类型</span>
+              <span style={{ width: 140 }}>采集日期</span>
+              <span style={{ width: 60 }}>操作</span>
+            </div>
 
             <Divider style={{ margin: "8px 0" }} />
 
