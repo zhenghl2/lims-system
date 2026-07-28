@@ -216,6 +216,7 @@ export const casesApi = {
     api.get("/cases/preprocessing/pending/"),
   savePreprocessing: (id: string, data: Record<string, unknown>) =>
     api.post(`/cases/preprocessing/${id}/save_processing/`, data),
+  deletePreprocessingBatch: (id: string) => api.delete(`/cases/preprocessing/${id}/`),
   completePreprocessing: (id: string) =>
     api.post(`/cases/preprocessing/${id}/complete/`),
 

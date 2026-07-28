@@ -216,7 +216,6 @@ export default function NipptPreProcessing() {
       const allSamples = [
         ...selectedBatch.female_samples,
         ...selectedBatch.male_blood_samples,
-        ...selectedBatch.male_other_samples,
       ].map(s => ({
         id: s.id,
         sample_condition: s.sample_condition,
@@ -305,6 +304,12 @@ export default function NipptPreProcessing() {
         <InputNumber size="small" min={1} max={10} value={v} style={{ width: 55 }}
           onChange={(val: number | null) => updateSampleField(r.id, "aliquot_tubes", val || 3)} />
       ) },
+    { title: "样本情况", dataIndex: "sample_condition", key: "cond", width: 110,
+      render: (v: string, r: PreSample) => (
+        <Select size="small" value={v || "OK"} style={{ width: 90 }}
+          placeholder="选择" options={CONDITION_OPTIONS}
+          onChange={(val: string) => updateSampleField(r.id, "sample_condition", val)} allowClear />
+      ) },
     { title: "QC", dataIndex: "qc_status", key: "qc", width: 80,
       render: (v: string, r: PreSample) => (
         <Select size="small" value={v || "PASS"} style={{ width: 70 }}
@@ -318,7 +323,7 @@ export default function NipptPreProcessing() {
       ) },
   ];
 
-  const maleBloodColumns = () => [
+  const maleColumns = () => [
     { title: "PT编号", dataIndex: "test_sample_id", key: "pt", width: 110,
       render: (v: string | null) => v ? <Text code>{v}</Text> : <Text type="secondary">—</Text> },
     { title: "姓名", dataIndex: "patient_name", key: "name", width: 80 },
@@ -328,33 +333,6 @@ export default function NipptPreProcessing() {
           placeholder="选择" options={CONDITION_OPTIONS}
           onChange={(val: string) => updateSampleField(r.id, "sample_condition", val)} allowClear />
       ) },
-    { title: "分装管数", dataIndex: "aliquot_tubes", key: "tubes", width: 80,
-      render: (v: number, r: PreSample) => (
-        <InputNumber size="small" min={1} max={10} value={v} style={{ width: 55 }}
-          onChange={(val: number | null) => updateSampleField(r.id, "aliquot_tubes", val || 2)} />
-      ) },
-    { title: "血浆体积(mL)", dataIndex: "plasma_volume", key: "pv", width: 100,
-      render: (v: number | null, r: PreSample) => (
-        <InputNumber size="small" min={0} step={0.1} value={v ?? 30} style={{ width: 70 }}
-          onChange={(val: number | null) => updateSampleField(r.id, "plasma_volume", val)} placeholder="30" />
-      ) },
-    { title: "QC", dataIndex: "qc_status", key: "qc", width: 80,
-      render: (v: string, r: PreSample) => (
-        <Select size="small" value={v || "PASS"} style={{ width: 70 }}
-          onChange={(val: string) => updateSampleField(r.id, "qc_status", val)}
-          options={[{ value: "PASS", label: "✅" }, { value: "FAIL", label: "❌" }]} />
-      ) },
-    { title: "备注", dataIndex: "qc_note", key: "note", width: 120,
-      render: (v: string, r: PreSample) => (
-        <Input size="small" value={v} placeholder="备注"
-          onChange={(e: any) => updateSampleField(r.id, "qc_note", e.target.value)} />
-      ) },
-  ];
-
-  const otherColumns = () => [
-    { title: "PT编号", dataIndex: "test_sample_id", key: "pt", width: 110,
-      render: (v: string | null) => v ? <Text code>{v}</Text> : <Text type="secondary">—</Text> },
-    { title: "姓名", dataIndex: "patient_name", key: "name", width: 80 },
     { title: "收到样本类型", dataIndex: "received_sample_types", key: "rst", width: 150,
       render: (v: string[]) => (
         <Space size={2} wrap>{v.map(t => {
@@ -375,15 +353,10 @@ export default function NipptPreProcessing() {
           return <Tag key={t}>{opt?.label || t}</Tag>;
         }) : <Text type="secondary">—</Text>)}</Space>
       ) },
-    { title: "洗脱体积(uL)", dataIndex: "elution_volume", key: "ev", width: 100,
-      render: (v: number | null, r: PreSample) => (
-        <InputNumber size="small" min={0} value={v ?? 30} style={{ width: 70 }}
-          onChange={(val: number | null) => updateSampleField(r.id, "elution_volume", val)} placeholder="30" />
-      ) },
-    { title: "DNA浓度", dataIndex: "dna_concentration", key: "dna", width: 90,
-      render: (v: number | null, r: PreSample) => (
-        <InputNumber size="small" min={0} step={0.1} value={v} style={{ width: 70 }}
-          onChange={(val: number | null) => updateSampleField(r.id, "dna_concentration", val)} placeholder="浓度" />
+    { title: "分装管数", dataIndex: "aliquot_tubes", key: "tubes", width: 80,
+      render: (v: number, r: PreSample) => (
+        <InputNumber size="small" min={1} max={10} value={v} style={{ width: 55 }}
+          onChange={(val: number | null) => updateSampleField(r.id, "aliquot_tubes", val || 2)} />
       ) },
     { title: "QC", dataIndex: "qc_status", key: "qc", width: 80,
       render: (v: string, r: PreSample) => (
@@ -482,32 +455,12 @@ export default function NipptPreProcessing() {
                 key: "male",
                 label: `👨 男性 (${selectedBatch.male_blood_count + selectedBatch.male_other_count})`,
                 children: (
-                  <>
-                    {/* Blood table */}
-                    {selectedBatch.male_blood_count > 0 && (
-                      <>
-                        <Text strong style={{ fontSize: 13, marginBottom: 8, display: "block" }}>
-                          🩸 血液样本 ({selectedBatch.male_blood_count})
-                        </Text>
-                        <Table dataSource={selectedBatch.male_blood_samples} rowKey="id"
-                          columns={maleBloodColumns()} size="small" pagination={false} scroll={{ x: 700 }}
-                          style={{ marginBottom: 16 }} />
-                      </>
-                    )}
-                    {/* Other samples table */}
-                    {selectedBatch.male_other_count > 0 && (
-                      <>
-                        <Text strong style={{ fontSize: 13, marginBottom: 8, display: "block" }}>
-                          🧬 其他样本类型 ({selectedBatch.male_other_count})
-                        </Text>
-                        <Table dataSource={selectedBatch.male_other_samples} rowKey="id"
-                          columns={otherColumns()} size="small" pagination={false} scroll={{ x: 1000 }} />
-                      </>
-                    )}
-                    {selectedBatch.male_blood_count === 0 && selectedBatch.male_other_count === 0 && (
-                      <Text type="secondary">无男性样本</Text>
-                    )}
-                  </>
+                  selectedBatch.male_blood_count + selectedBatch.male_other_count > 0 ? (
+                    <Table dataSource={selectedBatch.male_blood_samples} rowKey="id"
+                      columns={maleColumns()} size="small" pagination={false} scroll={{ x: 900 }} />
+                  ) : (
+                    <Text type="secondary">无男性样本</Text>
+                  )
                 ),
               },
             ]} />
