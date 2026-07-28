@@ -468,7 +468,7 @@ export default function NipptRegistration() {
 
             <Row gutter={[16, 8]} style={{ marginLeft: 16 }}>
               <Col xs={24} sm={8}>
-                <Form.Item name="sample_source" label="来源(国家)" style={{ marginBottom: 8 }}>
+                <Form.Item name="sample_source" label="来源(国家)" rules={[{ required: true, message: "必填" }]} style={{ marginBottom: 8 }}>
                   <Select options={SOURCE_OPTIONS} placeholder="选择来源" allowClear size="small" />
                 </Form.Item>
                 <Form.Item name="collection_date" label="申请日期" style={{ marginBottom: 8 }}>
@@ -480,7 +480,7 @@ export default function NipptRegistration() {
               </Col>
 
               <Col xs={24} sm={8}>
-                <Form.Item name="multiple_gestation" label="单双胎" style={{ marginBottom: 8 }}>
+                <Form.Item name="multiple_gestation" label="单双胎" rules={[{ required: true, message: "必填" }]} style={{ marginBottom: 8 }}>
                   <Radio.Group defaultValue={false} size="small" optionType="button" buttonStyle="solid">
                     <Radio.Button value={false}>单</Radio.Button>
                     <Radio.Button value={true}>双</Radio.Button>
