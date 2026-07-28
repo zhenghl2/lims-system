@@ -372,8 +372,9 @@ export default function NipptPreProcessing() {
       ) },
     { title: "分装管数", dataIndex: "aliquot_tubes", key: "tubes", width: 80,
       render: (v: number, r: PreSample) => (
+        r.category === "MALE_OTHER" ? <Text type="secondary">—</Text> :
         <InputNumber size="small" min={1} max={10} value={v} style={{ width: 55 }}
-          onChange={(val: number | null) => updateSampleField(r.id, "aliquot_tubes", val || 2)} />
+          onChange={(val: number | null) => updateSampleField(r.id, "aliquot_tubes", val || (r.role === "MOTHER" ? 3 : 2))} />
       ) },
     { title: "QC", dataIndex: "qc_status", key: "qc", width: 80,
       render: (v: string, r: PreSample) => (
