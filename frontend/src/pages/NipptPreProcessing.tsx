@@ -106,6 +106,17 @@ export default function NipptPreProcessing() {
   const [photos, setPhotos] = useState<string[]>([]);
 
   // ===== Data fetching =====
+  const deleteBatch = async (id: string, batchNumber: string) => {
+    try {
+      await (casesApi as any).deletePreprocessingBatch(id);
+      message.success(`批次 ${batchNumber} 已删除`);
+      fetchBatches();
+      if (selectedBatch?.id === id) setSelectedBatch(null);
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || "删除失败");
+    }
+  };
+
   const fetchBatches = useCallback(async () => {
     setLoading(true);
     try {
@@ -414,6 +425,15 @@ export default function NipptPreProcessing() {
               columns={[
                 { title: "批次号", dataIndex: "batch_number", key: "bn", width: 140,
                   render: (v: string) => <Text code style={{ fontSize: 12 }}>{v}</Text> },
+                {
+                  title: "操作", key: "act", width: 50,
+                  render: (_: any, r: BatchItem) =>
+                    r.status === "COMPLETED" ? null : (
+                      <Popconfirm title="删除此批次？样本将回到待处理" onConfirm={() => deleteBatch(r.id, r.batch_number)}>
+                        <Button type="link" danger size="small">删除</Button>
+                      </Popconfirm>
+                    ),
+                },
                 { title: "状态", dataIndex: "status", key: "st", width: 60,
                   render: (v: string) => {
                     const c: Record<string, string> = { DRAFT: "default", IN_PROGRESS: "blue", COMPLETED: "green" };

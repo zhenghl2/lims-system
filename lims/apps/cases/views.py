@@ -863,6 +863,17 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
 
         return Response({"message": f"Batch {batch.batch_number} completed"})
 
+    def destroy(self, request, *args, **kwargs):
+        batch = self.get_object()
+        if batch.status == "COMPLETED":
+            return Response({"detail": "Cannot delete completed batch"}, status=400)
+        # Revert workflow_stage for all samples back to RECEIVED
+        for sp in batch.samples.all():
+            if sp.case_sample_ids:
+                CaseSample.objects.filter(id__in=sp.case_sample_ids).update(workflow_stage="RECEIVED")
+        batch.delete()
+        return Response({"message": "Batch deleted, samples returned to pending"})
+
 
 # ══════════════════════════════════════════
 # NIPPT Extraction ViewSet (核酸提取)
