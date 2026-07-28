@@ -577,37 +577,33 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                 created_by=request.user,
             )
 
-            # Group by person — one PP sample per person with all their case_sample_ids
+            # One PP sample per CaseSample
             css = CaseSample.objects.filter(
                 id__in=case_sample_ids
             ).select_related("case", "sample")
 
-            groups = {}
             for cs in css:
-                key = (str(cs.case_id), cs.sample.patient_name)
-                if key not in groups:
-                    if cs.role == "MOTHER":
-                        cat = "FEMALE_BLOOD"
-                    elif cs.sample_source in ("BLOOD", "DBS"):
-                        cat = "MALE_BLOOD"
-                    else:
-                        cat = "MALE_OTHER"
-                    groups[key] = {"case": cs.case, "name": cs.sample.patient_name, "role": cs.role, "category": cat, "ids": []}
-                groups[key]["ids"].append(str(cs.id))
+                if cs.role == "MOTHER":
+                    cat = "FEMALE_BLOOD"
+                elif cs.sample_source in ("BLOOD", "DBS"):
+                    cat = "MALE_BLOOD"
+                else:
+                    cat = "MALE_OTHER"
 
-            for gdata in groups.values():
-                aliquot_default = 2 if gdata["category"] == "MALE_BLOOD" else 3
                 kwargs = {
                     "batch": batch,
-                    "case": gdata["case"],
-                    "patient_name": gdata["name"],
-                    "role": gdata["role"],
-                    "category": gdata["category"],
-                    "case_sample_ids": gdata["ids"],
-                    "aliquot_tubes": aliquot_default,
+                    "case": cs.case,
+                    "patient_name": cs.sample.patient_name,
+                    "role": cs.role,
+                    "category": cat,
+                    "case_sample_ids": [str(cs.id)],
                 }
-                if gdata["category"] == "MALE_BLOOD":
+                if cat == "MALE_BLOOD":
+                    kwargs["aliquot_tubes"] = 2
                     kwargs["plasma_volume"] = 30.0
+                elif cat == "FEMALE_BLOOD":
+                    kwargs["aliquot_tubes"] = 3
+                # MALE_OTHER: no aliquot_tubes
                 NipptPreProcessingSample.objects.create(**kwargs)
 
             CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="PRE_PROCESSING")
