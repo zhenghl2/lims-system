@@ -113,7 +113,7 @@ export default function SampleReceiving() {
           sampleType: cs.sample_source || "BLOOD",
           actualSampleType: cs.actual_sample_type || cs.sample_source || "BLOOD",
           collectionDate: cs.collection_date || "",
-          sampleSource: c.applicant || "",
+          sampleSource: cs.case_source || "",
           fedexNo: cs.fedex_no || "",
           phone: c.phone || "",
           preservationMethod: cs.preservation_method || "",

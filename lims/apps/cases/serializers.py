@@ -14,6 +14,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
     rejection_reason = serializers.CharField(source="sample.rejection_reason", read_only=True)
     rejection_note = serializers.CharField(source="sample.rejection_note", read_only=True)
     receipt_photo_url = serializers.SerializerMethodField()
+    case_source = serializers.CharField(source="sample.sample_source", read_only=True, allow_null=True, allow_blank=True)
     collection_date = serializers.CharField(source="sample.collection_date", read_only=True, allow_null=True)
     fedex_no = serializers.CharField(source="sample.fedex_no", read_only=True, allow_null=True, allow_blank=True)
     external_id = serializers.CharField(source="sample.external_id", read_only=True)
@@ -30,6 +31,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
             "arrival_date", "actual_sample_type", "preservation_method",
             "rejection_reason", "rejection_note", "external_id",
             "receipt_photo_url",
+            "case_source",
             "collection_date", "fedex_no",
             "created_at", "updated_at",
         ]
