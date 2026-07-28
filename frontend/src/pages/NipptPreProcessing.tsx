@@ -39,8 +39,8 @@ interface PendingEntry {
   patient_name: string;
   role: string;
   category: string;
-  sample_types: string[];
-  case_sample_ids: string[];
+  sample_type: string;
+  case_sample_id: string;
   test_sample_id: string | null;
 }
 
@@ -143,9 +143,7 @@ export default function NipptPreProcessing() {
       // Default: select all
       const allIds = new Set<string>();
       for (const e of data.entries) {
-        for (const id of e.case_sample_ids) {
-          allIds.add(id);
-        }
+        allIds.add(e.case_sample_id);
       }
       setSelectedKeys(allIds);
       setPendingSearch("");
@@ -192,7 +190,7 @@ export default function NipptPreProcessing() {
     if (checked) {
       const all = new Set<string>();
       for (const e of pendingData.entries) {
-        for (const id of e.case_sample_ids) all.add(id);
+        all.add(e.case_sample_id);
       }
       setSelectedKeys(all);
     } else {
@@ -576,21 +574,20 @@ export default function NipptPreProcessing() {
                   <div key={cat} style={{ marginBottom: 12 }}>
                     <Text strong style={{ fontSize: 13 }}>{catLabel} ({entries.length})</Text>
                     {entries.map(e => {
-                      const allIn = e.case_sample_ids.every(id => selectedKeys.has(id));
-                      const someIn = e.case_sample_ids.some(id => selectedKeys.has(id));
+                      const checked = selectedKeys.has(e.case_sample_id);
                       return (
-                        <div key={e.case_sample_ids.join(",")} style={{
+                        <div key={e.case_sample_id} style={{
                           padding: "6px 8px", borderBottom: "1px solid #f0f0f0",
                           display: "flex", alignItems: "center", gap: 8,
                         }}>
-                          <Checkbox checked={allIn} indeterminate={!allIn && someIn}
+                          <Checkbox checked={checked}
                             onChange={() => {
                               setSelectedKeys(prev => {
                                 const next = new Set(prev);
-                                if (allIn) {
-                                  e.case_sample_ids.forEach(id => next.delete(id));
+                                if (checked) {
+                                  next.delete(e.case_sample_id);
                                 } else {
-                                  e.case_sample_ids.forEach(id => next.add(id));
+                                  next.add(e.case_sample_id);
                                 }
                                 return next;
                               });
@@ -599,10 +596,10 @@ export default function NipptPreProcessing() {
                           {e.test_sample_id && <Tag color="blue" style={{ fontSize: 11 }}>{e.test_sample_id}</Tag>}
                           <Text strong>{e.patient_name}</Text>
                           <Space size={2} wrap>
-                            {e.sample_types.map(t => {
-                              const opt = SAMPLE_TYPE_OPTIONS.find(o => o.value === t);
-                              return <Tag key={t} color="green" style={{ fontSize: 10 }}>{opt?.label || t}</Tag>;
-                            })}
+                            {(() => {
+                              const opt = SAMPLE_TYPE_OPTIONS.find(o => o.value === e.sample_type);
+                              return <Tag color="green" style={{ fontSize: 10 }}>{opt?.label || e.sample_type}</Tag>;
+                            })()}
                           </Space>
                         </div>
                       );

@@ -572,14 +572,12 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                 created_by=request.user,
             )
 
-            # Group CaseSamples by (case, patient_name, category)
+            # One PP sample per CaseSample (no grouping by person)
             css = CaseSample.objects.filter(
                 id__in=case_sample_ids
             ).select_related("case", "sample")
 
-            groups = {}  # key: (case_id, patient_name, category)
             for cs in css:
-                # Determine category
                 if cs.role == "MOTHER":
                     cat = "FEMALE_BLOOD"
                 elif cs.sample_source in ("BLOOD", "DBS"):
@@ -587,24 +585,16 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                 else:
                     cat = "MALE_OTHER"
 
-                key = (str(cs.case_id), cs.sample.patient_name, cat)
-                if key not in groups:
-                    groups[key] = {"case": cs.case, "ids": [], "role": cs.role}
-                groups[key]["ids"].append(str(cs.id))
-
-            # Create one NipptPreProcessingSample per group
-            for (case_id, name, cat), gdata in groups.items():
                 aliquot_default = 2 if cat == "MALE_BLOOD" else 3
                 kwargs = {
                     "batch": batch,
-                    "case": gdata["case"],
-                    "patient_name": name,
-                    "role": gdata["role"],
+                    "case": cs.case,
+                    "patient_name": cs.sample.patient_name,
+                    "role": cs.role,
                     "category": cat,
-                    "case_sample_ids": gdata["ids"],
+                    "case_sample_ids": [str(cs.id)],
                     "aliquot_tubes": aliquot_default,
                 }
-                # Male blood samples: default plasma volume 30mL
                 if cat == "MALE_BLOOD":
                     kwargs["plasma_volume"] = 30.0
                 NipptPreProcessingSample.objects.create(**kwargs)
@@ -620,14 +610,14 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
 
 
 class PendingEntrySerializer(serializers.Serializer):
-    """待前处理队列条目 — 按人分组"""
+    """待前处理队列条目 — 逐条CaseSample"""
     case_id = serializers.CharField()
     case_number = serializers.CharField()
     patient_name = serializers.CharField()
     role = serializers.CharField()
     category = serializers.CharField()
-    sample_types = serializers.ListField(child=serializers.CharField())
-    case_sample_ids = serializers.ListField(child=serializers.CharField())
+    sample_type = serializers.CharField()
+    case_sample_id = serializers.CharField()
     test_sample_id = serializers.CharField(allow_null=True)
 
 

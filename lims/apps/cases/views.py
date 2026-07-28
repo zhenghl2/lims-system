@@ -751,8 +751,8 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
             id__in=list(excluded_ids)[:10000] if excluded_ids else []
         ).select_related("case", "sample").order_by("case__case_number", "sample__patient_name")
 
-        # Group by (case_id, patient_name, category)
-        groups = {}
+        # Each CaseSample is its own entry (no grouping by person)
+        entries = []
         for cs in qs:
             if cs.role == "MOTHER":
                 cat = "FEMALE_BLOOD"
@@ -761,26 +761,17 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
             else:
                 cat = "MALE_OTHER"
 
-            key = (str(cs.case_id), cs.sample.patient_name, cat)
-            if key not in groups:
-                groups[key] = {
-                    "case_id": str(cs.case_id),
-                    "case_number": cs.case.case_number,
-                    "patient_name": cs.sample.patient_name,
-                    "role": cs.role,
-                    "category": cat,
-                    "sample_types": [],
-                    "case_sample_ids": [],
-                    "test_sample_id": cs.test_sample_id,
-                }
-            g = groups[key]
-            if cs.sample_source not in g["sample_types"]:
-                g["sample_types"].append(cs.sample_source)
-            g["case_sample_ids"].append(str(cs.id))
-            if not g["test_sample_id"]:
-                g["test_sample_id"] = cs.test_sample_id
+            entries.append({
+                "case_id": str(cs.case_id),
+                "case_number": cs.case.case_number,
+                "patient_name": cs.sample.patient_name,
+                "role": cs.role,
+                "category": cat,
+                "sample_type": cs.sample_source,
+                "case_sample_id": str(cs.id),
+                "test_sample_id": cs.test_sample_id,
+            })
 
-        entries = list(groups.values())
         female_count = sum(1 for e in entries if e["category"] == "FEMALE_BLOOD")
         male_blood_count = sum(1 for e in entries if e["category"] == "MALE_BLOOD")
         male_other_count = sum(1 for e in entries if e["category"] == "MALE_OTHER")
