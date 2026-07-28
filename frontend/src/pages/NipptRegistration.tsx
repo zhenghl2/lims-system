@@ -406,14 +406,14 @@ export default function NipptRegistration() {
                       ),
                     },
                     {
-                      title: "", width: 150,
+                      title: "", width: 180,
                       render: (_r: any, row: any) => (
                         <Form.Item {...row.field} name={[row.field.name, "sample_type"]} style={{ margin: 0 }}
                           initialValue={["BLOOD"]}>
                           <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
                             size="small" bordered={false}
                             style={{ background: "#fafafa", minWidth: 110, borderRadius: 0 }}
-                            placeholder="类型" maxTagCount={2} />
+                            placeholder="类型" maxTagCount={5} />
                         </Form.Item>
                       ),
                     },
@@ -453,7 +453,7 @@ export default function NipptRegistration() {
               <span style={{ width: 90 }}>亲缘关系</span>
               <span style={{ width: 120 }}>姓名</span>
               <span style={{ width: 100 }}>民族</span>
-              <span style={{ width: 150 }}>样本类型</span>
+              <span style={{ width: 180 }}>样本类型</span>
               <span style={{ width: 140 }}>采集日期</span>
               <span style={{ width: 60 }}>操作</span>
             </div>
@@ -593,7 +593,7 @@ export default function NipptRegistration() {
               <Col xs={24} sm={6}>
                 <Form.Item name="supp_sample_type" label="样本类型" initialValue={["BLOOD"]}>
                   <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
-                    placeholder="选择样本类型" maxTagCount={2} />
+                    placeholder="选择样本类型" maxTagCount={5} />
                 </Form.Item>
               </Col>
               <Col xs={24} sm={6}>
