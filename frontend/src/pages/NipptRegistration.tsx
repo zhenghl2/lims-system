@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Card, Form, Input, Select, Button, message, Typography,
   Divider, Table, Tag, Modal, DatePicker, Row, Col,
-  Radio, Space, Collapse,
+  Radio, Space, Collapse, InputNumber,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, SendOutlined,
@@ -434,23 +434,54 @@ export default function NipptRegistration() {
                 <Form.Item name="collection_date" label="申请日期" style={{ marginBottom: 8 }}>
                   <DatePicker style={{ width: "100%" }} size="small" placeholder="选择日期" />
                 </Form.Item>
-                <Form.Item name="clinic_name" label="诊所/医院" style={{ marginBottom: 0 }}>
+                <Form.Item name="clinic_name" label="诊所/医院" style={{ marginBottom: 8 }}>
                   <Input placeholder="诊所或医院名称" size="small" />
+                </Form.Item>
+                <Form.Item name="phone" label="电话" style={{ marginBottom: 0 }}>
+                  <Input placeholder="电话号码" size="small" />
                 </Form.Item>
               </Col>
 
               <Col xs={24} sm={8}>
-                <Form.Item name="multiple_gestation" label="单双胎" rules={[{ required: true, message: "必填" }]} style={{ marginBottom: 8 }}>
-                  <Radio.Group defaultValue={false} size="small" optionType="button" buttonStyle="solid">
-                    <Radio.Button value={false}>单</Radio.Button>
-                    <Radio.Button value={true}>双</Radio.Button>
+                <Form.Item label="孕周" style={{ marginBottom: 8 }}>
+                  <Space>
+                    <Form.Item name="gestational_age_weeks" style={{ margin: 0 }}>
+                      <InputNumber size="small" min={0} max={45} placeholder="周" style={{ width: 60 }} />
+                    </Form.Item>
+                    <Text>周</Text>
+                    <Form.Item name="gestational_age_days" style={{ margin: 0 }}>
+                      <InputNumber size="small" min={0} max={6} placeholder="天" style={{ width: 60 }} />
+                    </Form.Item>
+                    <Text>天</Text>
+                  </Space>
+                </Form.Item>
+                <Form.Item name="calculation_method" label="计算方式" style={{ marginBottom: 8 }} initialValue="lmp">
+                  <Radio.Group size="small">
+                    <Radio value="lmp">末次月经</Radio>
+                    <Radio value="ultrasound">B超</Radio>
                   </Radio.Group>
                 </Form.Item>
-                <Form.Item name="phone" label="电话" style={{ marginBottom: 8 }}>
-                  <Input placeholder="电话号码" size="small" />
-                </Form.Item>
-                <Form.Item name="last_menstrual_period" label="末次月经" style={{ marginBottom: 0 }}>
+                <Form.Item name="last_menstrual_period" label="末次月经" style={{ marginBottom: 8 }}>
                   <DatePicker style={{ width: "100%" }} size="small" placeholder="选择日期" />
+                </Form.Item>
+                <Form.Item name="multiple_gestation" label="单双胎" rules={[{ required: true, message: "必填" }]} style={{ marginBottom: 0 }}
+                  initialValue={false}>
+                  <Radio.Group size="small" optionType="button" buttonStyle="solid">
+                    <Radio.Button value={false}>单胎</Radio.Button>
+                    <Radio.Button value={true}>双胎</Radio.Button>
+                  </Radio.Group>
+                </Form.Item>
+                <Form.Item noStyle shouldUpdate={(prev, cur) => prev.multiple_gestation !== cur.multiple_gestation}>
+                  {({ getFieldValue }) =>
+                    getFieldValue("multiple_gestation") ? (
+                      <Form.Item name="twin_type" label="双胎类型" style={{ marginTop: 8, marginBottom: 0 }} initialValue="dizygotic">
+                        <Radio.Group size="small">
+                          <Radio value="monozygotic">同卵</Radio>
+                          <Radio value="dizygotic">异卵</Radio>
+                        </Radio.Group>
+                      </Form.Item>
+                    ) : null
+                  }
                 </Form.Item>
               </Col>
 
