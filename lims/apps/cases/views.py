@@ -78,6 +78,11 @@ class CaseViewSet(viewsets.ModelViewSet):
         actual_sample_type = request.data.get("actual_sample_type", "")
         preservation_method = request.data.get("preservation_method", "")
 
+        # Save user-provided PT number to Case (before auto-assign fallback)
+        if pt_number and not case.pt_number:
+            case.pt_number = pt_number
+            case.save(update_fields=["pt_number", "updated_at"])
+
         cs.confirm_receipt(request.user, condition=condition)
         # Save new receiving fields
         if actual_sample_type:
@@ -438,22 +443,16 @@ class CaseViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def dashboard(self, request):
-        """NIPPT dashboard stats."""
         qs = self.get_queryset()
-
         status_counts = {}
         for s in Case.Status.values:
             status_counts[s.lower()] = qs.filter(status=s).count()
-
         urgent = qs.filter(is_urgent=True).count()
-
         now = timezone.now().date()
-        deadline_2d = now + timezone.timedelta(days=2)
         near_deadline = qs.filter(
-            expected_completion__lte=deadline_2d,
+            expected_completion__lte=now + timezone.timedelta(days=2),
             status__in=[Case.Status.IN_PROCESS, Case.Status.RECEIVING],
         ).count()
-
         incomplete_cases = 0
         for case in qs.filter(status=Case.Status.RECEIVING):
             mother = case.mother_sample
@@ -461,22 +460,26 @@ class CaseViewSet(viewsets.ModelViewSet):
                 fathers = case.father_samples
                 if fathers.filter(received_at=None).exists():
                     incomplete_cases += 1
-
         today_expected = qs.filter(status=Case.Status.REGISTERED).count()
-
-        from lims.apps.workflows.models import RunSample
-        nippt_run_samples = RunSample.objects.filter(
-            sample__case_sample__isnull=False,
-        )
+        # Module-based stage counts from CaseSample workflow_stage
+        all_css = CaseSample.objects.all()
         stage_counts = {
-            "queued": nippt_run_samples.filter(status="QUEUED").count(),
-            "in_progress": nippt_run_samples.filter(status="IN_PROGRESS").count(),
-            "sequenced": nippt_run_samples.filter(status="SEQUENCED").count(),
-            "analyzed": nippt_run_samples.filter(status="ANALYZED").count(),
-            "passed_qc": nippt_run_samples.filter(status="PASSED_QC").count(),
+            "registered": all_css.filter(workflow_stage="REGISTERED").count(),
+            "received": all_css.filter(workflow_stage="RECEIVED").count(),
+            "rejected": all_css.filter(workflow_stage="REJECTED").count(),
+            "pre_processing": all_css.filter(workflow_stage="PRE_PROCESSING").count(),
+            "extraction": all_css.filter(workflow_stage="EXTRACTION").count(),
+            "library_prep": all_css.filter(workflow_stage="LIBRARY_PREP").count(),
+            "pooling": all_css.filter(workflow_stage="POOLING").count(),
+            "hyb_seq": all_css.filter(workflow_stage="HYB_SEQ").count(),
+            "bioinfo": all_css.filter(workflow_stage="BIOINFO").count(),
+            "report_draft": all_css.filter(workflow_stage="REPORT_DRAFT").count(),
+            "completed": all_css.filter(workflow_stage="COMPLETED").count(),
+            "failed": all_css.filter(workflow_stage__endswith="_FAILED").count(),
         }
-
         return Response({
+            "total_cases": qs.count(),
+            "total_samples": CaseSample.objects.count(),
             "case_status": status_counts,
             "urgent": urgent,
             "near_deadline": near_deadline,
@@ -644,6 +647,33 @@ def public_register_info(request, token):
 # ============================================================
 # NIPPT Pre-Processing ViewSet
 # ============================================================
+
+
+# ═══ Workflow tracking helper ═══
+def update_wf(case_sample_ids, stage, action, batch_num="", operator=None):
+    from .models import WorkflowLog
+    if not case_sample_ids: return
+    CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage=stage)
+    WorkflowLog.objects.bulk_create([
+        WorkflowLog(case_sample_id=cid, stage=stage, action=action, batch_number=batch_num, operator=operator)
+        for cid in case_sample_ids
+    ])
+    if stage == "COMPLETED":
+        for cs in CaseSample.objects.filter(id__in=case_sample_ids).select_related("case"):
+            if cs.role == "MOTHER":
+                CaseSample.objects.filter(case=cs.case, role="ALLEGED_FATHER", workflow_stage="PENDING_ACTIVATION").update(
+                    workflow_stage="CANCELLED", is_active=False
+                )
+
+def advance_batch(batch, next_stage, operator=None):
+    passed, failed = [], []
+    for s in batch.samples.all():
+        if not s.case_sample_ids: continue
+        ids = list(s.case_sample_ids)
+        if s.qc_status == "PASS": passed.extend(ids)
+        else: failed.extend(ids)
+    if passed: update_wf(passed, next_stage, "COMPLETE", batch.batch_number, operator)
+    if failed: update_wf(failed, f"{next_stage}_FAILED", "FAIL", batch.batch_number, operator)
 
 class NipptPreProcessingViewSet(viewsets.ModelViewSet):
     """NIPPT 前处理批次管理"""
@@ -881,7 +911,8 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        return Response({"message":f"Completed {batch.samples.count()} samples"})
+        return Response
+        advance_batch(batch, "LIBRARY_PREP", request.user)({"message":f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()
@@ -978,7 +1009,8 @@ class NipptLibraryViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        return Response({"message":f"Completed {batch.samples.count()} samples"})
+        return Response
+        advance_batch(batch, "LIBRARY_PREP", request.user)({"message":f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()
@@ -1052,7 +1084,8 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        return Response({"message":f"Completed {batch.samples.count()} samples"})
+        return Response
+        advance_batch(batch, "LIBRARY_PREP", request.user)({"message":f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()
@@ -1116,7 +1149,8 @@ class NipptHybSeqViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        return Response({"message":"Completed"})
+        return Response
+        advance_batch(batch, "LIBRARY_PREP", request.user)({"message":"Completed"})
 
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()

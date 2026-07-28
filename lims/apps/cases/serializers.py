@@ -24,6 +24,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
             "receipt_condition", "received_at", "received_by",
             "collection_site", "collection_notes",
             "test_sample_id", "resample_of", "resample_number",
+            "workflow_stage", "is_active",
             "arrival_date", "actual_sample_type", "preservation_method",
             "rejection_reason", "rejection_note", "external_id",
             "receipt_photo_url",
@@ -577,6 +578,13 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                     kwargs["plasma_volume"] = 30.0
                 NipptPreProcessingSample.objects.create(**kwargs)
 
+            CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="PRE_PROCESSING")
+            from .models import WorkflowLog
+            WorkflowLog.objects.bulk_create([
+                WorkflowLog(case_sample_id=cid, stage="PRE_PROCESSING", action="ENTER", batch_number=batch_number)
+                for cid in case_sample_ids
+            ])
+
         return batch
 
 
@@ -943,7 +951,7 @@ class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
                 NipptPoolingSample.objects.create(**kwargs)
         return batch
 
-from .models import NipptHybSeqBatch, NipptHybSeqSample
+from .models import NipptHybSeqBatch, NipptHybSeqSample, WorkflowLog
 
 class NipptHybSeqSampleSerializer(serializers.ModelSerializer):
     test_sample_id = serializers.SerializerMethodField()
@@ -1060,3 +1068,12 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
                 except (ValueError, NipptPoolingBatch.DoesNotExist):
                     continue
         return batch
+
+
+class WorkflowLogSerializer(serializers.ModelSerializer):
+    operator_name = serializers.SerializerMethodField()
+    class Meta:
+        model = WorkflowLog
+        fields = ["id", "stage", "action", "batch_number", "note", "created_at", "operator_name"]
+    def get_operator_name(self, obj):
+        return obj.operator.username if obj.operator else ""

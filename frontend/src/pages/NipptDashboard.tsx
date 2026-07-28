@@ -1,116 +1,72 @@
 import { useState, useEffect } from "react";
-import { Card, Row, Col, Statistic, Table, Tag, Typography, Alert } from "antd";
-import {
-  ExperimentOutlined, ClockCircleOutlined,
-  WarningOutlined, InboxOutlined,
-} from "@ant-design/icons";
+import { Card, Row, Col, Statistic, Typography } from "antd";
 import { casesApi } from "../api";
-import type { CaseDashboard } from "../api/types";
 
 const { Title } = Typography;
 
-const STAGE_LABELS: Record<string, { label: string; color: string }> = {
-  queued: { label: "Queued", color: "default" },
-  in_progress: { label: "In Progress", color: "processing" },
-  sequenced: { label: "Sequenced", color: "blue" },
-  analyzed: { label: "Analyzed", color: "cyan" },
-  passed_qc: { label: "Passed QC", color: "green" },
-};
-
 export default function NipptDashboardPage() {
-  const [data, setData] = useState<CaseDashboard | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<any>(null);
 
-  const fetch = async () => {
-    setLoading(true);
-    try {
-      const res = await casesApi.dashboard();
-      setData(res.data);
-    } catch { /* ignore */ }
-    setLoading(false);
-  };
+  useEffect(() => {
+    casesApi.dashboard().then((res: any) => {
+      const d = res.data;
+      d.workflow_stages = d.workflow_stages || {};
+      setData(d);
+    });
+  }, []);
 
-  useEffect(() => { fetch(); }, []);
-
-  const stageData = data?.workflow_stages
-    ? Object.entries(data.workflow_stages).map(([k, v]) => ({
-        stage: STAGE_LABELS[k]?.label || k,
-        count: v,
-        color: STAGE_LABELS[k]?.color || "default",
-      }))
-    : [];
-
-  const stageColumns = [
-    { title: "Stage", dataIndex: "stage", key: "stage",
-      render: (text: string, record: any) => <Tag color={record.color}>{text}</Tag> },
-    { title: "Count", dataIndex: "count", key: "count" },
+  const stageItems = [
+    { k: "REGISTERED", l: "登记", c: "default" },
+    { k: "RECEIVED", l: "签收", c: "blue" },
+    { k: "REJECTED", l: "拒收", c: "red" },
+    { k: "PRE_PROCESSING", l: "前处理", c: "orange" },
+    { k: "EXTRACTION", l: "提取", c: "gold" },
+    { k: "LIBRARY_PREP", l: "建库", c: "purple" },
+    { k: "POOLING", l: "Pooling", c: "magenta" },
+    { k: "HYB_SEQ", l: "测序", c: "cyan" },
+    { k: "BIOINFO", l: "生信", c: "geekblue" },
+    { k: "REPORT_DRAFT", l: "报告", c: "lime" },
+    { k: "COMPLETED", l: "完成", c: "green" },
   ];
 
   return (
-    <div>
-      <Title level={4} style={{ marginBottom: 16 }}>NIPPT Dashboard</Title>
-
-      {data?.incomplete_pairs ? (
-        <Alert
-          type="warning" showIcon icon={<WarningOutlined />}
-          message={`${data.incomplete_pairs} case(s) have incomplete sample pairs (mother received, father missing)`}
-          style={{ marginBottom: 16 }}
-        />
-      ) : null}
-
-      {data?.near_deadline ? (
-        <Alert
-          type="error" showIcon icon={<ClockCircleOutlined />}
-          message={`${data.near_deadline} case(s) approaching deadline (within 2 days)`}
-          style={{ marginBottom: 16 }}
-        />
-      ) : null}
-
-      <Row gutter={[16, 16]}>
-        <Col xs={12} sm={8} md={4}>
-          <Card><Statistic title="Draft" value={data?.case_status?.draft || 0} /></Card>
+    <div style={{ padding: 24 }}>
+      <Title level={4}>NIPPT Dashboard</Title>
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col xs={12} sm={6} md={3}>
+          <Card size="small" style={{ background: "#f0f5ff" }}>
+            <Statistic title="总案例" value={data?.total_cases ?? 0} />
+          </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card><Statistic title="Registered" value={data?.case_status?.registered || 0} valueStyle={{ color: "#1677ff" }} /></Card>
+        <Col xs={12} sm={6} md={3}>
+          <Card size="small" style={{ background: "#f6ffed" }}>
+            <Statistic title="总实验样本" value={data?.total_samples ?? 0} />
+          </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card><Statistic title="Receiving" value={data?.case_status?.receiving || 0} valueStyle={{ color: "#fa8c16" }} /></Card>
+        <Col xs={12} sm={6} md={3}>
+          <Card size="small" style={{ background: "#fff2f0" }}>
+            <Statistic title="紧急" value={data?.urgent ?? 0} valueStyle={{ color: "#cf1322" }} />
+          </Card>
         </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card><Statistic title="In Process" value={data?.case_status?.in_process || 0} valueStyle={{ color: "#1677ff" }} /></Card>
-        </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card><Statistic title="Completed" value={data?.case_status?.completed || 0} valueStyle={{ color: "#13c2c2" }} /></Card>
-        </Col>
-        <Col xs={12} sm={8} md={4}>
-          <Card><Statistic title="Reported" value={data?.case_status?.reported || 0} valueStyle={{ color: "#52c41a" }} /></Card>
+        <Col xs={12} sm={6} md={3}>
+          <Card size="small" style={{ background: "#fffbe6" }}>
+            <Statistic title="即将到期" value={data?.near_deadline ?? 0} />
+          </Card>
         </Col>
       </Row>
-
-      <Row gutter={[16, 16]} style={{ marginTop: 16 }}>
-        <Col xs={24} md={6}>
-          <Card><Statistic title="Urgent" value={data?.urgent || 0} prefix={<WarningOutlined />} valueStyle={{ color: "#ff4d4f" }} /></Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card><Statistic title="Incomplete Pairs" value={data?.incomplete_pairs || 0} prefix={<InboxOutlined />} /></Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card><Statistic title="Near Deadline" value={data?.near_deadline || 0} prefix={<ClockCircleOutlined />} valueStyle={{ color: "#ff4d4f" }} /></Card>
-        </Col>
-        <Col xs={24} md={6}>
-          <Card><Statistic title="Expected Today" value={data?.today_expected || 0} prefix={<ExperimentOutlined />} /></Card>
-        </Col>
-      </Row>
-
-      <Card title="Workflow Stages" style={{ marginTop: 16 }}>
-        <Table
-          dataSource={stageData}
-          columns={stageColumns}
-          pagination={false}
-          size="small"
-          rowKey="stage"
-          loading={loading}
-        />
+      <Card title="样本流水线状态" size="small">
+        <Row gutter={[8, 8]}>
+          {stageItems.map(({ k, l, c }) => {
+            const count = data?.workflow_stages?.[k.toLowerCase()] || data?.workflow_stages?.[k] || 0;
+            return (
+              <Col key={k} xs={6} sm={4} md={3} lg={2}>
+                <Card size="small" style={{ textAlign: "center", background: count > 0 ? "#f0f5ff" : "#fafafa" }}>
+                  <Statistic title={l} value={count} valueStyle={{ fontSize: 18, color: count > 0 ? c : "#ccc" }} />
+                </Card>
+              </Col>
+            );
+          })}
+        </Row>
       </Card>
     </div>
   );

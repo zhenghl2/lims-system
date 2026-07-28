@@ -214,6 +214,9 @@ class CaseSample(models.Model):
         null=True, blank=True,
         help_text="Resample sequence number: 1, 2, ..."
     )
+    workflow_stage = models.CharField(max_length=30, default="REGISTERED", db_index=True)
+    is_active = models.BooleanField(default=True)
+    priority = models.IntegerField(default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -723,3 +726,17 @@ class NipptBioinfoSample(models.Model):
 
     def __str__(self):
         return f"{self.batch.batch_number} / {self.patient_name} ({self.category})"
+
+
+class WorkflowLog(models.Model):
+    case_sample = models.ForeignKey(CaseSample, on_delete=models.CASCADE, related_name="workflow_logs")
+    stage = models.CharField(max_length=30, db_index=True)
+    action = models.CharField(max_length=20)
+    batch_number = models.CharField(max_length=30, blank=True)
+    operator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True)
+    note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "nippt_workflow_logs"
+        ordering = ["-created_at"]

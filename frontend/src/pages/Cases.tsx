@@ -10,7 +10,7 @@ import {
 } from "@ant-design/icons";
 import { casesApi } from "../api";
 import type { CaseDetail } from "../api/types";
-import { REJECTION_REASONS, SAMPLE_STATUS_DISPLAY, SAMPLE_STATUS_FLOW } from "../api/types";
+import { REJECTION_REASONS, SAMPLE_STATUS_DISPLAY } from "../api/types";
 
 const { Text, Title } = Typography;
 
@@ -253,13 +253,26 @@ export default function Cases() {
               <Card key={cs.id} size="small" style={{ marginBottom: 8 }}
                 bodyStyle={{
                   background: cs.sample_status === "REJECTED" ? "#fff2f0" : "#fafafa",
-                  borderLeft: `3px solid ${cs.sample_status === "REJECTED" ? "#ff4d4f" : "#d9d9d9"}`,
+                  borderLeft: `3px solid ${cs.workflow_stage === "REJECTED" ? "#ff4d4f" : "#d9d9d9"}`,
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                   <Space>
                     <Text code style={{ color: "#1677ff" }}>{cs.test_sample_id || cs.sample_id}</Text>
                     <Tag color={cs.role === "MOTHER" ? "pink" : "blue"}>{cs.role === "MOTHER" ? "母亲" : "疑父"}</Tag>
+                    {(() => {
+                      const st = cs.workflow_stage;
+                      if (!st || st === "REGISTERED") return null;
+                      const mp: Record<string, [string, string]> = {
+                        RECEIVED: ["签收", "blue"], REJECTED: ["拒收", "red"],
+                        PRE_PROCESSING: ["前处理", "orange"], EXTRACTION: ["提取", "gold"],
+                        LIBRARY_PREP: ["建库", "purple"], POOLING: ["Pooling", "magenta"],
+                        HYB_SEQ: ["测序", "cyan"], BIOINFO: ["生信", "geekblue"],
+                        REPORT_DRAFT: ["报告", "lime"], COMPLETED: ["完成", "green"],
+                      };
+                      const [l, c] = mp[st] || [st, "default"];
+                      return <Tag color={c} style={{fontSize:11}}>{l}</Tag>;
+                    })()}
                     {cs.resample_of && <Badge count={`R${cs.resample_number}`} color="orange" />}
                   </Space>
                   <Tag color={STATUS_COLORS[cs.sample_status]}>
@@ -268,13 +281,15 @@ export default function Cases() {
                 </div>
 
                 <div style={{ display: "flex", gap: 2, marginBottom: 4 }}>
-                  {SAMPLE_STATUS_FLOW.map((s: string, i: number) => {
-                    const idx = SAMPLE_STATUS_FLOW.indexOf(cs.sample_status);
+                  {[..."REGISTERED,RECEIVED,PRE_PROCESSING,EXTRACTION,LIBRARY_PREP,POOLING,HYB_SEQ,BIOINFO,REPORT_DRAFT,COMPLETED".split(",")].map((s: string, i: number) => {
+                    const workflowOrder = "REGISTERED,RECEIVED,PRE_PROCESSING,EXTRACTION,LIBRARY_PREP,POOLING,HYB_SEQ,BIOINFO,REPORT_DRAFT,COMPLETED".split(",");
+                    const idx = workflowOrder.indexOf(cs.workflow_stage || "REGISTERED");
                     const isActive = i <= idx;
                     const colorMap: Record<string, string> = {
-                      REGISTERED: "#d9d9d9", RECEIVED: "#1677ff", IN_PROCESS: "#faad14",
-                      TESTING: "#722ed1", ANALYZING: "#2f54eb", COMPLETED: "#52c41a",
-                      REPORTED: "#13c2c2", ARCHIVED: "#8c8c8c", DISPOSED: "#595959",
+                      REGISTERED: "#d9d9d9", RECEIVED: "#1677ff", PRE_PROCESSING: "#faad14",
+                      EXTRACTION: "#faad14", LIBRARY_PREP: "#722ed1", POOLING: "#722ed1",
+                      HYB_SEQ: "#2f54eb", BIOINFO: "#2f54eb", REPORT_DRAFT: "#52c41a",
+                      COMPLETED: "#52c41a",
                     };
                     return (
                       <div key={s} style={{
