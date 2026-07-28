@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   Card, Form, Input, Select, Button, message, Typography,
-  Divider, Table, Tag, Modal, DatePicker, Row, Col, Switch,
+  Divider, Table, Tag, Modal, DatePicker, Row, Col,
   Radio, Space, Collapse,
 } from "antd";
 import {
@@ -282,13 +282,19 @@ export default function NipptRegistration() {
 
       {/* === 首次检测：完整登记表单 === */}
       {regType === "FIRST" && (
-        <Card size="small">
+        <Card size="small" style={{ borderRadius: 8 }}>
           <Form form={form} layout="vertical" size="small"
             initialValues={{ males: [{ sample_type: ["BLOOD"] }, { sample_type: ["BLOOD"] }] }}>
-            {/* 样本来源方式 */}
-            <Divider plain style={{ fontSize: 13, fontWeight: 500, marginTop: 0 }}>样本来源</Divider>
-            <div style={{ marginBottom: 8, color: "#666", fontSize: 12 }}>1. 本室工作人员采集；2. 申请人送来；3. 邮寄样本</div>
-            <Form.Item name="collection_method" label="采集方式" initialValue="1" style={{ marginBottom: 12 }}>
+
+            {/* 1 样本来源 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", background: "#1677ff", color: "#fff", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>1</span>
+              <Text strong style={{ fontSize: 15 }}>样本来源</Text>
+            </div>
+            <div style={{ marginBottom: 8, color: "#999", fontSize: 11, marginLeft: 32 }}>
+              1. 本室工作人员采集；2. 申请人送来；3. 邮寄样本
+            </div>
+            <Form.Item name="collection_method" style={{ marginLeft: 32, marginBottom: 0 }} initialValue="1">
               <Radio.Group>
                 <Radio value="1">1. 本室采集</Radio>
                 <Radio value="2">2. 申请人送来</Radio>
@@ -296,23 +302,32 @@ export default function NipptRegistration() {
               </Radio.Group>
             </Form.Item>
 
-            {/* 样本信息表 */}
-            <Divider plain style={{ fontSize: 13, fontWeight: 500, margin: "12px 0 8px" }}>样本信息</Divider>
+            <Divider style={{ margin: "8px 0" }} />
+
+            {/* 2 样本信息 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", background: "#1677ff", color: "#fff", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>2</span>
+              <Text strong style={{ fontSize: 15 }}>样本信息</Text>
+            </div>
+
             <Form.List name="males">
-              {(fields, { add, remove }) => (
+              {(fields, { add, remove }) => {
+                const rows = [
+                  { key: "mother", role: "孕妇" },
+                  ...fields.map((f, i) => ({
+                    key: f.key,
+                    role: fields.length > 1 ? `疑父${i + 1}` : "疑父",
+                    maleIndex: i,
+                    field: f,
+                  })),
+                ];
+                return (
                 <Table
-                  dataSource={[
-                    { key: "mother", role: "孕妇" },
-                    ...fields.map((f, i) => ({
-                      key: f.key,
-                      role: fields.length > 1 ? `疑父${i + 1}` : "疑父",
-                      maleIndex: i,
-                      field: f,
-                    })),
-                  ]}
+                  dataSource={rows}
                   pagination={false}
                   size="small"
                   rowKey="key"
+                  style={{ marginLeft: 32 }}
                   columns={[
                     {
                       title: "亲缘关系", dataIndex: "role", width: 90,
@@ -336,7 +351,7 @@ export default function NipptRegistration() {
                         ),
                     },
                     {
-                      title: "民族", width: 90,
+                      title: "民族", width: 100,
                       render: (_r: any, row: any) =>
                         row.maleIndex !== undefined ? (
                           <Form.Item {...row.field} name={[row.field.name, "ethnicity"]} style={{ margin: 0 }}>
@@ -351,7 +366,7 @@ export default function NipptRegistration() {
                         ),
                     },
                     {
-                      title: "样本类型", width: 120,
+                      title: "样本类型", width: 130,
                       render: (_r: any, row: any) =>
                         row.maleIndex !== undefined ? (
                           <Form.Item {...row.field} name={[row.field.name, "sample_type"]} style={{ margin: 0 }}
@@ -386,121 +401,124 @@ export default function NipptRegistration() {
                         ),
                     },
                     {
-                      title: "", width: 36,
+                      title: "操作", width: 60,
                       render: (_r: any, row: any) =>
                         row.maleIndex !== undefined ? (
-                          <Button type="text" danger size="small"
-                            style={{ padding: 0, minWidth: 24 }}
-                            icon={<span style={{ fontSize: 12 }}>✕</span>}
-                            onClick={() => remove(row.field.name)} />
+                          <Button type="link" danger size="small"
+                            onClick={() => remove(row.field.name)}>删除</Button>
                         ) : null,
                     },
                   ] as any}
                   locale={{ emptyText: "" }}
                   footer={() => (
-                    <Button type="dashed" onClick={() => add({ sample_type: ["BLOOD"] })} block
-                      icon={<PlusOutlined />} size="small">
-                      添加疑父
-                    </Button>
+                    <div style={{ padding: "6px 8px" }}>
+                      <Button type="dashed" onClick={() => add({ sample_type: ["BLOOD"] })} block
+                        icon={<PlusOutlined />} size="small">
+                        添加疑父
+                      </Button>
+                    </div>
                   )}
                 />
-              )}
+              )}}
             </Form.List>
 
-            {/* 基本信息 */}
-            <Divider plain style={{ fontSize: 13, fontWeight: 500, margin: "16px 0 8px" }}>基本信息</Divider>
-            <Row gutter={[12, 8]}>
+            <Divider style={{ margin: "8px 0" }} />
+
+            {/* 3 基本信息 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", background: "#1677ff", color: "#fff", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>3</span>
+              <Text strong style={{ fontSize: 15 }}>基本信息</Text>
+            </div>
+
+            <Row gutter={[16, 8]} style={{ marginLeft: 16 }}>
               <Col xs={24} sm={8}>
-                <Form.Item name="sample_source" label="来源(国家)" style={{ marginBottom: 0 }}>
+                <Form.Item name="sample_source" label="来源(国家)" style={{ marginBottom: 8 }}>
                   <Select options={SOURCE_OPTIONS} placeholder="选择来源" allowClear size="small" />
                 </Form.Item>
+                <Form.Item name="collection_date" label="申请日期" style={{ marginBottom: 8 }}>
+                  <DatePicker style={{ width: "100%" }} size="small" placeholder="选择日期" />
+                </Form.Item>
+                <Form.Item name="clinic_name" label="诊所/医院" style={{ marginBottom: 0 }}>
+                  <Input placeholder="诊所或医院名称" size="small" />
+                </Form.Item>
               </Col>
+
               <Col xs={24} sm={8}>
-                <Form.Item name="sales_person" label="销售/代理" style={{ marginBottom: 0 }}>
+                <Form.Item name="multiple_gestation" label="单双胎" style={{ marginBottom: 8 }}>
+                  <Radio.Group defaultValue={false} size="small" optionType="button" buttonStyle="solid">
+                    <Radio.Button value={false}>单</Radio.Button>
+                    <Radio.Button value={true}>双</Radio.Button>
+                  </Radio.Group>
+                </Form.Item>
+                <Form.Item name="phone" label="电话" style={{ marginBottom: 8 }}>
+                  <Input placeholder="电话号码" size="small" />
+                </Form.Item>
+                <Form.Item name="last_menstrual_period" label="末次月经" style={{ marginBottom: 0 }}>
+                  <DatePicker style={{ width: "100%" }} size="small" placeholder="选择日期" />
+                </Form.Item>
+              </Col>
+
+              <Col xs={24} sm={8}>
+                <Form.Item name="sales_person" label="销售/代理" style={{ marginBottom: 8 }}>
                   <Input placeholder="销售或代理名称" size="small" />
                 </Form.Item>
-              </Col>
-              <Col xs={24} sm={8}>
-                <Form.Item name="applicant" label="申请方" style={{ marginBottom: 0 }}>
+                <Form.Item name="applicant" label="申请方" style={{ marginBottom: 8 }}>
                   <Input placeholder="申请人" size="small" />
                 </Form.Item>
-              </Col>
-              <Col xs={24} sm={6}>
-                <Form.Item name="collection_date" label="申请日期" style={{ marginBottom: 0 }}>
-                  <DatePicker style={{ width: "100%" }} size="small" />
+                <Form.Item name="fedex_no" label="快递单号" style={{ marginBottom: 8 }}>
+                  <Input placeholder="快递单号" size="small" />
                 </Form.Item>
-              </Col>
-              <Col xs={24} sm={4}>
-                <Form.Item name="multiple_gestation" label="单双胎" valuePropName="checked" style={{ marginBottom: 0 }}>
-                  <Switch checkedChildren="双" unCheckedChildren="单" size="small" />
+                <Form.Item name="external_id" label="外部编号" style={{ marginBottom: 8 }}>
+                  <Input placeholder="外部编号" size="small" />
                 </Form.Item>
-              </Col>
-              <Col xs={24} sm={5}>
-                <Form.Item name="phone" label="电话" style={{ marginBottom: 0 }}>
-                  <Input placeholder="电话" size="small" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={5}>
-                <Form.Item name="fedex_no" label="快递单号" style={{ marginBottom: 0 }}>
-                  <Input placeholder="快递" size="small" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={4}>
-                <Form.Item name="external_id" label="外部编号" style={{ marginBottom: 0 }}>
-                  <Input placeholder="编号" size="small" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={6}>
-                <Form.Item name="clinic_name" label="诊所/医院" style={{ marginBottom: 0 }}>
-                  <Input placeholder="诊所" size="small" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={6}>
-                <Form.Item name="last_menstrual_period" label="末次月经" style={{ marginBottom: 0 }}>
-                  <DatePicker style={{ width: "100%" }} size="small" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={6}>
                 <Form.Item name="email" label="邮箱" style={{ marginBottom: 0 }}>
-                  <Input placeholder="邮箱" size="small" />
+                  <Input placeholder="邮箱地址" size="small" />
                 </Form.Item>
               </Col>
             </Row>
 
-            {/* 风险提示 */}
-            <Divider plain style={{ fontSize: 13, fontWeight: 500, margin: "16px 0 8px" }}>风险提示（*必填）</Divider>
-            <Row gutter={[16, 4]}>
+            <Divider style={{ margin: "8px 0" }} />
+
+            {/* 4 风险提示 */}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24, borderRadius: "50%", background: "#1677ff", color: "#fff", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>4</span>
+              <Text strong style={{ fontSize: 15 }}>风险提示</Text>
+              <Text type="danger" style={{ fontSize: 12 }}>*必填</Text>
+            </div>
+
+            <Row gutter={[24, 0]} style={{ marginLeft: 16 }}>
               {[
-                { key: "transfusion", label: "1. 是否接受过异体输血（一年内）" },
-                { key: "transplant", label: "2. 是否做过骨髓或器官移植（一年内）" },
-                { key: "immunotherapy", label: "3. 是否做过免疫治疗/干细胞治疗等引入外源DNA的治疗（一个月内）" },
-                { key: "miscarriage", label: "4. 是否有流产史（三个月内）" },
-                { key: "reduction", label: "5. 是否减胎" },
-                { key: "surrogacy", label: "6. 是否代孕" },
-                { key: "ivf", label: "7. 是否试管婴儿" },
-                { key: "week5", label: "8. 是否孕期已满5周" },
-              ].map(q => (
+                { key: "transfusion", label: "是否接受过异体输血（一年内）" },
+                { key: "transplant", label: "是否做过骨髓或器官移植（一年内）" },
+                { key: "immunotherapy", label: "是否做过免疫治疗/干细胞治疗等引入外源DNA的治疗（一个月内）" },
+                { key: "miscarriage", label: "是否有流产史（三个月内）" },
+                { key: "reduction", label: "是否减胎" },
+                { key: "surrogacy", label: "是否代孕" },
+                { key: "ivf", label: "是否试管婴儿" },
+                { key: "week5", label: "是否孕期已满5周" },
+              ].map((q, idx) => (
                 <Col key={q.key} xs={24} sm={12}>
-                  <Form.Item name={["risk", q.key]} label={q.label}
-                    style={{ marginBottom: 4 }} initialValue={false}
-                    labelCol={{ span: 16 }} wrapperCol={{ span: 8 }}>
-                    <Radio.Group size="small">
-                      <Radio value={false}>否</Radio>
-                      <Radio value={true}>是</Radio>
-                    </Radio.Group>
-                  </Form.Item>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                    <Text style={{ flex: 1, fontSize: 13 }}>{idx + 1}. {q.label}</Text>
+                    <Form.Item name={["risk", q.key]} style={{ margin: 0 }} initialValue={false}>
+                      <Radio.Group size="small">
+                        <Radio value={false}>否</Radio>
+                        <Radio value={true}>是</Radio>
+                      </Radio.Group>
+                    </Form.Item>
+                  </div>
                 </Col>
               ))}
             </Row>
 
-            {/* 排除说明 */}
-            <Card size="small" style={{ background: "#fffbe6", margin: "12px 0", fontSize: 12 }}>
-              <Text type="secondary" style={{ fontSize: 11 }}>
-                ⚠️ 异体输血、移植手术、异体细胞治疗等可能引入外源DNA影响检测结果；
+            <div style={{ margin: "12px 0", padding: "8px 12px", background: "#fffbe6", borderRadius: 6, display: "flex", gap: 8, alignItems: "flex-start" }}>
+              <span style={{ fontSize: 14, flexShrink: 0 }}>⚠️</span>
+              <Text type="secondary" style={{ fontSize: 11, lineHeight: 1.6 }}>
+                异体输血、移植手术、异体细胞治疗等可能引入外源DNA影响检测结果；
                 近期流产、减胎可能有残留DNA。以下情况不适合此检测：多胞胎(≥3)、
                 孕妇患肿瘤/先兆子痫/先天免疫疾病。
               </Text>
-            </Card>
+            </div>
 
             <Form.Item name="notes" label="备注" style={{ marginBottom: 12 }}>
               <Input.TextArea rows={2} placeholder="内部备注" size="small" />
