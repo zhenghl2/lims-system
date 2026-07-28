@@ -314,6 +314,16 @@ export default function NipptRegistration() {
               <Text strong style={{ fontSize: 15 }}>样本信息</Text>
             </div>
 
+            {/* Column headers */}
+            <div style={{ marginLeft: 32, marginBottom: 0, display: "flex", fontSize: 12, color: "#999", borderBottom: "1px solid #f0f0f0", paddingBottom: 6, marginTop: 4 }}>
+              <span style={{ width: 90 }}>亲缘关系</span>
+              <span style={{ width: 120 }}>姓名</span>
+              <span style={{ width: 100 }}>民族</span>
+              <span style={{ width: 180 }}>样本类型</span>
+              <span style={{ width: 140 }}>采集日期</span>
+              <span style={{ width: 60 }}>操作</span>
+            </div>
+
             {/* Mother row — outside Form.List, won't disappear */}
             <Table
               dataSource={[{ key: "mother" }]}
@@ -448,17 +458,7 @@ export default function NipptRegistration() {
               )}
             </Form.List>
 
-            {/* Column headers row */}
-            <div style={{ marginLeft: 32, marginBottom: 4, display: "flex", fontSize: 12, color: "#999", borderTop: "1px solid #f0f0f0", paddingTop: 4 }}>
-              <span style={{ width: 90 }}>亲缘关系</span>
-              <span style={{ width: 120 }}>姓名</span>
-              <span style={{ width: 100 }}>民族</span>
-              <span style={{ width: 180 }}>样本类型</span>
-              <span style={{ width: 140 }}>采集日期</span>
-              <span style={{ width: 60 }}>操作</span>
-            </div>
 
-            <Divider style={{ margin: "8px 0" }} />
 
             {/* 3 基本信息 */}
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
