@@ -5,11 +5,11 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Card, Form, Input, Select, Button, message, Typography,
   Divider, Table, Tag, Modal, DatePicker, Row, Col, Switch,
-  Radio, Space, Collapse, Checkbox,
+  Radio, Space, Collapse,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, SendOutlined,
-  UploadOutlined, SearchOutlined,
+  SearchOutlined,
   CopyOutlined,
 } from "@ant-design/icons";
 import { casesApi } from "../api";
@@ -45,15 +45,6 @@ const SOURCE_OPTIONS = [
   { value: "西班牙巴塞罗那经销商", label: "西班牙巴塞罗那经销商" },
   { value: "YLH西班牙bygens", label: "YLH西班牙bygens" },
   { value: "YLH西班牙LABGENETICS", label: "YLH西班牙LABGENETICS" },
-];
-
-// Risk warning options (placeholder, to be configured later)
-const RISK_WARNING_OPTIONS = [
-  { value: "heparin", label: "肝素抗凝" },
-  { value: "transfusion", label: "近期输血" },
-  { value: "transplant", label: "器官移植史" },
-  { value: "chimera", label: "嵌合体可能" },
-  { value: "vanishing_twin", label: "双胎消失综合征" },
 ];
 
 export default function NipptRegistration() {
@@ -160,7 +151,7 @@ export default function NipptRegistration() {
           phone: values.phone,
           email: values.email,
           multiple_gestation: values.multiple_gestation || false,
-          risk_warnings: values.risk_warnings || [],
+          risk_warnings: values.risk ? Object.entries(values.risk).filter(([_, v]) => v).map(([k]) => k) : [],
           registration_type: "FIRST",
           sample_source: values.sample_source,
           external_id: values.external_id,
@@ -293,10 +284,126 @@ export default function NipptRegistration() {
       {regType === "FIRST" && (
         <Card size="small">
           <Form form={form} layout="vertical" size="small">
+            {/* 样本来源方式 */}
+            <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>样本来源</Divider>
+            <div style={{ marginBottom: 12, color: "#666", fontSize: 12 }}>
+              1. 本室工作人员采集；2. 申请人送来；3. 邮寄样本
+            </div>
+            <Form.Item name="collection_method" label="采集方式" initialValue="1">
+              <Radio.Group>
+                <Radio value="1">1. 本室工作人员采集</Radio>
+                <Radio value="2">2. 申请人送来</Radio>
+                <Radio value="3">3. 邮寄样本</Radio>
+              </Radio.Group>
+            </Form.Item>
+
+            {/* 样本信息表 */}
+            <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>样本信息</Divider>
+            <Table
+              dataSource={(() => {
+                const rows: any[] = [{ key: "mother", role: "孕妇" }];
+                const males = form.getFieldValue("males") || [];
+                males.forEach((_: any, i: number) => {
+                  rows.push({ key: `father_${i}`, role: `疑父${males.length > 1 ? i + 1 : ""}`, maleIndex: i });
+                });
+                return rows;
+              })()}
+              pagination={false}
+              size="small"
+              columns={[
+                {
+                  title: "亲缘关系", dataIndex: "role", width: 100,
+                  render: (v: string) => <Text strong>{v}</Text>,
+                },
+                {
+                  title: "姓名", width: 130,
+                  render: (_: any, r: any) =>
+                    r.maleIndex !== undefined ? (
+                      <Form.Item name={["males", r.maleIndex, "name"]} style={{ margin: 0 }}
+                        rules={[{ required: true, message: "必填" }]}>
+                        <Input placeholder="姓名" size="small" bordered={false} style={{ background: "#fafafa" }} />
+                      </Form.Item>
+                    ) : (
+                      <Form.Item name="mother_name" style={{ margin: 0 }}
+                        rules={[{ required: true, message: "必填" }]}>
+                        <Input placeholder="孕妇姓名" size="small" bordered={false} style={{ background: "#fafafa" }} />
+                      </Form.Item>
+                    ),
+                },
+                {
+                  title: "民族", width: 100,
+                  render: (_: any, r: any) =>
+                    r.maleIndex !== undefined ? (
+                      <Form.Item name={["males", r.maleIndex, "ethnicity"]} style={{ margin: 0 }}>
+                        <Input placeholder="民族" size="small" bordered={false} style={{ background: "#fafafa" }} />
+                      </Form.Item>
+                    ) : (
+                      <Form.Item name="mother_ethnicity" style={{ margin: 0 }}>
+                        <Input placeholder="民族" size="small" bordered={false} style={{ background: "#fafafa" }} />
+                      </Form.Item>
+                    ),
+                },
+                {
+                  title: "样本类型", width: 130,
+                  render: (_: any, r: any) =>
+                    r.maleIndex !== undefined ? (
+                      <Form.Item name={["males", r.maleIndex, "sample_type"]} style={{ margin: 0 }}
+                        initialValue={["BLOOD"]}>
+                        <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
+                          size="small" bordered={false} style={{ background: "#fafafa", minWidth: 100 }}
+                          placeholder="类型" maxTagCount={1} />
+                      </Form.Item>
+                    ) : (
+                      <Form.Item name="mother_sample_type" style={{ margin: 0 }} initialValue={["BLOOD"]}>
+                        <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
+                          size="small" bordered={false} style={{ background: "#fafafa", minWidth: 100 }}
+                          placeholder="类型" maxTagCount={1} />
+                      </Form.Item>
+                    ),
+                },
+                {
+                  title: "采集日期", width: 150,
+                  render: (_: any, r: any) =>
+                    r.maleIndex !== undefined ? (
+                      <Form.Item name={["males", r.maleIndex, "arrival_date"]} style={{ margin: 0 }}>
+                        <DatePicker size="small" bordered={false} style={{ background: "#fafafa", width: "100%" }} placeholder="日期" />
+                      </Form.Item>
+                    ) : (
+                      <Form.Item name="female_arrival_date" style={{ margin: 0 }}>
+                        <DatePicker size="small" bordered={false} style={{ background: "#fafafa", width: "100%" }} placeholder="日期" />
+                      </Form.Item>
+                    ),
+                },
+                {
+                  title: "", width: 40,
+                  render: (_: any, r: any) =>
+                    r.maleIndex !== undefined ? (
+                      <Button type="text" danger size="small"
+                        icon={<span style={{ fontSize: 12 }}>✕</span>}
+                        onClick={() => {
+                          const males = form.getFieldValue("males") || [];
+                          males.splice(r.maleIndex, 1);
+                          form.setFieldsValue({ males });
+                        }} />
+                    ) : null,
+                },
+              ] as any}
+              locale={{ emptyText: "" }}
+            />
+            <Form.List name="males">
+              {(_fields, { add }) => (
+                <Button type="dashed" onClick={() => add({ sample_type: ["BLOOD"] })} block
+                  icon={<PlusOutlined />} style={{ marginTop: 8 }}>
+                  添加疑父
+                </Button>
+              )}
+            </Form.List>
+
+            {/* 基本信息 */}
             <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>基本信息</Divider>
             <Row gutter={12}>
               <Col xs={24} sm={8}>
-                <Form.Item name="sample_source" label="来源">
+                <Form.Item name="sample_source" label="来源(国家)">
                   <Select options={SOURCE_OPTIONS} placeholder="选择来源" allowClear />
                 </Form.Item>
               </Col>
@@ -313,28 +420,35 @@ export default function NipptRegistration() {
             </Row>
             <Row gutter={12}>
               <Col xs={24} sm={6}>
-                <Form.Item name="external_id" label="样本编号(外部)">
-                  <Input placeholder="外部样本编号" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={6}>
                 <Form.Item name="collection_date" label="申请日期">
                   <DatePicker style={{ width: "100%" }} />
                 </Form.Item>
               </Col>
               <Col xs={24} sm={6}>
+                <Form.Item name="multiple_gestation" label="单双胎" valuePropName="checked">
+                  <Switch checkedChildren="双胎" unCheckedChildren="单胎" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="phone" label="电话">
+                  <Input placeholder="联系电话" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
                 <Form.Item name="fedex_no" label="快递单号">
-                  <Input placeholder="FedEx/USPS..." />
+                  <Input placeholder="快递单号" />
                 </Form.Item>
               </Col>
             </Row>
-
-            <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>孕妇信息</Divider>
             <Row gutter={12}>
               <Col xs={24} sm={6}>
-                <Form.Item name="mother_name" label="孕妇姓名"
-                  rules={[{ required: true, message: "请输入孕妇姓名" }]}>
-                  <Input placeholder="孕妇姓名" />
+                <Form.Item name="external_id" label="样本编号(外部)">
+                  <Input placeholder="外部编号" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="clinic_name" label="诊所/医院">
+                  <Input placeholder="诊所名称" />
                 </Form.Item>
               </Col>
               <Col xs={24} sm={6}>
@@ -342,79 +456,44 @@ export default function NipptRegistration() {
                   <DatePicker style={{ width: "100%" }} />
                 </Form.Item>
               </Col>
-              <Col xs={24} sm={4}>
-                <Form.Item name="multiple_gestation" label="单双胎" valuePropName="checked">
-                  <Switch checkedChildren="双胎" unCheckedChildren="单胎" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={4}>
-                <Form.Item name="phone" label="电话">
-                  <Input placeholder="联系电话" />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={4}>
+              <Col xs={24} sm={6}>
                 <Form.Item name="email" label="邮箱">
                   <Input placeholder="邮箱地址" />
                 </Form.Item>
               </Col>
             </Row>
-            <Row gutter={12}>
-              <Col xs={24} sm={8}>
-                <Form.Item name="female_arrival_date" label="女性到样日期">
-                  <DatePicker style={{ width: "100%" }} placeholder="母亲样本到达日期" />
-                </Form.Item>
-              </Col>
-            </Row>
 
-            <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>男性信息</Divider>
-            <Form.List name="males">
-              {(fields, { add, remove }) => (
-                <>
-                  {fields.map(({ key, name, ...rest }) => (
-                    <Row key={key} gutter={12} style={{ marginBottom: 8 }} align="middle">
-                      <Col flex="1">
-                        <Form.Item {...rest} name={[name, "name"]} label="男性姓名" style={{ marginBottom: 0 }}>
-                          <Input placeholder="男性姓名" />
-                        </Form.Item>
-                      </Col>
-                      <Col style={{ width: 160 }}>
-                        <Form.Item {...rest} name={[name, "sample_type"]} label="样本类型" style={{ marginBottom: 0 }}
-                          initialValue={["BLOOD"]}>
-                          <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
-                            placeholder="选择样本类型" maxTagCount={2} />
-                        </Form.Item>
-                      </Col>
-                      <Col style={{ width: 180 }}>
-                        <Form.Item {...rest} name={[name, "arrival_date"]} label="到样日期" style={{ marginBottom: 0 }}>
-                          <DatePicker style={{ width: "100%" }} placeholder="男性到样日期" />
-                        </Form.Item>
-                      </Col>
-                      <Col style={{ width: 40, paddingTop: 22 }}>
-                        <Button type="text" danger icon={<span>✕</span>} onClick={() => remove(name)} size="small" />
-                      </Col>
-                    </Row>
-                  ))}
-                  <Button type="dashed" onClick={() => add({ sample_type: ["BLOOD"] })} block
-                    icon={<PlusOutlined />} style={{ marginBottom: 8 }}>
-                    添加男性
-                  </Button>
-                </>
-              )}
-            </Form.List>
+            {/* 风险提示 */}
+            <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>风险提示（*必填）</Divider>
+            {[
+              { key: "transfusion", label: "1. 是否接受过异体输血（一年内）" },
+              { key: "transplant", label: "2. 是否做过骨髓或器官移植（一年内）" },
+              { key: "immunotherapy", label: "3. 是否做过免疫治疗、干细胞治疗等引入外源DNA的治疗（一个月内）" },
+              { key: "miscarriage", label: "4. 是否有流产史（三个月内）" },
+              { key: "reduction", label: "5. 是否减胎" },
+              { key: "surrogacy", label: "6. 是否代孕" },
+              { key: "ivf", label: "7. 是否试管婴儿" },
+              { key: "week5", label: "8. 是否孕期已满5周" },
+            ].map(q => (
+              <Form.Item key={q.key} name={["risk", q.key]} label={q.label}
+                style={{ marginBottom: 6 }} initialValue={false}>
+                <Radio.Group>
+                  <Radio value={false}>否</Radio>
+                  <Radio value={true}>是</Radio>
+                </Radio.Group>
+              </Form.Item>
+            ))}
 
-            <Divider plain style={{ fontSize: 13, fontWeight: 500 }}>其他信息</Divider>
-            <Row gutter={12}>
-              <Col xs={24} sm={12}>
-                <Form.Item name="risk_warnings" label="影响结果的风险提示">
-                  <Checkbox.Group options={RISK_WARNING_OPTIONS} />
-                </Form.Item>
-              </Col>
-              <Col xs={24} sm={12}>
-                <Form.Item name="clinic_name" label="诊所/医院">
-                  <Input placeholder="诊所或医院名称" />
-                </Form.Item>
-              </Col>
-            </Row>
+            {/* 排除说明 */}
+            <Card size="small" style={{ background: "#fffbe6", marginBottom: 12, fontSize: 12 }}>
+              <Text type="secondary">
+                异体输血、移植手术、异体细胞治疗等可能会引入外源影响检测结果；
+                近期流产、减胎可能会有残留DNA影响检测结果。以下情况不适合做此检测：
+                怀有多胞胎（双胞胎以上）的孕妇；孕妇患有肿瘤疾病；孕妇患有先兆子痫；
+                孕妇患有先天免疫疾病。
+              </Text>
+            </Card>
+
             <Row gutter={12}>
               <Col span={24}>
                 <Form.Item name="notes" label="备注">
@@ -428,18 +507,10 @@ export default function NipptRegistration() {
                 onClick={handleSubmit} size="large">
                 提交登记
               </Button>
-              <Button icon={<UploadOutlined />} disabled title="批量导入功能开发中">
-                批量导入 (开发中)
-              </Button>
-              <Button icon={<UploadOutlined />} disabled title="从文件登记功能开发中">
-                从文件登记 (开发中)
-              </Button>
             </div>
           </Form>
         </Card>
-      )}
-
-      {/* === 补充样本：极简表单 === */}
+      )}      {/* === 补充样本：极简表单 === */}
       {regType === "SUPPLEMENT" && selectedCase && (
         <Card size="small">
           <Form form={form} layout="vertical" size="small">
