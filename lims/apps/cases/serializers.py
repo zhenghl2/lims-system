@@ -577,30 +577,36 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                 created_by=request.user,
             )
 
-            # One PP sample per CaseSample (no grouping by person)
+            # Group by person — one PP sample per person with all their case_sample_ids
             css = CaseSample.objects.filter(
                 id__in=case_sample_ids
             ).select_related("case", "sample")
 
+            groups = {}
             for cs in css:
-                if cs.role == "MOTHER":
-                    cat = "FEMALE_BLOOD"
-                elif cs.sample_source in ("BLOOD", "DBS"):
-                    cat = "MALE_BLOOD"
-                else:
-                    cat = "MALE_OTHER"
+                key = (str(cs.case_id), cs.sample.patient_name)
+                if key not in groups:
+                    if cs.role == "MOTHER":
+                        cat = "FEMALE_BLOOD"
+                    elif cs.sample_source in ("BLOOD", "DBS"):
+                        cat = "MALE_BLOOD"
+                    else:
+                        cat = "MALE_OTHER"
+                    groups[key] = {"case": cs.case, "name": cs.sample.patient_name, "role": cs.role, "category": cat, "ids": []}
+                groups[key]["ids"].append(str(cs.id))
 
-                aliquot_default = 2 if cat == "MALE_BLOOD" else 3
+            for gdata in groups.values():
+                aliquot_default = 2 if gdata["category"] == "MALE_BLOOD" else 3
                 kwargs = {
                     "batch": batch,
-                    "case": cs.case,
-                    "patient_name": cs.sample.patient_name,
-                    "role": cs.role,
-                    "category": cat,
-                    "case_sample_ids": [str(cs.id)],
+                    "case": gdata["case"],
+                    "patient_name": gdata["name"],
+                    "role": gdata["role"],
+                    "category": gdata["category"],
+                    "case_sample_ids": gdata["ids"],
                     "aliquot_tubes": aliquot_default,
                 }
-                if cat == "MALE_BLOOD":
+                if gdata["category"] == "MALE_BLOOD":
                     kwargs["plasma_volume"] = 30.0
                 NipptPreProcessingSample.objects.create(**kwargs)
 
@@ -621,8 +627,8 @@ class PendingEntrySerializer(serializers.Serializer):
     patient_name = serializers.CharField()
     role = serializers.CharField()
     category = serializers.CharField()
-    sample_type = serializers.CharField()
-    case_sample_id = serializers.CharField()
+    sample_types = serializers.ListField(child=serializers.CharField())
+    case_sample_ids = serializers.ListField(child=serializers.CharField())
     test_sample_id = serializers.CharField(allow_null=True)
 
 
