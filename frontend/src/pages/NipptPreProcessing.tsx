@@ -131,10 +131,27 @@ export default function NipptPreProcessing() {
 
   useEffect(() => { fetchBatches(); }, [fetchBatches]);
 
+  const autoFillExperimentType = (batch: any) => {
+    const allSamples = [...(batch.female_samples || []), ...(batch.male_blood_samples || [])];
+    for (const s of allSamples) {
+      if (s.experiment_sample_type) continue;
+      const types = s.received_sample_types || [];
+      if (types.length === 1) {
+        s.experiment_sample_type = types[0];
+        s.remaining_sample_types = [];
+      } else if (types.length > 1 && types.includes("BLOOD")) {
+        s.experiment_sample_type = "BLOOD";
+        s.remaining_sample_types = types.filter((t: string) => t !== "BLOOD");
+      }
+      // other cases: leave empty for operator
+    }
+  };
+
   const fetchDetail = async (id: string) => {
     setBatchLoading(true);
     try {
       const res = await (casesApi as any).getPreprocessingBatch(id);
+      autoFillExperimentType(res.data);
       setSelectedBatch(res.data);
       // Load saved photos
       setPhotos(res.data?.processing_data?.photos || []);
