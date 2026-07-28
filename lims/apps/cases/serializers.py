@@ -63,7 +63,7 @@ class CaseListSerializer(serializers.ModelSerializer):
             "sample_count", "received_count", "mother_name", "progress",
             "gestational_age_weeks", "gestational_age_days",
             "clinic_name", "sales_person",
-            "applicant", "registration_type",
+            "applicant", "country", "registration_type",
             "expected_completion", "workflow_status", "created_at",
             "case_samples",
         ]
@@ -262,6 +262,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         count = Case.objects.filter(case_number__startswith=prefix).count() + 1
         case_number = f"{prefix}-{count:04d}"
 
+        validated_data["country"] = sample_source
         case = Case.objects.create(
             case_number=case_number,
             panel=panel,
