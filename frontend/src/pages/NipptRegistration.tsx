@@ -315,58 +315,55 @@ export default function NipptRegistration() {
             </div>
 
                         {/* Single unified table — perfect alignment */}
+            {/* Mother row — OUTSIDE Form.List, never re-renders when males change */}
+            <Table
+              dataSource={[{ key: "mother" }]}
+              pagination={false}
+              size="small"
+              rowKey="key"
+              showHeader={true}
+              style={{ marginLeft: 32, marginBottom: 0 }}
+              columns={[
+                { title: "亲缘关系", dataIndex: "r", width: 90,
+                  render: () => <Text strong style={{ fontSize: 13 }}>孕妇</Text> },
+                { title: "姓名", width: 120,
+                  render: () => (
+                    <Form.Item name="mother_name" style={{ margin: 0 }}
+                      rules={[{ required: true, message: "必填" }]}>
+                      <Input placeholder="孕妇姓名" size="small" bordered={false}
+                        style={{ background: "#fafafa", borderRadius: 0 }} />
+                    </Form.Item>
+                  ) },
+                { title: "民族", width: 100,
+                  render: () => (
+                    <Form.Item name="mother_ethnicity" style={{ margin: 0 }}>
+                      <Input placeholder="民族" size="small" bordered={false}
+                        style={{ background: "#fafafa", borderRadius: 0 }} />
+                    </Form.Item>
+                  ) },
+                { title: "样本类型", width: 180,
+                  render: () => <Tag color="blue" style={{ margin: 0, fontSize: 12 }}>血液</Tag> },
+                { title: "采集日期", width: 140,
+                  render: () => (
+                    <Form.Item name="female_arrival_date" style={{ margin: 0 }}>
+                      <DatePicker size="small" bordered={false}
+                        style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
+                    </Form.Item>
+                  ) },
+                { title: "操作", width: 60, render: () => null },
+              ] as any}
+              locale={{ emptyText: "" }}
+            />
+
+            {/* Male rows — inside Form.List */}
             <Form.List name="males">
-              {(fields, { add, remove }) => {
-                const maleRows = fields.map((f, i) => ({
+              {(fields, { add, remove }) => (
+                <Table
+                  dataSource={fields.map((f, i) => ({
                     key: f.key,
                     role: fields.length > 1 ? `疑父${i + 1}` : "疑父",
                     maleIndex: i, field: f,
-                  }));
-                return (
-                <>
-                {/* Mother row — separate table, NOT inside Form.List render */}
-                <Table
-                  dataSource={[{ key: "mother" }]}
-                  pagination={false}
-                  size="small"
-                  rowKey="key"
-                  showHeader={true}
-                  style={{ marginLeft: 32, marginBottom: 0 }}
-                  columns={[
-                    { title: "亲缘关系", dataIndex: "r", width: 90,
-                      render: () => <Text strong style={{ fontSize: 13 }}>孕妇</Text> },
-                    { title: "姓名", width: 120,
-                      render: () => (
-                        <Form.Item name="mother_name" style={{ margin: 0 }}
-                          rules={[{ required: true, message: "必填" }]}>
-                          <Input placeholder="孕妇姓名" size="small" bordered={false}
-                            style={{ background: "#fafafa", borderRadius: 0 }} />
-                        </Form.Item>
-                      ) },
-                    { title: "民族", width: 100,
-                      render: () => (
-                        <Form.Item name="mother_ethnicity" style={{ margin: 0 }}>
-                          <Input placeholder="民族" size="small" bordered={false}
-                            style={{ background: "#fafafa", borderRadius: 0 }} />
-                        </Form.Item>
-                      ) },
-                    { title: "样本类型", width: 180,
-                      render: () => <Tag color="blue" style={{ margin: 0, fontSize: 12 }}>血液</Tag> },
-                    { title: "采集日期", width: 140,
-                      render: () => (
-                        <Form.Item name="female_arrival_date" style={{ margin: 0 }}>
-                          <DatePicker size="small" bordered={false}
-                            style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
-                        </Form.Item>
-                      ) },
-                    { title: "操作", width: 60, render: () => null },
-                  ] as any}
-                  locale={{ emptyText: "" }}
-                />
-
-                {/* Male rows — inside Form.List */}
-                <Table
-                  dataSource={maleRows}
+                  }))}
                   pagination={false}
                   size="small"
                   rowKey="key"
@@ -424,8 +421,7 @@ export default function NipptRegistration() {
                     </div>
                   )}
                 />
-                </>
-              )}}
+              )}
             </Form.List>
 
 <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
