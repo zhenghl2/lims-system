@@ -65,8 +65,9 @@ interface CaseSampleRow {
   preservationMethod: string;
   status: string;
   image: string | null;
-  ptBase: string; // PT base number (editable)
+  ptBase: string; // PT base number (editable, numeric only)
   received: boolean;
+  receivedAt: string;
 }
 
 export default function SampleReceiving() {
@@ -118,8 +119,9 @@ export default function SampleReceiving() {
           preservationMethod: cs.preservation_method || "",
           status: sample.status || "REGISTERED",
           image: cs.receipt_photo_url || null,
-          ptBase: c.pt_number || "",
+          ptBase: c.pt_number ? c.pt_number.replace(/^PT/i, "") : "",
           received: cs.received_at != null,
+          receivedAt: cs.received_at || "",
         });
       }
     }
@@ -181,7 +183,8 @@ export default function SampleReceiving() {
         if (r.caseId === row.caseId) {
           const fathers = prev.filter((x) => x.caseId === r.caseId && x.role === "ALLEGED_FATHER");
           const suffix = generateSuffix(r.role, fathers, r.patientName);
-          return { ...r, ptBase: newPtBase, testSampleId: newPtBase ? `${newPtBase}${suffix}` : "" };
+          const fullBase = newPtBase ? `PT${newPtBase}` : "";
+          return { ...r, ptBase: newPtBase, testSampleId: newPtBase ? `${fullBase}${suffix}` : "" };
         }
         return r;
       })
@@ -192,7 +195,7 @@ export default function SampleReceiving() {
   const confirmReceipt = async (row: CaseSampleRow, condition: string = "OK") => {
     try {
       const payload: any = { sample_id: row.sampleUuid, condition };
-      if (row.ptBase) payload.pt_number = row.ptBase;
+      if (row.ptBase) payload.pt_number = "PT" + row.ptBase;
       if (row.actualSampleType) payload.actual_sample_type = row.actualSampleType;
       if (row.preservationMethod) payload.preservation_method = row.preservationMethod;
       await (casesApi as any).confirmReceipt(row.caseId, payload);
@@ -208,7 +211,7 @@ export default function SampleReceiving() {
     for (const row of selected) {
       try {
         const payload: any = { sample_id: row.sampleUuid, condition: "OK" };
-        if (row.ptBase) payload.pt_number = row.ptBase;
+        if (row.ptBase) payload.pt_number = "PT" + row.ptBase;
         if (row.actualSampleType) payload.actual_sample_type = row.actualSampleType;
         if (row.preservationMethod) payload.preservation_method = row.preservationMethod;
         await (casesApi as any).confirmReceipt(row.caseId, payload);
@@ -231,13 +234,12 @@ export default function SampleReceiving() {
       if (!caseGroups.has(row.caseId)) caseGroups.set(row.caseId, []);
       caseGroups.get(row.caseId)!.push(row);
     }
-    let ptNum = parseInt(batchPtStart.replace(/\D/g, "")) || 1;
-    const prefix = batchPtStart.replace(/\d/g, "").trim() || "PT";
+    let ptNum = parseInt(batchPtStart) || 1;
 
     setData((prev) => {
       const updated = [...prev];
       for (const [_caseId, rows] of caseGroups) {
-        const base = `${prefix}${String(ptNum).padStart(5, "0")}`;
+        const base = `PT${String(ptNum).padStart(5, "0")}`;
         const fathers = rows.filter((r) => r.role === "ALLEGED_FATHER");
         for (const row of rows) {
           const idx = updated.findIndex((r) => r.key === row.key);
@@ -337,10 +339,11 @@ export default function SampleReceiving() {
         <Input
           size="small"
           value={r.ptBase}
-          placeholder="输入PT号"
-          onChange={(e) => handlePtChange(r.key, e.target.value)}
+          placeholder="输入数字"
+          onChange={(e) => handlePtChange(r.key, e.target.value.replace(/\D/g, ""))}
           style={{ width: 110, fontFamily: "monospace" }}
-          addonAfter={<Text type="secondary" style={{ fontSize: 11 }}>{v ? v.replace(r.ptBase, "") : ""}</Text>}
+          addonBefore="PT"
+          addonAfter={<Text type="secondary" style={{ fontSize: 11 }}>{v ? v.replace("PT" + r.ptBase, "") : ""}</Text>}
         />
       ),
     },
@@ -424,6 +427,10 @@ export default function SampleReceiving() {
         const t = STATUS_TAGS[v] || { color: "default", label: v };
         return <Tag color={t.color}>{t.label}</Tag>;
       },
+    },
+    {
+      title: "签收时间", dataIndex: "receivedAt", key: "rt", width: 130,
+      render: (v: string) => v ? dayjs(v).format("MM-DD HH:mm") : <Text type="secondary">—</Text>,
     },
     {
       title: "图片", dataIndex: "image", key: "img", width: 60,
@@ -562,7 +569,7 @@ export default function SampleReceiving() {
         <Input
           placeholder="如 PT00088"
           value={batchPtStart}
-          onChange={(e) => setBatchPtStart(e.target.value)}
+          onChange={(e) => setBatchPtStart(e.target.value.replace(/\D/g, ""))}
           style={{ fontFamily: "monospace" }}
         />
         <div style={{ marginTop: 8 }}>
