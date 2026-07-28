@@ -334,14 +334,14 @@ export default function SampleReceiving() {
       },
     },
     {
-      title: "PT编号", dataIndex: "testSampleId", key: "pt", width: 150,
+      title: "PT编号", dataIndex: "testSampleId", key: "pt", width: 180,
       render: (v: string, r: CaseSampleRow) => (
         <Input
           size="small"
           value={r.ptBase}
           placeholder="输入数字"
           onChange={(e) => handlePtChange(r.key, e.target.value.replace(/\D/g, ""))}
-          style={{ width: 110, fontFamily: "monospace" }}
+          style={{ width: 135, fontFamily: "monospace" }}
           addonBefore="PT"
           addonAfter={<Text type="secondary" style={{ fontSize: 11 }}>{v ? v.replace("PT" + r.ptBase, "") : ""}</Text>}
         />
