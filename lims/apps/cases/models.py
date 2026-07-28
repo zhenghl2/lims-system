@@ -38,7 +38,6 @@ class Case(models.Model):
     gestational_age_weeks = models.PositiveIntegerField(null=True, blank=True)
     gestational_age_days = models.PositiveIntegerField(null=True, blank=True)
     clinic_name = models.CharField(max_length=200, blank=True)
-    country = models.CharField(max_length=100, blank=True, default="")
     clinic_contact = models.CharField(max_length=100, blank=True)
     sales_person = models.CharField(max_length=100, blank=True)
     notes = models.TextField(blank=True)
