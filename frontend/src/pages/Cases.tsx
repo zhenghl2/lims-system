@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
+import dayjs from "dayjs";
 import {
   Card, Table, Tag, Typography, Button, Input, Select, Space,
-  Progress, Drawer, message, Badge, Popconfirm,
+  Progress, Drawer, message, Badge, Popconfirm, DatePicker,
 } from "antd";
 import {
   EyeOutlined, LinkOutlined, RedoOutlined,
@@ -37,6 +38,8 @@ const fmtDate = (v: string | null | undefined) => {
 export default function Cases() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
+  const [sourceFilter, setSourceFilter] = useState<string>("");
+  const [dateRange, setDateRange] = useState<[any, any] | null>(null);
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -51,6 +54,9 @@ export default function Cases() {
       const params: any = { page: p, page_size: 20 };
       if (search) params.search = search;
       if (statusFilter) params.status = statusFilter;
+      if (sourceFilter) params.applicant = sourceFilter;
+      if (dateRange && dateRange[0]) params.created_after = dayjs(dateRange[0]).format("YYYY-MM-DD");
+      if (dateRange && dateRange[1]) params.created_before = dayjs(dateRange[1]).format("YYYY-MM-DD");
       const r = await casesApi.list(params);
       setData(r.data?.results || []);
       setTotal(r.data?.count || 0);
@@ -58,7 +64,7 @@ export default function Cases() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadData(1); }, [search, statusFilter, page]);
+  useEffect(() => { loadData(1); }, [search, statusFilter, sourceFilter, dateRange, page]);
 
   const openDetail = async (id: string) => {
     setDrawerOpen(true);
@@ -170,28 +176,47 @@ export default function Cases() {
     <div style={{ padding: 16, maxWidth: 1400, margin: "0 auto" }}>
       <Title level={4}><EyeOutlined style={{ marginRight: 8, color: "#1677ff" }} />案例管理</Title>
 
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: 16 }} wrap>
         <Input.Search
-          placeholder="Case / PT / 诊所 / 销售..."
+          placeholder="Case / PT / 姓名..."
           value={search}
           onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-          style={{ width: 280 }}
+          style={{ width: 240 }}
         />
+        <Select
+          placeholder="全部来源"
+          value={sourceFilter || undefined}
+          onChange={(v) => { setSourceFilter(v || ""); setPage(1); }}
+          style={{ width: 110 }}
+          allowClear
+        >
+          <Select.Option value="国内">国内</Select.Option>
+          <Select.Option value="泰国">泰国</Select.Option>
+          <Select.Option value="巴西">巴西</Select.Option>
+          <Select.Option value="巴西万基">巴西万基</Select.Option>
+          <Select.Option value="韩国">韩国</Select.Option>
+          <Select.Option value="澳洲">澳洲</Select.Option>
+        </Select>
         <Select
           placeholder="全部状态"
           value={statusFilter || undefined}
           onChange={(v) => { setStatusFilter(v || ""); setPage(1); }}
-          style={{ width: 130 }}
+          style={{ width: 110 }}
           allowClear
         >
           <Select.Option value="REGISTERED">已登记</Select.Option>
           <Select.Option value="RECEIVING">接收中</Select.Option>
           <Select.Option value="IN_PROCESS">处理中</Select.Option>
-          <Select.Option value="TESTING">检测中</Select.Option>
-          <Select.Option value="ANALYZING">分析中</Select.Option>
           <Select.Option value="COMPLETED">已完成</Select.Option>
           <Select.Option value="REPORTED">已报告</Select.Option>
         </Select>
+        <DatePicker.RangePicker
+          placeholder={["开始日期", "结束日期"]}
+          value={dateRange as any}
+          onChange={(v) => { setDateRange(v as any); setPage(1); }}
+          style={{ width: 240 }}
+          allowEmpty={[true, true]}
+        />
       </Space>
 
       <Table

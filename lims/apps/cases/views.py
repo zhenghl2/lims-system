@@ -39,6 +39,17 @@ class CaseViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(status=statuses[0])
             elif len(statuses) > 1:
                 qs = qs.filter(status__in=statuses)
+        # Source/applicant filter
+        applicant = self.request.query_params.get("applicant", "").strip()
+        if applicant:
+            qs = qs.filter(applicant__icontains=applicant)
+        # Date range filter
+        date_after = self.request.query_params.get("created_after", "").strip()
+        if date_after:
+            qs = qs.filter(created_at__date__gte=date_after)
+        date_before = self.request.query_params.get("created_before", "").strip()
+        if date_before:
+            qs = qs.filter(created_at__date__lte=date_before)
         if self.request.user.site_id:
             qs = qs.filter(site=self.request.user.site)
         return qs
