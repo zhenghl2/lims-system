@@ -390,8 +390,8 @@ export default function NipptRegistration() {
                       title: "", width: 120,
                       render: (_r: any, row: any) => (
                         <Form.Item {...row.field} name={[row.field.name, "name"]} style={{ margin: 0 }}
-                          rules={[{ required: true, message: "必填" }]}>
-                          <Input placeholder="姓名" size="small" bordered={false}
+                          rules={row.maleIndex === 0 ? [{ required: true, message: "必填" }] : []}>
+                          <Input placeholder={row.maleIndex === 0 ? "姓名" : "姓名(选填)"} size="small" bordered={false}
                             style={{ background: "#fafafa", borderRadius: 0 }} />
                         </Form.Item>
                       ),
@@ -406,14 +406,14 @@ export default function NipptRegistration() {
                       ),
                     },
                     {
-                      title: "", width: 130,
+                      title: "", width: 150,
                       render: (_r: any, row: any) => (
                         <Form.Item {...row.field} name={[row.field.name, "sample_type"]} style={{ margin: 0 }}
                           initialValue={["BLOOD"]}>
                           <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
                             size="small" bordered={false}
-                            style={{ background: "#fafafa", minWidth: 90, borderRadius: 0 }}
-                            placeholder="类型" maxTagCount={1} />
+                            style={{ background: "#fafafa", minWidth: 110, borderRadius: 0 }}
+                            placeholder="类型" maxTagCount={2} />
                         </Form.Item>
                       ),
                     },
@@ -453,7 +453,7 @@ export default function NipptRegistration() {
               <span style={{ width: 90 }}>亲缘关系</span>
               <span style={{ width: 120 }}>姓名</span>
               <span style={{ width: 100 }}>民族</span>
-              <span style={{ width: 130 }}>样本类型</span>
+              <span style={{ width: 150 }}>样本类型</span>
               <span style={{ width: 140 }}>采集日期</span>
               <span style={{ width: 60 }}>操作</span>
             </div>
