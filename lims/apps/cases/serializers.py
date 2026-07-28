@@ -46,6 +46,7 @@ class CaseListSerializer(serializers.ModelSerializer):
     panel_name = serializers.CharField(source="panel.name", read_only=True)
     sample_count = serializers.SerializerMethodField()
     received_count = serializers.SerializerMethodField()
+    workflow_status = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     mother_name = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
@@ -60,7 +61,7 @@ class CaseListSerializer(serializers.ModelSerializer):
             "gestational_age_weeks", "gestational_age_days",
             "clinic_name", "sales_person",
             "applicant", "registration_type",
-            "expected_completion", "created_at",
+            "expected_completion", "workflow_status", "created_at",
             "case_samples",
         ]
 
@@ -94,6 +95,28 @@ class CaseListSerializer(serializers.ModelSerializer):
 
     def get_received_count(self, obj):
         return obj.case_samples.exclude(received_at=None).count()
+
+    def get_workflow_status(self, obj):
+        WORKFLOW_ORDER = [
+            "REGISTERED", "RECEIVED", "PRE_PROCESSING", "EXTRACTION",
+            "LIBRARY_PREP", "POOLING", "HYB_SEQ", "BIOINFO",
+            "REPORT_DRAFT", "COMPLETED"
+        ]
+        css = obj.case_samples.filter(is_active=True)
+        if not css.exists():
+            css = obj.case_samples.all()
+        slowest = "REGISTERED"
+        slowest_idx = len(WORKFLOW_ORDER)
+        for cs in css:
+            stage = cs.workflow_stage or "REGISTERED"
+            if stage.endswith("_FAILED"):
+                continue
+            if stage in WORKFLOW_ORDER:
+                idx = WORKFLOW_ORDER.index(stage)
+                if idx < slowest_idx:
+                    slowest_idx = idx
+                    slowest = stage
+        return slowest
 
 
 class CaseDetailSerializer(serializers.ModelSerializer):

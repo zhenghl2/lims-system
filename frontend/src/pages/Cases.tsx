@@ -16,13 +16,17 @@ const { Text, Title } = Typography;
 
 const STATUS_COLORS: Record<string, string> = {
   REGISTERED: "default", RECEIVING: "blue", RECEIVED: "blue",
-  IN_PROCESS: "orange", TESTING: "purple", ANALYZING: "geekblue",
-  COMPLETED: "green", REPORTED: "cyan", REJECTED: "red",
+  PRE_PROCESSING: "orange", EXTRACTION: "gold", LIBRARY_PREP: "purple",
+  POOLING: "magenta", HYB_SEQ: "cyan", BIOINFO: "geekblue",
+  REPORT_DRAFT: "lime", IN_PROCESS: "orange", COMPLETED: "green",
+  REPORTED: "cyan", REJECTED: "red",
 };
 const STATUS_DISPLAY: Record<string, string> = {
-  REGISTERED: "已登记", RECEIVING: "接收中", IN_PROCESS: "处理中",
-  TESTING: "检测中", ANALYZING: "分析中", COMPLETED: "已完成",
-  REPORTED: "已报告", ARCHIVED: "已归档", DISPOSED: "已销毁",
+  REGISTERED: "已登记", RECEIVING: "接收中", RECEIVED: "已签收",
+  PRE_PROCESSING: "前处理", EXTRACTION: "提取中", LIBRARY_PREP: "建库中",
+  POOLING: "Pooling", HYB_SEQ: "测序中", BIOINFO: "生信中",
+  REPORT_DRAFT: "报告草稿", IN_PROCESS: "处理中", COMPLETED: "已完成",
+  REPORTED: "已报告",
 };
 
 const fmtDate = (v: string | null | undefined) => {
@@ -119,12 +123,16 @@ export default function Cases() {
       ),
     },
     {
-      title: "诊所", dataIndex: "clinic_name", width: 120, responsive: ["md" as const],
+      title: "来源", dataIndex: "clinic_name", width: 120, responsive: ["md" as const],
       render: (v: string) => v || "-",
     },
     {
-      title: "状态", dataIndex: "status", width: 100,
-      render: (v: string) => <Tag color={STATUS_COLORS[v] || "default"}>{STATUS_DISPLAY[v] || v}</Tag>,
+      title: "状态", dataIndex: "workflow_status", width: 100,
+      render: (v: string, r: any) => {
+        const display = STATUS_DISPLAY[v] || STATUS_DISPLAY[r.status] || v || r.status;
+        const color = STATUS_COLORS[v] || STATUS_COLORS[r.status] || "default";
+        return <Tag color={color}>{display}</Tag>;
+      },
     },
     {
       title: "加急", dataIndex: "is_urgent", width: 60, align: "center" as const,

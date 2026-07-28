@@ -650,6 +650,41 @@ def public_register_info(request, token):
 
 
 # ═══ Workflow tracking helper ═══
+
+WORKFLOW_ORDER = [
+    "REGISTERED", "RECEIVED", "PRE_PROCESSING", "EXTRACTION",
+    "LIBRARY_PREP", "POOLING", "HYB_SEQ", "BIOINFO",
+    "REPORT_DRAFT", "COMPLETED"
+]
+
+def sync_case_status(case_sample_ids):
+    """Sync Case workflow_status from the slowest (most behind) active sample."""
+    if not case_sample_ids:
+        return
+    case_ids = set()
+    for cs in CaseSample.objects.filter(id__in=case_sample_ids).select_related("case"):
+        if cs.case:
+            case_ids.add(cs.case_id)
+    for case in Case.objects.filter(id__in=case_ids):
+        all_css = case.case_samples.filter(is_active=True)
+        if not all_css.exists():
+            all_css = case.case_samples.all()
+        slowest = "COMPLETED"
+        slowest_idx = len(WORKFLOW_ORDER)
+        for cs in all_css:
+            stage = cs.workflow_stage or "REGISTERED"
+            if stage.endswith("_FAILED"):
+                continue
+            if stage in WORKFLOW_ORDER:
+                idx = WORKFLOW_ORDER.index(stage)
+                if idx < slowest_idx:
+                    slowest_idx = idx
+                    slowest = stage
+        # Only update if the Case is past RECEIVING
+        if case.status in ("IN_PROCESS", "COMPLETED") and slowest_idx < len(WORKFLOW_ORDER):
+            case.workflow_status = slowest
+            case.save(update_fields=["updated_at"])
+
 def update_wf(case_sample_ids, stage, action, batch_num="", operator=None):
     from .models import WorkflowLog
     if not case_sample_ids: return
@@ -911,8 +946,8 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        return Response
-        advance_batch(batch, "LIBRARY_PREP", request.user)({"message":f"Completed {batch.samples.count()} samples"})
+        advance_batch(batch, "EXTRACTION", request.user)
+        return Response({"message": f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()
@@ -1009,8 +1044,8 @@ class NipptLibraryViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        return Response
-        advance_batch(batch, "LIBRARY_PREP", request.user)({"message":f"Completed {batch.samples.count()} samples"})
+        advance_batch(batch, "LIBRARY_PREP", request.user)
+        return Response({"message": f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()
@@ -1084,8 +1119,8 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        return Response
-        advance_batch(batch, "LIBRARY_PREP", request.user)({"message":f"Completed {batch.samples.count()} samples"})
+        advance_batch(batch, "LIBRARY_PREP", request.user)
+        return Response({"message": f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()
@@ -1149,8 +1184,8 @@ class NipptHybSeqViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        return Response
-        advance_batch(batch, "LIBRARY_PREP", request.user)({"message":"Completed"})
+        advance_batch(batch, "HYB_SEQ", request.user)
+        return Response({"message": f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()
