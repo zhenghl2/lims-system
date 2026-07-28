@@ -112,9 +112,9 @@ export default function SampleReceiving() {
           gestationalWeeks: isMother ? c.gestational_age_weeks : null,
           sampleType: cs.sample_source || "BLOOD",
           actualSampleType: cs.actual_sample_type || cs.sample_source || "BLOOD",
-          collectionDate: sample.collection_date || "",
-          sampleSource: c.sample_source || sample.sample_source || "",
-          fedexNo: sample.fedex_no || "",
+          collectionDate: cs.collection_date || "",
+          sampleSource: c.applicant || "",
+          fedexNo: cs.fedex_no || "",
           phone: c.phone || "",
           preservationMethod: cs.preservation_method || "",
           status: sample.status || "REGISTERED",
@@ -538,6 +538,11 @@ export default function SampleReceiving() {
         loading={loading}
         size="small"
         scroll={{ x: 1500, y: "calc(100vh - 320px)" }}
+        onRow={(r) => {
+          const nextRow = data[data.indexOf(r) + 1];
+          const isCaseBoundary = nextRow && r.caseId !== nextRow.caseId;
+          return isCaseBoundary ? { style: { borderBottom: "2px solid #d9d9d9" } } : {};
+        }}
         rowSelection={{
           selectedRowKeys,
           onChange: (keys) => setSelectedRowKeys(keys),
