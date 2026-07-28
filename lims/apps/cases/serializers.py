@@ -72,19 +72,23 @@ class CaseListSerializer(serializers.ModelSerializer):
         return ""
 
     def get_progress(self, obj):
-        STATUS_WEIGHT = {
-            "REGISTERED": 5, "RECEIVED": 15, "IN_PROCESS": 30,
-            "TESTING": 50, "ANALYZING": 70, "COMPLETED": 90,
-            "REPORTED": 100, "ARCHIVED": 100, "DISPOSED": 100,
+        WORKFLOW_WEIGHT = {
+            "REGISTERED": 5, "RECEIVED": 12,
+            "PRE_PROCESSING": 22, "EXTRACTION": 35,
+            "LIBRARY_PREP": 48, "POOLING": 58,
+            "HYB_SEQ": 70, "BIOINFO": 82,
+            "REPORT_DRAFT": 92, "COMPLETED": 100,
         }
-        css = obj.case_samples.select_related("sample").all()
+        css = obj.case_samples.all()
         total_weight = 0
         count = 0
         for cs in css:
-            s_status = cs.sample.status
-            if s_status == "REJECTED":
+            if not cs.is_active:
                 continue
-            total_weight += STATUS_WEIGHT.get(s_status, 0)
+            stage = cs.workflow_stage or "REGISTERED"
+            if stage.endswith("_FAILED"):
+                continue
+            total_weight += WORKFLOW_WEIGHT.get(stage, 0)
             count += 1
         if count == 0:
             return 0
@@ -161,19 +165,23 @@ class CaseDetailSerializer(serializers.ModelSerializer):
         return ""
 
     def get_progress(self, obj):
-        STATUS_WEIGHT = {
-            "REGISTERED": 5, "RECEIVED": 15, "IN_PROCESS": 30,
-            "TESTING": 50, "ANALYZING": 70, "COMPLETED": 90,
-            "REPORTED": 100, "ARCHIVED": 100, "DISPOSED": 100,
+        WORKFLOW_WEIGHT = {
+            "REGISTERED": 5, "RECEIVED": 12,
+            "PRE_PROCESSING": 22, "EXTRACTION": 35,
+            "LIBRARY_PREP": 48, "POOLING": 58,
+            "HYB_SEQ": 70, "BIOINFO": 82,
+            "REPORT_DRAFT": 92, "COMPLETED": 100,
         }
-        css = obj.case_samples.select_related("sample").all()
+        css = obj.case_samples.all()
         total_weight = 0
         count = 0
         for cs in css:
-            s_status = cs.sample.status
-            if s_status == "REJECTED":
+            if not cs.is_active:
                 continue
-            total_weight += STATUS_WEIGHT.get(s_status, 0)
+            stage = cs.workflow_stage or "REGISTERED"
+            if stage.endswith("_FAILED"):
+                continue
+            total_weight += WORKFLOW_WEIGHT.get(stage, 0)
             count += 1
         if count == 0:
             return 0
