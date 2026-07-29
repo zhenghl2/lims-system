@@ -373,7 +373,7 @@ export default function NipptPooling() {
                       })}
                       {/* Group summary */}
                       <tr style={{background:"#e6f7ff",fontWeight:700}}>
-                        <td style={{...td,textAlign:"left",paddingLeft:12}} colSpan={7}>📊 {g.name} 汇总</td>
+                        <td style={{...td,textAlign:"left",paddingLeft:12}} colSpan={6}>📊 {g.name} 汇总</td>
                         <td style={td}>投入: {g.totalMass} ng</td>
                         <td style={td}>总体积: {g.totalVol.toFixed(2)} μL</td>
                         <td style={td}>理论浓度: {g.theoryConc.toFixed(2)} ng/μL</td>
