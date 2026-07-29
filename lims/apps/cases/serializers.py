@@ -66,7 +66,7 @@ class CaseListSerializer(serializers.ModelSerializer):
             "sample_count", "received_count", "mother_name", "progress",
             "gestational_age_weeks", "gestational_age_days",
             "clinic_name", "sales_person",
-            "applicant", "registration_type",
+            "applicant", "case_source", "registration_type",
             "expected_completion", "workflow_status", "created_at",
             "case_samples",
         ]
