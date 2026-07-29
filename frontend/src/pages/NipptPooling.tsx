@@ -377,7 +377,7 @@ export default function NipptPooling() {
                         <td style={td}>投入: {g.totalMass} ng</td>
                         <td style={td}>总体积: {g.totalVol.toFixed(2)} μL</td>
                         <td style={td}>理论浓度: {g.theoryConc.toFixed(2)} ng/μL</td>
-                        <td style={td}>数据量: {g.dataAmount}M</td>
+                        <td style={td}>总数据量: {g.dataAmount}M ({(()=>{const f=g.rows.filter(r=>r.category==="FEMALE_BLOOD").length;const m=g.rows.filter(r=>r.category!=="FEMALE_BLOOD").length;return`${f}×2M+${m}×1M`})()})</td>
                       </tr>
                     </tbody>
                   </table>
