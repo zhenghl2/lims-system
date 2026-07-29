@@ -233,6 +233,7 @@ export default function NipptPreProcessing() {
       const allSamples = [
         ...selectedBatch.female_samples,
         ...selectedBatch.male_blood_samples,
+        ...selectedBatch.male_other_samples,
       ].map(s => ({
         id: s.id,
         sample_condition: s.sample_condition,
