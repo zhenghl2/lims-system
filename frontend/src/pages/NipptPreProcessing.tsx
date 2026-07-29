@@ -132,7 +132,7 @@ export default function NipptPreProcessing() {
   useEffect(() => { fetchBatches(); }, [fetchBatches]);
 
   const autoFillExperimentType = (batch: any) => {
-    const allSamples = [...(batch.female_samples || []), ...(batch.male_blood_samples || [])];
+    const allSamples = [...(batch.female_samples || []), ...(batch.male_other_samples || []), ...(batch.male_blood_samples || [])];
     for (const s of allSamples) {
       if (s.experiment_sample_type) continue;
       const types = s.received_sample_types || [];
