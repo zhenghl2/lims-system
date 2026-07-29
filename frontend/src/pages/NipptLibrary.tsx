@@ -153,6 +153,19 @@ export default function NipptLibrary() {
   const fetchBatches = useCallback(async()=>{setLoading(true);try{const r=await(casesApi as any).listLibraryBatches();setBatches(r.data?.results||[])}catch{}finally{setLoading(false)}},[]);
   useEffect(()=>{fetchBatches()},[fetchBatches]);
 
+  // Rebuild plates when start coords change
+  useEffect(() => {
+    if (!selectedBatch) return;
+    const d = selectedBatch;
+    const males = [...(d.male_blood_samples || []), ...(d.male_other_samples || [])];
+    if (region === "XIAMEN") {
+      setXiamenPlate(buildXiamenPlateGrid(d.female_samples || [], males));
+    } else {
+      setFemalePlate(hkFemaleStart ? buildPlateFromStart(d.female_samples || [], hkFemaleStart) : buildCenteredPlate(d.female_samples || []));
+      setMalePlate(hkMaleStart ? buildPlateFromStart(males, hkMaleStart) : buildCenteredPlate(males));
+    }
+  }, [femaleStartCoord, maleStartCoord, hkFemaleStart, hkMaleStart, region]);
+
   const fetchDetail = async(id:string)=>{
     setBatchLoading(true);
     try{
