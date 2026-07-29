@@ -366,7 +366,7 @@ export default function NipptPooling() {
                   </Space>
                 </div>
                 <div style={{overflowX:"auto"}}>
-                  <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,tableLayout:"fixed"}}>
+                  <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,tableLayout:"auto"}}>
                     <thead><tr>
                       <th style={{...th,width:36}}>#</th><th style={{...th,width:90}}>PT编号</th><th style={{...th,width:55}}>Index</th><th style={{...th,width:55}}>类型</th>
                       <th style={{...th,width:85}}>浓度</th><th style={{...th,width:65}}>洗脱 μL</th><th style={{...th,width:70}}>产量 ng</th>
