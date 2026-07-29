@@ -475,7 +475,7 @@ export default function NipptPreProcessing() {
                 label: `👨 男性 (${selectedBatch.male_blood_count + selectedBatch.male_other_count})`,
                 children: (
                   selectedBatch.male_blood_count + selectedBatch.male_other_count > 0 ? (
-                    <Table dataSource={selectedBatch.male_blood_samples} rowKey="id"
+                    <Table dataSource={[...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])]} rowKey="id"
                       columns={maleColumns()} size="small" pagination={false} scroll={{ x: 900 }} />
                   ) : (
                     <Text type="secondary">无男性样本</Text>
