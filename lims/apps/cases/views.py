@@ -942,8 +942,10 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
         groups = {}
         for cs in qs:
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
-            elif cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
-            else: cat = "MALE_OTHER"
+            else:
+                exp_type = exp_type_map.get(str(cs.id), cs.sample_source)
+                if exp_type in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+                else: cat = "MALE_OTHER"
             key = (str(cs.case_id), cs.sample.patient_name, cat)
             if key not in groups:
                 groups[key] = {"case_id":str(cs.case_id),"case_number":cs.case.case_number,
@@ -1132,8 +1134,10 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
         groups = {}
         for cs in qs:
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
-            elif cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
-            else: cat = "MALE_OTHER"
+            else:
+                exp_type = exp_type_map.get(str(cs.id), cs.sample_source)
+                if exp_type in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+                else: cat = "MALE_OTHER"
             key = (str(cs.case_id), cs.sample.patient_name, cat)
             if key not in groups:
                 groups[key] = {"case_id":str(cs.case_id),"case_number":cs.case.case_number,
