@@ -29,9 +29,9 @@ class CaseViewSet(viewsets.ModelViewSet):
     search_fields = ["case_number", "pt_number", "clinic_name", "sales_person"]
     ordering_fields = ["created_at", "case_number", "expected_completion"]
 
-    def filter_queryset(self, request, queryset, view):
-        qs = super().filter_queryset(request, queryset, view)
-        search = request.query_params.get("search", "").strip()
+    def filter_queryset(self, queryset):
+        qs = super().filter_queryset(queryset)
+        search = self.request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(
                 Q(case_number__icontains=search)
@@ -40,7 +40,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                 | Q(sales_person__icontains=search)
                 | Q(case_samples__sample__patient_name__icontains=search)
             ).distinct()
-        wf = request.query_params.get("workflow_status", "").strip()
+        wf = self.request.query_params.get("workflow_status", "").strip()
         if wf:
             qs = qs.filter(case_samples__workflow_stage=wf).distinct()
         return qs
