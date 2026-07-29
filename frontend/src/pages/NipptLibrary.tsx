@@ -82,6 +82,20 @@ export default function NipptLibrary() {
   const indexToCoordTB = (i:number)=>{const c=Math.floor(i/8),r=i%8;return`${ROWS[r]}${c+1}`;};
 
   // ── Build plates ──
+  const buildPlateFromStart = (samples:SampleItem[], startCoord:string):PlateGrid => {
+    const p = emptyPlate();
+    const startIdx = startCoord ? coordToIndexTB(startCoord) : 0;
+    let idx = 0;
+    for (let i = startIdx; i < 96 && idx < samples.length; i++) {
+      const coord = indexToCoordTB(i);
+      const r = ROWS.indexOf(coord[0]);
+      const c = parseInt(coord.slice(1)) - 1;
+      p[r][c] = { vgId: samples[idx].test_sample_id || "?", index: "", sampleIdx: idx, isQC: samples[idx].is_qc };
+      idx++;
+    }
+    return p;
+  };
+
   const buildCenteredPlate = (samples:SampleItem[]):PlateGrid => {
     const p = emptyPlate();
     const total = samples.length;
@@ -118,9 +132,13 @@ export default function NipptLibrary() {
     setter((prev:PlateGrid)=>{
       const next = prev.map(r=>r.map(c=>({...c})));
       next[row][col].index = value;
-      if(row===0&&/^\d+$/.test(value)){
+      if(/^\d+$/.test(value)){
         const base = parseInt(value);
-        const isFirst = plate.slice(0,row).every((r:any)=>!r[col]?.vgId);
+        // Check if this column's first filled cell starts at this row
+        let isFirst = true;
+        for(let r2=0; r2<row; r2++){
+          if(plate[r2]?.[col]?.vgId){ isFirst = false; break; }
+        }
         if(isFirst){
           for(let r=0;r<8;r++){
             if(plate[r]?.[col]?.vgId) next[r][col].index = String(base+r);
@@ -153,9 +171,9 @@ export default function NipptLibrary() {
       // Restore plate data
       const fp = ld.female_plate; const mp = ld.male_plate; const xp = ld.xiamen_plate;
       if(fp&&Array.isArray(fp)) setFemalePlate(fp);
-      else setFemalePlate(buildCenteredPlate(d.female_samples||[]));
+      else setFemalePlate(hkFemaleStart?buildPlateFromStart(d.female_samples||[],hkFemaleStart):buildCenteredPlate(d.female_samples||[]));
       if(mp&&Array.isArray(mp)) setMalePlate(mp);
-      else setMalePlate(buildCenteredPlate([...(d.male_blood_samples||[]),...(d.male_other_samples||[])]));
+      else setMalePlate(hkMaleStart?buildPlateFromStart([...(d.male_blood_samples||[]),...(d.male_other_samples||[])],hkMaleStart):buildCenteredPlate([...(d.male_blood_samples||[]),...(d.male_other_samples||[])]));
       if(xp&&Array.isArray(xp)) setXiamenPlate(xp);
       else setXiamenPlate(buildXiamenPlateGrid(d.female_samples||[], [...(d.male_blood_samples||[]),...(d.male_other_samples||[])]));
       libForm.setFieldsValue({
