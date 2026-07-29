@@ -21,7 +21,7 @@ const getDefaultAmount=(category:string,sampleType:string):number=>{
 
 type PoolRow = { id:string; ptId:string; index:string; sampleType:string; category:string;
   concentration:number|null; elutionVolume:number; yield:number;
-  poolingAmount:number; poolingVolume:number; eliminated:boolean; qc:string };
+  poolingAmount:number; poolingVolume:number; eliminated:boolean; qc:string; mixOverride?:number };
 type PoolGroup = { name:string; rows:PoolRow[]; totalMass:number; totalVol:number; theoryConc:number; dataAmount:number };
 interface SampleItem { id:string; patient_name:string; category:string; test_sample_id:string|null; experiment_sample_type?:string; }
 interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; }
@@ -85,26 +85,46 @@ export default function NipptPooling() {
     // Auto: distribute female/male evenly (default)
     const total = active.length;
     const numGroups = total > MAX_PER_GROUP ? Math.ceil(total / MAX_PER_GROUP) : 1;
-    let fi=0, mi=0;
-    for (let g=0; g<numGroups; g++) {
-      const fRemain = females.length - fi;
-      const mRemain = males.length - mi;
+
+    // Initialize mix arrays
+    const mixArrays: PoolRow[][] = Array.from({length: numGroups}, () => []);
+    const assigned = active.filter(r => r.mixOverride != null && r.mixOverride >= 1 && r.mixOverride <= numGroups);
+    const unassigned = active.filter(r => !(r.mixOverride != null && r.mixOverride >= 1 && r.mixOverride <= numGroups));
+
+    // Place assigned rows first
+    for (const r of assigned) {
+      mixArrays[(r.mixOverride || 1) - 1].push(r);
+    }
+
+    // Distribute unassigned by gender ratio
+    let uf = unassigned.filter(r => r.category === "FEMALE_BLOOD");
+    let um = unassigned.filter(r => r.category !== "FEMALE_BLOOD");
+    let fi = 0, mi = 0;
+    for (let g = 0; g < numGroups; g++) {
+      const fRemain = uf.length - fi;
+      const mRemain = um.length - mi;
       const gRemain = numGroups - g;
       const fPerGroup = Math.ceil(fRemain / gRemain);
       const mPerGroup = Math.ceil(mRemain / gRemain);
-      const fSlice = females.slice(fi, fi+fPerGroup);
-      const mSlice = males.slice(mi, mi+mPerGroup);
+      const fSlice = uf.slice(fi, fi + fPerGroup);
+      const mSlice = um.slice(mi, mi + mPerGroup);
       fi += fPerGroup; mi += mPerGroup;
-      const groupRows = [...fSlice, ...mSlice];
-      const dataAmt = fSlice.length*2 + mSlice.length*1;
-      const totalMass = groupRows.reduce((s,r)=>s+r.poolingAmount,0);
-      const totalVol = groupRows.reduce((s,r)=>s+r.poolingVolume,0);
+      mixArrays[g].push(...fSlice, ...mSlice);
+    }
+
+    for (let g = 0; g < numGroups; g++) {
+      const groupRows = mixArrays[g];
+      const fCount = groupRows.filter(r => r.category === "FEMALE_BLOOD").length;
+      const mCount = groupRows.filter(r => r.category !== "FEMALE_BLOOD").length;
+      const dataAmt = fCount * 2 + mCount * 1;
+      const totalMass = groupRows.reduce((s, r) => s + r.poolingAmount, 0);
+      const totalVol = groupRows.reduce((s, r) => s + r.poolingVolume, 0);
       result.push({
-        name: `mix${g+1}`,
+        name: `mix${g + 1}`,
         rows: groupRows,
-        totalMass: Math.round(totalMass*100)/100,
-        totalVol: Math.round(totalVol*100)/100,
-        theoryConc: totalVol>0?Math.round(totalMass/totalVol*100)/100:0,
+        totalMass: Math.round(totalMass * 100) / 100,
+        totalVol: Math.round(totalVol * 100) / 100,
+        theoryConc: totalVol > 0 ? Math.round(totalMass / totalVol * 100) / 100 : 0,
         dataAmount: dataAmt,
       });
     }
@@ -350,7 +370,7 @@ export default function NipptPooling() {
                     <thead><tr>
                       <th style={{...th,width:36}}>#</th><th style={{...th,width:90}}>PT编号</th><th style={{...th,width:55}}>Index</th><th style={{...th,width:55}}>类型</th>
                       <th style={{...th,width:85}}>浓度</th><th style={{...th,width:65}}>洗脱 μL</th><th style={{...th,width:70}}>产量 ng</th>
-                      <th style={{...th,width:75}}>投入 ng</th><th style={{...th,width:75}}>体积 μL</th><th style={{...th,width:90}}>QC</th>
+                      <th style={{...th,width:75}}>投入 ng</th><th style={{...th,width:75}}>体积 μL</th><th style={{...th,width:90}}>QC</th><th style={{...th,width:65}}>mix</th>
                     </tr></thead>
                     <tbody>
                       {g.rows.map((r)=>{
@@ -368,6 +388,18 @@ export default function NipptPooling() {
                             <td style={td}><InputNumber size="small" min={0} step={1} value={r.poolingAmount} onChange={v=>updateCell(ri,"poolingAmount",v)} style={{width:70}}/></td>
                             <td style={{...td,fontFamily:"monospace"}}>{r.poolingVolume>0?r.poolingVolume.toFixed(2):"-"}</td>
                             <td style={td}><Select size="small" value={r.qc} onChange={v=>updateCell(ri,"qc",v)} style={{width:90}} options={[{value:"PASS",label:"PASS"},{value:"FAIL",label:"FAIL"}]}/></td>
+                            <td style={td}>
+                              <Select size="small" value={r.mixOverride ?? (gi + 1)}
+                                style={{width:55}}
+                                onChange={v => {
+                                  const target = v ?? (gi + 1);
+                                  setRows(prev => prev.map(rr =>
+                                    rr.id === r.id ? { ...rr, mixOverride: target !== (gi + 1) ? target : undefined } : rr
+                                  ));
+                                }}
+                                options={groups.map((_, i) => ({ value: i + 1, label: `mix${i + 1}` }))}
+                              />
+                            </td>
                           </tr>
                         );
                       })}
