@@ -946,8 +946,7 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
         for cs in qs:
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
             else:
-                exp_type = exp_type_map.get(str(cs.id), cs.sample_source)
-                if exp_type in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+                if cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
             key = (str(cs.case_id), cs.sample.patient_name, cat)
             if key not in groups:
@@ -1125,14 +1124,10 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def pending(self, request):
         passed_ids = set()
-        exp_type_map = {}
         for ls in NipptLibrarySample.objects.filter(batch__status="COMPLETED", qc_status="PASS"):
             if ls.case_sample_ids:
                 for cid in ls.case_sample_ids:
                     passed_ids.add(cid)
-                    exp_type = ls.experiment_sample_type or ""
-                    if exp_type:
-                        exp_type_map[cid] = exp_type
         excluded_ids = set()
         for b in NipptPoolingBatch.objects.all().prefetch_related("samples"):
             for sp in b.samples.all():
@@ -1147,8 +1142,7 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
         for cs in qs:
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
             else:
-                exp_type = exp_type_map.get(str(cs.id), cs.sample_source)
-                if exp_type in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+                if cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
             key = (str(cs.case_id), cs.sample.patient_name, cat)
             if key not in groups:
