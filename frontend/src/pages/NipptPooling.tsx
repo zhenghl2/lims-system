@@ -374,9 +374,10 @@ export default function NipptPooling() {
                       {/* Group summary */}
                       <tr style={{background:"#e6f7ff",fontWeight:700}}>
                         <td style={{...td,textAlign:"left",paddingLeft:12}} colSpan={7}>📊 {g.name} 汇总</td>
+                        <td style={td}>投入: {g.totalMass} ng</td>
                         <td style={td}>总体积: {g.totalVol.toFixed(2)} μL</td>
                         <td style={td}>理论浓度: {g.theoryConc.toFixed(2)} ng/μL</td>
-                        <td style={td}>总数据量: {g.dataAmount}M ({(()=>{const f=g.rows.filter(r=>r.category==="FEMALE_BLOOD").length;const m=g.rows.filter(r=>r.category!=="FEMALE_BLOOD").length;return`${f}×2M+${m}×1M`})()})</td>
+                        <td style={td}>数据量: {g.dataAmount}M</td>
                       </tr>
                     </tbody>
                   </table>
