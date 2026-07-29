@@ -27,7 +27,7 @@ class CaseViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
     filterset_fields = ["panel", "is_urgent"]
-    search_fields = ["case_number", "pt_number", "clinic_name", "sales_person"]
+    search_fields = []
     ordering_fields = ["created_at", "case_number", "expected_completion"]
 
     def filter_queryset(self, queryset):
