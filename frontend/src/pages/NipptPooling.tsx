@@ -370,7 +370,7 @@ export default function NipptPooling() {
                     <thead><tr>
                       <th style={{...th,width:36}}>#</th><th style={{...th,width:90}}>PT编号</th><th style={{...th,width:55}}>Index</th><th style={{...th,width:55}}>类型</th>
                       <th style={{...th,width:85}}>浓度</th><th style={{...th,width:65}}>洗脱 μL</th><th style={{...th,width:70}}>产量 ng</th>
-                      <th style={{...th,width:75}}>投入 ng</th><th style={{...th,width:75}}>体积 μL</th><th style={{...th,width:90}}>QC</th><th style={{...th,width:80}}>mix</th>
+                      <th style={{...th,width:75}}>投入 ng</th><th style={{...th,width:75}}>体积 μL</th><th style={{...th,width:90}}>QC</th><th style={{...th,width:95}}>mix</th>
                     </tr></thead>
                     <tbody>
                       {g.rows.map((r)=>{
