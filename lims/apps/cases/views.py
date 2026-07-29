@@ -1037,10 +1037,14 @@ class NipptLibraryViewSet(viewsets.ModelViewSet):
     def pending(self, request):
         passed_ids = set()
         id2es = {}
+        exp_type_map = {}
         for es in NipptExtractionSample.objects.filter(batch__status="COMPLETED", qc_status="PASS"):
             if es.case_sample_ids:
                 for cid in es.case_sample_ids:
                     passed_ids.add(cid); id2es[cid] = es
+                    exp_type = es.experiment_sample_type or ""
+                    if exp_type:
+                        exp_type_map[cid] = exp_type
         excluded_ids = set()
         for b in NipptLibraryBatch.objects.all().prefetch_related("samples"):
             for sp in b.samples.all():
