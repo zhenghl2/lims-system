@@ -54,6 +54,7 @@ class CaseListSerializer(serializers.ModelSerializer):
     workflow_status = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     mother_name = serializers.SerializerMethodField()
+    case_source = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
     case_samples = CaseSampleSerializer(many=True, read_only=True)
 
@@ -74,6 +75,12 @@ class CaseListSerializer(serializers.ModelSerializer):
         ms = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
         if ms and ms.sample:
             return ms.sample.patient_name or ms.sample.sample_id
+        return ""
+
+    def get_case_source(self, obj):
+        cs = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
+        if cs and cs.sample:
+            return cs.sample.sample_source or ""
         return ""
 
     def get_progress(self, obj):
@@ -134,6 +141,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
     case_samples = CaseSampleSerializer(many=True, read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     mother_name = serializers.SerializerMethodField()
+    case_source = serializers.SerializerMethodField()
     all_samples_received = serializers.BooleanField(read_only=True)
     registration_url = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
@@ -167,6 +175,12 @@ class CaseDetailSerializer(serializers.ModelSerializer):
         ms = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
         if ms and ms.sample:
             return ms.sample.patient_name or ms.sample.sample_id
+        return ""
+
+    def get_case_source(self, obj):
+        cs = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
+        if cs and cs.sample:
+            return cs.sample.sample_source or ""
         return ""
 
     def get_progress(self, obj):

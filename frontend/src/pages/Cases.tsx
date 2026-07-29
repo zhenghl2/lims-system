@@ -129,7 +129,7 @@ export default function Cases() {
       ),
     },
     {
-      title: "来源", dataIndex: "clinic_name", width: 120, responsive: ["md" as const],
+      title: "来源", dataIndex: "case_source", width: 120, responsive: ["md" as const],
       render: (v: string) => v || "-",
     },
     {
