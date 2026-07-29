@@ -197,6 +197,15 @@ export default function Cases() {
           <Select.Option value="巴西万基">巴西万基</Select.Option>
           <Select.Option value="韩国">韩国</Select.Option>
           <Select.Option value="澳洲">澳洲</Select.Option>
+          <Select.Option value="CYJ印度">CYJ印度</Select.Option>
+          <Select.Option value="CYJ澳洲">CYJ澳洲</Select.Option>
+          <Select.Option value="CYJ秘鲁">CYJ秘鲁</Select.Option>
+          <Select.Option value="CYJ美国">CYJ美国</Select.Option>
+          <Select.Option value="澳洲经销商">澳洲经销商</Select.Option>
+          <Select.Option value="西班牙代理">西班牙代理</Select.Option>
+          <Select.Option value="西班牙巴塞罗那经销商">西班牙巴塞罗那经销商</Select.Option>
+          <Select.Option value="YLH西班牙bygens">YLH西班牙bygens</Select.Option>
+          <Select.Option value="YLH西班牙LABGENETICS">YLH西班牙LABGENETICS</Select.Option>
         </Select>
         <Select
           placeholder="全部状态"
