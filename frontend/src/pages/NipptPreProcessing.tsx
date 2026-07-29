@@ -359,11 +359,12 @@ export default function NipptPreProcessing() {
           onChange={(val: string) => updateSampleField(r.id, "experiment_sample_type", val)} allowClear />
       ) },
     { title: "剩余样本类型", dataIndex: "remaining_sample_types", key: "rest", width: 150,
-      render: (v: string[]) => (
-        <Space size={2} wrap>{(v && v.length > 0 ? v.map(t => {
-          const opt = SAMPLE_TYPE_OPTIONS.find(o => o.value === t);
-          return <Tag key={t}>{opt?.label || t}</Tag>;
-        }) : <Text type="secondary">—</Text>)}</Space>
+      render: (v: string[], r: PreSample) => (
+        <Select mode="multiple" size="small" value={v || []}
+          style={{ width: 130 }} placeholder="默认"
+          options={SAMPLE_TYPE_OPTIONS}
+          onChange={(val: string[]) => updateSampleField(r.id, "remaining_sample_types", val)}
+          allowClear maxTagCount={2} />
       ) },
     { title: "分装管数", dataIndex: "aliquot_tubes", key: "tubes", width: 80,
       render: (v: number, r: PreSample) => (

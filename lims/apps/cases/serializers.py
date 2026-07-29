@@ -464,6 +464,7 @@ class NipptPreProcessingSampleSerializer(serializers.ModelSerializer):
             "case_sample_ids",
             "sample_condition", "aliquot_tubes", "plasma_volume",
             "experiment_sample_type", "elution_volume", "dna_concentration",
+            "remaining_override",
             "qc_status", "qc_note", "operator", "processed_at",
             "received_sample_types", "remaining_sample_types",
             "test_sample_id", "created_at",

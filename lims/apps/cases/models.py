@@ -319,6 +319,8 @@ class NipptPreProcessingSample(models.Model):
     # === Male other sample fields (MALE_OTHER) ===
     experiment_sample_type = models.CharField(max_length=10, blank=True, default="",
         help_text="操作员选择的实验样本类型")
+    remaining_override = models.JSONField(null=True, blank=True, default=None,
+        help_text="Manually set remaining sample types (overrides computed)")
     elution_volume = models.FloatField(default=30, null=True, blank=True,
         help_text="洗脱体积 (uL)")
     dna_concentration = models.FloatField(null=True, blank=True,
@@ -351,7 +353,9 @@ class NipptPreProcessingSample(models.Model):
 
     @property
     def remaining_sample_types(self):
-        """Received types minus experiment type."""
+        """Return override or computed remaining types."""
+        if self.remaining_override is not None:
+            return self.remaining_override
         received = self.received_sample_types
         if self.experiment_sample_type and self.experiment_sample_type in received:
             received = [t for t in received if t != self.experiment_sample_type]

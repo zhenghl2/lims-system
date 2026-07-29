@@ -840,6 +840,9 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
                           "dna_concentration", "qc_status", "qc_note"]:
                 if field in sd:
                     setattr(sp, field, sd[field])
+            # Allow overriding remaining sample types
+            if "remaining_sample_types" in sd:
+                sp.remaining_override = sd["remaining_sample_types"] or None
             sp.operator = request.user
             sp.processed_at = timezone.now()
             sp.save()
