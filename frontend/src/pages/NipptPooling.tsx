@@ -390,7 +390,7 @@ export default function NipptPooling() {
                             <td style={td}><Select size="small" value={r.qc} onChange={v=>updateCell(ri,"qc",v)} style={{width:90}} options={[{value:"PASS",label:"PASS"},{value:"FAIL",label:"FAIL"}]}/></td>
                             <td style={td}>
                               <Select size="small" value={r.mixOverride ?? (gi + 1)}
-                                style={{width:55}}
+                                style={{width:85}}
                                 onChange={v => {
                                   const target = v ?? (gi + 1);
                                   setRows(prev => prev.map(rr =>
