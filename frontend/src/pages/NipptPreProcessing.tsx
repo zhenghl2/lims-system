@@ -322,12 +322,6 @@ export default function NipptPreProcessing() {
         <InputNumber size="small" min={1} max={10} value={v} style={{ width: 55 }}
           onChange={(val: number | null) => updateSampleField(r.id, "aliquot_tubes", val || 3)} />
       ) },
-    { title: "样本情况", dataIndex: "sample_condition", key: "cond", width: 110,
-      render: (v: string, r: PreSample) => (
-        <Select size="small" value={v || "OK"} style={{ width: 90 }}
-          placeholder="选择" options={CONDITION_OPTIONS}
-          onChange={(val: string) => updateSampleField(r.id, "sample_condition", val)} allowClear />
-      ) },
     { title: "QC", dataIndex: "qc_status", key: "qc", width: 80,
       render: (v: string, r: PreSample) => (
         <Select size="small" value={v || "PASS"} style={{ width: 70 }}
