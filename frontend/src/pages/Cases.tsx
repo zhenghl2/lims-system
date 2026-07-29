@@ -53,7 +53,7 @@ export default function Cases() {
     try {
       const params: any = { page: p, page_size: 20 };
       if (search) params.search = search;
-      if (statusFilter) params.status = statusFilter;
+      if (statusFilter) params.workflow_status = statusFilter;
       if (sourceFilter) params.applicant = sourceFilter;
       if (dateRange && dateRange[0]) params.created_after = dayjs(dateRange[0]).format("YYYY-MM-DD");
       if (dateRange && dateRange[1]) params.created_before = dayjs(dateRange[1]).format("YYYY-MM-DD");
@@ -116,7 +116,7 @@ export default function Cases() {
     },
     {
       title: "PT 编号", dataIndex: "pt_number", width: 100,
-      render: (v: string) => v ? <Tag color="blue">PT{v}</Tag> : "-",
+      render: (v: string) => v ? <Tag color="blue">{v}</Tag> : "-",
     },
     {
       title: "母亲", dataIndex: "mother_name", width: 80,
@@ -205,8 +205,14 @@ export default function Cases() {
           allowClear
         >
           <Select.Option value="REGISTERED">已登记</Select.Option>
-          <Select.Option value="RECEIVING">接收中</Select.Option>
-          <Select.Option value="IN_PROCESS">处理中</Select.Option>
+          <Select.Option value="RECEIVED">已签收</Select.Option>
+          <Select.Option value="PRE_PROCESSING">前处理</Select.Option>
+          <Select.Option value="EXTRACTION">提取中</Select.Option>
+          <Select.Option value="LIBRARY_PREP">建库中</Select.Option>
+          <Select.Option value="POOLING">Pooling</Select.Option>
+          <Select.Option value="HYB_SEQ">测序中</Select.Option>
+          <Select.Option value="BIOINFO">生信中</Select.Option>
+          <Select.Option value="REPORT_DRAFT">报告草稿</Select.Option>
           <Select.Option value="COMPLETED">已完成</Select.Option>
           <Select.Option value="REPORTED">已报告</Select.Option>
         </Select>
@@ -237,7 +243,7 @@ export default function Cases() {
         title={selectedCase ? (
           <Space>
             <Text strong code>{selectedCase.case_number}</Text>
-            {selectedCase.pt_number && <Tag color="blue">PT{selectedCase.pt_number}</Tag>}
+            {selectedCase.pt_number && <Tag color="blue">{selectedCase.pt_number}</Tag>}
             <Tag color={STATUS_COLORS[selectedCase.status]}>{STATUS_DISPLAY[selectedCase.status] || selectedCase.status}</Tag>
             {selectedCase.is_urgent && <Tag color="red">加急</Tag>}
           </Space>

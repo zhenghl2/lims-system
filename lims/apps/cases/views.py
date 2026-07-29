@@ -26,8 +26,24 @@ class CaseViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
     filterset_fields = ["panel", "is_urgent"]
-    search_fields = ["case_number", "clinic_name", "sales_person"]
+    search_fields = ["case_number", "pt_number", "clinic_name", "sales_person"]
     ordering_fields = ["created_at", "case_number", "expected_completion"]
+
+    def filter_queryset(self, request, queryset, view):
+        qs = super().filter_queryset(request, queryset, view)
+        search = request.query_params.get("search", "").strip()
+        if search:
+            qs = qs.filter(
+                Q(case_number__icontains=search)
+                | Q(pt_number__icontains=search)
+                | Q(clinic_name__icontains=search)
+                | Q(sales_person__icontains=search)
+                | Q(case_samples__sample__patient_name__icontains=search)
+            ).distinct()
+        wf = request.query_params.get("workflow_status", "").strip()
+        if wf:
+            qs = qs.filter(case_samples__workflow_stage=wf).distinct()
+        return qs
 
     def get_queryset(self):
         qs = Case.objects.prefetch_related("case_samples__sample").all()
@@ -42,7 +58,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         # Source/applicant filter
         applicant = self.request.query_params.get("applicant", "").strip()
         if applicant:
-            qs = qs.filter(applicant__icontains=applicant)
+            qs = qs.filter(case_samples__sample__sample_source__icontains=applicant).distinct()
         # Date range filter
         date_after = self.request.query_params.get("created_after", "").strip()
         if date_after:
@@ -261,7 +277,7 @@ class CaseViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def resample(self, request, pk=None):
         """Create a resample for a rejected CaseSample."""
-        from django.db.models import Max
+        from django.db.models import Max, Q
 
         case = self.get_object()
         case_sample_id = request.data.get("case_sample_id")
