@@ -158,7 +158,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
             "notes", "is_urgent", "expected_completion",
             "registration_token", "registration_url",
             "case_samples", "site", "created_by",
-            "created_at", "updated_at", "mother_name",
+            "created_at", "updated_at", "mother_name", "case_source",
         ]
         read_only_fields = [
             "id", "case_number", "pt_number", "registration_token", "created_at", "updated_at",
