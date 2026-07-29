@@ -954,8 +954,7 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
                     "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,
                     "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id}
             g = groups[key]
-            exp_type = exp_type_map.get(str(cs.id), cs.sample_source)
-            if exp_type not in g["sample_types"]: g["sample_types"].append(exp_type)
+            if cs.sample_source not in g["sample_types"]: g["sample_types"].append(cs.sample_source)
             g["case_sample_ids"].append(str(cs.id))
             if not g["test_sample_id"]: g["test_sample_id"] = cs.test_sample_id
         entries = list(groups.values())
@@ -1071,8 +1070,7 @@ class NipptLibraryViewSet(viewsets.ModelViewSet):
                     "dna_concentration":es.dna_concentration if es else None,
                     "extraction_sample_id":str(es.id) if es else None}
             g = groups[key]
-            exp_type = exp_type_map.get(str(cs.id), cs.sample_source)
-            if exp_type not in g["sample_types"]: g["sample_types"].append(exp_type)
+            if cs.sample_source not in g["sample_types"]: g["sample_types"].append(cs.sample_source)
             g["case_sample_ids"].append(str(cs.id))
             if not g["test_sample_id"]: g["test_sample_id"] = cs.test_sample_id
         entries = list(groups.values())
@@ -1150,8 +1148,7 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
                     "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,
                     "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id}
             g = groups[key]
-            exp_type = exp_type_map.get(str(cs.id), cs.sample_source)
-            if exp_type not in g["sample_types"]: g["sample_types"].append(exp_type)
+            if cs.sample_source not in g["sample_types"]: g["sample_types"].append(cs.sample_source)
             g["case_sample_ids"].append(str(cs.id))
             if not g["test_sample_id"]: g["test_sample_id"] = cs.test_sample_id
         entries = list(groups.values())
