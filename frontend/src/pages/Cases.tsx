@@ -180,7 +180,8 @@ export default function Cases() {
         <Input.Search
           placeholder="Case / PT / 姓名..."
           value={search}
-          onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+          onChange={(e) => setSearch(e.target.value)}
+          onSearch={(value) => { setSearch(value); setPage(1); }}
           style={{ width: 240 }}
         />
         <Select
