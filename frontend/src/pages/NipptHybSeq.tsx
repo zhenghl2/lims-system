@@ -67,7 +67,7 @@ const STEPS = [
 ];
 
 interface MixItem { id:string; pooling_batch_id:string; pooling_batch_number:string; mix_name:string; female:number; male:number; data_amount:number; }
-interface MixRow { mix_name:string; library_conc:number|null; input_amount:number; input_vol:number; expected_conc:number; water_added:number; }
+interface MixRow { mix_name:string; source:string; library_conc:number|null; input_amount:number; input_vol:number; expected_conc:number; water_added:number; }
 interface SampleItem { id:string; patient_name:string; category:string; test_sample_id:string|null; }
 interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; }
 interface BatchDetail extends BatchItem { female_samples:SampleItem[]; male_blood_samples:SampleItem[]; male_other_samples:SampleItem[]; hyb_seq_data:any; }
@@ -105,8 +105,9 @@ export default function NipptHybSeq() {
       // Auto-init mix rows from saved or from mix_ids
       let rows = sd.mix_rows||[];
       if (rows.length===0 && sd.mix_ids && sd.mix_ids.length>0) {
+        const mixSrc = sd.mix_sources || [];
         rows = sd.mix_ids.map((_:string,i:number)=>{
-          return {mix_name:`mix${i+1}`,library_conc:null,input_amount:10,input_vol:0,expected_conc:0.8,water_added:0};
+          return {mix_name:`mix${i+1}`,source:mixSrc[i]||"",library_conc:null,input_amount:10,input_vol:0,expected_conc:0.8,water_added:0};
         });
       }
       setMixRows(rows); setFinalConc(sd.final_conc??0.783);
@@ -209,6 +210,7 @@ export default function NipptHybSeq() {
                   <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,tableLayout:"fixed"}}>
                     <thead><tr>
                       <th style={{...th,width:80}}>mix编号</th>
+                      <th style={{...th,width:150}}>mix来源</th>
                       <th style={{...th,width:90}}>文库浓度</th>
                       <th style={{...th,width:65}}>投入量</th>
                       <th style={{...th,width:75}}>投入体积</th>
@@ -220,6 +222,7 @@ export default function NipptHybSeq() {
                       {mixRows.map((r,i)=>(
                         <tr key={i} style={{background:"#e8f5e9"}}>
                           <td style={td}><Tag color="blue">{r.mix_name}</Tag></td>
+                          <td style={td}><Input size="small" value={r.source} onChange={e=>updateMixCell(i,"source",e.target.value)} style={{width:140}} placeholder="例:20260723-03-001-mix1"/></td>
                           <td style={td}><InputNumber size="small" min={0} step={0.001} value={r.library_conc} onChange={v=>updateMixCell(i,"library_conc",v)} style={{width:80}} placeholder="0"/></td>
                           <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.input_amount} onChange={v=>updateMixCell(i,"input_amount",v)} style={{width:60}}/></td>
                           <td style={{...td,fontFamily:"monospace"}}>{r.input_vol>0?r.input_vol.toFixed(2):"-"}</td>
@@ -228,8 +231,15 @@ export default function NipptHybSeq() {
                           <td style={{...td,fontFamily:"monospace"}}>{mixSums.water>0?mixSums.water.toFixed(2):"-"}</td>
                         </tr>
                       ))}
+                      <tr style={{background:"#f5f5f5"}}>
+                        <td style={td} colSpan={8}>
+                          <Button size="small" type="dashed" onClick={()=>{
+                            setMixRows(prev=>[...prev,{mix_name:`mix${prev.length+1}`,source:"",library_conc:null,input_amount:10,input_vol:0,expected_conc:0.8,water_added:0}]);
+                          }} style={{width:"100%"}}>＋ 新增行</Button>
+                        </td>
+                      </tr>
                       <tr style={{background:"#fffbe6",fontWeight:600}}>
-                        <td style={td} colSpan={5}>最终检测浓度: <InputNumber size="small" min={0} step={0.001} value={finalConc} onChange={v=>v!==null&&setFinalConc(v)} style={{width:80}}/></td>
+                        <td style={td} colSpan={6}>最终检测浓度: <InputNumber size="small" min={0} step={0.001} value={finalConc} onChange={v=>v!==null&&setFinalConc(v)} style={{width:80}}/></td>
                         <td style={td} colSpan={2}>总投入: {mixSums.totalInput.toFixed(2)} ng | 总体积: {mixSums.totalVol.toFixed(2)} μL</td>
                       </tr>
                     </tbody>
