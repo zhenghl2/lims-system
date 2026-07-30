@@ -59,28 +59,11 @@ export default function NipptPooling() {
   // ── Grouping ──
   const groups = useMemo(():PoolGroup[]=>{
     const active = rows;
-    const females = active.filter(r=>r.category==="FEMALE_BLOOD");
-    const males = active.filter(r=>r.category!=="FEMALE_BLOOD");
     const result:PoolGroup[] = [];
     
     // Use manual allocation if enabled
     const alloc = useManualAlloc && manualAlloc.length>0 ? manualAlloc : null;
-    if (alloc) {
-      let fi=0, mi=0;
-      for (let g=0; g<alloc.length; g++) {
-        const fTake = Math.min(alloc[g].female, females.length - fi);
-        const mTake = Math.min(alloc[g].male, males.length - mi);
-        const fSlice = females.slice(fi, fi+fTake);
-        const mSlice = males.slice(mi, mi+mTake);
-        fi += fTake; mi += mTake;
-        const groupRows = [...fSlice, ...mSlice];
-        const dataAmt = fSlice.length*2 + mSlice.length*1;
-        const totalMass = groupRows.reduce((s,r)=>s+r.poolingAmount,0);
-        const totalVol = groupRows.reduce((s,r)=>s+r.poolingVolume,0);
-        result.push({name:`mix${g+1}`,rows:groupRows,totalMass:Math.round(totalMass*100)/100,totalVol:Math.round(totalVol*100)/100,theoryConc:totalVol>0?Math.round(totalMass/totalVol*100)/100:0,dataAmount:dataAmt});
-      }
-      return result;
-    }
+    
     
     // Auto: distribute female/male evenly (default)
     const total = active.length;
@@ -96,20 +79,32 @@ export default function NipptPooling() {
       mixArrays[(r.mixOverride || 1) - 1].push(r);
     }
 
-    // Distribute unassigned by gender ratio
+    // Distribute unassigned
     let uf = unassigned.filter(r => r.category === "FEMALE_BLOOD");
     let um = unassigned.filter(r => r.category !== "FEMALE_BLOOD");
-    let fi = 0, mi = 0;
-    for (let g = 0; g < numGroups; g++) {
-      const fRemain = uf.length - fi;
-      const mRemain = um.length - mi;
-      const gRemain = numGroups - g;
-      const fPerGroup = Math.ceil(fRemain / gRemain);
-      const mPerGroup = Math.ceil(mRemain / gRemain);
-      const fSlice = uf.slice(fi, fi + fPerGroup);
-      const mSlice = um.slice(mi, mi + mPerGroup);
-      fi += fPerGroup; mi += mPerGroup;
-      mixArrays[g].push(...fSlice, ...mSlice);
+    if (alloc) {
+      let fi = 0, mi = 0;
+      for (let g = 0; g < alloc.length; g++) {
+        const fTake = Math.min(alloc[g].female, uf.length - fi);
+        const mTake = Math.min(alloc[g].male, um.length - mi);
+        const fSlice = uf.slice(fi, fi + fTake);
+        const mSlice = um.slice(mi, mi + mTake);
+        fi += fTake; mi += mTake;
+        mixArrays[g].push(...fSlice, ...mSlice);
+      }
+    } else {
+      let fi = 0, mi = 0;
+      for (let g = 0; g < numGroups; g++) {
+        const fRemain = uf.length - fi;
+        const mRemain = um.length - mi;
+        const gRemain = numGroups - g;
+        const fPerGroup = Math.ceil(fRemain / gRemain);
+        const mPerGroup = Math.ceil(mRemain / gRemain);
+        const fSlice = uf.slice(fi, fi + fPerGroup);
+        const mSlice = um.slice(mi, mi + mPerGroup);
+        fi += fPerGroup; mi += mPerGroup;
+        mixArrays[g].push(...fSlice, ...mSlice);
+      }
     }
 
     for (let g = 0; g < numGroups; g++) {
