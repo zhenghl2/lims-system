@@ -945,9 +945,10 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
     female_samples = serializers.SerializerMethodField()
     male_blood_samples = serializers.SerializerMethodField()
     male_other_samples = serializers.SerializerMethodField()
+    library_index_map = serializers.SerializerMethodField()
     class Meta:
         model = NipptPoolingBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","created_by","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","library_index_map","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -956,6 +957,33 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
     def get_female_samples(self,obj): return NipptPoolingSampleSerializer(obj.samples.filter(category="FEMALE_BLOOD"), many=True).data
     def get_male_blood_samples(self,obj): return NipptPoolingSampleSerializer(obj.samples.filter(category="MALE_BLOOD"), many=True).data
     def get_male_other_samples(self,obj): return NipptPoolingSampleSerializer(obj.samples.filter(category="MALE_OTHER"), many=True).data
+    def get_library_index_map(self, obj):
+        index_map = {}
+        seen_batches = set()
+        for sp in obj.samples.all():
+            if not sp.source_library_sample_id:
+                continue
+            ls = NipptLibrarySample.objects.filter(id=sp.source_library_sample_id).first()
+            if not ls or not ls.batch.library_data or ls.batch.id in seen_batches:
+                continue
+            seen_batches.add(ls.batch.id)
+            ld = ls.batch.library_data
+
+            def extract_from_plate(plate):
+                if not plate: return
+                for row in plate:
+                    for cell in row:
+                        if isinstance(cell, dict) and cell.get("vgId") and cell.get("index"):
+                            index_map[cell["vgId"]] = cell["index"]
+
+            if ld.get("xiamen_plate"):
+                extract_from_plate(ld["xiamen_plate"])
+            if ld.get("female_plate"):
+                extract_from_plate(ld["female_plate"])
+            if ld.get("male_plate"):
+                extract_from_plate(ld["male_plate"])
+        return index_map
+
     def get_library_plate(self, obj):
         first = obj.samples.first()
         if first and first.source_library_sample_id:
