@@ -105,7 +105,7 @@ export default function NipptHybSeq() {
       // Auto-init mix rows from saved or from mix_ids
       let rows = sd.mix_rows||[];
       if (rows.length===0 && sd.mix_ids && sd.mix_ids.length>0) {
-        const mixSrc = sd.mix_sources || [];
+        const mixSrc = d.mix_sources || sd.mix_sources || [];
         const chip = sd.chip_number || "";
         rows = sd.mix_ids.map((_:string,i:number)=>{
           return {mix_name:chip?`${chip}Mix${i+1}`:`mix${i+1}`,source:mixSrc[i]||"",library_conc:null,input_amount:10,input_vol:0,expected_conc:0.8,water_added:0};

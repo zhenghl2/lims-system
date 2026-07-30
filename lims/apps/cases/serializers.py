@@ -1082,9 +1082,10 @@ class NipptHybSeqBatchDetailSerializer(serializers.ModelSerializer):
     female_samples = serializers.SerializerMethodField()
     male_blood_samples = serializers.SerializerMethodField()
     male_other_samples = serializers.SerializerMethodField()
+    mix_sources = serializers.SerializerMethodField()
     class Meta:
         model = NipptHybSeqBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","hyb_seq_data","created_by","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","mix_sources","hyb_seq_data","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1093,6 +1094,29 @@ class NipptHybSeqBatchDetailSerializer(serializers.ModelSerializer):
     def get_female_samples(self,obj): return NipptHybSeqSampleSerializer(obj.samples.filter(category="FEMALE_BLOOD"), many=True).data
     def get_male_blood_samples(self,obj): return NipptHybSeqSampleSerializer(obj.samples.filter(category="MALE_BLOOD"), many=True).data
     def get_male_other_samples(self,obj): return NipptHybSeqSampleSerializer(obj.samples.filter(category="MALE_OTHER"), many=True).data
+
+    def get_mix_sources(self, obj):
+        hd = obj.hyb_seq_data or {}
+        # Return stored value if available
+        stored = hd.get("mix_sources")
+        if stored:
+            return stored
+        # Otherwise compute from mix_ids
+        mix_ids = hd.get("mix_ids", [])
+        from .models import NipptPoolingBatch
+        sources = []
+        for mid in mix_ids:
+            try:
+                pb_id, gi_str = mid.rsplit("_", 1)
+                gi = int(gi_str)
+                pb = NipptPoolingBatch.objects.filter(id=pb_id).first()
+                if pb:
+                    sources.append(f"{pb.batch_number}-mix{gi+1}")
+                else:
+                    sources.append(mid)
+            except Exception:
+                sources.append(mid)
+        return sources
 
 class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
     mix_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
