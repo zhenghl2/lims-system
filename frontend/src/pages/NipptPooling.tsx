@@ -151,7 +151,7 @@ export default function NipptPooling() {
       }
       const savedRows = pd.rows||[];
       // Index from library plate or saved data
-      const savedIdx = pd.indexes||{};
+      let savedIdx:Record<string,string> = pd.indexes||{};
       const libPlate = d.library_plate || [];
       if (Object.keys(savedIdx).length === 0 && libPlate.length > 0) {
         // Build vgId→index map from library plate
@@ -164,7 +164,7 @@ export default function NipptPooling() {
         allSamples.forEach((s:SampleItem)=>{
           autoIdx[s.id] = idxMap[s.test_sample_id||''] || '';
         });
-        setSavedIndexes(autoIdx);
+        setSavedIndexes(autoIdx); /* use autoIdx for rows below */ savedIdx = autoIdx;
       } else {
         setSavedIndexes(savedIdx);
       }
