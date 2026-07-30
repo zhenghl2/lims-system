@@ -290,7 +290,7 @@ export default function NipptPooling() {
                   <Space size={4}>
                     {!showAllocInputs && <Button size="small" onClick={()=>{const d=(_g:any)=>groups.map(g=>({female:g.rows.filter(r=>r.category==="FEMALE_BLOOD").length,male:g.rows.filter(r=>r.category!=="FEMALE_BLOOD").length}));setPendingAlloc(useManualAlloc&&manualAlloc.length>0?[...manualAlloc]:d(groups));setShowAllocInputs(true)}}>手动调整</Button>}
                     {showAllocInputs && <>
-                      <Button size="small" onClick={()=>{setPendingAlloc(p=>p.length<2?p:[...p,{female:Math.ceil(females.length/(p.length+1)),male:Math.ceil(males.length/(p.length+1))}])}}>+组</Button>
+                      <Button size="small" onClick={()=>{setPendingAlloc(p=>[...p,{female:Math.ceil(females.length/(p.length+1)),male:Math.ceil(males.length/(p.length+1))}])}}>+组</Button>
                       <Button size="small" type="primary" onClick={()=>{if(pendingAlloc.length>0){setManualAlloc([...pendingAlloc]);setUseManualAlloc(true)}setShowAllocInputs(false)}}>✓ 确定</Button>
                       <Button size="small" onClick={()=>{setShowAllocInputs(false);setPendingAlloc([])}}>取消</Button>
                       <Button size="small" onClick={()=>{setManualAlloc([]);setUseManualAlloc(false);setShowAllocInputs(false);setPendingAlloc([])}}>重置</Button>
