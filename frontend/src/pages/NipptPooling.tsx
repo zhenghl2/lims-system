@@ -67,7 +67,7 @@ export default function NipptPooling() {
     
     // Auto: distribute female/male evenly (default)
     const total = active.length;
-    const numGroups = total > MAX_PER_GROUP ? Math.ceil(total / MAX_PER_GROUP) : 1;
+    const numGroups = alloc ? alloc.length : (total > MAX_PER_GROUP ? Math.ceil(total / MAX_PER_GROUP) : 1);
 
     // Initialize mix arrays
     const mixArrays: PoolRow[][] = Array.from({length: numGroups}, () => []);
