@@ -1097,9 +1097,10 @@ class NipptHybSeqBatchDetailSerializer(serializers.ModelSerializer):
 class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
     mix_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
     chip_number = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    mix_sources = serializers.ListField(child=serializers.CharField(), write_only=True, required=False, default=list)
     class Meta:
         model = NipptHybSeqBatch
-        fields = ["id","batch_number","status","mix_ids","chip_number"]
+        fields = ["id","batch_number","status","mix_ids","mix_sources","chip_number"]
         read_only_fields = ["id","batch_number"]
     def create(self, validated_data):
         request = self.context["request"]
@@ -1109,7 +1110,8 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
             batch_number = NipptHybSeqBatch.generate_batch_number()
             pooling_batch_id = mix_ids[0].split("_")[0] if mix_ids else ""
             batch = NipptHybSeqBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
-            batch.hyb_seq_data = {"pooling_batch_id": pooling_batch_id, "mix_ids": mix_ids, "chip_number": chip}
+            mix_sources = validated_data.pop("mix_sources", [])
+            batch.hyb_seq_data = {"pooling_batch_id": pooling_batch_id, "mix_ids": mix_ids, "mix_sources": mix_sources, "chip_number": chip}
             batch.save(update_fields=["hyb_seq_data"])
             # Create samples only for selected mixes
             # Parse mix_ids: {pooling_batch_id}_{group_index}

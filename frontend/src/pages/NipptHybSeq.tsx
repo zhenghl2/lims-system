@@ -106,8 +106,9 @@ export default function NipptHybSeq() {
       let rows = sd.mix_rows||[];
       if (rows.length===0 && sd.mix_ids && sd.mix_ids.length>0) {
         const mixSrc = sd.mix_sources || [];
+        const chip = sd.chip_number || "";
         rows = sd.mix_ids.map((_:string,i:number)=>{
-          return {mix_name:`mix${i+1}`,source:mixSrc[i]||"",library_conc:null,input_amount:10,input_vol:0,expected_conc:0.8,water_added:0};
+          return {mix_name:chip?`${chip}Mix${i+1}`:`mix${i+1}`,source:mixSrc[i]||"",library_conc:null,input_amount:10,input_vol:0,expected_conc:0.8,water_added:0};
         });
       }
       setMixRows(rows); setFinalConc(sd.final_conc??0.783);
@@ -133,7 +134,11 @@ export default function NipptHybSeq() {
     if(selectedMixIds.size===0){message.warning("请选择mix");return}
     try{
       const mixIds = Array.from(selectedMixIds);
-      const r=await(casesApi as any).createHybSeqBatch({mix_ids:mixIds, chip_number:chipNumber});
+      const sources = mixIds.map(mid=>{
+        const pm = pendingMixes.find((m:MixItem)=>m.id===mid);
+        return pm?.mix_name || "";
+      });
+      const r=await(casesApi as any).createHybSeqBatch({mix_ids:mixIds, mix_sources:sources, chip_number:chipNumber});
       message.success(`批次 ${r.data.batch_number} 已创建`); setModalOpen(false); fetchBatches();
     }catch(e:any){message.error(e?.response?.data?.detail||"创建失败")}
   };
