@@ -152,19 +152,13 @@ export default function NipptPooling() {
       const savedRows = pd.rows||[];
       // Index from library plate or saved data
       let savedIdx:Record<string,string> = pd.indexes||{};
-      const libPlate = d.library_plate || [];
-      if (Object.keys(savedIdx).length === 0 && libPlate.length > 0) {
-        // Build vgId→index map from library plate
-        const idxMap:Record<string,string> = {};
-        libPlate.forEach((row:any[])=>
-          row.forEach((cell:any)=>{ if(cell?.vgId && cell?.index) idxMap[cell.vgId] = cell.index; })
-        );
-        // Match by test_sample_id (vgId)
+      const idxMap:Record<string,string> = d.library_index_map || {};
+      if (Object.keys(savedIdx).length === 0 && Object.keys(idxMap).length > 0) {
         const autoIdx:Record<string,string> = {};
         allSamples.forEach((s:SampleItem)=>{
           autoIdx[s.id] = idxMap[s.test_sample_id||''] || '';
         });
-        setSavedIndexes(autoIdx); /* use autoIdx for rows below */ savedIdx = autoIdx;
+        setSavedIndexes(autoIdx); savedIdx = autoIdx;
       } else {
         setSavedIndexes(savedIdx);
       }
