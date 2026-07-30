@@ -290,7 +290,7 @@ export default function NipptPooling() {
                   <Space size={4}>
                     {!showAllocInputs && <Button size="small" onClick={()=>{const d=(_g:any)=>groups.map(g=>({female:g.rows.filter(r=>r.category==="FEMALE_BLOOD").length,male:g.rows.filter(r=>r.category!=="FEMALE_BLOOD").length}));setPendingAlloc(useManualAlloc&&manualAlloc.length>0?[...manualAlloc]:d(groups));setShowAllocInputs(true)}}>手动调整</Button>}
                     {showAllocInputs && <>
-                      <Button size="small" onClick={()=>{setPendingAlloc(p=>[...p,{female:Math.ceil(females.length/(p.length+1)),male:Math.ceil(males.length/(p.length+1))}])}}>+组</Button>
+                      <Button size="small" onClick={()=>{setPendingAlloc(p=>[...p,{female:0,male:0}])}}>+组</Button>
                       <Button size="small" type="primary" onClick={()=>{if(pendingAlloc.length>0){setManualAlloc([...pendingAlloc]);setUseManualAlloc(true)}setShowAllocInputs(false)}}>✓ 确定</Button>
                       <Button size="small" onClick={()=>{setShowAllocInputs(false);setPendingAlloc([])}}>取消</Button>
                       <Button size="small" onClick={()=>{setManualAlloc([]);setUseManualAlloc(false);setShowAllocInputs(false);setPendingAlloc([])}}>重置</Button>
@@ -314,11 +314,11 @@ export default function NipptPooling() {
                           <td style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center",fontSize:12,fontWeight:600}}>mix{i+1}</td>
                           <td style={{border:"1px solid #ddd",padding:1,textAlign:"center"}}>
                             <InputNumber size="small" min={0} style={{width:60}} value={fVal}
-                              onChange={v=>{const val=v??0;const na=[...pendingAlloc];na[i]={...na[i],female:val};const diff=val-(a.female??0);if(na.length>1){const oIdx=i===0?1:0;na[oIdx]={...na[oIdx],female:Math.max(0,(na[oIdx].female??0)-diff)}}setPendingAlloc(na)}}/>
+                              onChange={v=>{const na=[...pendingAlloc];na[i]={...na[i],female:v??0};setPendingAlloc(na)}}/>
                           </td>
                           <td style={{border:"1px solid #ddd",padding:1,textAlign:"center"}}>
                             <InputNumber size="small" min={0} style={{width:60}} value={mVal}
-                              onChange={v=>{const val=v??0;const na=[...pendingAlloc];na[i]={...na[i],male:val};const diff=val-(a.male??0);if(na.length>1){const oIdx=i===0?1:0;na[oIdx]={...na[oIdx],male:Math.max(0,(na[oIdx].male??0)-diff)}}setPendingAlloc(na)}}/>
+                              onChange={v=>{const na=[...pendingAlloc];na[i]={...na[i],male:v??0};setPendingAlloc(na)}}/>
                           </td>
                           <td style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center"}}>
                             {pendingAlloc.length>1 && <Button size="small" danger type="text" style={{fontSize:11,padding:0,minWidth:16}} onClick={()=>{const na=pendingAlloc.filter((_,j)=>j!==i);setPendingAlloc(na.length===0?[]:na)}}>×</Button>}
