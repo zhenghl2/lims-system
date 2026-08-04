@@ -88,6 +88,8 @@ export default function NipptHybSeq() {
 
   // Sequencing state
   const [platform, setPlatform] = useState("");
+  const [chip, setChip] = useState("");
+  const [readType, setReadType] = useState("");
   const [stepConfirmations, setStepConfirmations] = useState<Record<string,boolean>>({});
   const [mixRows, setMixRows] = useState<MixRow[]>([]);
   const [finalConc, setFinalConc] = useState(0.783);
@@ -101,7 +103,7 @@ export default function NipptHybSeq() {
       const r=await(casesApi as any).getHybSeqBatch(id);
       const d=r.data; setSelectedBatch(d);
       const sd=d.hyb_seq_data||{};
-      setPlatform(sd.platform||""); setStepConfirmations(sd.step_confirmations||{});
+      setPlatform(sd.platform||""); setChip(sd.chip||""); setReadType(sd.read_type||""); setStepConfirmations(sd.step_confirmations||{});
       // Auto-init mix rows from saved or from mix_ids
       let rows = sd.mix_rows||[];
       if (rows.length===0 && sd.mix_ids && sd.mix_ids.length>0) {
@@ -261,10 +263,10 @@ export default function NipptHybSeq() {
                   <Select style={{width:180}} value={platform||undefined} onChange={setPlatform} options={EQUIPMENT_OPTIONS} placeholder="选择平台"/>
                   {platform&&<>
                     <Text>芯片:</Text>
-                    <Select style={{width:150}} options={CHIP_OPTIONS[platform]||[]} value={form.getFieldValue("chip")} onChange={v=>form.setFieldsValue({chip:v})} placeholder="选择"/>
+                    <Select style={{width:150}} options={CHIP_OPTIONS[platform]||[]} value={chip||undefined} onChange={v=>{setChip(v||"");form.setFieldsValue({chip:v})}} placeholder="选择"/>
                   </>}
                   <Text>Read Type:</Text>
-                  <Select style={{width:100}} options={READ_TYPE_OPTIONS} value={form.getFieldValue("read_type")} onChange={v=>form.setFieldsValue({read_type:v})} placeholder="选择"/>
+                  <Select style={{width:100}} options={READ_TYPE_OPTIONS} value={readType||undefined} onChange={v=>{setReadType(v||"");form.setFieldsValue({read_type:v})}} placeholder="选择"/>
                 </Space>
                 <Form form={form} layout="inline" style={{flexWrap:"wrap",gap:8}}>
                   <Form.Item name="seq_date" label="日期"><DatePicker size="small" style={{width:120}}/></Form.Item>
