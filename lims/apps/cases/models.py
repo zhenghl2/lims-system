@@ -717,6 +717,16 @@ class NipptBioinfoSample(models.Model):
     result_file = models.CharField(max_length=200, blank=True, default="")
     cpi_values = models.JSONField(default=dict, blank=True)
 
+    # QC flag + metrics (per-sample, before pairing)
+    qc_flag = models.CharField(max_length=20, blank=True, default="",
+        choices=[("MALE_LOW_LAYERS","男性层数低"),("FEMALE_LOW_LAYERS","女性层数低"),
+                 ("MALE_CONTAM","男性污染"),("FEMALE_CONTAM","女性污染"),
+                 ("FETAL_LOW_CONC","胎儿浓度低"),("OTHER","其他异常")])
+    layers = models.FloatField(null=True, blank=True, help_text="层数")
+    concentration = models.FloatField(null=True, blank=True, help_text="浓度")
+    het_ratio = models.FloatField(null=True, blank=True, help_text="杂纯比")
+    y_ratio = models.FloatField(null=True, blank=True, help_text="Y比例")
+
     qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
         choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
     qc_note = models.TextField(blank=True, default="")
@@ -730,6 +740,76 @@ class NipptBioinfoSample(models.Model):
 
     def __str__(self):
         return f"{self.batch.batch_number} / {self.patient_name} ({self.category})"
+
+
+class NipptBioinfoPair(models.Model):
+    """Bioinformatics analysis pair — Mother + Father CPI unit"""
+
+    class Result(models.TextChoices):
+        INCLUSION = "INCLUSION", "支持"
+        EXCLUSION = "EXCLUSION", "不支持"
+        INCONCLUSIVE = "INCONCLUSIVE", "亲缘临界"
+
+    class QCFlag(models.TextChoices):
+        MALE_LOW_LAYERS = "MALE_LOW_LAYERS", "男性层数低"
+        FEMALE_LOW_LAYERS = "FEMALE_LOW_LAYERS", "女性层数低"
+        MALE_CONTAM = "MALE_CONTAM", "男性污染"
+        FEMALE_CONTAM = "FEMALE_CONTAM", "女性污染"
+        FETAL_LOW_CONC = "FETAL_LOW_CONC", "胎儿浓度低"
+        OTHER = "OTHER", "其他异常"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    batch = models.ForeignKey(
+        NipptBioinfoBatch, on_delete=models.CASCADE, related_name="pairs"
+    )
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="bioinfo_pairs")
+
+    mother_sample = models.ForeignKey(
+        NipptBioinfoSample, on_delete=models.CASCADE, related_name="pairs_as_mother"
+    )
+    father_sample = models.ForeignKey(
+        NipptBioinfoSample, on_delete=models.CASCADE, related_name="pairs_as_father"
+    )
+
+    father_label = models.CharField(max_length=10, help_text="H / HA / HB / HC...")
+    is_cross_batch = models.BooleanField(default=False)
+    mother_source_batch = models.CharField(max_length=30, blank=True, default="")
+    father_source_batch = models.CharField(max_length=30, blank=True, default="")
+
+    cpi = models.FloatField(null=True, blank=True)
+    cpi_combined = models.FloatField(null=True, blank=True)
+    result = models.CharField(
+        max_length=20, blank=True, default="",
+        choices=Result.choices, db_index=True,
+    )
+
+    note = models.TextField(blank=True, default="")
+    report_data = models.JSONField(default=dict, blank=True)
+
+    # QC Flag (optional)
+    qc_flag = models.CharField(max_length=20, blank=True, default="", choices=QCFlag.choices, db_index=True)
+
+    # Analysis Metrics
+    mother_layers = models.FloatField(null=True, blank=True, help_text="母本层数")
+    mother_concentration = models.FloatField(null=True, blank=True, help_text="母本浓度")
+    mother_het_ratio = models.FloatField(null=True, blank=True, help_text="母本杂纯比")
+    mother_y_ratio = models.FloatField(null=True, blank=True, help_text="母本Y比例")
+
+    father_layers = models.FloatField(null=True, blank=True, help_text="父本层数")
+    father_concentration = models.FloatField(null=True, blank=True, help_text="父本浓度")
+    father_het_ratio = models.FloatField(null=True, blank=True, help_text="父本杂纯比")
+    father_y_ratio = models.FloatField(null=True, blank=True, help_text="父本Y比例")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "nippt_bioinfo_pairs"
+        ordering = ["case__case_number", "father_label"]
+        unique_together = [["batch", "mother_sample", "father_sample"]]
+
+    def __str__(self):
+        return f"{self.case.case_number} / {self.father_label} ({self.get_result_display() or 'Pending'})"
 
 
 class WorkflowLog(models.Model):

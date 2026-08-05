@@ -1,5 +1,6 @@
 """Case views."""
 from django.db import transaction
+from django.http import HttpResponse
 from django.db.models import Q, F
 from django.utils import timezone
 from rest_framework import viewsets, status, permissions
@@ -52,7 +53,12 @@ class CaseViewSet(viewsets.ModelViewSet):
         status_param = self.request.query_params.get("status", "")
         if status_param:
             statuses = [s.strip() for s in status_param.split(",") if s.strip()]
-            if len(statuses) == 1:
+            if "RECEIVING" in statuses:
+                qs = qs.filter(
+                    Q(status__in=statuses) |
+                    Q(case_samples__received_at__isnull=True)
+                ).distinct()
+            elif len(statuses) == 1:
                 qs = qs.filter(status=statuses[0])
             elif len(statuses) > 1:
                 qs = qs.filter(status__in=statuses)
@@ -859,13 +865,13 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         """Mark batch as complete. PASS samples advance to lab workflow."""
-        from django.db import transaction as db_transaction
+        from django.db import transaction
 
         batch = self.get_object()
         if batch.status == NipptPreProcessingBatch.Status.COMPLETED:
             raise ValidationError("Batch already completed")
 
-        with db_transaction.atomic():
+        with transaction.atomic():
             batch.status = NipptPreProcessingBatch.Status.COMPLETED
             batch.save(update_fields=["status", "updated_at"])
 
@@ -1245,3 +1251,235 @@ class NipptHybSeqViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"detail":"Cannot delete"}, status=400)
         batch.delete(); return Response({"message":"Deleted"})
+
+
+from .models import NipptBioinfoBatch, NipptBioinfoSample, NipptBioinfoPair
+from .serializers import (
+    NipptBioinfoBatchListSerializer, NipptBioinfoBatchDetailSerializer,
+    NipptBioinfoBatchCreateSerializer, NipptBioinfoPairSerializer,
+    NipptBioinfoSampleSerializer,
+)
+
+
+class NipptBioinfoViewSet(viewsets.ModelViewSet):
+    """NIPPT Bioinformatics — pair-based CPI analysis"""
+    permission_classes = [permissions.IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
+    search_fields = ["batch_number"]
+    ordering_fields = ["created_at", "batch_number"]
+
+    def get_queryset(self):
+        return NipptBioinfoBatch.objects.prefetch_related("samples", "pairs").all()
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return NipptBioinfoBatchListSerializer
+        if self.action == "create":
+            return NipptBioinfoBatchCreateSerializer
+        return NipptBioinfoBatchDetailSerializer
+
+    @action(detail=False, methods=["get"])
+    def pending_info(self, request):
+        # Exclude HybSeq batches already used in bioinfo batches
+        used_hs_ids = set()
+        for bb in NipptBioinfoBatch.objects.all():
+            bid = (bb.bioinfo_data or {}).get("source_hybseq_batch_id")
+            if bid:
+                used_hs_ids.add(bid)
+        
+        latest_hs = NipptHybSeqBatch.objects.filter(
+            status="COMPLETED"
+        ).exclude(id__in=used_hs_ids).order_by("-created_at").first()
+        
+        if not latest_hs:
+            return Response({"available": False, "message": "No completed HybSeq batch available"})
+        hs_samples = NipptHybSeqSample.objects.filter(batch=latest_hs, qc_status="PASS").select_related("case")
+        cases_in_batch = {}
+        for hs in hs_samples:
+            cases_in_batch.setdefault(hs.case_id, {"mother": False, "fathers": []})
+            if hs.role == "MOTHER":
+                cases_in_batch[hs.case_id]["mother"] = True
+            else:
+                cases_in_batch[hs.case_id]["fathers"].append(hs.patient_name)
+        batch_internal = sum(1 for c in cases_in_batch.values() if c["mother"] and c["fathers"])
+        total_pairs = sum(len(c["fathers"]) for c in cases_in_batch.values() if c["mother"])
+        all_hs = NipptHybSeqBatch.objects.filter(status="COMPLETED").exclude(id__in=used_hs_ids).order_by("-created_at")[:20]
+        return Response({
+            "available": True,
+            "primary_batch": {"id": str(latest_hs.id), "batch_number": latest_hs.batch_number, "created_at": latest_hs.created_at, "sample_count": hs_samples.count()},
+            "pairing_summary": {"batch_internal_cases": batch_internal, "batch_internal_pairs": total_pairs},
+            "all_hybseq_batches": [{"id": str(hb.id), "batch_number": hb.batch_number} for hb in all_hs],
+        })
+
+    @action(detail=True, methods=["post"])
+    def save_processing(self, request, pk=None):
+        batch = self.get_object()
+        if batch.status == "COMPLETED":
+            return Response({"error": "Batch already completed"}, status=400)
+        pairs_data = request.data.get("pairs", [])
+        METRIC_FIELDS = [
+            "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
+            "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",
+        ]
+        for pd in pairs_data:
+            pair_id = pd.get("id")
+            if not pair_id: continue
+            updates = {
+                "cpi": pd.get("cpi"), "cpi_combined": pd.get("cpi_combined"),
+                "result": pd.get("result", ""), "note": pd.get("note", ""),
+                "report_data": pd.get("report_data", {}), "updated_at": timezone.now(),
+            }
+            for f in METRIC_FIELDS:
+                if f in pd and pd[f] is not None:
+                    updates[f] = pd[f]
+            NipptBioinfoPair.objects.filter(id=pair_id, batch=batch).update(**updates)
+        sd = request.data.get("bioinfo_data", {})
+        if sd:
+            batch.bioinfo_data = sd
+            batch.save(update_fields=["bioinfo_data", "updated_at"])
+        return Response({"message": "Saved"})
+
+    @action(detail=True, methods=["post"])
+    def complete(self, request, pk=None):
+        batch = self.get_object()
+        if batch.status == "COMPLETED":
+            return Response({"error": "Already completed"}, status=400)
+        incomplete = batch.pairs.filter(result="").count()
+        if incomplete > 0:
+            return Response({"error": f"{incomplete} pair(s) missing CPI", "incomplete": incomplete}, status=400)
+
+        batch.status = "COMPLETED"
+        batch.save(update_fields=["status", "updated_at"])
+        advance_batch(batch, "BIOINFO", request.user)
+        return Response({"message": f"Completed {batch.pairs.count()} pairs"})
+
+    @action(detail=True, methods=["post"])
+    def add_manual_pair(self, request, pk=None):
+        batch = self.get_object()
+        if batch.status == "COMPLETED":
+            return Response({"error": "Batch already completed"}, status=400)
+        mid = request.data.get("mother_sample_id")
+        fid = request.data.get("father_sample_id")
+        if not mid or not fid:
+            return Response({"error": "mother_sample_id and father_sample_id required"}, status=400)
+        try:
+            mother = NipptBioinfoSample.objects.get(id=mid, batch=batch)
+            father = NipptBioinfoSample.objects.get(id=fid, batch=batch)
+        except NipptBioinfoSample.DoesNotExist as e:
+            return Response({"error": str(e)}, status=404)
+        if mother.role != "MOTHER":
+            return Response({"error": "mother must be MOTHER"}, status=400)
+        label = request.data.get("father_label") or ""
+        if not label:
+            existing = NipptBioinfoPair.objects.filter(batch=batch, mother_sample=mother).count()
+            label = "H" if existing == 0 else f"H{chr(65 + existing)}"
+        pair = NipptBioinfoPair.objects.create(
+            batch=batch, case=mother.case, mother_sample=mother,
+            father_sample=father, father_label=label, is_cross_batch=True)
+        return Response(NipptBioinfoPairSerializer(pair).data, status=201)
+
+    @action(detail=True, methods=["get"])
+    def export_template(self, request, pk=None):
+        """Download CSV template with pair info pre-filled (including metric columns)"""
+        batch = self.get_object()
+        pairs = batch.pairs.select_related("case").order_by("case__case_number", "father_label")
+        import csv, io
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow([
+            "case_number", "pt_number", "father_label",
+            "cpi", "cpi_combined", "result", "note",
+            "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
+            "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",
+        ])
+        for p in pairs:
+            writer.writerow([
+                p.case.case_number, p.case.pt_number or "", p.father_label,
+                p.cpi or "", p.cpi_combined or "", p.result or "", p.note or "",
+                p.mother_layers or "", p.mother_concentration or "", p.mother_het_ratio or "", p.mother_y_ratio or "",
+                p.father_layers or "", p.father_concentration or "", p.father_het_ratio or "", p.father_y_ratio or "",
+            ])
+        response = HttpResponse(output.getvalue(), content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="bioinfo_{batch.batch_number}_template.csv"'
+        return response
+
+    @action(detail=True, methods=["post"])
+    def import_cpi(self, request, pk=None):
+        """Import CPI + metrics from CSV or Excel file"""
+        batch = self.get_object()
+        if batch.status == "COMPLETED":
+            return Response({"error": "Batch already completed"}, status=400)
+        uploaded = request.FILES.get("file")
+        if not uploaded:
+            return Response({"error": "No file uploaded"}, status=400)
+        # Parse
+        rows = []
+        fname = uploaded.name.lower()
+        if fname.endswith(".csv"):
+            import csv, io
+            content_bytes = uploaded.read()
+            content_str = content_bytes.decode("utf-8-sig")
+            reader = csv.DictReader(io.StringIO(content_str))
+            rows = list(reader)
+        elif fname.endswith((".xlsx", ".xls")):
+            import openpyxl
+            wb = openpyxl.load_workbook(uploaded, read_only=True)
+            ws = wb.active
+            headers = [str(cell.value or "") for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+            for row in ws.iter_rows(min_row=2, values_only=True):
+                rows.append(dict(zip(headers, [str(v) if v is not None else "" for v in row])))
+        else:
+            return Response({"error": "Unsupported format. Use .csv or .xlsx"}, status=400)
+        # Build pair index
+        pair_index = {}
+        for p in batch.pairs.select_related("case"):
+            key = (p.case.case_number, p.case.pt_number or "", p.father_label)
+            pair_index[key] = p
+        RESULT_VALS = {"INCLUSION", "EXCLUSION", "INCONCLUSIVE"}
+        METRIC_FIELDS = [
+            "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
+            "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",
+        ]
+        updated = 0; skipped = 0; errors = []
+        for i, row in enumerate(rows, start=2):
+            cn = (row.get("case_number") or "").strip()
+            pt = (row.get("pt_number") or "").strip()
+            fl = (row.get("father_label") or "").strip()
+            pair = pair_index.get((cn, pt, fl))
+            if not pair:
+                errors.append(f"Row {i}: pair not found ({cn}/{pt}/{fl})")
+                skipped += 1
+                continue
+            upd = {"updated_at": timezone.now()}
+            cpi_s = (row.get("cpi") or "").strip()
+            result_s = (row.get("result") or "").strip().upper()
+            note_s = (row.get("note") or "").strip()
+            if cpi_s:
+                try: upd["cpi"] = float(cpi_s)
+                except ValueError:
+                    errors.append(f"Row {i}: invalid cpi '{cpi_s}'"); skipped += 1; continue
+            if result_s:
+                if result_s not in RESULT_VALS:
+                    errors.append(f"Row {i}: invalid result '{result_s}'"); skipped += 1; continue
+                upd["result"] = result_s
+            if note_s: upd["note"] = note_s
+            for f in METRIC_FIELDS:
+                val_s = (row.get(f) or "").strip()
+                if val_s:
+                    try: upd[f] = float(val_s)
+                    except ValueError:
+                        errors.append(f"Row {i}: invalid {f} '{val_s}'"); skipped += 1; continue
+            NipptBioinfoPair.objects.filter(id=pair.id).update(**upd)
+            updated += 1
+        return Response({
+            "message": f"Updated {updated}, skipped {skipped}",
+            "updated": updated, "skipped": skipped,
+            "errors": errors[:20], "total_rows": len(rows),
+        })
+
+    def destroy(self, request, *args, **kwargs):
+        batch = self.get_object()
+        if batch.status == "COMPLETED":
+            return Response({"detail": "Cannot delete completed batch"}, status=400)
+        batch.delete()
+        return Response({"message": "Deleted"})

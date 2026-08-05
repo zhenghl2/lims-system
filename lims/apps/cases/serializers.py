@@ -1174,6 +1174,358 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
         return batch
 
 
+from .models import NipptBioinfoBatch, NipptBioinfoSample, NipptBioinfoPair, NipptHybSeqBatch, NipptHybSeqSample
+
+
+# ── NIPPT Bioinformatics Serializers ──
+
+class NipptBioinfoPairSerializer(serializers.ModelSerializer):
+    mother_name = serializers.CharField(source="mother_sample.patient_name", read_only=True)
+    father_name = serializers.CharField(source="father_sample.patient_name", read_only=True)
+    mother_index = serializers.SerializerMethodField()
+    father_index = serializers.SerializerMethodField()
+    father_sample_type = serializers.SerializerMethodField()
+    case_number = serializers.CharField(source="case.case_number", read_only=True)
+    pt_number = serializers.CharField(source="case.pt_number", read_only=True)
+    case_source = serializers.SerializerMethodField()
+    result_display = serializers.CharField(source="get_result_display", read_only=True)
+    qc_flag_display = serializers.CharField(source="get_qc_flag_display", read_only=True)
+
+    class Meta:
+        model = NipptBioinfoPair
+        fields = [
+            "id", "batch", "case", "case_number", "pt_number", "case_source",
+            "mother_sample", "mother_name", "mother_index",
+            "father_sample", "father_name", "father_index", "father_sample_type",
+            "father_label", "is_cross_batch",
+            "mother_source_batch", "father_source_batch",
+            "cpi", "cpi_combined", "result", "result_display",
+            "note", "report_data",
+            "qc_flag", "qc_flag_display",
+            "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
+            "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_mother_index(self, obj):
+        return self._get_index(obj.mother_sample)
+
+    def get_father_index(self, obj):
+        return self._get_index(obj.father_sample)
+
+    def get_father_sample_type(self, obj):
+        return self._get_sample_type(obj.father_sample)
+
+    def get_case_source(self, obj):
+        """Get country/region source from mother's Sample"""
+        if obj.mother_sample and obj.mother_sample.case_sample_ids:
+            cs = CaseSample.objects.filter(
+                id=obj.mother_sample.case_sample_ids[0]
+            ).select_related("sample").first()
+            if cs and cs.sample:
+                return cs.sample.sample_source or ""
+        return ""
+
+    def _get_index(self, sample):
+        if not sample or not sample.source_hybseq_sample_id:
+            return ""
+        from .models import NipptHybSeqSample, NipptPoolingSample
+        hs = NipptHybSeqSample.objects.filter(id=sample.source_hybseq_sample_id).first()
+        if hs and hs.source_pooling_sample_id:
+            ps = NipptPoolingSample.objects.filter(id=hs.source_pooling_sample_id).first()
+            if ps and ps.batch.pooling_data:
+                return ps.batch.pooling_data.get("indexes", {}).get(
+                    str(hs.source_pooling_sample_id), ""
+                )
+        return ""
+
+    def _get_sample_type(self, sample):
+        if not sample or not sample.case_sample_ids:
+            return ""
+        cs = CaseSample.objects.filter(id=sample.case_sample_ids[0]).first()
+        if cs:
+            return cs.get_sample_source_display() or cs.sample_source
+        return ""
+
+
+class NipptBioinfoSampleSerializer(serializers.ModelSerializer):
+    case_number = serializers.CharField(source="case.case_number", read_only=True)
+    pt_number = serializers.CharField(source="case.pt_number", read_only=True)
+    test_sample_id = serializers.SerializerMethodField()
+    index = serializers.SerializerMethodField()
+    sample_type = serializers.SerializerMethodField()
+    qc_flag_display = serializers.CharField(source="get_qc_flag_display", read_only=True)
+
+    class Meta:
+        model = NipptBioinfoSample
+        fields = [
+            "id", "batch", "case", "patient_name", "role", "category",
+            "case_sample_ids", "source_hybseq_sample_id",
+            "test_sample_id", "index", "sample_type",
+            "case_number", "pt_number",
+            "qc_flag", "qc_flag_display", "layers", "concentration", "het_ratio", "y_ratio",
+            "qc_status", "qc_note",
+        ]
+
+    def get_test_sample_id(self, obj):
+        if obj.case_sample_ids:
+            cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
+            if cs:
+                return cs.test_sample_id
+        return None
+
+    def get_index(self, obj):
+        if not obj.source_hybseq_sample_id:
+            return ""
+        from .models import NipptHybSeqSample, NipptPoolingSample
+        hs = NipptHybSeqSample.objects.filter(id=obj.source_hybseq_sample_id).first()
+        if hs and hs.source_pooling_sample_id:
+            ps = NipptPoolingSample.objects.filter(id=hs.source_pooling_sample_id).first()
+            if ps and ps.batch.pooling_data:
+                return ps.batch.pooling_data.get("indexes", {}).get(
+                    str(hs.source_pooling_sample_id), ""
+                )
+        return ""
+
+    def get_sample_type(self, obj):
+        if not obj.case_sample_ids:
+            return ""
+        cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
+        if cs:
+            return cs.get_sample_source_display() or cs.sample_source
+        return ""
+
+
+class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    pair_count = serializers.SerializerMethodField()
+    completed_pair_count = serializers.SerializerMethodField()
+    sample_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NipptBioinfoBatch
+        fields = [
+            "id", "batch_number", "status", "status_display",
+            "pair_count", "completed_pair_count", "sample_count",
+            "created_by", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
+
+    def get_pair_count(self, obj):
+        return obj.pairs.count() if hasattr(obj, 'pairs') else 0
+
+    def get_completed_pair_count(self, obj):
+        return obj.pairs.exclude(result="").count() if hasattr(obj, 'pairs') else 0
+
+    def get_sample_count(self, obj):
+        return obj.samples.count() if hasattr(obj, 'samples') else 0
+
+
+class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    pair_count = serializers.SerializerMethodField()
+    sample_count = serializers.SerializerMethodField()
+    pairs = NipptBioinfoPairSerializer(many=True, read_only=True)
+    unpaired_mothers = serializers.SerializerMethodField()
+    unpaired_fathers = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NipptBioinfoBatch
+        fields = [
+            "id", "batch_number", "status", "status_display",
+            "bioinfo_data", "pair_count", "sample_count",
+            "pairs", "unpaired_mothers", "unpaired_fathers",
+            "created_by", "created_at", "updated_at",
+        ]
+        read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
+
+    def get_pair_count(self, obj):
+        return obj.pairs.count() if hasattr(obj, 'pairs') else 0
+
+    def get_sample_count(self, obj):
+        return obj.samples.count() if hasattr(obj, 'samples') else 0
+
+    def get_unpaired_mothers(self, obj):
+        if not hasattr(obj, 'pairs'):
+            return []
+        paired_ids = set(obj.pairs.values_list("mother_sample_id", flat=True))
+        unpaired = obj.samples.filter(role="MOTHER").exclude(id__in=paired_ids)
+        return NipptBioinfoSampleSerializer(unpaired, many=True).data
+
+    def get_unpaired_fathers(self, obj):
+        if not hasattr(obj, 'pairs'):
+            return []
+        paired_ids = set(obj.pairs.values_list("father_sample_id", flat=True))
+        unpaired = obj.samples.exclude(role="MOTHER").exclude(id__in=paired_ids)
+        return NipptBioinfoSampleSerializer(unpaired, many=True).data
+
+
+class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
+    hybseq_batch_id = serializers.UUIDField(write_only=True, required=False)
+
+    class Meta:
+        model = NipptBioinfoBatch
+        fields = ["id", "batch_number", "hybseq_batch_id"]
+        read_only_fields = ["id", "batch_number"]
+
+    def create(self, validated_data):
+        request = self.context["request"]
+        hybseq_batch_id = validated_data.pop("hybseq_batch_id", None)
+
+        # Collect already-used HybSeq batch IDs
+        used_ids = set()
+        for bb in NipptBioinfoBatch.objects.all():
+            bid = (bb.bioinfo_data or {}).get("source_hybseq_batch_id")
+            if bid:
+                used_ids.add(bid)
+
+        if hybseq_batch_id:
+            if hybseq_batch_id in used_ids:
+                raise serializers.ValidationError({"hybseq_batch_id": "This HybSeq batch has already been used"})
+            primary_hs = NipptHybSeqBatch.objects.get(id=hybseq_batch_id, status="COMPLETED")
+        else:
+            primary_hs = NipptHybSeqBatch.objects.filter(
+                status="COMPLETED"
+            ).exclude(id__in=used_ids).order_by("-created_at").first()
+            if not primary_hs:
+                raise serializers.ValidationError({"hybseq_batch_id": "No completed HybSeq batch found"})
+
+        with transaction.atomic():
+            batch_number = NipptBioinfoBatch.generate_batch_number()
+            batch = NipptBioinfoBatch.objects.create(
+                batch_number=batch_number, status="DRAFT", created_by=request.user,
+            )
+
+            hs_samples = NipptHybSeqSample.objects.filter(
+                batch=primary_hs, qc_status="PASS"
+            ).select_related("case")
+
+            created_sample_map = {}
+            case_samples_map = {}
+
+            for hs in hs_samples:
+                bs = NipptBioinfoSample.objects.create(
+                    batch=batch, case=hs.case,
+                    patient_name=hs.patient_name, role=hs.role,
+                    category=hs.category,
+                    case_sample_ids=hs.case_sample_ids,
+                    source_hybseq_sample_id=str(hs.id),
+                )
+                created_sample_map[str(hs.id)] = bs
+                role_key = "MOTHER" if hs.role == "MOTHER" else "FATHER"
+                case_samples_map.setdefault(hs.case_id, {"MOTHER": [], "FATHER": []})
+                case_samples_map[hs.case_id][role_key].append(bs)
+
+            cross_batch_count = 0
+
+            # Phase 1: within-batch pairing
+            for case_id, groups in case_samples_map.items():
+                mothers = groups["MOTHER"]
+                fathers = groups["FATHER"]
+                for mother in mothers:
+                    for idx, father in enumerate(fathers):
+                        label = "H" if len(fathers) == 1 else f"H{chr(65 + idx)}"
+                        NipptBioinfoPair.objects.create(
+                            batch=batch, case_id=case_id,
+                            mother_sample=mother, father_sample=father,
+                            father_label=label,
+                            is_cross_batch=False,
+                            mother_source_batch=primary_hs.batch_number,
+                            father_source_batch=primary_hs.batch_number,
+                        )
+
+            # Phase 2: cross-batch supplement
+            for case_id, groups in case_samples_map.items():
+                has_mother = len(groups["MOTHER"]) > 0
+                has_father = len(groups["FATHER"]) > 0
+
+                if has_mother and has_father:
+                    continue
+
+                case = Case.objects.get(id=case_id)
+                all_cs = case.case_samples.filter(
+                    workflow_stage__in=["HYB_SEQ", "BIOINFO", "REPORT_DRAFT", "COMPLETED"],
+                    is_active=True,
+                ).select_related("sample")
+
+                if not has_mother:
+                    for cs in all_cs.filter(role="MOTHER"):
+                        hss = NipptHybSeqSample.objects.filter(
+                            case_sample_ids__contains=[str(cs.id)],
+                            batch__status="COMPLETED", qc_status="PASS",
+                        ).select_related("batch").first()
+                        if hss and str(hss.id) not in created_sample_map:
+                            bs = NipptBioinfoSample.objects.create(
+                                batch=batch, case=case,
+                                patient_name=hss.patient_name, role="MOTHER",
+                                category=hss.category,
+                                case_sample_ids=hss.case_sample_ids,
+                                source_hybseq_sample_id=str(hss.id),
+                            )
+                            created_sample_map[str(hss.id)] = bs
+                            groups["MOTHER"].append(bs)
+
+                if not has_father:
+                    existing_names = {f.patient_name for f in groups["FATHER"]}
+                    for cs in all_cs.filter(role="ALLEGED_FATHER"):
+                        if cs.sample.patient_name in existing_names:
+                            continue
+                        hss = NipptHybSeqSample.objects.filter(
+                            case_sample_ids__contains=[str(cs.id)],
+                            batch__status="COMPLETED", qc_status="PASS",
+                        ).select_related("batch").first()
+                        if hss and str(hss.id) not in created_sample_map:
+                            bs = NipptBioinfoSample.objects.create(
+                                batch=batch, case=case,
+                                patient_name=hss.patient_name, role="ALLEGED_FATHER",
+                                category=hss.category,
+                                case_sample_ids=hss.case_sample_ids,
+                                source_hybseq_sample_id=str(hss.id),
+                            )
+                            created_sample_map[str(hss.id)] = bs
+                            groups["FATHER"].append(bs)
+
+                # Cross-batch pairing
+                for mother in groups["MOTHER"]:
+                    for idx, father in enumerate(groups["FATHER"]):
+                        label = "H" if len(groups["FATHER"]) == 1 else f"H{chr(65 + idx)}"
+                        if NipptBioinfoPair.objects.filter(
+                            batch=batch, mother_sample=mother, father_sample=father,
+                        ).exists():
+                            continue
+                        m_hs = NipptHybSeqSample.objects.filter(
+                            id=mother.source_hybseq_sample_id
+                        ).first()
+                        f_hs = NipptHybSeqSample.objects.filter(
+                            id=father.source_hybseq_sample_id
+                        ).first()
+                        is_cross = (
+                            (m_hs and str(m_hs.batch_id) != str(primary_hs.id)) or
+                            (f_hs and str(f_hs.batch_id) != str(primary_hs.id))
+                        )
+                        NipptBioinfoPair.objects.create(
+                            batch=batch, case_id=case_id,
+                            mother_sample=mother, father_sample=father,
+                            father_label=label,
+                            is_cross_batch=is_cross,
+                            mother_source_batch=m_hs.batch.batch_number if m_hs else "",
+                            father_source_batch=f_hs.batch.batch_number if f_hs else "",
+                        )
+                        if is_cross:
+                            cross_batch_count += 1
+
+            batch.bioinfo_data = {
+                "source_hybseq_batch_id": str(primary_hs.id),
+                "source_hybseq_batch_number": primary_hs.batch_number,
+                "auto_paired": True,
+                "cross_batch_count": cross_batch_count,
+            }
+            batch.save(update_fields=["bioinfo_data"])
+
+        return batch
+
+
 class WorkflowLogSerializer(serializers.ModelSerializer):
     operator_name = serializers.SerializerMethodField()
     class Meta:
