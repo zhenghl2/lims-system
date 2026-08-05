@@ -53,7 +53,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         status_param = self.request.query_params.get("status", "")
         if status_param:
             statuses = [s.strip() for s in status_param.split(",") if s.strip()]
-            if "RECEIVING" in statuses:
+            if "RECEIVED" in statuses:
                 qs = qs.filter(
                     Q(status__in=statuses) |
                     Q(case_samples__received_at__isnull=True)
@@ -144,20 +144,12 @@ class CaseViewSet(viewsets.ModelViewSet):
         if hasattr(case, '_prefetched_objects_cache'):
             case._prefetched_objects_cache.pop('case_samples', None)
 
-        # Transition REGISTERED -> RECEIVING when at least one sample received
-        if case.status == Case.Status.REGISTERED:
-            case.status = Case.Status.RECEIVING
-            case.save(update_fields=["status", "updated_at"])
+        # Sync Case status from CaseSample states
+        case.update_status()
 
-        if case.all_samples_received:
-            case.status = Case.Status.IN_PROCESS
-            # PT number should be provided by user via confirm_receipt
-            # If not set yet, auto-assign as fallback
-            if not case.pt_number:
-                case.assign_pt_number()
-                case.save(update_fields=["status", "updated_at", "pt_number"])
-            else:
-                case.save(update_fields=["status", "updated_at"])
+        if case.all_samples_received and not case.pt_number:
+            case.assign_pt_number()
+            case.save(update_fields=["pt_number", "updated_at"])
             # Generate test_sample_id suffix if not already set
             # 按 patient_name 分組父亲，同一父亲多样本共用后缀
             father_css = list(case.case_samples.filter(
@@ -335,6 +327,10 @@ class CaseViewSet(viewsets.ModelViewSet):
             new_cs.save(update_fields=["test_sample_id"])
             
             register_redo_samples(original_cs, target_stage, new_cs, request.user, sample_source)
+
+            original_cs.is_active = False
+            original_cs.save(update_fields=["is_active"])
+            case.update_status()
             
             WorkflowLog.objects.create(
                 case_sample=new_cs, stage=target_stage, action="REDO",
@@ -504,7 +500,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         """Delete a sample from a case. Only allowed in REGISTERED/RECEIVING status."""
         case = self.get_object()
 
-        if case.status not in (Case.Status.REGISTERED, Case.Status.RECEIVING):
+        if case.status not in ("REGISTERED", "RECEIVED"):
             raise ValidationError(
                 "Cannot delete samples once case is IN_PROCESS or later"
             )
@@ -573,10 +569,10 @@ class CaseViewSet(viewsets.ModelViewSet):
         now = timezone.now().date()
         near_deadline = qs.filter(
             expected_completion__lte=now + timezone.timedelta(days=2),
-            status__in=[Case.Status.IN_PROCESS, Case.Status.RECEIVING],
+            status__in=["PRE_PROCESSING","EXTRACTION","LIBRARY_PREP","POOLING","HYB_SEQ","BIOINFO","REPORT_DRAFT","RECEIVED"],
         ).count()
         incomplete_cases = 0
-        for case in qs.filter(status=Case.Status.RECEIVING):
+        for case in qs.filter(status="RECEIVED"):
             mother = case.mother_sample
             if mother and mother.received_at:
                 fathers = case.father_samples
@@ -588,7 +584,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         stage_counts = {
             "registered": all_css.filter(workflow_stage="REGISTERED").count(),
             "received": all_css.filter(workflow_stage="RECEIVED").count(),
-            "rejected": all_css.filter(workflow_stage="REJECTED").count(),
+            "rejected": all_css.filter(sample__status="REJECTED").count(),
             "pre_processing": all_css.filter(workflow_stage="PRE_PROCESSING").count(),
             "extraction": all_css.filter(workflow_stage="EXTRACTION").count(),
             "library_prep": all_css.filter(workflow_stage="LIBRARY_PREP").count(),
@@ -599,6 +595,25 @@ class CaseViewSet(viewsets.ModelViewSet):
             "completed": all_css.filter(workflow_stage="COMPLETED").count(),
             "failed": all_css.filter(workflow_stage__endswith="_FAILED").count(),
         }
+        # Stage detail: top 20 samples per stage
+        stage_detail = {}
+        for stage in ["REGISTERED","RECEIVED","PRE_PROCESSING","EXTRACTION",
+                       "LIBRARY_PREP","POOLING","HYB_SEQ","BIOINFO","REPORT_DRAFT","COMPLETED"]:
+            css = all_css.filter(workflow_stage=stage, is_active=True).select_related("case","sample")[:20]
+            stage_detail[stage] = [{
+                "case_id": str(cs.case_id), "case_number": cs.case.case_number,
+                "pt_number": cs.case.pt_number or "", "patient_name": cs.sample.patient_name or "",
+                "sample_source": cs.sample_source, "test_sample_id": cs.test_sample_id or "",
+                "updated_at": str(cs.updated_at),
+            } for cs in css]
+        # Rejected
+        rj = all_css.filter(sample__status="REJECTED").select_related("case","sample")[:20]
+        stage_detail["REJECTED"] = [{
+            "case_id": str(cs.case_id), "case_number": cs.case.case_number,
+            "patient_name": cs.sample.patient_name or "", "sample_source": cs.sample_source,
+            "test_sample_id": cs.test_sample_id or "", "updated_at": str(cs.updated_at),
+        } for cs in rj]
+
         return Response({
             "total_cases": qs.count(),
             "total_samples": CaseSample.objects.count(),
@@ -608,6 +623,7 @@ class CaseViewSet(viewsets.ModelViewSet):
             "incomplete_pairs": incomplete_cases,
             "today_expected": today_expected,
             "workflow_stages": stage_counts,
+            "stage_detail": stage_detail,
         })
 
 
@@ -625,7 +641,7 @@ def public_register(request, token):
     if case.registration_token_expires and case.registration_token_expires < timezone.now():
         raise PermissionDenied("Registration token has expired")
 
-    if case.status not in (Case.Status.DRAFT, Case.Status.REGISTERED):
+    if case.status not in ("REGISTERED", "RECEIVED"):
         return Response(
             {"error": f"Case is already {case.get_status_display()}"},
             status=status.HTTP_400_BAD_REQUEST,
@@ -952,6 +968,13 @@ def advance_batch(batch, next_stage, operator=None):
         else: failed.extend(ids)
     if passed: update_wf(passed, next_stage, "COMPLETE", batch.batch_number, operator)
     if failed: update_wf(failed, f"{next_stage}_FAILED", "FAIL", batch.batch_number, operator)
+    # Sync Case status
+    all_ids = set(passed + failed)
+    if all_ids:
+        case_ids = set(CaseSample.objects.filter(id__in=all_ids).values_list("case_id", flat=True))
+        for cid in case_ids:
+            try: Case.objects.get(id=cid).update_status()
+            except Case.DoesNotExist: pass
 
 class NipptPreProcessingViewSet(viewsets.ModelViewSet):
     """NIPPT 前处理批次管理"""

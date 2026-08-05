@@ -6,17 +6,28 @@ from django.conf import settings
 from django.utils import timezone
 
 
+WORKFLOW_ORDER = [
+    "REGISTERED", "RECEIVED", "PRE_PROCESSING", "EXTRACTION",
+    "LIBRARY_PREP", "POOLING", "HYB_SEQ", "BIOINFO",
+    "REPORT_DRAFT", "COMPLETED"
+]
+
 class Case(models.Model):
     """A case groups mother + alleged father(s) samples for NIPPT."""
 
     class Status(models.TextChoices):
-        DRAFT = "DRAFT", "Draft"
-        REGISTERED = "REGISTERED", "Registered"
-        RECEIVING = "RECEIVING", "Receiving"
-        IN_PROCESS = "IN_PROCESS", "In Process"
-        COMPLETED = "COMPLETED", "Completed"
-        REPORTED = "REPORTED", "Reported"
-        CANCELLED = "CANCELLED", "Cancelled"
+        REGISTERED = "REGISTERED", "已登记"
+        RECEIVED = "RECEIVED", "已签收"
+        PRE_PROCESSING = "PRE_PROCESSING", "前处理"
+        EXTRACTION = "EXTRACTION", "提取中"
+        LIBRARY_PREP = "LIBRARY_PREP", "建库中"
+        POOLING = "POOLING", "Pooling"
+        HYB_SEQ = "HYB_SEQ", "测序中"
+        BIOINFO = "BIOINFO", "生信中"
+        REPORT_DRAFT = "REPORT_DRAFT", "报告草稿"
+        COMPLETED = "COMPLETED", "已完成"
+        HAS_FAILURE = "HAS_FAILURE", "有失败"
+        CANCELLED = "CANCELLED", "已取消"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     case_number = models.CharField(max_length=30, unique=True, db_index=True)
@@ -29,7 +40,7 @@ class Case(models.Model):
     )
     status = models.CharField(
         max_length=20,
-        default=Status.DRAFT,
+        default=Status.REGISTERED,
         choices=Status.choices,
         db_index=True,
     )
@@ -95,6 +106,31 @@ class Case(models.Model):
             num = Case.objects.count() or 1
         self.pt_number = f"{self.PT_PREFIX}{num:05d}"
         return self.pt_number
+
+    @property
+    def computed_status(self):
+        """从 CaseSample 实时推导 Case 状态."""
+        active = self.case_samples.filter(is_active=True)
+        if not active.exists():
+            active = self.case_samples.all()
+        if not active.exists():
+            return "REGISTERED"
+        if active.filter(workflow_stage__endswith="_FAILED").exists():
+            return "HAS_FAILURE"
+        stages = [cs.workflow_stage for cs in active if cs.workflow_stage]
+        if stages and all(s == "COMPLETED" for s in stages):
+            return "COMPLETED"
+        for stage in WORKFLOW_ORDER[:-1]:
+            if any(s == stage for s in stages):
+                return stage
+        return "REGISTERED"
+
+    def update_status(self):
+        """同步 computed_status 到 DB status 字段."""
+        new = self.computed_status
+        if self.status != new:
+            self.status = new
+            self.save(update_fields=["status", "updated_at"])
 
     def generate_test_sample_id(self, case_sample, resample_num=None, redo_num=None):
         """Generate a PT test sample ID for a CaseSample.
@@ -250,11 +286,12 @@ class CaseSample(models.Model):
         self.receipt_condition = condition
         self.received_at = timezone.now()
         self.received_by = user
+        self.workflow_stage = "RECEIVED"
         if photo:
             self.receipt_photo = photo
         self.save(update_fields=[
             "receipt_condition", "received_at", "received_by",
-            "receipt_photo", "updated_at",
+            "workflow_stage", "receipt_photo", "updated_at",
         ])
 
 

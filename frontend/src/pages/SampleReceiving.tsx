@@ -137,7 +137,7 @@ export default function SampleReceiving() {
     try {
       const params: any = { page_size: 100 };
       if (activeTab === "pending") {
-        params.status = "REGISTERED,RECEIVING";
+        params.status = "REGISTERED,RECEIVED";
       } else {
         params.status = "RECEIVED,IN_PROCESS,COMPLETED,REPORTED";
       }

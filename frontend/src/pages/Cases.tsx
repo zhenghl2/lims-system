@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import {
   Card, Table, Tag, Typography, Button, Input, Select, Space,
-  Progress, Drawer, message, Badge, Popconfirm, DatePicker,
+  Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse,
   Modal, Timeline,
 } from "antd";
 import {
@@ -22,14 +22,14 @@ const STATUS_COLORS: Record<string, string> = {
   PRE_PROCESSING: "orange", EXTRACTION: "gold", LIBRARY_PREP: "purple",
   POOLING: "magenta", HYB_SEQ: "cyan", BIOINFO: "geekblue",
   REPORT_DRAFT: "lime", IN_PROCESS: "orange", COMPLETED: "green",
-  REPORTED: "cyan", REJECTED: "red",
+  REPORTED: "cyan", REJECTED: "red", HAS_FAILURE: "red",
 };
 const STATUS_DISPLAY: Record<string, string> = {
   REGISTERED: "已登记", RECEIVING: "接收中", RECEIVED: "已签收",
   PRE_PROCESSING: "前处理", EXTRACTION: "提取中", LIBRARY_PREP: "建库中",
   POOLING: "Pooling", HYB_SEQ: "测序中", BIOINFO: "生信中",
   REPORT_DRAFT: "报告草稿", IN_PROCESS: "处理中", COMPLETED: "已完成",
-  REPORTED: "已报告",
+  REPORTED: "已报告", HAS_FAILURE: "有失败",
 };
 
 const fmtDate = (v: string | null | undefined) => {
@@ -298,30 +298,35 @@ export default function Cases() {
         ) : "案例详情"}
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
-        width={520}
+        width={800}
         loading={drawerLoading}
       >
         {selectedCase && (
           <>
             <Progress percent={selectedCase.progress || 0} style={{ marginBottom: 16 }} />
 
-            <Card size="small" style={{ marginBottom: 12 }}>
-              <Space direction="vertical" size={2}>
-                <Text><Text type="secondary">母亲:</Text> {(selectedCase as any).mother_name || "-"}</Text>
-                <Text><Text type="secondary">Panel:</Text> {selectedCase.panel_name || selectedCase.panel_code}</Text>
-                <Text><Text type="secondary">孕周:</Text> {selectedCase.gestational_age_weeks ?? "-"}周{selectedCase.gestational_age_days ?? ""}天</Text>
-                <Text><Text type="secondary">诊所:</Text> {selectedCase.clinic_name || "-"}</Text>
-                <Text><Text type="secondary">销售:</Text> {selectedCase.sales_person || "-"}</Text>
-                <Text><Text type="secondary">联系方式:</Text> {selectedCase.clinic_contact || "-"}</Text>
-                <Text><Text type="secondary">创建时间:</Text> {fmtDate(selectedCase.created_at)}</Text>
-                {selectedCase.expected_completion && (
-                  <Text><Text type="secondary">预计完成:</Text> {selectedCase.expected_completion}</Text>
-                )}
-                {selectedCase.notes && (
-                  <Text><Text type="secondary">备注:</Text> {selectedCase.notes}</Text>
-                )}
-              </Space>
-            </Card>
+            <Collapse defaultActiveKey={["basic"]} size="small" style={{ marginBottom: 12 }}>
+              <Collapse.Panel key="basic" header="基本信息">
+                <Space direction="vertical" size={2}>
+                  <Text><Text type="secondary">母亲:</Text> {(selectedCase as any).mother_name || "-"}</Text>
+                  <Text><Text type="secondary">Panel:</Text> {selectedCase.panel_name || selectedCase.panel_code}</Text>
+                  <Text><Text type="secondary">孕周:</Text> {selectedCase.gestational_age_weeks ?? "-"}周{selectedCase.gestational_age_days ?? ""}天</Text>
+                  <Text><Text type="secondary">诊所:</Text> {selectedCase.clinic_name || "-"}</Text>
+                  <Text><Text type="secondary">销售:</Text> {selectedCase.sales_person || "-"}</Text>
+                  <Text><Text type="secondary">联系方式:</Text> {selectedCase.clinic_contact || "-"}</Text>
+                  <Text><Text type="secondary">来源:</Text> {(selectedCase as any).case_source || "-"}</Text>
+                  <Text><Text type="secondary">申请方:</Text> {selectedCase.applicant || "-"}</Text>
+                  <Text><Text type="secondary">登记类型:</Text> {selectedCase.registration_type || "首次"}</Text>
+                  <Text><Text type="secondary">创建时间:</Text> {fmtDate(selectedCase.created_at)}</Text>
+                  {selectedCase.expected_completion && (
+                    <Text><Text type="secondary">预计完成:</Text> {selectedCase.expected_completion}</Text>
+                  )}
+                  {selectedCase.notes && (
+                    <Text><Text type="secondary">备注:</Text> {selectedCase.notes}</Text>
+                  )}
+                </Space>
+              </Collapse.Panel>
+              <Collapse.Panel key="samples" header={`样本列表 (${selectedCase.case_samples?.length || 0})`}>
 
             <div style={{ marginBottom: 12 }}>
               {selectedCase.registration_token ? (
@@ -335,7 +340,6 @@ export default function Cases() {
               )}
             </div>
 
-            <Title level={5}>样本列表</Title>
             {selectedCase.case_samples.map((cs: any) => (
               <Card key={cs.id} size="small" style={{ marginBottom: 8 }}
                 bodyStyle={{
@@ -435,6 +439,8 @@ export default function Cases() {
                 )}
               </Card>
             ))}
+              </Collapse.Panel>
+            </Collapse>
           </>
         )}
       </Drawer>

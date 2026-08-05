@@ -53,7 +53,8 @@ class CaseListSerializer(serializers.ModelSerializer):
     sample_count = serializers.SerializerMethodField()
     received_count = serializers.SerializerMethodField()
     workflow_status = serializers.SerializerMethodField()
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    status = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
     mother_name = serializers.SerializerMethodField()
     case_source = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
@@ -72,6 +73,17 @@ class CaseListSerializer(serializers.ModelSerializer):
             "case_samples",
         ]
 
+    def get_status(self, obj):
+        return obj.computed_status
+
+    def get_status_display(self, obj):
+        st = obj.computed_status
+        MAP = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
+               "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
+               "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
+               "COMPLETED":"已完成","HAS_FAILURE":"有失败","CANCELLED":"已取消"}
+        return MAP.get(st, st)
+
     def get_mother_name(self, obj):
         ms = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
         if ms and ms.sample:
@@ -83,6 +95,17 @@ class CaseListSerializer(serializers.ModelSerializer):
         if cs and cs.sample:
             return cs.sample.sample_source or ""
         return ""
+
+    def get_status(self, obj):
+        return obj.computed_status
+
+    def get_status_display(self, obj):
+        st = obj.computed_status
+        MAP = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
+               "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
+               "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
+               "COMPLETED":"已完成","HAS_FAILURE":"有失败","CANCELLED":"已取消"}
+        return MAP.get(st, st)
 
     def get_can_redo(self, obj):
         """Return list of CaseSample IDs that have a FAIL workflow stage."""
@@ -146,9 +169,9 @@ class CaseDetailSerializer(serializers.ModelSerializer):
     panel_code = serializers.CharField(source="panel.code", read_only=True)
     panel_name = serializers.CharField(source="panel.name", read_only=True)
     case_samples = CaseSampleSerializer(many=True, read_only=True)
-    status_display = serializers.CharField(source="get_status_display", read_only=True)
+    status = serializers.SerializerMethodField()
+    status_display = serializers.SerializerMethodField()
     mother_name = serializers.SerializerMethodField()
-    can_redo = serializers.SerializerMethodField()  # list of CaseSample IDs that can be redone
     case_source = serializers.SerializerMethodField()
     all_samples_received = serializers.BooleanField(read_only=True)
     registration_url = serializers.SerializerMethodField()
@@ -167,7 +190,6 @@ class CaseDetailSerializer(serializers.ModelSerializer):
             "registration_token", "registration_url",
             "case_samples", "site", "created_by",
             "created_at", "updated_at", "mother_name", "case_source",
-            "can_redo",
         ]
         read_only_fields = [
             "id", "case_number", "pt_number", "registration_token", "created_at", "updated_at",
@@ -180,6 +202,17 @@ class CaseDetailSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(f"/register/{obj.registration_token}/")
         return None
 
+    def get_status(self, obj):
+        return obj.computed_status
+
+    def get_status_display(self, obj):
+        st = obj.computed_status
+        MAP = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
+               "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
+               "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
+               "COMPLETED":"已完成","HAS_FAILURE":"有失败","CANCELLED":"已取消"}
+        return MAP.get(st, st)
+
     def get_mother_name(self, obj):
         ms = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
         if ms and ms.sample:
@@ -191,6 +224,17 @@ class CaseDetailSerializer(serializers.ModelSerializer):
         if cs and cs.sample:
             return cs.sample.sample_source or ""
         return ""
+
+    def get_status(self, obj):
+        return obj.computed_status
+
+    def get_status_display(self, obj):
+        st = obj.computed_status
+        MAP = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
+               "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
+               "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
+               "COMPLETED":"已完成","HAS_FAILURE":"有失败","CANCELLED":"已取消"}
+        return MAP.get(st, st)
 
     def get_can_redo(self, obj):
         """Return list of CaseSample IDs that have a FAIL workflow stage."""
@@ -260,7 +304,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             "risk_warnings", "registration_type",
             "last_menstrual_period",
             "notes", "is_urgent", "expected_completion",
-            "mother_name", "mother_dob", "father_names",
+            "mother_name", "can_redo", "mother_dob", "father_names",
             "father_sample_types",
             "external_id", "sample_source", "fedex_no",
             "female_arrival_date", "male_arrival_dates",
@@ -635,23 +679,22 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                     "category": gdata["category"],
                     "case_sample_ids": gdata["ids"],
                 }
-                # Filter case_sample_ids by experiment_sample_type if set
-                exp_type = gdata.get("experiment_sample_type", "")
-                if exp_type:
-                    matching = []
-                    for cid in kwargs.get("case_sample_ids", []):
-                        cs = CaseSample.objects.filter(id=cid).first()
-                        if cs and cs.sample_source == exp_type:
-                            matching.append(cid)
-                    kwargs["case_sample_ids"] = matching
-
                 if gdata["category"] == "MALE_BLOOD":
                     kwargs["aliquot_tubes"] = 2
                     kwargs["plasma_volume"] = 30.0
                 elif gdata["category"] == "FEMALE_BLOOD":
                     kwargs["aliquot_tubes"] = 3
                 # MALE_OTHER: no aliquot_tubes
-                NipptPreProcessingSample.objects.create(**kwargs)
+                # Filter case_sample_ids by experiment_sample_type if set
+            exp_type = gdata.get("experiment_sample_type", "")
+            if exp_type:
+                matching = []
+                for cid in kwargs.get("case_sample_ids", []):
+                    cs = CaseSample.objects.filter(id=cid).first()
+                    if cs and cs.sample_source == exp_type:
+                        matching.append(cid)
+                kwargs["case_sample_ids"] = matching
+            NipptPreProcessingSample.objects.create(**kwargs)
 
             CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="PRE_PROCESSING")
             from .models import WorkflowLog
@@ -797,14 +840,13 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                     kwargs["aliquot_tubes"] = pp_sample.aliquot_tubes
                     kwargs["source_preprocessing_sample_id"] = pp_sample.id
                 es = NipptExtractionSample.objects.create(**kwargs)
-                if pp_sample:
-                    NipptPreProcessingSample.objects.filter(id=pp_sample.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
-                # ENTER WorkflowLog
                 for cid in kwargs.get("case_sample_ids", []):
                     WorkflowLog.objects.create(
                         case_sample_id=cid, stage="EXTRACTION", action="ENTER",
                         batch_number=batch.batch_number, batch_sample_id=str(es.id),
                         operator=request.user)
+                if pp_sample:
+                    NipptPreProcessingSample.objects.filter(id=pp_sample.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
             if qc_sample_id:
                 qc = NipptPreProcessingSample.objects.filter(id=qc_sample_id).first()
                 if qc:
@@ -1210,12 +1252,6 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
                                 case_sample_ids=ps.case_sample_ids,
                                 source_pooling_sample_id=ps.id,
                             )
-                            # ENTER WorkflowLog
-                            for cid in ps.case_sample_ids:
-                                WorkflowLog.objects.create(
-                                    case_sample_id=cid, stage="HYB_SEQ", action="ENTER",
-                                    batch_number=batch.batch_number, batch_sample_id=str(hs.id),
-                                    operator=request.user)
                 except (ValueError, NipptPoolingBatch.DoesNotExist):
                     continue
         return batch
