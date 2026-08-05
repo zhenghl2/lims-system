@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from rest_framework.exceptions import ValidationError, NotFound
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
-from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample, NipptLibraryBatch, NipptLibrarySample, NipptPoolingBatch, NipptPoolingSample, NipptHybSeqBatch, NipptHybSeqSample
+from .models import Case, CaseSample, WorkflowLog, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample, NipptLibraryBatch, NipptLibrarySample, NipptPoolingBatch, NipptPoolingSample, NipptHybSeqBatch, NipptHybSeqSample
 from .serializers import (
     CaseListSerializer, CaseDetailSerializer, CaseCreateSerializer,
     CaseSampleSerializer, PublicRegistrationSerializer,
@@ -280,6 +280,94 @@ class CaseViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         new_cs = serializer.save()
         return Response(CaseSampleSerializer(new_cs).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=["post"])
+    def redo(self, request, pk=None):
+        """重做：创建新 CaseSample (T后缀) + 管道记录，进入目标模块 pending 列表."""
+        from django.db.models import Max, F
+        from lims.apps.samples.models import Sample
+        
+        case = self.get_object()
+        original_cs_id = request.data.get("original_case_sample_id")
+        target_stage = request.data.get("target_stage")
+        sample_source = request.data.get("sample_source", "BLOOD")
+        
+        if not original_cs_id or not target_stage:
+            raise ValidationError("original_case_sample_id and target_stage required")
+        
+        original_cs = case.case_samples.filter(id=original_cs_id).first()
+        if not original_cs:
+            raise NotFound("CaseSample not found")
+        
+        # 检查血液管数
+        if sample_source in ("BLOOD", "DBS"):
+            pp_sample = NipptPreProcessingSample.objects.filter(
+                case_sample_ids__contains=[str(original_cs.id)]
+            ).order_by("-created_at").first()
+            if not pp_sample or pp_sample.aliquot_tubes <= 0:
+                raise ValidationError("No remaining blood tubes available")
+            pp_sample.aliquot_tubes = F("aliquot_tubes") - 1
+            pp_sample.save(update_fields=["aliquot_tubes"])
+        
+        max_n = CaseSample.objects.filter(redo_of=original_cs).aggregate(m=Max("redo_count"))["m"]
+        next_n = (max_n or 0) + 1
+        
+        with transaction.atomic():
+            new_sample = Sample.objects.create(
+                sample_id=f"{case.case_number}-REDO-T{next_n}",
+                sample_type=original_cs.sample.sample_type,
+                panel=case.panel, patient_name=original_cs.sample.patient_name,
+                patient_sex=original_cs.sample.patient_sex,
+                status="REGISTERED", site=case.site,
+                collection_date=timezone.now().date(),
+                receipt_date=timezone.now().date(),
+                receipt_time=timezone.now().time(),
+                created_by=request.user,
+            )
+            new_cs = CaseSample.objects.create(
+                case=case, sample=new_sample, role=original_cs.role,
+                sample_source=sample_source,
+                redo_of=original_cs, redo_count=next_n,
+                workflow_stage=target_stage,
+            )
+            new_cs.test_sample_id = case.generate_test_sample_id(
+                new_cs, resample_num=original_cs.resample_number, redo_num=next_n)
+            new_cs.save(update_fields=["test_sample_id"])
+            
+            register_redo_samples(original_cs, target_stage, new_cs, request.user, sample_source)
+            
+            WorkflowLog.objects.create(
+                case_sample=new_cs, stage=target_stage, action="REDO",
+                operator=request.user,
+                note=f"Redo #{next_n} from {original_cs.test_sample_id or 'unknown'}"
+            )
+        
+        return Response(CaseSampleSerializer(new_cs).data, status=201)
+
+    @action(detail=True, methods=["get"])
+    def sample_history(self, request, pk=None):
+        """返回 Case 下每个 CaseSample 的实验历史."""
+        from collections import defaultdict
+        from .models import WorkflowLog
+        case = self.get_object()
+        logs = WorkflowLog.objects.filter(
+            case_sample__case=case
+        ).select_related("case_sample").order_by("created_at")
+        
+        history = {}
+        for log in logs:
+            cs_id = str(log.case_sample_id)
+            if cs_id not in history:
+                history[cs_id] = {
+                    "test_sample_id": log.case_sample.test_sample_id or "",
+                    "stages": []
+                }
+            history[cs_id]["stages"].append({
+                "stage": log.stage, "action": log.action,
+                "batch_number": log.batch_number or "",
+                "timestamp": str(log.created_at),
+            })
+        return Response(history)
 
     @action(detail=True, methods=["post"])
     def resample(self, request, pk=None):
@@ -734,6 +822,127 @@ def update_wf(case_sample_ids, stage, action, batch_num="", operator=None):
                     workflow_stage="CANCELLED", is_active=False
                 )
 
+def register_redo_samples(case_sample, target_stage, new_cs, operator, sample_source):
+    """Create upstream module Sample records so the redo'd sample appears in pending lists."""
+    from .models import (
+        NipptPreProcessingBatch, NipptPreProcessingSample,
+        NipptExtractionBatch, NipptExtractionSample,
+        NipptLibraryBatch, NipptLibrarySample,
+        NipptPoolingBatch, NipptPoolingSample,
+        NipptHybSeqBatch, NipptHybSeqSample,
+        WorkflowLog,
+    )
+    def _find_batch(model_class, fallback_cls):
+        obj = model_class.objects.filter(
+            case_sample_ids__contains=[str(case_sample.id)]
+        ).order_by("-created_at").first()
+        if obj:
+            return obj.batch
+        return fallback_cls.objects.filter(status="COMPLETED").first()
+
+    base = dict(
+        case=case_sample.case,
+        patient_name=case_sample.sample.patient_name,
+        role=case_sample.role,
+        case_sample_ids=[str(new_cs.id)],
+        qc_status="PASS",
+        category="FEMALE_BLOOD" if case_sample.role=="MOTHER"
+                 else ("MALE_BLOOD" if sample_source in ("BLOOD","DBS") else "MALE_OTHER"),
+    )
+    logs = []
+
+    if target_stage == "EXTRACTION":
+        pp = NipptPreProcessingSample.objects.create(
+            batch=_find_batch(NipptPreProcessingSample, NipptPreProcessingBatch),
+            experiment_sample_type=sample_source, aliquot_tubes=1, **base)
+        logs.append(WorkflowLog(case_sample=new_cs, stage="PRE_PROCESSING",
+            action="ENTER", batch_number=pp.batch.batch_number,
+            batch_sample_id=str(pp.id), operator=operator))
+    
+    elif target_stage == "LIBRARY_PREP":
+        pp = NipptPreProcessingSample.objects.create(
+            batch=_find_batch(NipptPreProcessingSample, NipptPreProcessingBatch),
+            experiment_sample_type=sample_source, aliquot_tubes=0, **base)
+        es = NipptExtractionSample.objects.create(
+            batch=_find_batch(NipptExtractionSample, NipptExtractionBatch),
+            source_preprocessing_sample_id=pp.id,
+            **{k:v for k,v in base.items() if k!="batch"})
+        logs.append(WorkflowLog(case_sample=new_cs, stage="PRE_PROCESSING",
+            action="ENTER", batch_number=pp.batch.batch_number,
+            batch_sample_id=str(pp.id), operator=operator))
+        logs.append(WorkflowLog(case_sample=new_cs, stage="EXTRACTION",
+            action="ENTER", batch_number=es.batch.batch_number,
+            batch_sample_id=str(es.id), operator=operator))
+    
+    elif target_stage == "POOLING":
+        pp = NipptPreProcessingSample.objects.create(
+            batch=_find_batch(NipptPreProcessingSample, NipptPreProcessingBatch),
+            experiment_sample_type=sample_source, aliquot_tubes=0, **base)
+        es = NipptExtractionSample.objects.create(
+            batch=_find_batch(NipptExtractionSample, NipptExtractionBatch),
+            source_preprocessing_sample_id=pp.id,
+            **{k:v for k,v in base.items() if k!="batch"})
+        ls = NipptLibrarySample.objects.create(
+            batch=_find_batch(NipptLibrarySample, NipptLibraryBatch),
+            source_extraction_sample_id=es.id,
+            **{k:v for k,v in base.items() if k!="batch"})
+        for s, stage in [(pp,"PRE_PROCESSING"),(es,"EXTRACTION"),(ls,"LIBRARY_PREP")]:
+            logs.append(WorkflowLog(case_sample=new_cs, stage=stage,
+                action="ENTER", batch_number=s.batch.batch_number,
+                batch_sample_id=str(s.id), operator=operator))
+    
+    elif target_stage == "HYB_SEQ":
+        pp = NipptPreProcessingSample.objects.create(
+            batch=_find_batch(NipptPreProcessingSample, NipptPreProcessingBatch),
+            experiment_sample_type=sample_source, aliquot_tubes=0, **base)
+        es = NipptExtractionSample.objects.create(
+            batch=_find_batch(NipptExtractionSample, NipptExtractionBatch),
+            source_preprocessing_sample_id=pp.id,
+            **{k:v for k,v in base.items() if k!="batch"})
+        ls = NipptLibrarySample.objects.create(
+            batch=_find_batch(NipptLibrarySample, NipptLibraryBatch),
+            source_extraction_sample_id=es.id,
+            **{k:v for k,v in base.items() if k!="batch"})
+        ps = NipptPoolingSample.objects.create(
+            batch=_find_batch(NipptPoolingSample, NipptPoolingBatch),
+            source_library_sample_id=ls.id,
+            **{k:v for k,v in base.items() if k!="batch"})
+        for s, stage in [(pp,"PRE_PROCESSING"),(es,"EXTRACTION"),
+                         (ls,"LIBRARY_PREP"),(ps,"POOLING")]:
+            logs.append(WorkflowLog(case_sample=new_cs, stage=stage,
+                action="ENTER", batch_number=s.batch.batch_number,
+                batch_sample_id=str(s.id), operator=operator))
+    
+    elif target_stage == "BIOINFO":
+        pp = NipptPreProcessingSample.objects.create(
+            batch=_find_batch(NipptPreProcessingSample, NipptPreProcessingBatch),
+            experiment_sample_type=sample_source, aliquot_tubes=0, **base)
+        es = NipptExtractionSample.objects.create(
+            batch=_find_batch(NipptExtractionSample, NipptExtractionBatch),
+            source_preprocessing_sample_id=pp.id,
+            **{k:v for k,v in base.items() if k!="batch"})
+        ls = NipptLibrarySample.objects.create(
+            batch=_find_batch(NipptLibrarySample, NipptLibraryBatch),
+            source_extraction_sample_id=es.id,
+            **{k:v for k,v in base.items() if k!="batch"})
+        ps = NipptPoolingSample.objects.create(
+            batch=_find_batch(NipptPoolingSample, NipptPoolingBatch),
+            source_library_sample_id=ls.id,
+            **{k:v for k,v in base.items() if k!="batch"})
+        hs = NipptHybSeqSample.objects.create(
+            batch=_find_batch(NipptHybSeqSample, NipptHybSeqBatch),
+            source_pooling_sample_id=ps.id,
+            **{k:v for k,v in base.items() if k!="batch"})
+        for s, stage in [(pp,"PRE_PROCESSING"),(es,"EXTRACTION"),
+                         (ls,"LIBRARY_PREP"),(ps,"POOLING"),(hs,"HYB_SEQ")]:
+            logs.append(WorkflowLog(case_sample=new_cs, stage=stage,
+                action="ENTER", batch_number=s.batch.batch_number,
+                batch_sample_id=str(s.id), operator=operator))
+    
+    if logs:
+        WorkflowLog.objects.bulk_create(logs)
+
+
 def advance_batch(batch, next_stage, operator=None):
     passed, failed = [], []
     for s in batch.samples.all():
@@ -795,7 +1004,7 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
             else:
                 cat = "MALE_OTHER"
 
-            key = (str(cs.case_id), cs.sample.patient_name)
+            key = (str(cs.case_id), cs.sample.patient_name, cs.sample_source)
             if key not in groups:
                 groups[key] = {
                     "case_id": str(cs.case_id),
@@ -954,7 +1163,7 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
             else:
                 if cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
-            key = (str(cs.case_id), cs.sample.patient_name, cat)
+            key = (str(cs.case_id), cs.sample.patient_name, cs.sample_source)
             if key not in groups:
                 groups[key] = {"case_id":str(cs.case_id),"case_number":cs.case.case_number,
                     "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,
@@ -1068,7 +1277,7 @@ class NipptLibraryViewSet(viewsets.ModelViewSet):
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
             elif cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
             else: cat = "MALE_OTHER"
-            key = (str(cs.case_id), cs.sample.patient_name, cat)
+            key = (str(cs.case_id), cs.sample.patient_name, cs.sample_source)
             if key not in groups:
                 groups[key] = {"case_id":str(cs.case_id),"case_number":cs.case.case_number,
                     "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,
@@ -1148,7 +1357,7 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
             else:
                 if cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
-            key = (str(cs.case_id), cs.sample.patient_name, cat)
+            key = (str(cs.case_id), cs.sample.patient_name, cs.sample_source)
             if key not in groups:
                 groups[key] = {"case_id":str(cs.case_id),"case_number":cs.case.case_number,
                     "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,

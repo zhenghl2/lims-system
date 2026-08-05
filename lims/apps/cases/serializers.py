@@ -27,6 +27,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
             "receipt_condition", "received_at", "received_by",
             "collection_site", "collection_notes",
             "test_sample_id", "resample_of", "resample_number",
+            "redo_of", "redo_count",
             "workflow_stage", "is_active",
             "arrival_date", "actual_sample_type", "preservation_method",
             "rejection_reason", "rejection_note", "external_id",
@@ -82,6 +83,12 @@ class CaseListSerializer(serializers.ModelSerializer):
         if cs and cs.sample:
             return cs.sample.sample_source or ""
         return ""
+
+    def get_can_redo(self, obj):
+        """Return list of CaseSample IDs that have a FAIL workflow stage."""
+        return list(obj.case_samples.filter(
+            workflow_stage__endswith="_FAILED"
+        ).values_list("id", flat=True))
 
     def get_progress(self, obj):
         WORKFLOW_WEIGHT = {
@@ -141,6 +148,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
     case_samples = CaseSampleSerializer(many=True, read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     mother_name = serializers.SerializerMethodField()
+    can_redo = serializers.SerializerMethodField()  # list of CaseSample IDs that can be redone
     case_source = serializers.SerializerMethodField()
     all_samples_received = serializers.BooleanField(read_only=True)
     registration_url = serializers.SerializerMethodField()
@@ -159,6 +167,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
             "registration_token", "registration_url",
             "case_samples", "site", "created_by",
             "created_at", "updated_at", "mother_name", "case_source",
+            "can_redo",
         ]
         read_only_fields = [
             "id", "case_number", "pt_number", "registration_token", "created_at", "updated_at",
@@ -182,6 +191,12 @@ class CaseDetailSerializer(serializers.ModelSerializer):
         if cs and cs.sample:
             return cs.sample.sample_source or ""
         return ""
+
+    def get_can_redo(self, obj):
+        """Return list of CaseSample IDs that have a FAIL workflow stage."""
+        return list(obj.case_samples.filter(
+            workflow_stage__endswith="_FAILED"
+        ).values_list("id", flat=True))
 
     def get_progress(self, obj):
         WORKFLOW_WEIGHT = {
@@ -620,6 +635,16 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                     "category": gdata["category"],
                     "case_sample_ids": gdata["ids"],
                 }
+                # Filter case_sample_ids by experiment_sample_type if set
+                exp_type = gdata.get("experiment_sample_type", "")
+                if exp_type:
+                    matching = []
+                    for cid in kwargs.get("case_sample_ids", []):
+                        cs = CaseSample.objects.filter(id=cid).first()
+                        if cs and cs.sample_source == exp_type:
+                            matching.append(cid)
+                    kwargs["case_sample_ids"] = matching
+
                 if gdata["category"] == "MALE_BLOOD":
                     kwargs["aliquot_tubes"] = 2
                     kwargs["plasma_volume"] = 30.0
@@ -771,9 +796,15 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                     if pp_sample.plasma_volume: kwargs["plasma_volume"] = pp_sample.plasma_volume
                     kwargs["aliquot_tubes"] = pp_sample.aliquot_tubes
                     kwargs["source_preprocessing_sample_id"] = pp_sample.id
-                NipptExtractionSample.objects.create(**kwargs)
+                es = NipptExtractionSample.objects.create(**kwargs)
                 if pp_sample:
                     NipptPreProcessingSample.objects.filter(id=pp_sample.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
+                # ENTER WorkflowLog
+                for cid in kwargs.get("case_sample_ids", []):
+                    WorkflowLog.objects.create(
+                        case_sample_id=cid, stage="EXTRACTION", action="ENTER",
+                        batch_number=batch.batch_number, batch_sample_id=str(es.id),
+                        operator=request.user)
             if qc_sample_id:
                 qc = NipptPreProcessingSample.objects.filter(id=qc_sample_id).first()
                 if qc:
@@ -883,7 +914,12 @@ class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
                     if cid in es_map: es = es_map[cid]; break
                 kwargs = {"batch":batch,"case":gdata["case"],"patient_name":name,"role":gdata["role"],"category":cat,"case_sample_ids":gdata["ids"]}
                 if es: kwargs["source_extraction_sample_id"] = es.id
-                NipptLibrarySample.objects.create(**kwargs)
+                ls = NipptLibrarySample.objects.create(**kwargs)
+                for cid in kwargs.get("case_sample_ids", []):
+                    WorkflowLog.objects.create(
+                        case_sample_id=cid, stage="LIBRARY_PREP", action="ENTER",
+                        batch_number=batch.batch_number, batch_sample_id=str(ls.id),
+                        operator=request.user)
         return batch
 
 
@@ -1026,7 +1062,12 @@ class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
                     if cid in ls_map: ls = ls_map[cid]; break
                 kwargs = {"batch":batch,"case":gdata["case"],"patient_name":name,"role":gdata["role"],"category":cat,"case_sample_ids":gdata["ids"]}
                 if ls: kwargs["source_library_sample_id"] = ls.id
-                NipptPoolingSample.objects.create(**kwargs)
+                ps = NipptPoolingSample.objects.create(**kwargs)
+                for cid in kwargs.get("case_sample_ids", []):
+                    WorkflowLog.objects.create(
+                        case_sample_id=cid, stage="POOLING", action="ENTER",
+                        batch_number=batch.batch_number, batch_sample_id=str(ps.id),
+                        operator=request.user)
         return batch
 
 from .models import NipptHybSeqBatch, NipptHybSeqSample, WorkflowLog
@@ -1163,12 +1204,18 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
                     used_m_ids.update(ps.id for ps in m_pool)
                     for ps in f_pool + m_pool:
                         if not NipptHybSeqSample.objects.filter(batch=batch, source_pooling_sample_id=ps.id).exists():
-                            NipptHybSeqSample.objects.create(
+                            hs = NipptHybSeqSample.objects.create(
                                 batch=batch, case=ps.case, patient_name=ps.patient_name,
                                 role=ps.role, category=ps.category,
                                 case_sample_ids=ps.case_sample_ids,
                                 source_pooling_sample_id=ps.id,
                             )
+                            # ENTER WorkflowLog
+                            for cid in ps.case_sample_ids:
+                                WorkflowLog.objects.create(
+                                    case_sample_id=cid, stage="HYB_SEQ", action="ENTER",
+                                    batch_number=batch.batch_number, batch_sample_id=str(hs.id),
+                                    operator=request.user)
                 except (ValueError, NipptPoolingBatch.DoesNotExist):
                     continue
         return batch

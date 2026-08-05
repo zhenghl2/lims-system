@@ -96,11 +96,13 @@ class Case(models.Model):
         self.pt_number = f"{self.PT_PREFIX}{num:05d}"
         return self.pt_number
 
-    def generate_test_sample_id(self, case_sample, resample_num=None):
+    def generate_test_sample_id(self, case_sample, resample_num=None, redo_num=None):
         """Generate a PT test sample ID for a CaseSample.
         
-        test_sample_id is per PERSON (not per physical sample).
-        Same father's multiple sample types share the same ID.
+        Suffix rules:
+        - Mother: W, Father: H/HA/HB...
+        - Resample: _R{n}, Redo: _T{n}
+        - Combined: _R{n}_T{n}
         """
         if not self.pt_number:
             self.assign_pt_number()
@@ -108,7 +110,6 @@ class Case(models.Model):
         if case_sample.role == "MOTHER":
             suffix = "W"
         elif case_sample.role == "ALLEGED_FATHER":
-            # Group by patient_name, assign same suffix to same father
             father_names = []
             for cs in self.case_samples.filter(
                 role="ALLEGED_FATHER"
@@ -121,12 +122,14 @@ class Case(models.Model):
             if len(father_names) == 1:
                 suffix = "H"
             else:
-                suffix = f"H{chr(65 + idx)}"  # HA, HB, HC...
+                suffix = f"H{chr(65 + idx)}"
         else:
             suffix = "U"
         tid = f"{base}{suffix}"
         if resample_num:
-            tid += f"{resample_num}"
+            tid += f"_R{resample_num}"
+        if redo_num:
+            tid += f"_T{redo_num}"
         return tid
 
     @property
@@ -162,6 +165,10 @@ class CaseSample(models.Model):
         TOOTHBRUSH       = "TOOTHBRUSH",  "牙刷"
         CIGARETTE_BUTT   = "CIGARETTE",   "烟头"
         WATER_BOTTLE     = "BOTTLE",      "水瓶"
+        BEARD            = "BEARD",       "胡须"
+        DENTAL_FLOSS     = "FLOSS",       "牙线"
+        SEMEN_STAIN      = "SEMSTAIN",    "精斑"
+        CHEWING_GUM      = "GUM",         "口香糖"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="case_samples")
@@ -213,6 +220,15 @@ class CaseSample(models.Model):
     resample_number = models.PositiveSmallIntegerField(
         null=True, blank=True,
         help_text="Resample sequence number: 1, 2, ..."
+    )
+    redo_of = models.ForeignKey(
+        "self", null=True, blank=True, on_delete=models.SET_NULL,
+        related_name="redos",
+        help_text="Points to original CaseSample if this is a redo"
+    )
+    redo_count = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Redo sequence number: 1, 2, ..."
     )
     workflow_stage = models.CharField(max_length=30, default="REGISTERED", db_index=True)
     is_active = models.BooleanField(default=True)
@@ -817,6 +833,7 @@ class WorkflowLog(models.Model):
     stage = models.CharField(max_length=30, db_index=True)
     action = models.CharField(max_length=20)
     batch_number = models.CharField(max_length=30, blank=True)
+    batch_sample_id = models.CharField(max_length=40, null=True, blank=True)
     operator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True)
     note = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)

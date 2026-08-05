@@ -3,6 +3,7 @@ import dayjs from "dayjs";
 import {
   Card, Table, Tag, Typography, Button, Input, Select, Space,
   Progress, Drawer, message, Badge, Popconfirm, DatePicker,
+  Modal, Timeline,
 } from "antd";
 import {
   EyeOutlined, LinkOutlined, RedoOutlined,
@@ -10,6 +11,7 @@ import {
   CopyOutlined,
 } from "@ant-design/icons";
 import { casesApi } from "../api";
+import api from "../api/client";
 import type { CaseDetail } from "../api/types";
 import { REJECTION_REASONS, SAMPLE_STATUS_DISPLAY } from "../api/types";
 
@@ -35,6 +37,9 @@ const fmtDate = (v: string | null | undefined) => {
   return v.slice(0, 10);
 };
 
+(casesApi as any).redo = (caseId: string, data: any) => api.post(`/cases/${caseId}/redo/`, data);
+(casesApi as any).sampleHistory = (caseId: string) => api.get(`/cases/${caseId}/sample_history/`);
+
 export default function Cases() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
@@ -47,6 +52,10 @@ export default function Cases() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedCase, setSelectedCase] = useState<CaseDetail | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
+  const [redoOpen, setRedoOpen] = useState(false);
+  const [redoTarget, setRedoTarget] = useState<any>(null);
+  const [sampleHistory, setSampleHistory] = useState<any>({});
+  const [historyOpen, setHistoryOpen] = useState<Set<string>>(new Set());
 
   const loadData = async (p: number = page) => {
     setLoading(true);
@@ -65,6 +74,35 @@ export default function Cases() {
   };
 
   useEffect(() => { loadData(1); }, [search, statusFilter, sourceFilter, dateRange, page]);
+
+  const doRedo = async () => {
+    if (!redoTarget) return;
+    try {
+      await (casesApi as any).redo(redoTarget.caseId, {
+        original_case_sample_id: redoTarget.csId,
+        target_stage: redoTarget.targetStage,
+        sample_source: redoTarget.sampleSource,
+      });
+      message.success("重做已创建");
+      setRedoOpen(false);
+      if (selectedCase) { const r = await casesApi.get(selectedCase.id); setSelectedCase(r.data); }
+    } catch (e: any) { message.error(e?.response?.data?.detail || "重做失败"); }
+  };
+
+  const toggleHistory = async (csId: string) => {
+    const next = new Set(historyOpen);
+    if (next.has(csId)) { next.delete(csId); }
+    else {
+      next.add(csId);
+      if (!sampleHistory[csId] && selectedCase) {
+        try {
+          const r = await (casesApi as any).sampleHistory(selectedCase.id);
+          setSampleHistory((prev: any) => ({ ...prev, ...r.data }));
+        } catch {}
+      }
+    }
+    setHistoryOpen(next);
+  };
 
   const openDetail = async (id: string) => {
     setDrawerOpen(true);
@@ -323,6 +361,19 @@ export default function Cases() {
                       return <Tag color={c} style={{fontSize:11}}>{l}</Tag>;
                     })()}
                     {cs.resample_of && <Badge count={`R${cs.resample_number}`} color="orange" />}
+                    {cs.redo_count && <Badge count={`T${cs.redo_count}`} color="cyan" />}
+                    {(cs.workflow_stage || "").endsWith("_FAILED") && (
+                      <Button size="small" danger onClick={() => {
+                        setRedoTarget({
+                          caseId: selectedCase!.id, csId: cs.id,
+                          testSampleId: cs.test_sample_id || cs.sample_id,
+                          patientName: cs.patient_name,
+                          failedStage: cs.workflow_stage,
+                          targetStage: "", sampleSource: "BLOOD"
+                        });
+                        setRedoOpen(true);
+                      }}>重做</Button>
+                    )}
                   </Space>
                   <Tag color={STATUS_COLORS[cs.sample_status]}>
                     {SAMPLE_STATUS_DISPLAY[cs.sample_status] || cs.sample_status}
@@ -354,7 +405,22 @@ export default function Cases() {
                   <Text style={{ fontSize: 12 }}>{cs.patient_name || cs.sample_id}</Text>
                   <Text type="secondary" style={{ fontSize: 11 }}>{cs.source_display || cs.sample_source}</Text>
                   {cs.received_at && <Text type="secondary" style={{ fontSize: 11 }}>接收: {fmtDate(cs.received_at)}</Text>}
+                  <Button size="small" type="link" onClick={() => toggleHistory(cs.id)}>
+                    {historyOpen.has(cs.id) ? "收起历史" : "实验历史"}
+                  </Button>
                 </Space>
+                {historyOpen.has(cs.id) && sampleHistory[cs.id]?.stages?.length > 0 && (
+                  <Timeline style={{ marginTop: 8 }} items={
+                    sampleHistory[cs.id].stages.map((s: any) => ({
+                      color: s.action === "COMPLETE" ? "green" : s.action === "FAIL" ? "red" : "blue",
+                      children: <span style={{ fontSize: 12 }}>
+                        <Text strong>{s.stage}</Text> — {s.action}
+                        {s.batch_number && <Text type="secondary"> ({s.batch_number})</Text>}
+                        <br /><Text type="secondary" style={{ fontSize: 11 }}>{s.timestamp?.slice(0, 19)}</Text>
+                      </span>
+                    }))
+                  } />
+                )}
 
                 {cs.sample_status === "REJECTED" && (
                   <div style={{ marginTop: 6, padding: "4px 8px", background: "#fff2f0", borderRadius: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -372,6 +438,44 @@ export default function Cases() {
           </>
         )}
       </Drawer>
+
+      {/* Redo Modal */}
+      <Modal title="重做样本" open={redoOpen} onCancel={() => setRedoOpen(false)} onOk={doRedo} okText="确认重做">
+        {redoTarget && (
+          <>
+            <p>原样本: {redoTarget.testSampleId} ({redoTarget.patientName})</p>
+            <p>失败环节: {redoTarget.failedStage}</p>
+            <p>目标环节:{" "}
+              <Select value={redoTarget.targetStage || undefined} style={{width:200}}
+                onChange={(v) => setRedoTarget({...redoTarget, targetStage: v})}
+                options={[
+                  {label:"EXTRACTION 核酸提取",value:"EXTRACTION"},
+                  {label:"LIBRARY_PREP 文库构建",value:"LIBRARY_PREP"},
+                  {label:"POOLING 定量Pooling",value:"POOLING"},
+                  {label:"HYB_SEQ 杂交测序",value:"HYB_SEQ"},
+                  {label:"BIOINFO 生物信息",value:"BIOINFO"},
+                ]} />
+            </p>
+            <p>样本类型:{" "}
+              <Select value={redoTarget.sampleSource} style={{width:200}}
+                onChange={(v) => setRedoTarget({...redoTarget, sampleSource: v})}
+                options={[
+                  {label:"血液 BLOOD",value:"BLOOD"},
+                  {label:"毛发 HAIR",value:"HAIR"},
+                  {label:"口拭子 SWAB",value:"SWAB"},
+                  {label:"血痕 DBS",value:"DBS"},
+                  {label:"指甲 NAIL",value:"NAIL"},
+                  {label:"精液 SEMEN",value:"SEMEN"},
+                  {label:"胡须 BEARD",value:"BEARD"},
+                  {label:"牙线 FLOSS",value:"FLOSS"},
+                  {label:"精斑 SEMSTAIN",value:"SEMSTAIN"},
+                  {label:"口香糖 GUM",value:"GUM"},
+                ]} />
+            </p>
+            <p>新PT编号预览: <Text code>{redoTarget.testSampleId?.replace(/_?R\d+/, "")}_T{Math.max(1, ((selectedCase?.case_samples || []).filter((c:any) => c.redo_of === redoTarget.csId).length) + 1)}</Text></p>
+          </>
+        )}
+      </Modal>
     </div>
   );
 }

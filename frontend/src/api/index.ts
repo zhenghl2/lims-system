@@ -260,6 +260,11 @@ export const casesApi = {
   saveBioinfo: (id: string, data: any) => api.post(`/cases/bioinformatics/${id}/save_processing/`, data),
   completeBioinfo: (id: string) => api.post(`/cases/bioinformatics/${id}/complete/`),
 
+  redo: (id: string, data: { original_case_sample_id: string; target_stage: string; sample_source: string }) =>
+    api.post(`/cases/${id}/redo/`, data),
+  sampleHistory: (id: string) =>
+    api.get<Record<string, any>>(`/cases/${id}/sample_history/`),
+
   uploadReceiptPhoto: (id: string, formData: FormData) =>
     api.post(`/cases/${id}/upload-receipt-photo/`, formData, {
       headers: { "Content-Type": "multipart/form-data" },

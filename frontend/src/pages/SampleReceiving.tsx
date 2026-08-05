@@ -25,6 +25,10 @@ const SAMPLE_TYPE_OPTIONS = [
   { value: "TOOTHBRUSH", label: "牙刷" },
   { value: "CIGARETTE",  label: "烟头" },
   { value: "BOTTLE",     label: "水瓶" },
+  { value: "BEARD",     label: "胡须" },
+  { value: "FLOSS",     label: "牙线" },
+  { value: "SEMSTAIN",  label: "精斑" },
+  { value: "GUM",       label: "口香糖" },
 ];
 
 const PRESERVATION_OPTIONS = [
@@ -200,7 +204,15 @@ export default function SampleReceiving() {
       if (row.preservationMethod) payload.preservation_method = row.preservationMethod;
       await (casesApi as any).confirmReceipt(row.caseId, payload);
       message.success(condition === "OK" ? `已签收 ${row.testSampleId || row.patientName}` : "已拒收");
-      fetchData();
+      if (condition !== "OK") {
+        // For rejections, reload full data to show status change
+        fetchData();
+      } else {
+        // For normal receipt, update locally to preserve PT numbers
+        setData((prev) =>
+          prev.map((r) => (r.key === row.key ? { ...r, received: true, status: "RECEIVED" } : r))
+        );
+      }
     } catch {
       message.error("操作失败");
     }
@@ -287,9 +299,21 @@ export default function SampleReceiving() {
       const formData = new FormData();
       formData.append("photo", file);
       formData.append("case_sample_id", pendingPhoto.current.csId);
-      await (casesApi as any).uploadReceiptPhoto(pendingPhoto.current.caseId, formData);
+      const uploadRes = await (casesApi as any).uploadReceiptPhoto(pendingPhoto.current.caseId, formData);
       message.success("照片已上传");
-      fetchData();
+      // Update photo URL locally — don't refetch to preserve PT numbers
+      const photoUrl = uploadRes.data?.receipt_photo_url;
+      setData((prev) =>
+        prev.map((r) => {
+          if (r.csId === pendingPhoto.current!.csId) {
+            return { ...r, image: photoUrl || null };
+          }
+          if ((pendingPhoto.current as any)?.pairCsIds?.includes(r.csId)) {
+            return { ...r, image: photoUrl || null };
+          }
+          return r;
+        })
+      );
     } catch {
       message.error("上传失败");
     } finally {

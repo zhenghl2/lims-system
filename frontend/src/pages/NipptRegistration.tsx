@@ -27,6 +27,10 @@ const SAMPLE_TYPE_OPTIONS = [
   { value: "TOOTHBRUSH", label: "牙刷" },
   { value: "CIGARETTE",  label: "烟头" },
   { value: "BOTTLE",     label: "水瓶" },
+  { value: "BEARD",     label: "胡须" },
+  { value: "FLOSS",     label: "牙线" },
+  { value: "SEMSTAIN",  label: "精斑" },
+  { value: "GUM",       label: "口香糖" },
 ];
 
 const SOURCE_OPTIONS = [
