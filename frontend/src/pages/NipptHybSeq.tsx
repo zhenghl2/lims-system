@@ -93,6 +93,9 @@ export default function NipptHybSeq() {
   const [stepConfirmations, setStepConfirmations] = useState<Record<string,boolean>>({});
   const [mixRows, setMixRows] = useState<MixRow[]>([]);
   const [finalConc, setFinalConc] = useState(0.783);
+const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦"];
+const [operators, setOperators] = useState<Record<string,string>>({});
+const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
   const fetchBatches = useCallback(async()=>{setLoading(true);try{const r=await(casesApi as any).listHybSeqBatches();setBatches(r.data?.results||[])}catch{}finally{setLoading(false)}},[]);
   useEffect(()=>{fetchBatches()},[fetchBatches]);
@@ -306,7 +309,8 @@ export default function NipptHybSeq() {
                         const chip = selectedBatch.hyb_seq_data?.chip_number || selectedBatch.batch_number;
                         const ptId = s.test_sample_id||"-";
                         const uploadId = chip+"_"+padded+"_"+ptId;
-                        return (
+
+  return (
                           <tr key={i} style={{background:i%2===0?"#e8f5e9":"#fafafa"}}>
                             <td style={td}>{i+1}</td>
                             <td style={td}><Text code style={{fontSize:11}}>{ptId}</Text></td>
@@ -323,6 +327,32 @@ export default function NipptHybSeq() {
                 </div>
               </Card>
             )}
+            <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
+              <Text type="secondary">操作人: </Text>
+              <Select size="small" placeholder="选择" style={{ width: 100 }}
+                value={operators[selectedBatch.id] || (selectedBatch as any).operator_name || undefined}
+                onChange={v => setOperators(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+              </Select>
+              <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
+              <Select size="small" placeholder="选择" style={{ width: 100 }}
+                value={reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || undefined}
+                onChange={v => setReviewers(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+              </Select>
+
+              <Button size="small" type="primary" style={{ marginLeft: 16 }}
+                onClick={async () => {
+                  const data = { operator_name: operators[selectedBatch.id] || "", reviewer: reviewers[selectedBatch.id] || "" };
+                  const url = "/api/v1/cases/hybseq/" + selectedBatch.id + "/";
+                  const r = await fetch(url, { method: "PATCH",
+                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("access_token") },
+                    body: JSON.stringify(data)
+                  });
+                  if (r.ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
+                  else message.error("保存失败");
+                }}>保存</Button>
+            </div>
           </Card>
         ):(
           <div style={{textAlign:"center",paddingTop:100,color:"#999"}}><Title level={5} type="secondary">选择批次查看详情</Title><Button type="primary" icon={<PlusOutlined/>} onClick={openNewBatch}>新建上机批次</Button></div>
@@ -339,7 +369,8 @@ export default function NipptHybSeq() {
         <div style={{maxHeight:350,overflow:"auto"}}>
           {pendingMixes.map(m=>{
             const checked = selectedMixIds.has(m.id);
-            return (
+
+  return (
               <div key={m.id} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
                 <Checkbox checked={checked} onChange={()=>{setSelectedMixIds(p=>{const n=new Set(p);checked?n.delete(m.id):n.add(m.id);return n})}}/>
                 <Tag color="blue">{m.mix_name}</Tag>
@@ -349,6 +380,7 @@ export default function NipptHybSeq() {
           })}
         </div>
       </Modal>
+
     </div>
   );
 }

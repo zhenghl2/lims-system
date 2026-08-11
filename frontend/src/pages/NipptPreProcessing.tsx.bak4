@@ -6,7 +6,7 @@ import {
   Checkbox, Divider, Upload, Image, DatePicker, TimePicker,
 } from "antd";
 import {
-  PlusOutlined, ReloadOutlined,
+  PlusOutlined, ReloadOutlined, CheckOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined,
   CameraOutlined,
 } from "@ant-design/icons";
@@ -238,43 +238,38 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   };
 
   // ===== Save & Complete =====
-  const buildSamplePayload = (samples: PreSample[]) =>
-    samples.map(s => ({
-      id: s.id,
-      sample_condition: s.sample_condition,
-      aliquot_tubes: s.aliquot_tubes,
-      plasma_volume: s.plasma_volume,
-      experiment_sample_type: s.experiment_sample_type,
-      elution_volume: s.elution_volume,
-      dna_concentration: s.dna_concentration,
-      qc_status: s.qc_status,
-      qc_note: s.qc_note,
-    }));
-
-  const buildPpDatePayload = () => {
-    const payload: any = {};
-    if (ppDate) payload.pp_date = ppDate;
-    if (ppTime) payload.pp_time = ppTime;
-    return payload;
-  };
-
-  const doSave = async (label: string, samples: PreSample[]) => {
+  const saveProcessing = async () => {
     if (!selectedBatch) return;
     try {
+      const allSamples = [
+        ...selectedBatch.female_samples,
+        ...selectedBatch.male_blood_samples,
+        ...selectedBatch.male_other_samples,
+      ].map(s => ({
+        id: s.id,
+        sample_condition: s.sample_condition,
+        aliquot_tubes: s.aliquot_tubes,
+        plasma_volume: s.plasma_volume,
+        experiment_sample_type: s.experiment_sample_type,
+        elution_volume: s.elution_volume,
+        dna_concentration: s.dna_concentration,
+        qc_status: s.qc_status,
+        qc_note: s.qc_note,
+      }));
+      const ppDatePayload: any = {};
+      if (ppDate) ppDatePayload.pp_date = ppDate;
+      if (ppTime) ppDatePayload.pp_time = ppTime;
       await (casesApi as any).savePreprocessing(selectedBatch.id, {
-        samples: buildSamplePayload(samples),
+        samples: allSamples,
         processing_data: { ...selectedBatch.processing_data, photos },
-        ...buildPpDatePayload(),
+        ...ppDatePayload,
       });
-      message.success(`${label}保存成功`);
+      message.success("保存成功");
       fetchDetail(selectedBatch.id);
     } catch {
-      message.error(`${label}保存失败`);
+      message.error("保存失败");
     }
   };
-
-  const saveFemaleSamples = () => doSave("女性", selectedBatch!.female_samples);
-  const saveMaleSamples = () => doSave("男性", [...selectedBatch!.male_blood_samples, ...selectedBatch!.male_other_samples]);
 
   const completeBatch = async () => {
     if (!selectedBatch) return;
@@ -462,10 +457,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             <Space>
               <Button icon={<ReloadOutlined />} size="small" loading={batchLoading}
                 onClick={() => fetchDetail(selectedBatch.id)}>刷新</Button>
-              <Button type="primary" size="small"
-                onClick={saveFemaleSamples} loading={batchLoading}>💾 保存女性</Button>
-              <Button size="small"
-                onClick={saveMaleSamples} loading={batchLoading}>💾 保存男性</Button>
+              <Button type="primary" icon={<CheckOutlined />} size="small"
+                onClick={saveProcessing} loading={batchLoading}>保存</Button>
               {selectedBatch.status !== "COMPLETED" && (<>
                 <Popconfirm title="确定删除该批次？样本将回到待处理" onConfirm={() => deleteBatch(selectedBatch.id, selectedBatch.batch_number)}>
                   <Button type="primary" size="small" danger>删除批次</Button>

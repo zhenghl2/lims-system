@@ -2,9 +2,10 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import React from "react";
 import { Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
-  Space, Popconfirm, Select, Checkbox } from "antd";
+  Space, Popconfirm, Select, Checkbox, DatePicker, TimePicker } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
+import dayjs from "dayjs";
 const { Text, Title } = Typography;
 
 const SAMPLE_TYPE_LABELS:Record<string,string>={BLOOD:"血液",DBS:"血痕",HAIR:"毛发",NAIL:"指甲",SWAB:"口拭子",TOOTHBRUSH:"牙刷"};
@@ -38,6 +39,8 @@ export default function NipptPooling() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [batchNumberPreview, setBatchNumberPreview] = useState("");
   const [saving, setSaving] = useState(false);
+  const [poolDate, setPoolDate] = useState<string>("");
+  const [poolTime, setPoolTime] = useState<string>("");
 
   // Pooling state
   const [poolingBase, setPoolingBase] = useState(DEFAULT_POOLING_AMOUNT);
@@ -45,6 +48,9 @@ export default function NipptPooling() {
   const [groupBases, setGroupBases] = useState<Record<number,number>>({});
   const [groupElutions, setGroupElutions] = useState<Record<number,number>>({});
   const [rows, setRows] = useState<PoolRow[]>([]);
+const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦"];
+const [operators, setOperators] = useState<Record<string,string>>({});
+const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const [manualAlloc, setManualAlloc] = useState<{female:number;male:number}[]>([]);
   const [pendingAlloc, setPendingAlloc] = useState<{female:number;male:number}[]>([]);
   const [showAllocInputs, setShowAllocInputs] = useState(false);
@@ -266,6 +272,14 @@ export default function NipptPooling() {
                 <Popconfirm title="完成批次？" onConfirm={completeBatch}><Button type="primary" size="small" danger>完成</Button></Popconfirm>
               </>}
             </Space>}>
+            {/* 实验日期 */}
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8,fontSize:12}}>
+              <span style={{color:"#666"}}>日期:</span>
+              <DatePicker size="small" style={{width:130}} value={poolDate?dayjs(poolDate):null} onChange={(d:any)=>setPoolDate(d?d.format("YYYY-MM-DD"):"")} placeholder="选择日期" format="YYYY-MM-DD"/>
+              <span style={{color:"#666",marginLeft:16}}>时间:</span>
+              <TimePicker size="small" style={{width:100}} format="HH:mm" value={poolTime?dayjs(poolTime,"HH:mm"):null} onChange={(d:any)=>setPoolTime(d?d.format("HH:mm"):"")} placeholder="选择时间"/>
+            </div>
+
             {/* Global info */}
             <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:10,fontSize:12,flexWrap:"wrap"}}>
               <span style={{color:"#666"}}>样本数: {rows.length} | 淘汰阈值: &lt;{YIELD_THRESHOLD} ng | 组数: {groups.length}</span>
@@ -298,7 +312,8 @@ export default function NipptPooling() {
                     {(showAllocInputs ? pendingAlloc : manualAlloc).map((a:{female:number;male:number},i:number)=>{
                       const fVal = a.female ?? 0;
                       const mVal = a.male ?? 0;
-                      return (
+
+  return (
                         <tr key={i}>
                           <td style={{border:"1px solid #ddd",padding:"2px 6px",textAlign:"center",fontSize:12,fontWeight:600}}>mix{i+1}</td>
                           <td style={{border:"1px solid #ddd",padding:1,textAlign:"center"}}>
@@ -365,7 +380,8 @@ export default function NipptPooling() {
                       {g.rows.map((r)=>{
                         const ri = rows.findIndex(rr=>rr.id===r.id);
                         const stLabel = SAMPLE_TYPE_LABELS[r.sampleType]||r.sampleType||(r.category.includes("BLOOD")?"血液":"—");
-                        return (
+
+  return (
                           <tr key={r.id} style={{background:r.qc==="FAIL"?"#fff1f0":r.eliminated?"#fffbe6":"#e8f5e9"}}>
                             <td style={td}>{ri+1}</td>
                             <td style={td}><Text code style={{fontSize:11}}>{r.ptId}</Text></td>
@@ -405,6 +421,32 @@ export default function NipptPooling() {
                 </div>
               </div>
             ))}
+            <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
+              <Text type="secondary">操作人: </Text>
+              <Select size="small" placeholder="选择" style={{ width: 100 }}
+                value={operators[selectedBatch.id] || (selectedBatch as any).operator_name || undefined}
+                onChange={v => setOperators(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+              </Select>
+              <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
+              <Select size="small" placeholder="选择" style={{ width: 100 }}
+                value={reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || undefined}
+                onChange={v => setReviewers(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+              </Select>
+
+              <Button size="small" type="primary" style={{ marginLeft: 16 }}
+                onClick={async () => {
+                  const data = { operator_name: operators[selectedBatch.id] || "", reviewer: reviewers[selectedBatch.id] || "" };
+                  const url = "/api/v1/cases/pooling/" + selectedBatch.id + "/";
+                  const r = await fetch(url, { method: "PATCH",
+                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("access_token") },
+                    body: JSON.stringify(data)
+                  });
+                  if (r.ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
+                  else message.error("保存失败");
+                }}>保存</Button>
+            </div>
           </Card>
         ):(
           <div style={{textAlign:"center",paddingTop:100,color:"#999"}}><Title level={5} type="secondary">选择批次查看详情</Title><Button type="primary" icon={<PlusOutlined/>} onClick={openNewBatch}>新建Pooling批次</Button></div>
@@ -419,15 +461,18 @@ export default function NipptPooling() {
               const entries = pendingData.entries.filter((e:any)=>e.category===cat);
               if(!entries.length)return null;
               const labels:Record<string,string>={FEMALE_BLOOD:"👩 女性",MALE_BLOOD:"🩸 男性血液",MALE_OTHER:"🧬 男性其他"};
-              return (<div key={cat}><Text strong style={{fontSize:13}}>{labels[cat]} ({entries.length})</Text>
+
+  return (<div key={cat}><Text strong style={{fontSize:13}}>{labels[cat]} ({entries.length})</Text>
                 {entries.map((e:any)=>{const allIn=e.case_sample_ids.every((id:string)=>selectedKeys.has(id)),someIn=e.case_sample_ids.some((id:string)=>selectedKeys.has(id));
-                  return (<div key={e.case_sample_ids.join(",")} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
+
+  return (<div key={e.case_sample_ids.join(",")} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
                     <Checkbox checked={allIn} indeterminate={!allIn&&someIn} onChange={()=>{setSelectedKeys(prev=>{const n=new Set(prev);if(allIn)e.case_sample_ids.forEach((id:string)=>n.delete(id));else e.case_sample_ids.forEach((id:string)=>n.add(id));return n})}}/>
                     <Text code style={{fontSize:11,width:150}}>{e.case_number}</Text>{e.test_sample_id&&<Tag color="blue" style={{fontSize:11}}>{e.test_sample_id}</Tag>}<Text strong>{e.patient_name}</Text></div>)})}</div>)
             })}
           </div>
         </div>)}
       </Modal>
+
     </div>
   );
 }

@@ -58,6 +58,9 @@ export default function NipptBioinformatics() {
   const [manualPairFather, setManualPairFather] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<any>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
+const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦"];
+const [operators, setOperators] = useState<Record<string,string>>({});
+const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
   const fetchBatches = useCallback(async () => {
     setLoading(true);
@@ -328,6 +331,32 @@ export default function NipptBioinformatics() {
                 <Button icon={<CheckOutlined />} onClick={handleComplete}>Complete Batch</Button>
               </Space>)}
             {selectedBatch.status === "COMPLETED" && <Alert type="success" message="Batch completed" showIcon style={{ marginTop: 16 }} />}
+            <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
+              <Text type="secondary">操作人: </Text>
+              <Select size="small" placeholder="选择" style={{ width: 100 }}
+                value={operators[selectedBatch.id] || (selectedBatch as any).operator_name || undefined}
+                onChange={v => setOperators(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+              </Select>
+              <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
+              <Select size="small" placeholder="选择" style={{ width: 100 }}
+                value={reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || undefined}
+                onChange={v => setReviewers(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+              </Select>
+
+              <Button size="small" type="primary" style={{ marginLeft: 16 }}
+                onClick={async () => {
+                  const data = { operator_name: operators[selectedBatch.id] || "", reviewer: reviewers[selectedBatch.id] || "" };
+                  const url = "/api/v1/cases/bioinfo/" + selectedBatch.id + "/";
+                  const r = await fetch(url, { method: "PATCH",
+                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("access_token") },
+                    body: JSON.stringify(data)
+                  });
+                  if (r.ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
+                  else message.error("保存失败");
+                }}>保存</Button>
+            </div>
           </Card>
         ) : (
           <div style={{ textAlign: "center", paddingTop: 100, color: "#999" }}><Title level={5} type="secondary">Select a batch</Title><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>New Batch</Button></div>)}
@@ -351,6 +380,7 @@ export default function NipptBioinformatics() {
             <ul style={{maxHeight:200,overflow:"auto",marginTop:8}}>{importResult.errors.map((e:string,i:number) => <li key={i} style={{fontSize:12}}>{e}</li>)}</ul></>)}
         </>)}
       </Modal>
+
     </div>
   );
 }

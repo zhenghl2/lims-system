@@ -76,6 +76,9 @@ class Case(models.Model):
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+"
     )
+    operator_name = models.CharField(max_length=50, blank=True, default="")
+    reviewer = models.CharField(max_length=50, blank=True, default="")
+    experiment_time = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -115,6 +118,10 @@ class Case(models.Model):
             active = self.case_samples.all()
         if not active.exists():
             return "REGISTERED"
+        # 全部样本被拒收
+        if all(cs.sample.status == "REJECTED" for cs in self.case_samples.all()):
+            return "REJECTED"
+
         if active.filter(workflow_stage__endswith="_FAILED").exists():
             return "HAS_FAILURE"
         stages = [cs.workflow_stage for cs in active if cs.workflow_stage]
@@ -225,6 +232,7 @@ class CaseSample(models.Model):
     received_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+"
     )
+    received_by_name = models.CharField(max_length=50, blank=True, default="")
 
     # Collection info (may differ per sample in a case)
     collection_site = models.CharField(max_length=100, blank=True)
@@ -316,9 +324,14 @@ class NipptPreProcessingBatch(models.Model):
         max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True
     )
     processing_data = models.JSONField(default=dict, blank=True)
+    pp_date = models.CharField(max_length=20, blank=True, default="")
+    pp_time = models.CharField(max_length=10, blank=True, default="")
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+"
     )
+    operator_name = models.CharField(max_length=50, blank=True, default="")
+    reviewer = models.CharField(max_length=50, blank=True, default="")
+    experiment_time = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -582,6 +595,8 @@ class NipptPoolingBatch(models.Model):
     batch_number = models.CharField(max_length=30, unique=True, db_index=True)
     status = models.CharField(max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True)
     pooling_data = models.JSONField(default=dict, blank=True)
+    pool_date = models.CharField(max_length=20, blank=True, default="")
+    pool_time = models.CharField(max_length=10, blank=True, default="")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

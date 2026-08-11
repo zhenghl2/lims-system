@@ -56,6 +56,7 @@ class CaseListSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
     mother_name = serializers.SerializerMethodField()
+    can_redo = serializers.SerializerMethodField()
     case_source = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
     case_samples = CaseSampleSerializer(many=True, read_only=True)
@@ -65,7 +66,7 @@ class CaseListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "case_number", "pt_number", "panel_code", "panel_name",
             "status", "status_display", "is_urgent",
-            "sample_count", "received_count", "mother_name", "progress",
+            "sample_count", "received_count", "mother_name", "can_redo", "progress",
             "gestational_age_weeks", "gestational_age_days",
             "clinic_name", "sales_person",
             "applicant", "case_source", "registration_type",
@@ -78,11 +79,11 @@ class CaseListSerializer(serializers.ModelSerializer):
 
     def get_status_display(self, obj):
         st = obj.computed_status
-        MAP = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
-               "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
-               "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
-               "COMPLETED":"已完成","HAS_FAILURE":"有失败","CANCELLED":"已取消"}
-        return MAP.get(st, st)
+        M = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
+             "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
+             "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
+             "COMPLETED":"已完成","HAS_FAILURE":"有失败","REJECTED":"已拒收","CANCELLED":"已取消"}
+        return M.get(st, st)
 
     def get_mother_name(self, obj):
         ms = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
@@ -101,11 +102,11 @@ class CaseListSerializer(serializers.ModelSerializer):
 
     def get_status_display(self, obj):
         st = obj.computed_status
-        MAP = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
-               "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
-               "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
-               "COMPLETED":"已完成","HAS_FAILURE":"有失败","CANCELLED":"已取消"}
-        return MAP.get(st, st)
+        M = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
+             "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
+             "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
+             "COMPLETED":"已完成","HAS_FAILURE":"有失败","REJECTED":"已拒收","CANCELLED":"已取消"}
+        return M.get(st, st)
 
     def get_can_redo(self, obj):
         """Return list of CaseSample IDs that have a FAIL workflow stage."""
@@ -172,6 +173,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
     status = serializers.SerializerMethodField()
     status_display = serializers.SerializerMethodField()
     mother_name = serializers.SerializerMethodField()
+    can_redo = serializers.SerializerMethodField()
     case_source = serializers.SerializerMethodField()
     all_samples_received = serializers.BooleanField(read_only=True)
     registration_url = serializers.SerializerMethodField()
@@ -189,7 +191,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
             "notes", "is_urgent", "expected_completion",
             "registration_token", "registration_url",
             "case_samples", "site", "created_by",
-            "created_at", "updated_at", "mother_name", "case_source",
+            "created_at", "updated_at", "mother_name", "can_redo", "case_source",
         ]
         read_only_fields = [
             "id", "case_number", "pt_number", "registration_token", "created_at", "updated_at",
@@ -207,11 +209,11 @@ class CaseDetailSerializer(serializers.ModelSerializer):
 
     def get_status_display(self, obj):
         st = obj.computed_status
-        MAP = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
-               "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
-               "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
-               "COMPLETED":"已完成","HAS_FAILURE":"有失败","CANCELLED":"已取消"}
-        return MAP.get(st, st)
+        M = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
+             "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
+             "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
+             "COMPLETED":"已完成","HAS_FAILURE":"有失败","REJECTED":"已拒收","CANCELLED":"已取消"}
+        return M.get(st, st)
 
     def get_mother_name(self, obj):
         ms = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
@@ -224,17 +226,6 @@ class CaseDetailSerializer(serializers.ModelSerializer):
         if cs and cs.sample:
             return cs.sample.sample_source or ""
         return ""
-
-    def get_status(self, obj):
-        return obj.computed_status
-
-    def get_status_display(self, obj):
-        st = obj.computed_status
-        MAP = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
-               "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
-               "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
-               "COMPLETED":"已完成","HAS_FAILURE":"有失败","CANCELLED":"已取消"}
-        return MAP.get(st, st)
 
     def get_can_redo(self, obj):
         """Return list of CaseSample IDs that have a FAIL workflow stage."""
@@ -559,7 +550,7 @@ class NipptPreProcessingBatchListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "batch_number", "status", "status_display",
             "sample_count", "female_count", "male_blood_count", "male_other_count",
-            "created_by", "created_at", "updated_at",
+            "created_by", "operator_name", "reviewer", "experiment_time", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
@@ -593,7 +584,7 @@ class NipptPreProcessingBatchDetailSerializer(serializers.ModelSerializer):
             "id", "batch_number", "status", "status_display",
             "sample_count", "female_count", "male_blood_count", "male_other_count",
             "female_samples", "male_blood_samples", "male_other_samples",
-            "processing_data", "created_by", "created_at", "updated_at",
+            "processing_data", "pp_date", "pp_time", "created_by", "operator_name", "reviewer", "experiment_time", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
@@ -1246,7 +1237,7 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
                     used_m_ids.update(ps.id for ps in m_pool)
                     for ps in f_pool + m_pool:
                         if not NipptHybSeqSample.objects.filter(batch=batch, source_pooling_sample_id=ps.id).exists():
-                            hs = NipptHybSeqSample.objects.create(
+                            NipptHybSeqSample.objects.create(
                                 batch=batch, case=ps.case, patient_name=ps.patient_name,
                                 role=ps.role, category=ps.category,
                                 case_sample_ids=ps.case_sample_ids,
@@ -1278,7 +1269,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
         model = NipptBioinfoPair
         fields = [
             "id", "batch", "case", "case_number", "pt_number", "case_source",
-            "mother_sample", "mother_name", "mother_index",
+            "mother_sample", "mother_name", "can_redo", "mother_index",
             "father_sample", "father_name", "father_index", "father_sample_type",
             "father_label", "is_cross_batch",
             "mother_source_batch", "father_source_batch",
@@ -1391,7 +1382,7 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "batch_number", "status", "status_display",
             "pair_count", "completed_pair_count", "sample_count",
-            "created_by", "created_at", "updated_at",
+            "created_by", "operator_name", "reviewer", "experiment_time", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
@@ -1419,7 +1410,7 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
             "id", "batch_number", "status", "status_display",
             "bioinfo_data", "pair_count", "sample_count",
             "pairs", "unpaired_mothers", "unpaired_fathers",
-            "created_by", "created_at", "updated_at",
+            "created_by", "operator_name", "reviewer", "experiment_time", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 

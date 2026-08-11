@@ -61,6 +61,7 @@ interface BatchDetail extends BatchItem {
   male_blood_samples: ExtractionSample[];
   male_other_samples: ExtractionSample[];
   extraction_data: any;
+  operator?: string; reviewer?: string; experiment_time?: string;
 }
 interface QCandidate {
   id: string; patient_name: string; case_number: string;
@@ -93,6 +94,9 @@ export default function NipptExtraction() {
   const [extForm] = Form.useForm();
   const [stepConfirmations, setStepConfirmations] = useState<Record<string, boolean>>({});
   const [photos, setPhotos] = useState<string[]>([]);
+const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦"];
+const [operators, setOperators] = useState<Record<string,string>>({});
+const [reviewers, setReviewers] = useState<Record<string,string>>({});
   // sampleResults: { [sampleId]: { status: "pass"|"fail", note: string, concentration?: number } }
   const [femaleResults, setFemaleResults] = useState<Record<string, any>>({});
   const [maleResults, setMaleResults] = useState<Record<string, any>>({});
@@ -301,7 +305,8 @@ export default function NipptExtraction() {
       </div>
     );
 
-    return (
+
+  return (
       <Popover content={popContent} trigger="click" open={open} onOpenChange={v => { setOpen(v); if (v) { setLocalStatus(status); setLocalNote(note); setLocalConc(r.concentration); } }}
         placement="bottomLeft" destroyTooltipOnHide>
         <td style={{ background: bg, cursor: "pointer", width: 80, height: 42, textAlign: "center", fontSize: 11, color, padding: 2 }}>
@@ -322,7 +327,8 @@ export default function NipptExtraction() {
         if (si < samples.length) { map[key] = samples[si]; si++; }
       }
     }
-    return (
+
+  return (
       <table style={{ borderCollapse: "collapse", margin: "8px auto" }}>
         <thead><tr><th style={{ width: 30 }}></th>{COLS_12.map(c => <th key={c} style={{ width: 80, fontSize: 12, fontWeight: 500, padding: 4 }}>{c}</th>)}</tr></thead>
         <tbody>{ROWS_8.map(row => (
@@ -346,7 +352,8 @@ export default function NipptExtraction() {
       for (let r = 0; r < 8; r++) { if (!skipSet.has(`${ROWS_8[r]}7`) && si < samples.length) cells.push({ row: r, col: 7, sampleIdx: si++ }); }
       if (cells.length > 0) { plates.push({ cells }); pi++; } else break;
     }
-    return (
+
+  return (
       <div>
         {plates.map((plate, pIdx) => {
           const skips = skipCoords[pIdx] || "";
@@ -354,7 +361,8 @@ export default function NipptExtraction() {
           const cellMap = new Map<string, number>();
           plate.cells.forEach(c => cellMap.set(`${ROWS_8[c.row]}:${COLS_12[c.col-1]}`, c.sampleIdx));
           const plateNo = `P${pIdx + 1}`;
-          return (
+
+  return (
             <div key={pIdx} style={{ marginBottom: 16 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 12 }}>
                 <span style={{ color: "#666", whiteSpace: "nowrap" }}>{plateNo} 跳过孔位:</span>
@@ -386,7 +394,8 @@ export default function NipptExtraction() {
                           if (pairSample) {
                             const r = getResult(isFemale, pairSample.id);
                             const v = r.concentration ?? pairSample.dna_concentration;
-                            return (
+
+  return (
                               <td key={key} style={{ width: 80, height: 42, textAlign: "center", padding: 2, background: "#fafafa" }}>
                                 <InputNumber size="small" min={0} step={0.1} style={{ width: 70, fontSize: 11 }}
                                   value={v ?? undefined} placeholder="—"
@@ -416,7 +425,8 @@ export default function NipptExtraction() {
 
     const manualHide = method === "MANUAL";
 
-    return (
+
+  return (
       <div>
         {/* Method selector */}
         <Card size="small" style={{ marginBottom: 12 }}>
@@ -467,7 +477,8 @@ export default function NipptExtraction() {
                 { title: "姓名", dataIndex: "patient_name", width: 100 },
                 { title: "QC", key: "qc", width: 120, render: (_: any, r: ExtractionSample) => {
                   const res = getResult(isFemale, r.id);
-                  return (
+
+  return (
                     <Select size="small" value={res.status || "pass"} style={{ width: 90 }}
                       onChange={v => setResult(isFemale, r.id, v, res.note || "", res.concentration)}
                       options={[{value:"pass",label:"✅ PASS"}, {value:"fail",label:"❌ FAIL"}]} />
@@ -500,7 +511,8 @@ export default function NipptExtraction() {
                 }},
                 { title: "QC", key: "qc", width: 120, render: (_: any, r: ExtractionSample) => {
                   const res = getResult(isFemale, r.id);
-                  return (
+
+  return (
                     <Select size="small" value={res.status || "pass"} style={{ width: 90 }}
                       onChange={v => setResult(isFemale, r.id, v, res.note || "", res.concentration)}
                       options={[{value:"pass",label:"✅ PASS"}, {value:"fail",label:"❌ FAIL"}]} />
@@ -592,6 +604,32 @@ export default function NipptExtraction() {
                     <CameraOutlined style={{ fontSize: 24, color: "#999" }} /><Text type="secondary" style={{ fontSize: 11 }}>拍照/上传</Text></div>
                 </Upload>
               </div>
+            <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
+              <Text type="secondary">操作人: </Text>
+              <Select size="small" placeholder="选择" style={{ width: 100 }}
+                value={operators[selectedBatch.id] || (selectedBatch as any).operator_name || undefined}
+                onChange={v => setOperators(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+              </Select>
+              <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
+              <Select size="small" placeholder="选择" style={{ width: 100 }}
+                value={reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || undefined}
+                onChange={v => setReviewers(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+              </Select>
+
+              <Button size="small" type="primary" style={{ marginLeft: 16 }}
+                onClick={async () => {
+                  const data = { operator_name: operators[selectedBatch.id] || "", reviewer: reviewers[selectedBatch.id] || "" };
+                  const url = "/api/v1/cases/extraction/" + selectedBatch.id + "/";
+                  const r = await fetch(url, { method: "PATCH",
+                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("access_token") },
+                    body: JSON.stringify(data)
+                  });
+                  if (r.ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
+                  else message.error("保存失败");
+                }}>保存</Button>
+            </div>
             </Card>
           </Card>
         ) : (
@@ -618,11 +656,13 @@ export default function NipptExtraction() {
               const entries = pendingData.entries.filter((e: any) => e.category === cat && (!pendingSearch || e.patient_name.includes(pendingSearch) || e.case_number.includes(pendingSearch) || (e.test_sample_id||"").includes(pendingSearch)));
               if (!entries.length) return null;
               const labels: Record<string,string> = {FEMALE_BLOOD:"👩 女性",MALE_BLOOD:"🩸 男性血液",MALE_OTHER:"🧬 男性其他"};
-              return (<div key={cat} style={{ marginBottom: 8 }}><Text strong style={{ fontSize: 13 }}>{labels[cat]} ({entries.length})</Text>
+
+  return (<div key={cat} style={{ marginBottom: 8 }}><Text strong style={{ fontSize: 13 }}>{labels[cat]} ({entries.length})</Text>
                 {entries.map((e: any) => {
                   const allIn = e.case_sample_ids.every((id: string) => selectedKeys.has(id));
                   const someIn = e.case_sample_ids.some((id: string) => selectedKeys.has(id));
-                  return (<div key={e.case_sample_ids.join(",")} style={{ padding: "4px 8px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8 }}>
+
+  return (<div key={e.case_sample_ids.join(",")} style={{ padding: "4px 8px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8 }}>
                     <Checkbox checked={allIn} indeterminate={!allIn && someIn} onChange={() => { setSelectedKeys(prev => { const next = new Set(prev); if (allIn) e.case_sample_ids.forEach((id: string) => next.delete(id)); else e.case_sample_ids.forEach((id: string) => next.add(id)); return next; }); }} />
                     <Text code style={{ fontSize: 11, width: 150 }}>{e.case_number}</Text>{e.test_sample_id && <Tag color="blue" style={{ fontSize: 11 }}>{e.test_sample_id}</Tag>}
                     <Text strong>{e.patient_name}</Text><Space size={2} wrap>{e.sample_types.map((t: string) => <Tag key={t} color="green" style={{ fontSize: 10 }}>{SAMPLE_TYPE_LABELS[t]||t}</Tag>)}</Space></div>);})}</div>);})}
@@ -640,6 +680,7 @@ export default function NipptExtraction() {
           </div>
         </div>)}
       </Modal>
+
     </div>
   );
 }

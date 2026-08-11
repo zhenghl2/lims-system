@@ -69,6 +69,9 @@ export default function NipptLibrary() {
   // ── Steps & photos ──
   const [stepConfirmations, setStepConfirmations] = useState<Record<string,boolean>>({});
   const [photos, setPhotos] = useState<string[]>([]);
+const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦"];
+const [operators, setOperators] = useState<Record<string,string>>({});
+const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
   // ── Plate data (NIPT-style grid) ──
   const emptyPlate = ():PlateGrid => Array.from({length:8},()=>Array.from({length:12},()=>({vgId:"",index:""})));
@@ -263,7 +266,8 @@ export default function NipptLibrary() {
               const passBg = sr?.status==="pass"?"#f6ffed":undefined;
               const baseBg = cell.vgId?"#e8f5e9":"#fafafa";
               const bg = failBg||passBg||baseBg;
-              return (
+
+  return (
                 <td key={col} style={{...cellStyle,background:bg,cursor:cell.vgId?"pointer":"default"}}>
                   <Popover trigger="click" content={
                     <div style={{minWidth:180}}>
@@ -377,10 +381,10 @@ export default function NipptLibrary() {
               <Space direction="vertical" style={{width:"100%"}}>
                 <Card size="small" title={<Space>{`👩 女性板 — ${selectedBatch.female_count} 样本`}<Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkFemaleStart} onChange={e=>setHkFemaleStart(e.target.value.toUpperCase())} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
                   {renderNiptPlate(femalePlate, setFemalePlate)}
-                </Card>
+              </Card>
                 <Card size="small" title={<Space>{`👨 男性板 — ${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`}<Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkMaleStart} onChange={e=>setHkMaleStart(e.target.value.toUpperCase())} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
                   {renderNiptPlate(malePlate, setMalePlate)}
-                </Card>
+              </Card>
               </Space>
             )}
 
@@ -390,6 +394,32 @@ export default function NipptLibrary() {
                 {photos.map((url,i)=>(<div key={i} style={{position:"relative",width:104,height:104}}><Image src={url} width={104} height={104} style={{objectFit:"cover",borderRadius:4}}/><Button type="text" danger size="small" style={{position:"absolute",top:-8,right:-8,background:"#fff",borderRadius:"50%"}} onClick={()=>setPhotos(p=>p.filter((_,j)=>j!==i))}>✕</Button></div>))}
                 <Upload beforeUpload={f=>{handlePhoto(f);return false}} showUploadList={false} accept="image/*"><div style={{width:104,height:104,border:"1px dashed #d9d9d9",borderRadius:4,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer"}}><CameraOutlined style={{fontSize:24,color:"#999"}}/><Text type="secondary" style={{fontSize:11}}>拍照</Text></div></Upload>
               </div>
+            <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
+              <Text type="secondary">操作人: </Text>
+              <Select size="small" placeholder="选择" style={{ width: 100 }}
+                value={operators[selectedBatch.id] || (selectedBatch as any).operator_name || undefined}
+                onChange={v => setOperators(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+              </Select>
+              <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
+              <Select size="small" placeholder="选择" style={{ width: 100 }}
+                value={reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || undefined}
+                onChange={v => setReviewers(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+              </Select>
+
+              <Button size="small" type="primary" style={{ marginLeft: 16 }}
+                onClick={async () => {
+                  const data = { operator_name: operators[selectedBatch.id] || "", reviewer: reviewers[selectedBatch.id] || "" };
+                  const url = "/api/v1/cases/library/" + selectedBatch.id + "/";
+                  const r = await fetch(url, { method: "PATCH",
+                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("access_token") },
+                    body: JSON.stringify(data)
+                  });
+                  if (r.ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
+                  else message.error("保存失败");
+                }}>保存</Button>
+            </div>
             </Card>
           </Card>
         ):(
@@ -405,15 +435,18 @@ export default function NipptLibrary() {
               const entries = pendingData.entries.filter((e:any)=>e.category===cat);
               if(!entries.length)return null;
               const labels:Record<string,string>={FEMALE_BLOOD:"👩 女性",MALE_BLOOD:"🩸 男性血液",MALE_OTHER:"🧬 男性其他"};
-              return (<div key={cat} style={{marginBottom:8}}><Text strong style={{fontSize:13}}>{labels[cat]} ({entries.length})</Text>
+
+  return (<div key={cat} style={{marginBottom:8}}><Text strong style={{fontSize:13}}>{labels[cat]} ({entries.length})</Text>
                 {entries.map((e:any)=>{const allIn=e.case_sample_ids.every((id:string)=>selectedKeys.has(id)),someIn=e.case_sample_ids.some((id:string)=>selectedKeys.has(id));
-                  return (<div key={e.case_sample_ids.join(",")} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
+
+  return (<div key={e.case_sample_ids.join(",")} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
                     <Checkbox checked={allIn} indeterminate={!allIn&&someIn} onChange={()=>{setSelectedKeys(prev=>{const n=new Set(prev);if(allIn)e.case_sample_ids.forEach((id:string)=>n.delete(id));else e.case_sample_ids.forEach((id:string)=>n.add(id));return n})}}/>
                     <Text code style={{fontSize:11,width:150}}>{e.case_number}</Text>{e.test_sample_id&&<Tag color="blue" style={{fontSize:11}}>{e.test_sample_id}</Tag>}<Text strong>{e.patient_name}</Text></div>)})}</div>)
             })}
           </div>
         </div>)}
       </Modal>
+
     </div>
   );
 }

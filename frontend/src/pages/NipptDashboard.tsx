@@ -1,15 +1,8 @@
 import { useState, useEffect } from "react";
-import { Card, Row, Col, Statistic, Typography, Tag } from "antd";
+import { Card, Row, Col, Statistic, Typography, Table, Tag } from "antd";
 import { casesApi } from "../api";
 
 const { Title, Text } = Typography;
-
-const STAGE_COLORS: Record<string, string> = {
-  REGISTERED: "default", RECEIVED: "blue", REJECTED: "red",
-  PRE_PROCESSING: "orange", EXTRACTION: "gold", LIBRARY_PREP: "purple",
-  POOLING: "magenta", HYB_SEQ: "cyan", BIOINFO: "geekblue",
-  REPORT_DRAFT: "lime", COMPLETED: "green",
-};
 
 export default function NipptDashboardPage() {
   const [data, setData] = useState<any>(null);

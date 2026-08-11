@@ -351,13 +351,28 @@ class CaseViewSet(viewsets.ModelViewSet):
         ).select_related("case_sample").order_by("created_at")
         
         history = {}
+        # 1. Prep：签收记录作为第一条 stage
+        for cs in case.case_samples.all():
+            if cs.received_at is None:
+                continue
+            cs_id = str(cs.id)
+            history[cs_id] = {
+                "test_sample_id": cs.test_sample_id or "",
+                "stages": [{
+                    "stage": "RECEIVED", "action": cs.receipt_condition or "签收",
+                    "timestamp": str(cs.received_at), "batch_number": "",
+                    "pt_number": cs.test_sample_id or cs.case.pt_number or "",
+                    "receipt_photo_url": cs.receipt_photo.url if cs.receipt_photo else "",
+                    "received_by": cs.received_by.username if cs.received_by else "",
+                    "condition": cs.receipt_condition or "OK",
+                }]
+            }
+
+        # 2. 追加 WorkflowLog 条目
         for log in logs:
             cs_id = str(log.case_sample_id)
             if cs_id not in history:
-                history[cs_id] = {
-                    "test_sample_id": log.case_sample.test_sample_id or "",
-                    "stages": []
-                }
+                history[cs_id] = {"test_sample_id": log.case_sample.test_sample_id or "", "stages": []}
             history[cs_id]["stages"].append({
                 "stage": log.stage, "action": log.action,
                 "batch_number": log.batch_number or "",

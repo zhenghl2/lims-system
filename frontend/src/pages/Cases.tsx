@@ -29,7 +29,7 @@ const STATUS_DISPLAY: Record<string, string> = {
   PRE_PROCESSING: "前处理", EXTRACTION: "提取中", LIBRARY_PREP: "建库中",
   POOLING: "Pooling", HYB_SEQ: "测序中", BIOINFO: "生信中",
   REPORT_DRAFT: "报告草稿", IN_PROCESS: "处理中", COMPLETED: "已完成",
-  REPORTED: "已报告", HAS_FAILURE: "有失败",
+  REPORTED: "已报告", HAS_FAILURE: "有失败", REJECTED: "已拒收",
 };
 
 const fmtDate = (v: string | null | undefined) => {
@@ -41,7 +41,7 @@ const fmtDate = (v: string | null | undefined) => {
 (casesApi as any).sampleHistory = (caseId: string) => api.get(`/cases/${caseId}/sample_history/`);
 
 export default function Cases() {
-  const [search, setSearch] = useState("");
+    const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [sourceFilter, setSourceFilter] = useState<string>("");
   const [dateRange, setDateRange] = useState<[any, any] | null>(null);
@@ -171,10 +171,10 @@ export default function Cases() {
       render: (v: string) => v || "-",
     },
     {
-      title: "状态", dataIndex: "workflow_status", width: 100,
-      render: (v: string, r: any) => {
-        const display = STATUS_DISPLAY[v] || STATUS_DISPLAY[r.status] || v || r.status;
-        const color = STATUS_COLORS[v] || STATUS_COLORS[r.status] || "default";
+      title: "状态", dataIndex: "status", width: 100,
+      render: (_v: string, r: any) => {
+        const display = r.status_display || _v;
+        const color = STATUS_COLORS[r.status] || STATUS_COLORS[_v] || "default";
         return <Tag color={color}>{display}</Tag>;
       },
     },
@@ -315,8 +315,8 @@ export default function Cases() {
                   <Text><Text type="secondary">销售:</Text> {selectedCase.sales_person || "-"}</Text>
                   <Text><Text type="secondary">联系方式:</Text> {selectedCase.clinic_contact || "-"}</Text>
                   <Text><Text type="secondary">来源:</Text> {(selectedCase as any).case_source || "-"}</Text>
-                  <Text><Text type="secondary">申请方:</Text> {selectedCase.applicant || "-"}</Text>
-                  <Text><Text type="secondary">登记类型:</Text> {selectedCase.registration_type || "首次"}</Text>
+                  <Text><Text type="secondary">申请方:</Text> {(selectedCase as any).applicant || "-"}</Text>
+                  <Text><Text type="secondary">登记类型:</Text> {(selectedCase as any).registration_type || "首次"}</Text>
                   <Text><Text type="secondary">创建时间:</Text> {fmtDate(selectedCase.created_at)}</Text>
                   {selectedCase.expected_completion && (
                     <Text><Text type="secondary">预计完成:</Text> {selectedCase.expected_completion}</Text>
@@ -413,16 +413,45 @@ export default function Cases() {
                     {historyOpen.has(cs.id) ? "收起历史" : "实验历史"}
                   </Button>
                 </Space>
-                {historyOpen.has(cs.id) && sampleHistory[cs.id]?.stages?.length > 0 && (
+                {historyOpen.has(cs.id) && sampleHistory[cs.id] && (
                   <Timeline style={{ marginTop: 8 }} items={
-                    sampleHistory[cs.id].stages.map((s: any) => ({
-                      color: s.action === "COMPLETE" ? "green" : s.action === "FAIL" ? "red" : "blue",
-                      children: <span style={{ fontSize: 12 }}>
-                        <Text strong>{s.stage}</Text> — {s.action}
-                        {s.batch_number && <Text type="secondary"> ({s.batch_number})</Text>}
-                        <br /><Text type="secondary" style={{ fontSize: 11 }}>{s.timestamp?.slice(0, 19)}</Text>
-                      </span>
-                    }))
+                    sampleHistory[cs.id].stages.map((s: any) => {
+                      if (s.stage === "RECEIVED") {
+                        return {
+                          color: s.condition === "OK" ? "green" : "red",
+                          children: <div style={{ fontSize: 12 }}>
+                            <Space size={4}>
+                              {s.pt_number && <Tag color="blue" style={{ fontSize: 11 }}>{s.pt_number}</Tag>}
+                              <Text strong>签收</Text>
+                              <Tag color={s.condition === "OK" ? "green" : "red"} style={{ fontSize: 11 }}>
+                                {s.condition === "OK" ? "通过" : s.condition}
+                              </Tag>
+                            </Space>
+                            <br />
+                            <Text type="secondary">时间: {s.timestamp?.slice(0, 19)}</Text>
+                            {s.received_by && <Text type="secondary"> | 签收人: {s.received_by}</Text>}
+                            {s.receipt_photo_url && (
+                              <div style={{ marginTop: 4 }}>
+                                <img
+                                  src={s.receipt_photo_url}
+                                  alt="签收照片"
+                                  style={{ maxWidth: 120, maxHeight: 80, cursor: "pointer", borderRadius: 4 }}
+                                  onClick={() => window.open(s.receipt_photo_url, "_blank")}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        };
+                      }
+                      return {
+                        color: s.action === "COMPLETE" ? "green" : s.action === "FAIL" ? "red" : "blue",
+                        children: <span style={{ fontSize: 12 }}>
+                          <Text strong>{s.stage}</Text> — {s.action}
+                          {s.batch_number && <Text type="secondary"> ({s.batch_number})</Text>}
+                          <br /><Text type="secondary" style={{ fontSize: 11 }}>{s.timestamp?.slice(0, 19)}</Text>
+                        </span>
+                      };
+                    })
                   } />
                 )}
 
