@@ -80,6 +80,7 @@ interface CaseSampleRow {
   ptBase: string;
   received: boolean;
   receivedAt: string;
+  caseHasPhoto?: boolean;
 }
 
 export default function SampleReceiving() {
@@ -119,7 +120,6 @@ export default function SampleReceiving() {
       const caseSamples = c.case_samples || [];
       for (const cs of caseSamples) {
         const isMother = cs.role === "MOTHER";
-        const sample = cs.sample || {};
         rows.push({
           key: `${c.id}:${cs.id}`,
           caseId: c.id,
@@ -138,7 +138,7 @@ export default function SampleReceiving() {
           fedexNo: cs.fedex_no || "",
           phone: c.phone || "",
           preservationMethod: cs.preservation_method || "",
-          status: sample.status || "REGISTERED",
+          status: cs.sample_status || "REGISTERED",
           image: cs.receipt_photo_url || null,
           ptBase: c.pt_number ? c.pt_number.replace(/^PT/i, "") : "",
           received: cs.received_at != null,
@@ -154,11 +154,11 @@ export default function SampleReceiving() {
     try {
       const params: any = { page_size: 100 };
       if (activeTab === "pending") {
-        params.status = "REGISTERED,RECEIVED";
+        params.status = "REGISTERED";
       } else if (activeTab === "rejected") {
         params.status = "REJECTED";
       } else {
-        params.status = "RECEIVED,IN_PROCESS,COMPLETED,REPORTED";
+        params.status = "RECEIVED,PRE_PROCESSED,EXTRACTION,IN_PROCESS,COMPLETED,REPORTED,ACCEPTED";
       }
       if (search.trim().length >= 2) params.search = search.trim();
       const _r = await (casesApi as any).list(params);
@@ -170,7 +170,13 @@ export default function SampleReceiving() {
       if (regTypeFilter) {
         filtered = filtered.filter((c: any) => c.registration_type === regTypeFilter);
       }
-      const rows = flatCases(filtered);
+      const allRows = flatCases(filtered);
+      // 行级状态过滤：拒绝样本绝不出现于待签收/已签收 tab
+      const rows = allRows.filter((r) => {
+        if (activeTab === "pending") return r.status === "REGISTERED";
+        if (activeTab === "rejected") return r.status === "REJECTED";
+        return !["REGISTERED", "REJECTED"].includes(r.status);
+      });
       setData(rows);
     } catch {
       message.error("加载失败");
@@ -212,9 +218,22 @@ export default function SampleReceiving() {
     );
   };
 
+  // --- 签收前置校验：PT 编号 + 图片（Case 级） ---
+  const validateBeforeReceipt = (row: CaseSampleRow): string | null => {
+    if (!row.ptBase) return "请先填写 PT 编号";
+    const hasPhoto = row.caseHasPhoto || data.some((r) => r.caseId === row.caseId && r.image);
+    if (!hasPhoto) return "请先上传样本图片";
+    return null;
+  };
+
   // --- Receipt actions ---
   const confirmReceipt = async (row: CaseSampleRow, condition: string = "OK", rejectionNote: string = "") => {
     try {
+      const preErr = validateBeforeReceipt(row);
+      if (preErr) {
+        message.error(preErr);
+        return;
+      }
       const payload: any = { sample_id: row.sampleUuid, condition };
       if (row.ptBase) payload.pt_number = "PT" + row.ptBase;
       if (row.actualSampleType) payload.actual_sample_type = row.actualSampleType;
@@ -231,8 +250,8 @@ export default function SampleReceiving() {
           prev.map((r) => (r.key === row.key ? { ...r, received: true, status: "RECEIVED" } : r))
         );
       }
-    } catch {
-      message.error("操作失败");
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || "操作失败");
     }
   };
 
@@ -240,6 +259,11 @@ export default function SampleReceiving() {
     const selected = data.filter((r) => selectedRowKeys.includes(r.key));
     for (const row of selected) {
       try {
+        const preErr = validateBeforeReceipt(row);
+        if (preErr) {
+          message.error(`${row.patientName}: ${preErr}`);
+          continue;
+        }
         const payload: any = { sample_id: row.sampleUuid, condition: "OK" };
         if (row.ptBase) payload.pt_number = "PT" + row.ptBase;
         if (row.actualSampleType) payload.actual_sample_type = row.actualSampleType;
@@ -329,8 +353,12 @@ export default function SampleReceiving() {
       const photoUrl = uploadRes.data?.receipt_photo_url;
       setData((prev) =>
         prev.map((r) => {
-          if (r.csId === pendingPhoto.current!.csId) {
-            return { ...r, image: photoUrl || null };
+          if (r.caseId === pendingPhoto.current!.caseId) {
+            return {
+              ...r,
+              image: r.csId === pendingPhoto.current!.csId ? photoUrl || null : r.image,
+              caseHasPhoto: true,
+            };
           }
           return r;
         })

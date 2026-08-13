@@ -55,15 +55,8 @@ class CaseViewSet(viewsets.ModelViewSet):
         status_param = self.request.query_params.get("status", "")
         if status_param:
             statuses = [s.strip() for s in status_param.split(",") if s.strip()]
-            if "RECEIVED" in statuses:
-                qs = qs.filter(
-                    Q(status__in=statuses) |
-                    Q(case_samples__received_at__isnull=True)
-                ).distinct()
-            elif len(statuses) == 1:
-                qs = qs.filter(status=statuses[0])
-            elif len(statuses) > 1:
-                qs = qs.filter(status__in=statuses)
+            # 按样本级状态过滤（避免 Case 状态与样本状态不一致导致拒收样本泄漏）
+            qs = qs.filter(case_samples__sample__status__in=statuses).distinct()
         # Source/applicant filter
         applicant = self.request.query_params.get("applicant", "").strip()
         if applicant:
@@ -279,8 +272,15 @@ class CaseViewSet(viewsets.ModelViewSet):
         if not cs:
             raise NotFound("Sample not found in this case")
 
+        # ── 强制校验：PT 编号 + 图片（签收与拒收均要求）──
+        pt_number = (request.data.get("pt_number") or "").strip()
+        if not pt_number and not case.pt_number:
+            raise ValidationError("请先填写 PT 编号")
+        has_photo = case.case_samples.exclude(receipt_photo__isnull=True).exclude(receipt_photo="").exists()
+        if not has_photo:
+            raise ValidationError("请先上传样本图片")
+
         # Accept receiving metadata
-        pt_number = request.data.get("pt_number", "").strip()
         actual_sample_type = request.data.get("actual_sample_type", "")
         preservation_method = request.data.get("preservation_method", "")
 
