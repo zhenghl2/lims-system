@@ -58,3 +58,4 @@ htmlcov/
 *.pem
 certs/
 lims/docker/certs/
+*.bak_*
