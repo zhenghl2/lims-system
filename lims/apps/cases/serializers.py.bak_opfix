@@ -295,7 +295,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             "risk_warnings", "registration_type",
             "last_menstrual_period",
             "notes", "is_urgent", "expected_completion",
-            "mother_name", "mother_dob", "father_names",
+            "mother_name", "can_redo", "mother_dob", "father_names",
             "father_sample_types",
             "external_id", "sample_source", "fedex_no",
             "female_arrival_date", "male_arrival_dates",
@@ -396,38 +396,6 @@ class CaseCreateSerializer(serializers.ModelSerializer):
 
         return case
 
-
-
-class NipptImportFatherSerializer(serializers.Serializer):
-    """巴西导入：单个疑父"""
-    name = serializers.CharField(allow_blank=True, default="")
-    id_card = serializers.CharField(required=False, allow_blank=True, default="")
-    sample_types = serializers.ListField(
-        child=serializers.ChoiceField(choices=CaseSample.SampleSource.choices),
-        required=False, default=list,
-    )
-
-
-class NipptImportCaseItemSerializer(serializers.Serializer):
-    """巴西导入：一个 Case（Seq 基号分组后）"""
-    seq = serializers.CharField()
-    mother_name = serializers.CharField()
-    mother_dob = serializers.CharField(required=False, allow_blank=True, default="")      # DD/MM/YYYY
-    mother_id_card = serializers.CharField(required=False, allow_blank=True, default="")
-    gestational_age_weeks = serializers.IntegerField(required=False, allow_null=True)
-    collection_date = serializers.CharField(required=False, allow_blank=True, default="") # DD/MM/YYYY
-    fathers = NipptImportFatherSerializer(many=True, required=False, default=list)
-    sales_person = serializers.CharField(required=False, allow_blank=True, default="")
-    price = serializers.CharField(required=False, allow_blank=True, default="")
-    balance = serializers.CharField(required=False, allow_blank=True, default="")
-    gender_info = serializers.CharField(required=False, allow_blank=True, default="")
-    notes = serializers.CharField(required=False, allow_blank=True, default="")
-    expected_completion = serializers.CharField(required=False, allow_blank=True, default="")  # DD/MM/YYYY
-
-
-class NipptBatchImportSerializer(serializers.Serializer):
-    """巴西送检单批量导入"""
-    cases = NipptImportCaseItemSerializer(many=True)
 
 class SupplementSerializer(serializers.Serializer):
     """补充样本：给已有 Case 添加新的 CaseSample (母亲或父亲)."""
@@ -790,7 +758,7 @@ class NipptExtractionBatchListSerializer(serializers.ModelSerializer):
         model = NipptExtractionBatch
         fields = ["id", "batch_number", "status", "status_display", "sample_count",
                   "female_count", "male_blood_count", "male_other_count",
-                  "created_by", "operator_name", "reviewer", "created_at", "updated_at"]
+                  "created_by", "created_at", "updated_at"]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
     def get_sample_count(self, obj): return obj.samples.count()
@@ -814,7 +782,7 @@ class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
         fields = ["id", "batch_number", "status", "status_display",
                   "sample_count", "female_count", "male_blood_count", "male_other_count",
                   "female_samples", "male_blood_samples", "male_other_samples",
-                  "extraction_data", "created_by", "operator_name", "reviewer", "created_at", "updated_at"]
+                  "extraction_data", "created_by", "created_at", "updated_at"]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
     def get_sample_count(self, obj): return obj.samples.count()
@@ -920,7 +888,7 @@ class NipptLibraryBatchListSerializer(serializers.ModelSerializer):
     male_other_count = serializers.SerializerMethodField()
     class Meta:
         model = NipptLibraryBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -938,7 +906,7 @@ class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
     male_other_samples = serializers.SerializerMethodField()
     class Meta:
         model = NipptLibraryBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","library_data","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","library_data","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1029,7 +997,7 @@ class NipptPoolingBatchListSerializer(serializers.ModelSerializer):
     male_other_count = serializers.SerializerMethodField()
     class Meta:
         model = NipptPoolingBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1049,7 +1017,7 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
     library_index_map = serializers.SerializerMethodField()
     class Meta:
         model = NipptPoolingBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","library_index_map","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","library_index_map","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1172,7 +1140,7 @@ class NipptHybSeqBatchListSerializer(serializers.ModelSerializer):
     male_other_count = serializers.SerializerMethodField()
     class Meta:
         model = NipptHybSeqBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1191,7 +1159,7 @@ class NipptHybSeqBatchDetailSerializer(serializers.ModelSerializer):
     mix_sources = serializers.SerializerMethodField()
     class Meta:
         model = NipptHybSeqBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","mix_sources","hyb_seq_data","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","mix_sources","hyb_seq_data","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1414,7 +1382,7 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "batch_number", "status", "status_display",
             "pair_count", "completed_pair_count", "sample_count",
-            "created_by", "operator_name", "reviewer", "created_at", "updated_at",
+            "created_by", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
@@ -1442,7 +1410,7 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
             "id", "batch_number", "status", "status_display",
             "bioinfo_data", "pair_count", "sample_count",
             "pairs", "unpaired_mothers", "unpaired_fathers",
-            "created_by", "operator_name", "reviewer", "created_at", "updated_at",
+            "created_by", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 

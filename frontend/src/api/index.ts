@@ -188,6 +188,8 @@ export const casesApi = {
   get: (id: string) => api.get<CaseDetail>(`/cases/${id}/`),
   create: (data: CaseCreatePayload) =>
     api.post<CaseDetail>("/cases/", data),
+  batchImportNippt: (data: Record<string, unknown>) =>
+    api.post("/cases/batch_import_nippt/", data),
   update: (id: string, data: Record<string, unknown>) =>
     api.patch<CaseDetail>(`/cases/${id}/`, data),
   confirmReceipt: (id: string, data: ConfirmReceiptPayload) =>

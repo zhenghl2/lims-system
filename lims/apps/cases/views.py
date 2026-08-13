@@ -17,6 +17,7 @@ from .serializers import (
     NipptPreProcessingBatchCreateSerializer, NipptPreProcessingSampleSerializer,
     PendingEntrySerializer,
     SupplementSerializer,
+    NipptBatchImportSerializer,
 )
 from lims.apps.samples.models import Sample, SampleType
 from lims.apps.organizations.models import Site
@@ -86,6 +87,108 @@ class CaseViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         serializer.save()
+
+    @action(detail=False, methods=["post"])
+    def batch_import_nippt(self, request):
+        """巴西送检单批量导入：按 Seq 分组的 Case 列表，事务创建（防重：external_id）。"""
+        from datetime import datetime
+
+        serializer = NipptBatchImportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        dry_run = str(request.data.get("dry_run", "")).lower() in ("true", "1", "yes")
+        if dry_run:
+            existing = [
+                item["seq"] for item in serializer.validated_data["cases"]
+                if Sample.objects.filter(external_id=item["seq"]).exists()
+            ]
+            return Response({"dry_run": True, "existing": existing})
+
+        def parse_d(d):
+            """DD/MM/YYYY -> date, 失败返回 None"""
+            if not d:
+                return None
+            try:
+                return datetime.strptime(d.strip(), "%d/%m/%Y").date()
+            except (ValueError, AttributeError):
+                try:
+                    return datetime.strptime(d.strip(), "%d-%m-%Y").date()
+                except (ValueError, AttributeError):
+                    return None
+
+        created, skipped, errors = [], [], []
+        for item in serializer.validated_data["cases"]:
+            seq = item["seq"]
+            if Sample.objects.filter(external_id=seq).exists():
+                skipped.append({"seq": seq, "reason": "exists"})
+                continue
+            try:
+                with transaction.atomic():
+                    father_names = [f["name"] for f in item["fathers"] if f["name"] and f["name"] != "-"]
+                    father_sample_types = [
+                        f["sample_types"] or ["BLOOD"]
+                        for f in item["fathers"] if f["name"] and f["name"] != "-"
+                    ]
+                    mother_dob = parse_d(item["mother_dob"])
+                    create_serializer = CaseCreateSerializer(data={
+                        "mother_name": item["mother_name"],
+                        "mother_dob": mother_dob.isoformat() if mother_dob else None,
+                        "father_names": father_names,
+                        "father_sample_types": father_sample_types,
+                        "gestational_age_weeks": item["gestational_age_weeks"],
+                        "sample_source": "巴西",
+                        "sales_person": item["sales_person"],
+                        "notes": item["notes"],
+                        "external_id": seq,
+                        "registration_type": "FIRST",
+                    }, context={"request": request})
+                    create_serializer.is_valid(raise_exception=True)
+                    case = create_serializer.save()
+
+                    # 附加字段：母亲
+                    mother_cs = case.case_samples.filter(role=CaseSample.Role.MOTHER).select_related("sample").first()
+                    if mother_cs:
+                        m = mother_cs.sample
+                        m.id_card = item["mother_id_card"] or ""
+                        m.price = item["price"] or ""
+                        m.balance = item["balance"] or ""
+                        m.gender_info = item["gender_info"] or ""
+                        cd = parse_d(item["collection_date"])
+                        if cd:
+                            m.collection_date = cd
+                        m.save(update_fields=[
+                            "id_card", "price", "balance", "gender_info",
+                            "collection_date", "updated_at",
+                        ])
+                    # 附加字段：疑父 id_card
+                    for f in item["fathers"]:
+                        if not f["name"] or f["name"] == "-" or not f["id_card"]:
+                            continue
+                        fcss = case.case_samples.filter(
+                            role=CaseSample.Role.ALLEGED_FATHER,
+                            sample__patient_name=f["name"],
+                        ).select_related("sample")
+                        for cs in fcss:
+                            cs.sample.id_card = f["id_card"]
+                            cs.sample.save(update_fields=["id_card", "updated_at"])
+                    # 报告截止日期
+                    due = parse_d(item["expected_completion"])
+                    if due:
+                        case.expected_completion = due
+                        case.save(update_fields=["expected_completion", "updated_at"])
+
+                    created.append({"seq": seq, "case_number": case.case_number})
+            except Exception as e:
+                errors.append({"seq": seq, "error": str(e)[:300]})
+
+        return Response({
+            "created": created,
+            "skipped": skipped,
+            "errors": errors,
+            "created_count": len(created),
+            "skipped_count": len(skipped),
+            "error_count": len(errors),
+        })
 
     @action(detail=True, methods=["post"])
     def generate_token(self, request, pk=None):
