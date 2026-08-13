@@ -1,7 +1,7 @@
 // NipptHybSeq.tsx — Hybridization & Sequencing (NIPT-style + Mix dilution table)
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
-  Space, Popconfirm, Select, Checkbox, Form, DatePicker, TimePicker } from "antd";
+  Space, Popconfirm, Select, Checkbox, Form, DatePicker, TimePicker, Radio } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import dayjs from "dayjs";
@@ -90,6 +90,7 @@ export default function NipptHybSeq() {
   const [platform, setPlatform] = useState("");
   const [chip, setChip] = useState("");
   const [readType, setReadType] = useState("");
+  const [seqKit, setSeqKit] = useState("");
   const [stepConfirmations, setStepConfirmations] = useState<Record<string,boolean>>({});
   const [mixRows, setMixRows] = useState<MixRow[]>([]);
   const [finalConc, setFinalConc] = useState(0.783);
@@ -106,7 +107,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const r=await(casesApi as any).getHybSeqBatch(id);
       const d=r.data; setSelectedBatch(d);
       const sd=d.hyb_seq_data||{};
-      setPlatform(sd.platform||""); setChip(sd.chip||""); setReadType(sd.read_type||""); setStepConfirmations(sd.step_confirmations||{});
+      setPlatform(sd.platform||""); setChip(sd.chip||""); setReadType(sd.read_type||""); setSeqKit(sd.sequencing_kit||""); setStepConfirmations(sd.step_confirmations||{});
       // Auto-init mix rows from saved or from mix_ids
       let rows = sd.mix_rows||[];
       if (rows.length===0 && sd.mix_ids && sd.mix_ids.length>0) {
@@ -171,7 +172,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     if(!selectedBatch)return; setSaving(true);
     try{
       const sd = {
-        platform, step_confirmations:stepConfirmations,
+        platform, sequencing_kit:seqKit, step_confirmations:stepConfirmations,
         ...form.getFieldsValue(), mix_rows:mixRows, final_conc:finalConc,
       };
       await(casesApi as any).saveHybSeq(selectedBatch.id,{hyb_seq_data:sd});
@@ -278,6 +279,40 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                   <Form.Item name="chip_number" label="Chip号"><Input size="small" style={{width:120}} placeholder="chip编号"/></Form.Item>
                 </Form>
               </Space>
+            </Card>
+
+            {/* Reagents */}
+            <Card size="small" title="🧪 试剂" style={{marginBottom:12}}>
+              <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
+                {/* 杂交捕获 */}
+                <div style={{flex:1,minWidth:320}}>
+                  <Text strong style={{fontSize:13}}>杂交捕获</Text>
+                  <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,marginTop:4}}>
+                    <thead><tr>
+                      <th style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"left",background:"#f5f5f5"}}>名称</th>
+                      <th style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center",background:"#f5f5f5",width:100}}>货号/备注</th>
+                    </tr></thead>
+                    <tbody>
+                      <tr><td style={{border:"1px solid #ddd",padding:"4px 8px"}}>NIPPT 探针</td><td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}><Tag>定制</Tag></td></tr>
+                      <tr><td style={{border:"1px solid #ddd",padding:"4px 8px"}}>NadPrep NanoBlockers (for Illumina), 96 rxn</td><td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}><Text code>1006102</Text></td></tr>
+                      <tr><td style={{border:"1px solid #ddd",padding:"4px 8px"}}>NadPrep Rapid Hybrid Capture Reagents v2, 96 rxn</td><td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}><Text code>1005421</Text></td></tr>
+                    </tbody>
+                  </table>
+                </div>
+                {/* 测序 */}
+                <div style={{flex:1,minWidth:280}}>
+                  <Text strong style={{fontSize:13}}>测序 (三选一)</Text>
+                  <div style={{marginTop:4}}>
+                    <Radio.Group value={seqKit} onChange={e=>setSeqKit(e.target.value)}>
+                      <Space direction="vertical">
+                        <Radio value="PRM-PE150-150M">Sal us Pro 测序试剂套装 (PRM-PE150-150M)</Radio>
+                        <Radio value="PRM-PE100-250M">Sal us Pro 测序试剂套装 (PRM-PE100-250M)</Radio>
+                        <Radio value="PRM-PE75-500M">Sal us Pro 测序试剂套装 (PRM-PE75-500M)</Radio>
+                      </Space>
+                    </Radio.Group>
+                  </div>
+                </div>
+              </div>
             </Card>
 
             {/* Step confirmations */}

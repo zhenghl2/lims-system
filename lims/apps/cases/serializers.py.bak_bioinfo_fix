@@ -758,7 +758,7 @@ class NipptExtractionBatchListSerializer(serializers.ModelSerializer):
         model = NipptExtractionBatch
         fields = ["id", "batch_number", "status", "status_display", "sample_count",
                   "female_count", "male_blood_count", "male_other_count",
-                  "created_by", "operator_name", "reviewer", "created_at", "updated_at"]
+                  "created_by", "created_at", "updated_at"]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
     def get_sample_count(self, obj): return obj.samples.count()
@@ -782,7 +782,7 @@ class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
         fields = ["id", "batch_number", "status", "status_display",
                   "sample_count", "female_count", "male_blood_count", "male_other_count",
                   "female_samples", "male_blood_samples", "male_other_samples",
-                  "extraction_data", "created_by", "operator_name", "reviewer", "created_at", "updated_at"]
+                  "extraction_data", "created_by", "created_at", "updated_at"]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
     def get_sample_count(self, obj): return obj.samples.count()
@@ -888,7 +888,7 @@ class NipptLibraryBatchListSerializer(serializers.ModelSerializer):
     male_other_count = serializers.SerializerMethodField()
     class Meta:
         model = NipptLibraryBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -906,7 +906,7 @@ class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
     male_other_samples = serializers.SerializerMethodField()
     class Meta:
         model = NipptLibraryBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","library_data","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","library_data","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -997,7 +997,7 @@ class NipptPoolingBatchListSerializer(serializers.ModelSerializer):
     male_other_count = serializers.SerializerMethodField()
     class Meta:
         model = NipptPoolingBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1017,7 +1017,7 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
     library_index_map = serializers.SerializerMethodField()
     class Meta:
         model = NipptPoolingBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","library_index_map","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","library_index_map","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1140,7 +1140,7 @@ class NipptHybSeqBatchListSerializer(serializers.ModelSerializer):
     male_other_count = serializers.SerializerMethodField()
     class Meta:
         model = NipptHybSeqBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1159,7 +1159,7 @@ class NipptHybSeqBatchDetailSerializer(serializers.ModelSerializer):
     mix_sources = serializers.SerializerMethodField()
     class Meta:
         model = NipptHybSeqBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","mix_sources","hyb_seq_data","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","mix_sources","hyb_seq_data","created_by","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1269,7 +1269,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
         model = NipptBioinfoPair
         fields = [
             "id", "batch", "case", "case_number", "pt_number", "case_source",
-            "mother_sample", "mother_name", "mother_index",
+            "mother_sample", "mother_name", "can_redo", "mother_index",
             "father_sample", "father_name", "father_index", "father_sample_type",
             "father_label", "is_cross_batch",
             "mother_source_batch", "father_source_batch",
@@ -1382,7 +1382,7 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "batch_number", "status", "status_display",
             "pair_count", "completed_pair_count", "sample_count",
-            "created_by", "operator_name", "reviewer", "created_at", "updated_at",
+            "created_by", "operator_name", "reviewer", "experiment_time", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
@@ -1410,7 +1410,7 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
             "id", "batch_number", "status", "status_display",
             "bioinfo_data", "pair_count", "sample_count",
             "pairs", "unpaired_mothers", "unpaired_fathers",
-            "created_by", "operator_name", "reviewer", "created_at", "updated_at",
+            "created_by", "operator_name", "reviewer", "experiment_time", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 

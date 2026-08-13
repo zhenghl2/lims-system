@@ -21,13 +21,11 @@ const EQUIPMENT_OPTIONS = [
   {value:"PCR_ABI_9700",label:"PCR仪 - ABI 9700"},{value:"PCR_BioRad_T100",label:"PCR仪 - Bio-Rad T100"},
 ];
 
-// ── Reagent kits (NIPT-style) ──
+// ── Reagent kits ──
 const FEMALE_KITS = [{value:"F-KIT-A",label:"NIPPT Female Library Kit A"},{value:"F-KIT-B",label:"NIPPT Female Library Kit B"}];
 const MALE_KITS = [{value:"M-KIT-A",label:"NIPPT Male Library Kit A"},{value:"M-KIT-B",label:"NIPPT Male Library Kit B"}];
-const LIB_KITS = [{value:"ND607-02",label:"VAHTS Universal DNA Library Prep Kit (ND607-02)"},{value:"ZD101-02",label:"ZHIXUAN Universal DNA Library Prep Kit (ZD101-02)"}];
-const INDEX_KITS = [{value:"N34201-01",label:"VAHTS Maxi UDI Adapters Set1 (N34201-01)"},{value:"N34202-01",label:"VAHTS Maxi UDI Adapters Set2 (N34202-01)"},{value:"ZA201",label:"ZHIXUAN Maxi UDI Adapters Set1 (ZA201)"}];
-const QUANT_KITS = [{value:"EQ121-02",label:"Equalbit 1x dsDNA HS Assay Kit (EQ121-02)"},{value:"ZQ501",label:"ZHIXUAN 1x dsDNA HS Assay Kit (ZQ501)"}];
-const BEAD_KITS = [{value:"ZB401",label:"DNA Clean Beads (ZB401)"}];
+const LIB_KITS = [{value:"ND607-C2",label:"VAHTS Universal DNA Library Prep Kit for Illumina V5 (ND607-C2)"},{value:"ND801-02",label:"VAHTS Universal Plus DNA Library Prep Kit V4 (ND801-02)"}];
+const INDEX_KITS = [{value:"N34201",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 1 (N34201)"},{value:"N34202",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 2 (N34202)"},{value:"N34203",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 3 (N34203)"},{value:"N34204",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 4 (N34204)"}];
 
 type PlateCell = { vgId: string; index: string; sampleIdx?: number; isQC?: boolean };
 type PlateGrid = PlateCell[][];
@@ -57,11 +55,10 @@ export default function NipptLibrary() {
   // ── Reagents (NIPT-style) ──
   const [femaleLibKit, setFemaleLibKit] = useState("");
   const [maleLibKit, setMaleLibKit] = useState("");
-  const [libKit, setLibKit] = useState("");
+  const [libKits, setLibKits] = useState<string[]>([]);
+  const [libKitDetails, setLibKitDetails] = useState<Record<string,{lot:string;expiry:string}>>({});
   const [selectedIndexKits, setSelectedIndexKits] = useState<string[]>([]);
   const [indexKitDetails, setIndexKitDetails] = useState<Record<string,{lot:string;expiry:string}>>({});
-  const [quantKit, setQuantKit] = useState("");
-  const [beadKit, setBeadKit] = useState("");
   const [positiveControl, setPositiveControl] = useState("");
   const [negativeControl, setNegativeControl] = useState("");
   const [libForm] = Form.useForm();
@@ -178,7 +175,9 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       setRegion(ld.region||"XIAMEN");setFemaleStartCoord(ld.female_start_coord||"");setMaleStartCoord(ld.male_start_coord||"");
       setHkFemaleStart(ld.hk_female_start||"");setHkMaleStart(ld.hk_male_start||"");
       setFemaleLibKit(ld.female_lib_kit||"");setMaleLibKit(ld.male_lib_kit||"");
-      setLibKit(ld.lib_kit||"");setQuantKit(ld.quant_kit||"");setBeadKit(ld.bead_kit||"");
+      setLibKitDetails({});
+      if(Array.isArray(ld.lib_kits)){setLibKits(ld.lib_kits.map((k:any)=>k.kit));const ldt:any={};ld.lib_kits.forEach((k:any)=>{ldt[k.kit]={lot:k.lot||"",expiry:k.expiry||""}});setLibKitDetails(ldt)}
+      else{setLibKits([]);setLibKitDetails({})}
       setPositiveControl(ld.positive_control||"");setNegativeControl(ld.negative_control||"");
       if(Array.isArray(ld.index_kits)){setSelectedIndexKits(ld.index_kits.map((k:any)=>k.kit));const dt:any={};ld.index_kits.forEach((k:any)=>{dt[k.kit]={lot:k.lot||"",expiry:k.expiry||""}});setIndexKitDetails(dt)}
       else{setSelectedIndexKits([]);setIndexKitDetails({})}
@@ -229,8 +228,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const ld:any = {region,female_start_coord:femaleStartCoord,male_start_coord:maleStartCoord,
         hk_female_start:hkFemaleStart,hk_male_start:hkMaleStart,
         female_lib_kit:femaleLibKit,male_lib_kit:maleLibKit,
-        lib_kit:libKit,index_kits:selectedIndexKits.map(k=>({kit:k,lot:indexKitDetails[k]?.lot||"",expiry:indexKitDetails[k]?.expiry||""})),
-        quant_kit:quantKit,bead_kit:beadKit,
+        lib_kits:libKits.map(k=>({kit:k,lot:libKitDetails[k]?.lot||"",expiry:libKitDetails[k]?.expiry||""})),
+        index_kits:selectedIndexKits.map(k=>({kit:k,lot:indexKitDetails[k]?.lot||"",expiry:indexKitDetails[k]?.expiry||""})),
         positive_control:positiveControl,negative_control:negativeControl,
         ...libForm.getFieldsValue(),step_confirmations:stepConfirmations,sample_results:sampleResults,photos,
         female_plate:femalePlate,male_plate:malePlate,xiamen_plate:xiamenPlate,
@@ -298,13 +297,6 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     {title:"样本",width:100,render:(_:any,r:BatchItem)=><Text style={{fontSize:11}}>👩{r.female_count} 👨{r.male_blood_count+r.male_other_count}</Text>},
   ];
 
-  const ReagentRow = ({label,value,onChange,options,lot,onLot,expiry,onExpiry}:{label:string;value:string;onChange:any;options:{value:string;label:string}[];lot:string;onLot:any;expiry:string;onExpiry:any})=>(
-    <Row gutter={12} style={{marginBottom:8}}>
-      <Col span={13}><Form.Item label={label} style={{marginBottom:0}}><Select options={options} value={value||undefined} onChange={onChange} placeholder={`选择${label}`} showSearch optionFilterProp="label"/></Form.Item></Col>
-      <Col span={4}><Form.Item label="批号" style={{marginBottom:0}}><Input value={lot} onChange={e=>onLot(e.target.value)} placeholder="批号"/></Form.Item></Col>
-      <Col span={5}><Form.Item label="有效期" style={{marginBottom:0}}><DatePicker picker="month" value={expiry?dayjs(expiry):null} onChange={(d:any)=>onExpiry(d?d.format("YYYY-MM"):"")} placeholder="有效期" style={{width:"100%"}} format="YYYY-MM"/></Form.Item></Col>
-    </Row>
-  );
 
   return (
     <div style={{display:"flex",height:"calc(100vh - 140px)",gap:12}}>
@@ -348,7 +340,15 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
             {/* Reagent kits (NIPT-style) */}
             <Card size="small" title="建库试剂盒及配套试剂" style={{marginBottom:12}}>
-              <ReagentRow label="文库构建Kit" value={libKit} onChange={setLibKit} options={LIB_KITS} lot="lib_kit_lot" onLot={()=>{}} expiry="lib_kit_expiry" onExpiry={()=>{}}/>
+              <div style={{marginBottom:8}}>
+                <Row gutter={12} style={{marginBottom:4}}><Col span={13}><span style={{fontSize:14,color:"rgba(0,0,0,0.88)"}}>文库构建Kit</span></Col><Col span={4}><span style={{fontSize:14,color:"rgba(0,0,0,0.88)"}}>批号</span></Col><Col span={5}><span style={{fontSize:14,color:"rgba(0,0,0,0.88)"}}>有效期</span></Col></Row>
+                <Row gutter={12}><Col span={13}><Select mode="multiple" options={LIB_KITS} value={libKits} onChange={(vs:string[])=>{setLibKits(vs);setLibKitDetails((p:any)=>{const n={...p};Object.keys(n).forEach(k=>{if(!vs.includes(k))delete n[k]});vs.forEach(v=>{if(!n[v])n[v]={lot:"",expiry:""}});return n})}} placeholder="选择文库构建Kit" showSearch optionFilterProp="label" style={{width:"100%"}} maxTagCount={2}/></Col></Row>
+                {libKits.map(kv=>{const k=LIB_KITS.find(k=>k.value===kv);return(
+                  <Row key={kv} gutter={12} style={{marginBottom:8}}><Col span={13}><div style={{padding:"4px 11px",lineHeight:"30px",border:"1px solid #d9d9d9",borderRadius:6,background:"#f5f5f5",color:"#1677ff",fontWeight:500,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{k?.label||kv}</div></Col>
+                  <Col span={4}><Input placeholder="批号" value={libKitDetails[kv]?.lot||""} onChange={e=>setLibKitDetails((p:any)=>({...p,[kv]:{...p[kv],lot:e.target.value}}))}/></Col>
+                  <Col span={5}><DatePicker picker="month" placeholder="有效期" style={{width:"100%"}} format="YYYY-MM" value={libKitDetails[kv]?.expiry?dayjs(libKitDetails[kv].expiry):null} onChange={(d:any)=>setLibKitDetails((p:any)=>({...p,[kv]:{...p[kv],expiry:d?d.format("YYYY-MM"):""}}))}/></Col></Row>
+                )})}
+              </div>
               <div style={{marginBottom:8}}>
                 <Row gutter={12} style={{marginBottom:4}}><Col span={13}><span style={{fontSize:14,color:"rgba(0,0,0,0.88)"}}>Index接头</span></Col><Col span={4}><span style={{fontSize:14,color:"rgba(0,0,0,0.88)"}}>批号</span></Col><Col span={5}><span style={{fontSize:14,color:"rgba(0,0,0,0.88)"}}>有效期</span></Col></Row>
                 <Row gutter={12}><Col span={13}><Select mode="multiple" options={INDEX_KITS} value={selectedIndexKits} onChange={(vs:string[])=>{setSelectedIndexKits(vs);setIndexKitDetails((p:any)=>{const n={...p};Object.keys(n).forEach(k=>{if(!vs.includes(k))delete n[k]});vs.forEach(v=>{if(!n[v])n[v]={lot:"",expiry:""}});return n})}} placeholder="选择 Index 接头" showSearch optionFilterProp="label" style={{width:"100%"}} maxTagCount={2}/></Col></Row>
@@ -358,8 +358,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                   <Col span={5}><DatePicker picker="month" placeholder="有效期" style={{width:"100%"}} format="YYYY-MM" value={indexKitDetails[kv]?.expiry?dayjs(indexKitDetails[kv].expiry):null} onChange={(d:any)=>setIndexKitDetails((p:any)=>({...p,[kv]:{...p[kv],expiry:d?d.format("YYYY-MM"):""}}))}/></Col></Row>
                 )})}
               </div>
-              <ReagentRow label="定量Kit" value={quantKit} onChange={setQuantKit} options={QUANT_KITS} lot="quant_kit_lot" onLot={()=>{}} expiry="quant_kit_expiry" onExpiry={()=>{}}/>
-              <ReagentRow label="纯化磁珠" value={beadKit} onChange={setBeadKit} options={BEAD_KITS} lot="bead_kit_lot" onLot={()=>{}} expiry="bead_kit_expiry" onExpiry={()=>{}}/>
+
               <Row gutter={16} style={{marginTop:8}}>
                 <Col span={12}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontWeight:600,whiteSpace:"nowrap"}}>阳性质控品:</span><Input placeholder="批号/序列号" value={positiveControl} onChange={e=>setPositiveControl(e.target.value)}/></div></Col>
                 <Col span={12}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontWeight:600,whiteSpace:"nowrap"}}>阴性质控品:</span><Input placeholder="批号/序列号" value={negativeControl} onChange={e=>setNegativeControl(e.target.value)}/></div></Col>

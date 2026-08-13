@@ -435,18 +435,40 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
               <Text strong style={{ marginRight: 12 }}>🧪 提取方法：</Text>
               <Radio.Group value={method} onChange={e => setMethod(e.target.value)} options={EXTRACTION_METHODS} optionType="button" />
             </div>
-            <Form form={extForm} layout="inline" style={{ flexWrap: "wrap", gap: 8 }}>
-              <Form.Item name="extraction_date" label="日期"><DatePicker size="small" style={{ width: 130 }} /></Form.Item>
-              <Form.Item name="extraction_time" label="时间"><TimePicker size="small" format="HH:mm" style={{ width: 100 }} /></Form.Item>
-              <Form.Item name="equipment" label="设备"><Input size="small" style={{ width: 120 }} placeholder="设备编号" /></Form.Item>
-              <Form.Item name="kit_type" label="试剂盒">
-                <Select size="small" style={{ width: 120 }} placeholder="选择"
-                  options={[{value:"QIAamp",label:"QIAamp"},{value:"MagMAX",label:"MagMAX"},{value:"NucleoSpin",label:"NucleoSpin"}]} allowClear />
-              </Form.Item>
-              <Form.Item name="reagent_lot" label="批号"><Input size="small" style={{ width: 100 }} placeholder="批号" /></Form.Item>
-              <Form.Item name="reagent_expiry" label="有效期"><DatePicker size="small" style={{ width: 130 }} /></Form.Item>
-              <Form.Item name="temperature" label="温度(℃)"><InputNumber size="small" style={{ width: 70 }} min={0} max={50} /></Form.Item>
-              <Form.Item name="humidity" label="湿度(%)"><InputNumber size="small" style={{ width: 70 }} min={0} max={100} /></Form.Item>
+            <Form form={extForm}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Form.Item name="extraction_date" label="日期" style={{ marginBottom: 4 }}>
+                  <DatePicker size="small" style={{ width: 140 }} />
+                </Form.Item>
+                <Form.Item name="extraction_time" label="时间" style={{ marginBottom: 4 }}>
+                  <TimePicker size="small" format="HH:mm" style={{ width: 120 }} />
+                </Form.Item>
+                <Form.Item name="temperature" label="温度(℃)" style={{ marginBottom: 4 }}>
+                  <InputNumber size="small" style={{ width: 80 }} min={0} max={50} />
+                </Form.Item>
+                <Form.Item name="humidity" label="湿度(%)" style={{ marginBottom: 4 }}>
+                  <InputNumber size="small" style={{ width: 80 }} min={0} max={100} />
+                </Form.Item>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                <Form.Item name="equipment" label="设备" style={{ marginBottom: 4 }}>
+                  <Input size="small" style={{ width: 140 }} placeholder="设备编号" />
+                </Form.Item>
+                <Form.Item name="kit_type" label="试剂盒" style={{ marginBottom: 4 }}>
+                  <Select size="small" style={{ minWidth: 260 }} placeholder="选择" allowClear
+                    options={[
+                      { value: "MAGEN_CFDNA", label: "Magen cfDNA提取试剂盒 (12919w-480)" },
+                      { value: "MAGEN_ROUND", label: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)" },
+                      { value: "MAGEN_CONICAL", label: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)" },
+                    ]} />
+                </Form.Item>
+                <Form.Item name="reagent_lot" label="批号" style={{ marginBottom: 4 }}>
+                  <Input size="small" style={{ width: 110 }} placeholder="批号" />
+                </Form.Item>
+                <Form.Item name="reagent_expiry" label="有效期" style={{ marginBottom: 4 }}>
+                  <DatePicker size="small" style={{ width: 140 }} />
+                </Form.Item>
+              </div>
             </Form>
           </Space>
         </Card>

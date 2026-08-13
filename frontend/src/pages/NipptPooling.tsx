@@ -41,6 +41,7 @@ export default function NipptPooling() {
   const [saving, setSaving] = useState(false);
   const [poolDate, setPoolDate] = useState<string>("");
   const [poolTime, setPoolTime] = useState<string>("");
+  const [quantKit, setQuantKit] = useState("EQ121-02");
 
   // Pooling state
   const [poolingBase, setPoolingBase] = useState(DEFAULT_POOLING_AMOUNT);
@@ -144,6 +145,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const pd=d.pooling_data||{};
       setPoolingBase(pd.poolingBase??DEFAULT_POOLING_AMOUNT);
       setGlobalElutionVol(pd.globalElutionVol??DEFAULT_ELUTION);
+      setQuantKit(pd.quant_kit||"EQ121-02");
       setGroupBases(pd.groupBases||{});
       setGroupElutions(pd.groupElutions||{});
       const allSamples = [...(d.female_samples||[]),...(d.male_blood_samples||[]),...(d.male_other_samples||[])];
@@ -229,7 +231,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     try{
       const samples = rows.map(r=>({id:r.id,qc_status:r.qc,qc_note:""}));
       const pd = {
-        poolingBase,globalElutionVol,groupBases,groupElutions,manual_alloc:manualAlloc,customAmounts,
+        quant_kit:quantKit,poolingBase,globalElutionVol,groupBases,groupElutions,manual_alloc:manualAlloc,customAmounts,
         rows:rows.map(r=>({concentration:r.concentration,elutionVolume:r.elutionVolume,yield:r.yield,poolingAmount:r.poolingAmount,poolingVolume:r.poolingVolume,eliminated:r.eliminated,qc:r.qc})),
         indexes:savedIndexes,
       };
@@ -272,12 +274,15 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                 <Popconfirm title="完成批次？" onConfirm={completeBatch}><Button type="primary" size="small" danger>完成</Button></Popconfirm>
               </>}
             </Space>}>
-            {/* 实验日期 */}
-            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8,fontSize:12}}>
+            {/* 实验日期 & 试剂 */}
+            <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8,fontSize:12,flexWrap:"wrap"}}>
               <span style={{color:"#666"}}>日期:</span>
               <DatePicker size="small" style={{width:130}} value={poolDate?dayjs(poolDate):null} onChange={(d:any)=>setPoolDate(d?d.format("YYYY-MM-DD"):"")} placeholder="选择日期" format="YYYY-MM-DD"/>
               <span style={{color:"#666",marginLeft:16}}>时间:</span>
               <TimePicker size="small" style={{width:100}} format="HH:mm" value={poolTime?dayjs(poolTime,"HH:mm"):null} onChange={(d:any)=>setPoolTime(d?d.format("HH:mm"):"")} placeholder="选择时间"/>
+              <span style={{color:"#666",marginLeft:16}}>🧪 试剂:</span>
+              <Select size="small" style={{width:300}} value={quantKit} onChange={setQuantKit}
+                options={[{value:"EQ121-02",label:"VAHTS 1×dsDNA HS Assay Kit (EQ121-02)"}]} />
             </div>
 
             {/* Global info */}
