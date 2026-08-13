@@ -13,7 +13,7 @@ import {
   SearchOutlined,
   CopyOutlined, InboxOutlined,
 } from "@ant-design/icons";
-import * as XLSX from "xlsx";
+
 import { casesApi } from "../api";
 import dayjs from "dayjs";
 
@@ -80,6 +80,8 @@ export default function NipptRegistration() {
   const [importNiptSkipped, setImportNiptSkipped] = useState(0);
   const [importFileName, setImportFileName] = useState("");
   const [importLoading, setImportLoading] = useState(false);
+  const [importNiptFiles, setImportNiptFiles] = useState<any[]>([]);
+  const [importErrorFiles, setImportErrorFiles] = useState<any[]>([]);
   const [importResult, setImportResult] = useState<any>(null);
 
   useEffect(() => { refreshCases(); }, []);
@@ -147,98 +149,35 @@ export default function NipptRegistration() {
     navigator.clipboard.writeText(url).then(() => message.success("Link copied!"));
   };
 
-  // ── 巴西导入：解析 xlsx ──
-  const PT_TYPE_MAP: Record<string, string> = {
-    "Sangue": "BLOOD", "FTA": "DBS", "Swab": "SWAB", "Cabelo": "HAIR",
-    "Unha": "NAIL", "Saliva": "SWAB", "Semen": "SEMEN", "Escova": "TOOTHBRUSH",
-  };
-
-  const mapSampleTypes = (s: string): string[] => {
-    if (!s) return ["BLOOD"];
-    const parts = s.split("/").map((t) => t.trim()).filter(Boolean);
-    const mapped = parts.map((t) => {
-      for (const [k, v] of Object.entries(PT_TYPE_MAP)) {
-        if (t.toLowerCase().includes(k.toLowerCase())) return v;
+  const handleImportFiles = async (files: File[]) => {
+    if (!files.length) return;
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    setImportLoading(true);
+    try {
+      const res = await (casesApi as any).parseNipptDocs(fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const d = res.data;
+      setImportRows(d.cases || []);
+      setImportNiptSkipped(d.nipt_count ?? d.nipt_files?.length ?? 0);
+      setImportNiptFiles(d.nipt_files || []);
+      setImportErrorFiles(d.error_files || []);
+      setImportFileName(files.map((f) => f.name).join("、"));
+      setImportExisting(new Set(d.existing || []));
+      setImportChecked(new Set((d.cases || []).map((r: any) => r.seq)));
+      setImportResult(null);
+      if (d.error_count > 0) {
+        message.warning(`解析完成：${d.case_count} 个Case，${d.nipt_count ?? 0} 个NIPT跳过，${d.error_count} 个文件解析失败`);
+      } else {
+        message.success(`解析完成：${d.case_count} 个Case${d.nipt_count ? `，${d.nipt_count} 个NIPT跳过` : ""}`);
       }
-      return "";
-    }).filter(Boolean);
-    return mapped.length > 0 ? mapped : ["BLOOD"];
-  };
-
-  const parseGestWeek = (s: string): number | undefined => {
-    const m = s?.match(/(\d+)\s*semana/i);
-    return m ? parseInt(m[1], 10) : undefined;
-  };
-
-  const handleImportFile = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const wb = XLSX.read(e.target?.result, { type: "array" });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        const json: any[] = XLSX.utils.sheet_to_json(ws);
-        if (!json.length) { message.error("文件为空"); return; }
-        if (!("Test_Item" in json[0]) || !("Seq" in json[0])) {
-          message.error("列格式不正确：需要 Test_Item 和 Seq 列"); return;
-        }
-        const nipptRows = json.filter((r) => String(r.Test_Item || "").toLowerCase() === "nippt");
-        const niptCount = json.length - nipptRows.length;
-
-        const groups = new Map<string, any>();
-        for (const r of nipptRows) {
-          const seq = String(r.Seq || "").replace(/HB$/, "").trim();
-          if (!seq) continue;
-          if (!groups.has(seq)) {
-            groups.set(seq, {
-              seq,
-              mother_name: r["孕妇名字"] || r.client_name || "",
-              mother_dob: r.Date_of_Birth || "",
-              mother_id_card: r.RG_F || "",
-              gestational_age_weeks: parseGestWeek(r.Gestational_Week),
-              collection_date: r["孕妇采样日期"] || "",
-              sales_person: r.Sales || "",
-              price: r.Price || "",
-              balance: r.Balance || "",
-              gender_info: r["性别鉴定"] || "",
-              notes: r["备注"] || "",
-              expected_completion: r.Report_Due_Date || "",
-              fathers: [] as any[],
-            });
-          }
-          const g = groups.get(seq)!;
-          const fname = r["疑父名字"] || "";
-          if (fname && fname !== "-") {
-            g.fathers.push({
-              name: fname,
-              id_card: r.RG_M || "",
-              sample_types: mapSampleTypes(r["疑父样本类型"] || ""),
-            });
-          }
-        }
-        const rows = Array.from(groups.values());
-        setImportRows(rows);
-        setImportNiptSkipped(niptCount);
-        setImportFileName(file.name);
-        setImportChecked(new Set(rows.map((r) => r.seq)));
-        setImportExisting(new Set());
-        // 查重
-        (casesApi as any).batchImportNippt({ cases: rows, dry_run: true })
-          .then((res: any) => {
-            const existing: string[] = res.data?.existing || [];
-            setImportExisting(new Set(existing));
-            setImportChecked((prev) => {
-              const next = new Set(prev);
-              existing.forEach((s) => next.delete(s));
-              return next;
-            });
-          })
-          .catch(() => {});
-      } catch (err) {
-        message.error("解析失败，请确认是 baxi_NIPPT.xlsx 格式");
-      }
-    };
-    reader.readAsArrayBuffer(file);
-    return false; // prevent auto upload
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || "解析失败");
+    } finally {
+      setImportLoading(false);
+    }
+    return false;
   };
 
   const handleImportSubmit = async () => {
@@ -262,6 +201,8 @@ export default function NipptRegistration() {
         setImportFileName("");
         setImportChecked(new Set());
         setImportResult(null);
+        setImportNiptFiles([]);
+        setImportErrorFiles([]);
         refreshCases();
       }
     } catch (e: any) {
@@ -812,23 +753,46 @@ export default function NipptRegistration() {
             系统将过滤 NIPT 项目，按 Seq 分组后批量登记首次检测 Case（来源：巴西）。
           </div>
           <Upload.Dragger
-            accept=".xlsx"
+            accept=".docx"
+            multiple
             showUploadList={false}
-            beforeUpload={handleImportFile}
+            beforeUpload={(_f: any, fileList: any) => {
+              handleImportFiles(fileList.map((f: any) => f.originFileObj || f));
+              return false;
+            }}
             style={{ marginBottom: 16 }}
           >
             <p className="ant-upload-drag-icon"><InboxOutlined style={{ fontSize: 36, color: "#1677ff" }} /></p>
-            <p className="ant-upload-text">点击或拖拽 xlsx 文件到此处</p>
-            <p className="ant-upload-hint">仅支持 .xlsx，NIPT 行将自动跳过</p>
+            <p className="ant-upload-text">点击或拖拽送检单 Word 文件到此处（可多选）</p>
+            <p className="ant-upload-hint">支持批量上传 .docx，NIPT 送检单自动跳过</p>
           </Upload.Dragger>
 
           {importFileName && (
             <div style={{ marginBottom: 8 }}>
               <Tag color="blue">{importFileName}</Tag>
               <Text type="secondary" style={{ fontSize: 12 }}>
-                共 {importRows.length} 个Case{importNiptSkipped > 0 ? `，跳过 NIPT ${importNiptSkipped} 行` : ""}
+                共 {importRows.length} 个Case{importNiptSkipped > 0 ? `，跳过 NIPT ${importNiptSkipped} 个` : ""}
                 {importExisting.size > 0 ? `，已存在 ${importExisting.size} 个` : ""}
+                {importErrorFiles.length > 0 ? `，解析失败 ${importErrorFiles.length} 个` : ""}
               </Text>
+            </div>
+          )}
+
+          {importNiptFiles.length > 0 && (
+            <div style={{ marginBottom: 8, padding: "6px 10px", background: "#fafafa", borderRadius: 6 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>跳过（NIPT）:</Text>
+              {importNiptFiles.map((f: any, i: number) => (
+                <Tag key={i} style={{ marginLeft: 4, marginBottom: 2 }}>{f.file}（{f.test_item}）</Tag>
+              ))}
+            </div>
+          )}
+
+          {importErrorFiles.length > 0 && (
+            <div style={{ marginBottom: 8, padding: "6px 10px", background: "#fff1f0", borderRadius: 6 }}>
+              <Text type="danger" style={{ fontSize: 12 }}>解析失败:</Text>
+              {importErrorFiles.map((f: any, i: number) => (
+                <Tag key={i} color="red" style={{ marginLeft: 4, marginBottom: 2 }}>{f.file}: {f.error}</Tag>
+              ))}
             </div>
           )}
 
@@ -855,6 +819,7 @@ export default function NipptRegistration() {
                   { title: "Seq", dataIndex: "seq", width: 90,
                     render: (v: string) => <Text code>{v}</Text> },
                   { title: "孕妇", dataIndex: "mother_name", width: 170, ellipsis: true },
+                  { title: "RG_F", dataIndex: "mother_id_card", width: 110 },
                   { title: "疑父", key: "fathers", width: 200, ellipsis: true,
                     render: (_: any, r: any) => r.fathers.map((f: any) => f.name).join("；") },
                   { title: "疑父样本类型", key: "types", width: 140,

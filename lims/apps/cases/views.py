@@ -6,6 +6,7 @@ from django.utils import timezone
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.response import Response
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.exceptions import ValidationError, NotFound
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
@@ -88,6 +89,72 @@ class CaseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save()
 
+    @action(detail=False, methods=["post"], parser_classes=[MultiPartParser, FormParser, JSONParser])
+    def parse_nippt_docs(self, request):
+        """巴西送检单 Word 解析：上传多个 .docx，解析并查重，不创建数据。"""
+        from .nippt_docx_parser import parse_docx_bytes, NipptDocxParseError
+
+        files = request.FILES.getlist("files")
+        if not files:
+            raise ValidationError("请上传至少一个 .docx 文件")
+
+        cases = []
+        nipt_files = []
+        error_files = []
+        duplicate_files = []
+        seen_seq_files = {}
+
+        for f in files:
+            fname = f.name
+            if not fname.lower().endswith(".docx"):
+                error_files.append({"file": fname, "error": "非 .docx 文件"})
+                continue
+            try:
+                data = f.read()
+                if len(data) > 20 * 1024 * 1024:
+                    raise NipptDocxParseError("文件超过 20MB")
+                r = parse_docx_bytes(data, fname)
+            except NipptDocxParseError as e:
+                error_files.append({"file": fname, "error": str(e)})
+                continue
+            except Exception as e:
+                error_files.append({"file": fname, "error": f"解析异常: {str(e)[:200]}"})
+                continue
+
+            if r.get("_nipt"):
+                nipt_files.append({"file": fname, "test_item": r.get("test_item", "")})
+                continue
+
+            seq = r["seq"]
+            if seq in seen_seq_files:
+                # 同批内重复 Seq：合并疑父
+                duplicate_files.append({"file": fname, "seq": seq, "merged_with": seen_seq_files[seq]})
+                existing = next((c for c in cases if c["seq"] == seq), None)
+                if existing:
+                    existing["fathers"].extend(r["fathers"])
+                continue
+            seen_seq_files[seq] = fname
+            cases.append(r)
+
+        # 查重：库中已存在的 Seq
+        existing_seqs = []
+        if cases:
+            seqs = [c["seq"] for c in cases]
+            existing_seqs = list(
+                Sample.objects.filter(external_id__in=seqs).values_list("external_id", flat=True)
+            )
+
+        return Response({
+            "cases": cases,
+            "nipt_files": nipt_files,
+            "error_files": error_files,
+            "duplicate_files": duplicate_files,
+            "existing": existing_seqs,
+            "case_count": len(cases),
+            "nipt_count": len(nipt_files),
+            "error_count": len(error_files),
+        })
+
     @action(detail=False, methods=["post"])
     def batch_import_nippt(self, request):
         """巴西送检单批量导入：按 Seq 分组的 Case 列表，事务创建（防重：external_id）。"""
@@ -130,18 +197,20 @@ class CaseViewSet(viewsets.ModelViewSet):
                         for f in item["fathers"] if f["name"] and f["name"] != "-"
                     ]
                     mother_dob = parse_d(item["mother_dob"])
-                    create_serializer = CaseCreateSerializer(data={
+                    create_data = {
                         "mother_name": item["mother_name"],
-                        "mother_dob": mother_dob.isoformat() if mother_dob else None,
                         "father_names": father_names,
                         "father_sample_types": father_sample_types,
-                        "gestational_age_weeks": item["gestational_age_weeks"],
+                        "gestational_age_weeks": item.get("gestational_age_weeks"),
                         "sample_source": "巴西",
                         "sales_person": item["sales_person"],
                         "notes": item["notes"],
                         "external_id": seq,
                         "registration_type": "FIRST",
-                    }, context={"request": request})
+                    }
+                    if mother_dob:
+                        create_data["mother_dob"] = mother_dob.isoformat()
+                    create_serializer = CaseCreateSerializer(data=create_data, context={"request": request})
                     create_serializer.is_valid(raise_exception=True)
                     case = create_serializer.save()
 

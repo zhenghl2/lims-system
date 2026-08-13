@@ -190,6 +190,8 @@ export const casesApi = {
     api.post<CaseDetail>("/cases/", data),
   batchImportNippt: (data: Record<string, unknown>) =>
     api.post("/cases/batch_import_nippt/", data),
+  parseNipptDocs: (formData: FormData, config?: Record<string, unknown>) =>
+    api.post("/cases/parse_nippt_docs/", formData, config),
   update: (id: string, data: Record<string, unknown>) =>
     api.patch<CaseDetail>(`/cases/${id}/`, data),
   confirmReceipt: (id: string, data: ConfirmReceiptPayload) =>

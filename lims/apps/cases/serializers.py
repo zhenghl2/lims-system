@@ -414,7 +414,7 @@ class NipptImportCaseItemSerializer(serializers.Serializer):
     mother_name = serializers.CharField()
     mother_dob = serializers.CharField(required=False, allow_blank=True, default="")      # DD/MM/YYYY
     mother_id_card = serializers.CharField(required=False, allow_blank=True, default="")
-    gestational_age_weeks = serializers.IntegerField(required=False, allow_null=True)
+    gestational_age_weeks = serializers.IntegerField(required=False, allow_null=True, default=None)
     collection_date = serializers.CharField(required=False, allow_blank=True, default="") # DD/MM/YYYY
     fathers = NipptImportFatherSerializer(many=True, required=False, default=list)
     sales_person = serializers.CharField(required=False, allow_blank=True, default="")

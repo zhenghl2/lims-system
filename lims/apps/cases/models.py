@@ -89,6 +89,13 @@ class Case(models.Model):
     def __str__(self):
         return self.case_number
 
+    def delete(self, *args, **kwargs):
+        """删除 Case 时级联删除关联 Sample（否则父亲样本变孤儿，barcode 冲突）。"""
+        for cs in self.case_samples.all():
+            if cs.sample_id:
+                cs.sample.delete()
+        return super().delete(*args, **kwargs)
+
     PT_PREFIX = "PT"
 
     def generate_token(self):
