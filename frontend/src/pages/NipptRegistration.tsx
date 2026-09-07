@@ -967,7 +967,7 @@ export default function NipptRegistration() {
                 {(() => {
                   const cs = selectedCase.case_samples?.find((s: any) => s.id === resampleTarget);
                   if (!cs) return "";
-                  const baseId = cs.test_sample_id || cs.sample_id || "";
+                  const baseId = cs.test_sample_id || selectedCase.pt_number || selectedCase.case_number || "";
                   const existingResamples = selectedCase.case_samples?.filter(
                     (s: any) => s.resample_of === cs.id
                   ).length || 0;
@@ -987,7 +987,7 @@ export default function NipptRegistration() {
               onChange={setResampleTarget}
               options={(selectedCase.case_samples || []).map((cs: any) => ({
                 value: cs.id,
-                label: `${cs.test_sample_id || cs.sample_id || "-"} — ${cs.patient_name} (${cs.role === "MOTHER" ? "母亲" : "父亲"})`,
+                label: `${cs.test_sample_id || "(未签收)"} — ${cs.patient_name} (${cs.role === "MOTHER" ? "母亲" : "父亲"})`,
               }))}
             />
           </div>
@@ -1001,9 +1001,9 @@ export default function NipptRegistration() {
             style={{ marginBottom: 16 }}
             columns={[
               { title: "PT编号", dataIndex: "test_sample_id", key: "pt", width: 150,
-                render: (v: string, r: any) => v
+                render: (v: string) => v
                   ? <Text code style={{ fontSize: 12 }}>{v}</Text>
-                  : <Text type="secondary" style={{ fontSize: 11 }}>{r.sample_id || "-"}</Text> },
+                  : <Text type="secondary">-</Text> },
               { title: "姓名", dataIndex: "patient_name", key: "name", width: 100,
                 render: (v: string) => v || "-" },
               { title: "角色", dataIndex: "role", key: "role", width: 70,
