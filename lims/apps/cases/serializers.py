@@ -453,6 +453,14 @@ class SupplementSerializer(serializers.Serializer):
     external_id = serializers.CharField(max_length=100, required=False, allow_blank=True)
     ethnicity = serializers.CharField(max_length=50, required=False, allow_blank=True)
     relationship_to_mother = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    notes = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="",
+                                  help_text="备注，存 CaseSample.collection_notes")
+    gestational_age_weeks = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=45,
+                                                     help_text="孕妇补样：更新孕周（空=不更新）")
+    gestational_age_days = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=6,
+                                                    help_text="孕妇补样：孕周天数")
+    multiple_gestation = serializers.BooleanField(required=False, allow_null=True,
+                                                  help_text="孕妇补样：更新单双胎（null/缺省=不更新）")
 
     def create(self, validated_data):
         from lims.apps.samples.models import Sample, SampleType
@@ -468,6 +476,20 @@ class SupplementSerializer(serializers.Serializer):
         external_id = validated_data.get("external_id", "")
         ethnicity = validated_data.get("ethnicity", "")
         relationship = validated_data.get("relationship_to_mother", "")
+        notes = validated_data.get("notes", "") or ""
+        ga_weeks = validated_data.get("gestational_age_weeks")
+        ga_days = validated_data.get("gestational_age_days")
+        mg = validated_data.get("multiple_gestation")
+
+        # 孕妇补样：明确传入时更新 Case 的孕周/单双胎（None=不更新）
+        if role == "MOTHER":
+            if ga_weeks is not None:
+                case.gestational_age_weeks = ga_weeks
+                case.gestational_age_days = ga_days or 0
+                case.save(update_fields=["gestational_age_weeks", "gestational_age_days"])
+            if mg is not None:
+                case.multiple_gestation = mg
+                case.save(update_fields=["multiple_gestation"])
 
         today = datetime.date.today()
         now = datetime.datetime.now()
@@ -506,6 +528,7 @@ class SupplementSerializer(serializers.Serializer):
                 arrival_date=arrival_date,
                 ethnicity=ethnicity,
                 relationship_to_mother=relationship,
+                collection_notes=notes,
             )
             css.append(cs_obj)
         # test_sample_id assigned during receipt confirmation

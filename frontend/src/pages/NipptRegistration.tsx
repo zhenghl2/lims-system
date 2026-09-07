@@ -346,6 +346,12 @@ export default function NipptRegistration() {
           sample_types: values.supp_sample_type || ["BLOOD"],
           arrival_date: values.supp_arrival_date
             ? dayjs(values.supp_arrival_date).format("YYYY-MM-DD") : undefined,
+          notes: values.supp_notes || "",
+          gestational_age_weeks: values.supp_ga_weeks ?? null,
+          gestational_age_days: values.supp_ga_days ?? null,
+          multiple_gestation: values.supp_mg === "KEEP" ? null
+            : values.supp_mg === "TRUE" ? true
+            : values.supp_mg === "FALSE" ? false : null,
         });
         message.success(`补充样本成功`);
       } else if (regType === "RESAMPLE" && selectedCase && resampleTarget) {
@@ -852,7 +858,45 @@ export default function NipptRegistration() {
               <Tag color="blue">PT: {selectedCase.pt_number}</Tag>
               <Tag>{selectedCase.case_number}</Tag>
             </div>
+
+            {/* 原样本信息（参考样本签收列体系，精简 7 列） */}
+            <Table
+              size="small"
+              pagination={false}
+              rowKey="id"
+              dataSource={selectedCase.case_samples || []}
+              style={{ marginBottom: 16 }}
+              columns={[
+                { title: "PT编号", dataIndex: "test_sample_id", key: "pt", width: 130,
+                  render: (v: string) => v ? <Text code style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">-</Text> },
+                { title: "姓名", dataIndex: "patient_name", key: "name", width: 100,
+                  render: (v: string) => v || "-" },
+                { title: "角色", dataIndex: "role", key: "role", width: 70,
+                  render: (v: string) => v === "MOTHER" ? <Tag color="magenta" style={{ margin: 0 }}>孕妇</Tag> : <Tag color="blue" style={{ margin: 0 }}>疑父</Tag> },
+                { title: "样本类型", dataIndex: "sample_source", key: "st", width: 80,
+                  render: (v: string) => {
+                    const m: Record<string, string> = { BLOOD: "血液", DBS: "血痕", HAIR: "毛发", SWAB: "口拭子", NAIL: "指甲", SEMEN: "精液", TOOTHBRUSH: "牙刷", CIGARETTE: "烟头", BOTTLE: "水瓶", BEARD: "胡须", FLOSS: "牙线", SEMSTAIN: "精斑", GUM: "口香糖" };
+                    return m[v] || v || "-";
+                  } },
+                { title: "采集日期", dataIndex: "collection_date", key: "cd", width: 100,
+                  render: (v: string) => v || "-" },
+                { title: "状态", dataIndex: "sample_status", key: "status", width: 90,
+                  render: (v: string) => {
+                    const m: Record<string, string> = { REGISTERED: "default", RECEIVED: "green", REJECTED: "red", IN_PROCESS: "processing", COMPLETED: "success" };
+                    const l: Record<string, string> = { REGISTERED: "已登记", RECEIVED: "已签收", REJECTED: "已拒收", IN_PROCESS: "实验中", COMPLETED: "已完成" };
+                    return <Tag color={m[v] || "default"} style={{ margin: 0 }}>{l[v] || v || "-"}</Tag>;
+                  } },
+                { title: "备注", dataIndex: "collection_notes", key: "notes", width: 140, ellipsis: true,
+                  render: (v: string) => v || "-" },
+              ] as any}
+            />
+
             <Row gutter={12}>
+              <Col xs={24} sm={6}>
+                <Form.Item name="supp_arrival_date" label="到样日期" style={{ marginBottom: 8 }}>
+                  <DatePicker style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
               <Col xs={24} sm={6}>
                 <Form.Item name="supp_role" label="补样对象" rules={[{ required: true }]} initialValue="ALLEGED_FATHER">
                   <Select options={[
@@ -867,17 +911,51 @@ export default function NipptRegistration() {
                 </Form.Item>
               </Col>
               <Col xs={24} sm={6}>
-                <Form.Item name="supp_sample_type" label="样本类型" initialValue={["BLOOD"]}>
+                <Form.Item name="supp_sample_type" label="样本类型" initialValue={["BLOOD"]} style={{ marginBottom: 8 }}>
                   <Select mode="multiple" options={SAMPLE_TYPE_OPTIONS}
                     placeholder="选择样本类型" maxTagCount={5} />
                 </Form.Item>
               </Col>
-              <Col xs={24} sm={6}>
-                <Form.Item name="supp_arrival_date" label="到样日期">
-                  <DatePicker style={{ width: "100%" }} />
-                </Form.Item>
-              </Col>
             </Row>
+
+            {/* 孕妇补样：孕周/单双胎（更新 Case 原值，空=不更新） */}
+            <Form.Item noStyle shouldUpdate={(prev, cur) => prev.supp_role !== cur.supp_role}>
+              {({ getFieldValue }) =>
+                getFieldValue("supp_role") === "MOTHER" ? (
+                  <Row gutter={12}>
+                    <Col xs={24} sm={6}>
+                      <Form.Item label="孕周（更新，空=不改）" style={{ marginBottom: 8 }}>
+                        <Space>
+                          <Form.Item name="supp_ga_weeks" noStyle>
+                            <InputNumber size="small" min={0} max={45} placeholder="周" style={{ width: 60 }} />
+                          </Form.Item>
+                          <Text>周</Text>
+                          <Form.Item name="supp_ga_days" noStyle>
+                            <InputNumber size="small" min={0} max={6} placeholder="天" style={{ width: 60 }} />
+                          </Form.Item>
+                          <Text>天</Text>
+                        </Space>
+                      </Form.Item>
+                    </Col>
+                    <Col xs={24} sm={6}>
+                      <Form.Item name="supp_mg" label="单双胎（更新）" initialValue="KEEP" style={{ marginBottom: 8 }}>
+                        <Select size="small" options={[
+                          { value: "KEEP", label: "不更新" },
+                          { value: "NULL", label: "客户未填" },
+                          { value: "FALSE", label: "单胎" },
+                          { value: "TRUE", label: "双胎" },
+                        ]} />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                ) : null
+              }
+            </Form.Item>
+
+            <Form.Item name="supp_notes" label="备注" style={{ marginBottom: 8 }}>
+              <Input.TextArea rows={2} placeholder="备注（样本管理与样本签收可见）" />
+            </Form.Item>
+
             <div style={{ display: "flex", gap: 12, marginTop: 12 }}>
               <Button type="primary" icon={<PlusOutlined />} loading={loading}
                 onClick={handleSubmit} size="large">

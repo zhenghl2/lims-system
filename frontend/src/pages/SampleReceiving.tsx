@@ -75,6 +75,7 @@ interface CaseSampleRow {
   fedexNo: string;
   phone: string;
   preservationMethod: string;
+  collectionNotes: string;
   status: string;
   image: string | null;
   ptBase: string;
@@ -138,6 +139,7 @@ export default function SampleReceiving() {
           fedexNo: cs.fedex_no || "",
           phone: c.phone || "",
           preservationMethod: cs.preservation_method || "",
+          collectionNotes: cs.collection_notes || "",
           status: cs.sample_status || "REGISTERED",
           image: cs.receipt_photo_url || null,
           ptBase: c.pt_number ? c.pt_number.replace(/^PT/i, "") : "",
@@ -469,6 +471,10 @@ export default function SampleReceiving() {
     {
       title: "手机", dataIndex: "phone", key: "ph", width: 110,
       render: (v: string) => v || "—",
+    },
+    {
+      title: "备注", dataIndex: "collectionNotes", key: "notes", width: 130, ellipsis: true,
+      render: (v: string) => v ? <span style={{ color: "#d46b08" }}>{v}</span> : "—",
     },
     {
       title: "保温措施", dataIndex: "preservationMethod", key: "pm", width: 110,

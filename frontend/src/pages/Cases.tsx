@@ -409,6 +409,7 @@ export default function Cases() {
                   <Text style={{ fontSize: 12 }}>{cs.patient_name || cs.sample_id}</Text>
                   <Text type="secondary" style={{ fontSize: 11 }}>{cs.source_display || cs.sample_source}</Text>
                   {cs.received_at && <Text type="secondary" style={{ fontSize: 11 }}>接收: {fmtDate(cs.received_at)}</Text>}
+                  {cs.collection_notes && <Tag color="orange" style={{ fontSize: 11, margin: 0 }}>备注: {cs.collection_notes}</Tag>}
                   <Button size="small" type="link" onClick={() => toggleHistory(cs.id)}>
                     {historyOpen.has(cs.id) ? "收起历史" : "实验历史"}
                   </Button>
