@@ -56,7 +56,13 @@ class Case(models.Model):
     expected_completion = models.DateField(null=True, blank=True)
 
     # Registration metadata
-    multiple_gestation = models.BooleanField(default=False, help_text="单双胎: False=单胎, True=双胎")
+    multiple_gestation = models.BooleanField(default=False, null=True, blank=True, help_text="单双胎: null=客户未填, False=单胎, True=双胎")
+    collection_method = models.CharField(max_length=2, blank=True, default="3",
+        choices=[("1", "本室采集"), ("2", "申请人送来"), ("3", "邮寄样本")],
+        help_text="采集方式: 1=本室采集, 2=申请人送来, 3=邮寄样本")
+    application_signed = models.CharField(max_length=10, blank=True, default="",
+        choices=[("YES", "是"), ("NO", "否"), ("WECHAT", "微信授权")],
+        help_text="申请单是否签字")
     applicant = models.CharField(max_length=200, blank=True, default="", help_text="申请方")
     phone = models.CharField(max_length=30, blank=True, default="", help_text="联系电话")
     email = models.EmailField(max_length=200, blank=True, default="", help_text="邮箱")

@@ -230,10 +230,16 @@ export default function NipptRegistration() {
           applicant: values.applicant,
           phone: values.phone,
           email: values.email,
-          multiple_gestation: values.multiple_gestation || false,
+          multiple_gestation: values.multiple_gestation === undefined ? null : values.multiple_gestation,
           risk_warnings: values.risk ? Object.entries(values.risk).filter(([_, v]) => v).map(([k]) => k) : [],
           registration_type: "FIRST",
           sample_source: values.sample_source,
+          collection_method: values.collection_method,
+          application_signed: values.application_signed || "",
+          expected_completion: values.report_deadline
+            ? dayjs(values.report_deadline).format("YYYY-MM-DD")
+            : ((values.males || []).map((m: any) => m.report_deadline)
+                .filter(Boolean).map((d: any) => dayjs(d).format("YYYY-MM-DD"))[0] || undefined),
           external_id: values.external_id,
           fedex_no: values.fedex_no,
           female_arrival_date: values.female_arrival_date
@@ -366,7 +372,7 @@ export default function NipptRegistration() {
         <Card size="small" style={{ borderRadius: 8 }}>
           <Form form={form} layout="vertical" size="small"
             initialValues={{
-              males: [{ sample_type: ["BLOOD"] }, { sample_type: ["BLOOD"] }],
+              males: [{ sample_type: ["BLOOD"] }],
               mother_sample_type: ["BLOOD"],
               female_arrival_date: dayjs(),
             }}>
@@ -379,13 +385,39 @@ export default function NipptRegistration() {
             <div style={{ marginBottom: 8, color: "#999", fontSize: 11, marginLeft: 32 }}>
               1. 本室工作人员采集；2. 申请人送来；3. 邮寄样本
             </div>
-            <Form.Item name="collection_method" style={{ marginLeft: 32, marginBottom: 0 }} initialValue="1">
+            <Form.Item name="collection_method" style={{ marginLeft: 32, marginBottom: 0 }} initialValue="3">
               <Radio.Group>
                 <Radio value="1">1. 本室采集</Radio>
                 <Radio value="2">2. 申请人送来</Radio>
                 <Radio value="3">3. 邮寄样本</Radio>
               </Radio.Group>
             </Form.Item>
+            <Row gutter={[16, 0]} style={{ marginLeft: 32, marginTop: 12 }}>
+              <Col xs={24} sm={8}>
+                <Form.Item name="sample_source" label="来源(国家)" rules={[{ required: true, message: "必填" }]} style={{ marginBottom: 8 }}>
+                  <Select options={SOURCE_OPTIONS} placeholder="选择来源" allowClear size="small" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item name="applicant" label="申请方" style={{ marginBottom: 8 }}>
+                  <Input placeholder="申请方" size="small" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item name="phone" label="电话" style={{ marginBottom: 8 }}>
+                  <Input placeholder="电话号码" size="small" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item name="application_signed" label="申请单是否签字" style={{ marginBottom: 0 }}>
+                  <Radio.Group size="small">
+                    <Radio value="YES">是</Radio>
+                    <Radio value="NO">否</Radio>
+                    <Radio value="WECHAT">微信授权</Radio>
+                  </Radio.Group>
+                </Form.Item>
+              </Col>
+            </Row>
 
             <Divider style={{ margin: "8px 0" }} />
 
@@ -405,6 +437,13 @@ export default function NipptRegistration() {
               showHeader={true}
               style={{ marginLeft: 32, marginBottom: 0 }}
               columns={[
+                { title: "采集日期", width: 140,
+                  render: () => (
+                    <Form.Item name="female_arrival_date" style={{ margin: 0 }}>
+                      <DatePicker size="small" bordered={false}
+                        style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
+                    </Form.Item>
+                  ) },
                 { title: "亲缘关系", dataIndex: "r", width: 90,
                   render: () => <Text strong style={{ fontSize: 13 }}>孕妇</Text> },
                 { title: "姓名", width: 120,
@@ -424,9 +463,9 @@ export default function NipptRegistration() {
                   ) },
                 { title: "样本类型", width: 180,
                   render: () => <Tag color="blue" style={{ margin: 0, fontSize: 12 }}>血液</Tag> },
-                { title: "采集日期", width: 140,
+                { title: "报告截止日期", width: 140,
                   render: () => (
-                    <Form.Item name="female_arrival_date" style={{ margin: 0 }}>
+                    <Form.Item name="report_deadline" style={{ margin: 0 }}>
                       <DatePicker size="small" bordered={false}
                         style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
                     </Form.Item>
@@ -451,6 +490,14 @@ export default function NipptRegistration() {
                   showHeader={false}
                   style={{ marginLeft: 32 }}
                   columns={[
+                    { title: "", width: 140,
+                      render: (_r: any, row: any) => (
+                        <Form.Item {...row.field} name={[row.field.name, "arrival_date"]} style={{ margin: 0 }}
+                          initialValue={dayjs()}>
+                          <DatePicker size="small" bordered={false}
+                            style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
+                        </Form.Item>
+                      ) },
                     { title: "", width: 90,
                       render: (_r: any, row: any) => <Text strong style={{ fontSize: 13 }}>{row.role}</Text> },
                     { title: "", width: 120,
@@ -480,8 +527,7 @@ export default function NipptRegistration() {
                       ) },
                     { title: "", width: 140,
                       render: (_r: any, row: any) => (
-                        <Form.Item {...row.field} name={[row.field.name, "arrival_date"]} style={{ margin: 0 }}
-                          initialValue={dayjs()}>
+                        <Form.Item {...row.field} name={[row.field.name, "report_deadline"]} style={{ margin: 0 }}>
                           <DatePicker size="small" bordered={false}
                             style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
                         </Form.Item>
@@ -512,21 +558,21 @@ export default function NipptRegistration() {
 
             <Row gutter={[16, 8]} style={{ marginLeft: 16 }}>
               <Col xs={24} sm={8}>
-                <Form.Item name="sample_source" label="来源(国家)" rules={[{ required: true, message: "必填" }]} style={{ marginBottom: 8 }}>
-                  <Select options={SOURCE_OPTIONS} placeholder="选择来源" allowClear size="small" />
+                <Form.Item name="sales_person" label="销售/代理" style={{ marginBottom: 8 }}>
+                  <Input placeholder="销售或代理名称" size="small" />
                 </Form.Item>
-                <Form.Item name="collection_date" label="申请日期" style={{ marginBottom: 8 }}>
-                  <DatePicker style={{ width: "100%" }} size="small" placeholder="选择日期" />
+                <Form.Item name="external_id" label="外部编号" style={{ marginBottom: 8 }}>
+                  <Input placeholder="外部编号" size="small" />
                 </Form.Item>
-                <Form.Item name="clinic_name" label="诊所/医院" style={{ marginBottom: 8 }}>
-                  <Input placeholder="诊所或医院名称" size="small" />
-                </Form.Item>
-                <Form.Item name="phone" label="电话" style={{ marginBottom: 0 }}>
-                  <Input placeholder="电话号码" size="small" />
+                <Form.Item name="fedex_no" label="快递单号" style={{ marginBottom: 0 }}>
+                  <Input placeholder="快递单号" size="small" />
                 </Form.Item>
               </Col>
 
               <Col xs={24} sm={8}>
+                <Form.Item name="email" label="邮箱" style={{ marginBottom: 8 }}>
+                  <Input placeholder="邮箱地址" size="small" />
+                </Form.Item>
                 <Form.Item label="孕周" style={{ marginBottom: 8 }}>
                   <Space>
                     <Form.Item name="gestational_age_weeks" style={{ margin: 0 }}>
@@ -539,26 +585,30 @@ export default function NipptRegistration() {
                     <Text>天</Text>
                   </Space>
                 </Form.Item>
-                <Form.Item name="calculation_method" label="计算方式" style={{ marginBottom: 8 }} initialValue="lmp">
+                <Form.Item name="calculation_method" label="计算方式" style={{ marginBottom: 0 }} initialValue="lmp">
                   <Radio.Group size="small">
                     <Radio value="lmp">末次月经</Radio>
                     <Radio value="ultrasound">B超</Radio>
                   </Radio.Group>
                 </Form.Item>
+              </Col>
+
+              <Col xs={24} sm={8}>
                 <Form.Item name="last_menstrual_period" label="末次月经" style={{ marginBottom: 8 }}>
                   <DatePicker style={{ width: "100%" }} size="small" placeholder="选择日期" />
                 </Form.Item>
-                <Form.Item name="multiple_gestation" label="单双胎" rules={[{ required: true, message: "必填" }]} style={{ marginBottom: 0 }}
+                <Form.Item name="multiple_gestation" label="单双胎" style={{ marginBottom: 8 }}
                   initialValue={false}>
                   <Radio.Group size="small" optionType="button" buttonStyle="solid">
+                    <Radio.Button value={null}>客户未填</Radio.Button>
                     <Radio.Button value={false}>单胎</Radio.Button>
                     <Radio.Button value={true}>双胎</Radio.Button>
                   </Radio.Group>
                 </Form.Item>
                 <Form.Item noStyle shouldUpdate={(prev, cur) => prev.multiple_gestation !== cur.multiple_gestation}>
                   {({ getFieldValue }) =>
-                    getFieldValue("multiple_gestation") ? (
-                      <Form.Item name="twin_type" label="双胎类型" style={{ marginTop: 8, marginBottom: 0 }} initialValue="dizygotic">
+                    getFieldValue("multiple_gestation") === true ? (
+                      <Form.Item name="twin_type" label="双胎类型" style={{ marginTop: 0, marginBottom: 0 }} initialValue="dizygotic">
                         <Radio.Group size="small">
                           <Radio value="monozygotic">同卵</Radio>
                           <Radio value="dizygotic">异卵</Radio>
@@ -567,23 +617,11 @@ export default function NipptRegistration() {
                     ) : null
                   }
                 </Form.Item>
-              </Col>
-
-              <Col xs={24} sm={8}>
-                <Form.Item name="sales_person" label="销售/代理" style={{ marginBottom: 8 }}>
-                  <Input placeholder="销售或代理名称" size="small" />
+                <Form.Item name="collection_date" label="申请日期" style={{ marginBottom: 8 }}>
+                  <DatePicker style={{ width: "100%" }} size="small" placeholder="选择日期" />
                 </Form.Item>
-                <Form.Item name="applicant" label="申请方" style={{ marginBottom: 8 }}>
-                  <Input placeholder="申请人" size="small" />
-                </Form.Item>
-                <Form.Item name="fedex_no" label="快递单号" style={{ marginBottom: 8 }}>
-                  <Input placeholder="快递单号" size="small" />
-                </Form.Item>
-                <Form.Item name="external_id" label="外部编号" style={{ marginBottom: 8 }}>
-                  <Input placeholder="外部编号" size="small" />
-                </Form.Item>
-                <Form.Item name="email" label="邮箱" style={{ marginBottom: 0 }}>
-                  <Input placeholder="邮箱地址" size="small" />
+                <Form.Item name="clinic_name" label="诊所/医院" style={{ marginBottom: 0 }}>
+                  <Input placeholder="诊所或医院名称" size="small" />
                 </Form.Item>
               </Col>
             </Row>

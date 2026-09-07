@@ -70,6 +70,7 @@ class CaseListSerializer(serializers.ModelSerializer):
             "gestational_age_weeks", "gestational_age_days",
             "clinic_name", "sales_person",
             "applicant", "case_source", "registration_type",
+            "collection_method", "application_signed",
             "expected_completion", "workflow_status", "created_at",
             "case_samples",
         ]
@@ -273,6 +274,10 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         write_only=True, required=False, default=list,
         help_text='每个父亲的样本类型列表，如 [["BLOOD","HAIR"], ["SWAB"]]'
     )
+    multiple_gestation = serializers.BooleanField(required=False, allow_null=True)
+    collection_method = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    application_signed = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    expected_completion = serializers.DateField(write_only=True, required=False, allow_null=True)
     # New fields
     external_id = serializers.CharField(write_only=True, required=False, allow_blank=True, 
                                          help_text="外部样本编号")
@@ -286,9 +291,13 @@ class CaseCreateSerializer(serializers.ModelSerializer):
     last_menstrual_period = serializers.DateField(write_only=True, required=False,
                                                    help_text="末次月经")
 
+    case_number = serializers.CharField(read_only=True)
+    id = serializers.UUIDField(read_only=True)
+
     class Meta:
         model = Case
         fields = [
+            "id", "case_number",
             "sample_id", "gestational_age_weeks", "gestational_age_days",
             "clinic_name", "clinic_contact", "sales_person",
             "applicant", "phone", "email", "multiple_gestation",
@@ -299,6 +308,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             "father_sample_types",
             "external_id", "sample_source", "fedex_no",
             "female_arrival_date", "male_arrival_dates",
+            "collection_method", "application_signed", "expected_completion",
         ]
 
     def create(self, validated_data):
@@ -354,6 +364,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             sample_source=sample_source,
             fedex_no=fedex_no,
             last_menstrual_period=last_menstrual_period,
+            multiple_gestation=bool(validated_data.get("multiple_gestation")),
             collection_date=today,
             receipt_date=today,
             receipt_time=now.time(),
