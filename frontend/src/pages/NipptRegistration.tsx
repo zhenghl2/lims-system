@@ -444,21 +444,6 @@ export default function NipptRegistration() {
                 </Tag>
               )}
             </Space>
-            {regType === "RESAMPLE" && selectedCase && (
-              <div style={{ marginTop: 8 }}>
-                <Text type="secondary">选择重采对象：</Text>
-                <Select
-                  style={{ width: 300, marginLeft: 8 }}
-                  placeholder="选择要重采的样本"
-                  value={resampleTarget}
-                  onChange={setResampleTarget}
-                  options={selectedCase.case_samples?.map((cs: any) => ({
-                    value: cs.id,
-                    label: `${cs.test_sample_id} — ${cs.patient_name} (${cs.role === "MOTHER" ? "母亲" : "父亲"})`,
-                  })) || []}
-                />
-              </div>
-            )}
           </div>
         )}
       </Card>
@@ -971,58 +956,78 @@ export default function NipptRegistration() {
       )}
 
       {/* === 重采样本 === */}
-      {regType === "RESAMPLE" && selectedCase && resampleTarget && (
+      {regType === "RESAMPLE" && selectedCase && (
         <Card size="small">
-          <Form form={form} layout="vertical" size="small">
-            <div style={{ marginBottom: 12 }}>
-              <Tag color="blue">PT: {selectedCase.pt_number}</Tag>
-              <Tag>{selectedCase.case_number}</Tag>
+          <div style={{ marginBottom: 12 }}>
+            <Tag color="blue">PT: {selectedCase.pt_number}</Tag>
+            <Tag>{selectedCase.case_number}</Tag>
+            {resampleTarget && (
               <Tag color="purple">
                 重采 →{" "}
                 {(() => {
                   const cs = selectedCase.case_samples?.find((s: any) => s.id === resampleTarget);
                   if (!cs) return "";
-                  const baseId = cs.test_sample_id || "";
+                  const baseId = cs.test_sample_id || cs.sample_id || "";
                   const existingResamples = selectedCase.case_samples?.filter(
                     (s: any) => s.resample_of === cs.id
                   ).length || 0;
                   return `${baseId}-R${existingResamples + 1}`;
                 })()}
               </Tag>
-            </div>
+            )}
+          </div>
 
-            {/* 原样本信息表格（同补充样本，7 列） */}
-            <Table
-              size="small"
-              pagination={false}
-              rowKey="id"
-              dataSource={selectedCase.case_samples || []}
-              style={{ marginBottom: 16 }}
-              columns={[
-                { title: "PT编号", dataIndex: "test_sample_id", key: "pt", width: 130,
-                  render: (v: string) => v ? <Text code style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">-</Text> },
-                { title: "姓名", dataIndex: "patient_name", key: "name", width: 100,
-                  render: (v: string) => v || "-" },
-                { title: "角色", dataIndex: "role", key: "role", width: 70,
-                  render: (v: string) => v === "MOTHER" ? <Tag color="magenta" style={{ margin: 0 }}>孕妇</Tag> : <Tag color="blue" style={{ margin: 0 }}>疑父</Tag> },
-                { title: "样本类型", dataIndex: "sample_source", key: "st", width: 80,
-                  render: (v: string) => {
-                    const m: Record<string, string> = { BLOOD: "血液", DBS: "血痕", HAIR: "毛发", SWAB: "口拭子", NAIL: "指甲", SEMEN: "精液", TOOTHBRUSH: "牙刷", CIGARETTE: "烟头", BOTTLE: "水瓶", BEARD: "胡须", FLOSS: "牙线", SEMSTAIN: "精斑", GUM: "口香糖" };
-                    return m[v] || v || "-";
-                  } },
-                { title: "采集日期", dataIndex: "collection_date", key: "cd", width: 100,
-                  render: (v: string) => v || "-" },
-                { title: "状态", dataIndex: "sample_status", key: "status", width: 90,
-                  render: (v: string) => {
-                    const m: Record<string, string> = { REGISTERED: "default", RECEIVED: "green", REJECTED: "red", IN_PROCESS: "processing", COMPLETED: "success" };
-                    const l: Record<string, string> = { REGISTERED: "已登记", RECEIVED: "已签收", REJECTED: "已拒收", IN_PROCESS: "实验中", COMPLETED: "已完成" };
-                    return <Tag color={m[v] || "default"} style={{ margin: 0 }}>{l[v] || v || "-"}</Tag>;
-                  } },
-                { title: "备注", dataIndex: "collection_notes", key: "notes", width: 140, ellipsis: true,
-                  render: (v: string) => v || "-" },
-              ] as any}
+          {/* 重采对象选择 */}
+          <div style={{ marginBottom: 12 }}>
+            <Text type="secondary">选择重采对象：</Text>
+            <Select
+              style={{ width: 320, marginLeft: 8 }}
+              placeholder="选择要重采的样本"
+              value={resampleTarget}
+              onChange={setResampleTarget}
+              options={(selectedCase.case_samples || []).map((cs: any) => ({
+                value: cs.id,
+                label: `${cs.test_sample_id || cs.sample_id || "-"} — ${cs.patient_name} (${cs.role === "MOTHER" ? "母亲" : "父亲"})`,
+              }))}
             />
+          </div>
 
+          {/* 原样本信息表格（同补充样本，7 列） */}
+          <Table
+            size="small"
+            pagination={false}
+            rowKey="id"
+            dataSource={selectedCase.case_samples || []}
+            style={{ marginBottom: 16 }}
+            columns={[
+              { title: "PT编号", dataIndex: "test_sample_id", key: "pt", width: 150,
+                render: (v: string, r: any) => v
+                  ? <Text code style={{ fontSize: 12 }}>{v}</Text>
+                  : <Text type="secondary" style={{ fontSize: 11 }}>{r.sample_id || "-"}</Text> },
+              { title: "姓名", dataIndex: "patient_name", key: "name", width: 100,
+                render: (v: string) => v || "-" },
+              { title: "角色", dataIndex: "role", key: "role", width: 70,
+                render: (v: string) => v === "MOTHER" ? <Tag color="magenta" style={{ margin: 0 }}>孕妇</Tag> : <Tag color="blue" style={{ margin: 0 }}>疑父</Tag> },
+              { title: "样本类型", dataIndex: "sample_source", key: "st", width: 80,
+                render: (v: string) => {
+                  const m: Record<string, string> = { BLOOD: "血液", DBS: "血痕", HAIR: "毛发", SWAB: "口拭子", NAIL: "指甲", SEMEN: "精液", TOOTHBRUSH: "牙刷", CIGARETTE: "烟头", BOTTLE: "水瓶", BEARD: "胡须", FLOSS: "牙线", SEMSTAIN: "精斑", GUM: "口香糖" };
+                  return m[v] || v || "-";
+                } },
+              { title: "采集日期", dataIndex: "collection_date", key: "cd", width: 100,
+                render: (v: string) => v || "-" },
+              { title: "状态", dataIndex: "sample_status", key: "status", width: 90,
+                render: (v: string) => {
+                  const m: Record<string, string> = { REGISTERED: "default", RECEIVED: "green", REJECTED: "red", IN_PROCESS: "processing", COMPLETED: "success" };
+                  const l: Record<string, string> = { REGISTERED: "已登记", RECEIVED: "已签收", REJECTED: "已拒收", IN_PROCESS: "实验中", COMPLETED: "已完成" };
+                  return <Tag color={m[v] || "default"} style={{ margin: 0 }}>{l[v] || v || "-"}</Tag>;
+                } },
+              { title: "备注", dataIndex: "collection_notes", key: "notes", width: 140, ellipsis: true,
+                render: (v: string) => v || "-" },
+            ] as any}
+          />
+
+          {resampleTarget && (
+          <Form form={form} layout="vertical" size="small">
             <Row gutter={12}>
               <Col xs={24} sm={6}>
                 <Form.Item name="re_arrival_date" label="到样日期" style={{ marginBottom: 8 }}>
@@ -1032,7 +1037,8 @@ export default function NipptRegistration() {
               <Col xs={24} sm={6}>
                 <Form.Item label="原编号">
                   <Input disabled value={
-                    selectedCase.case_samples?.find((s: any) => s.id === resampleTarget)?.test_sample_id || ""
+                    selectedCase.case_samples?.find((s: any) => s.id === resampleTarget)?.test_sample_id
+                    || selectedCase.case_samples?.find((s: any) => s.id === resampleTarget)?.sample_id || ""
                   } />
                 </Form.Item>
               </Col>
@@ -1083,6 +1089,7 @@ export default function NipptRegistration() {
               </Button>
             </div>
           </Form>
+          )}
         </Card>
       )}
 
