@@ -561,6 +561,13 @@ class CaseViewSet(viewsets.ModelViewSet):
         case_sample_id = request.data.get("case_sample_id")
         patient_name = request.data.get("patient_name", "").strip()
         sample_source = request.data.get("sample_source", "BLOOD")
+        notes = (request.data.get("notes", "") or "").strip()
+        ga_weeks = request.data.get("gestational_age_weeks")
+        ga_days = request.data.get("gestational_age_days")
+
+        # 兼容多类型：sample_source 可能是列表（重采换类型，如血液→口拭子）
+        if isinstance(sample_source, list):
+            sample_source = sample_source[0] if sample_source else "BLOOD"
 
         if not case_sample_id:
             raise ValidationError("case_sample_id is required")
@@ -569,17 +576,28 @@ class CaseViewSet(viewsets.ModelViewSet):
         if not original_cs:
             raise NotFound("CaseSample not found in this case")
 
-        # Determine next resample number
-        if original_cs.resample_number:
-            next_num = original_cs.resample_number + 1
-        else:
-            max_existing = case.case_samples.filter(
-                resample_of=original_cs
-            ).aggregate(m=Max("resample_number"))["m"]
-            next_num = (max_existing or 1) + 1
+        # Determine next resample number — Case 级全局唯一
+        # （sample_id 为 {case_number}-RESAMPLE-{n}，不同原样本的重采也必须全局递增，否则撞唯一键）
+        max_existing = case.case_samples.filter(
+            resample_number__isnull=False
+        ).aggregate(m=Max("resample_number"))["m"]
+        next_num = (max_existing or 0) + 1
 
         if not patient_name:
             patient_name = original_cs.patient_name or original_cs.sample.patient_name
+
+        # 孕妇重采：孕周更新 Case（旧值轨迹记入备注，便于统计重采时孕周）
+        ga_note = ""
+        if original_cs.role == "MOTHER" and ga_weeks is not None:
+            old_ga = f"{case.gestational_age_weeks or 0}周{case.gestational_age_days or 0}天"
+            new_ga = f"{ga_weeks}周{ga_days or 0}天"
+            if old_ga != new_ga:
+                ga_note = f"[重采] 孕周 {old_ga} → {new_ga}"
+                case.gestational_age_weeks = ga_weeks
+                case.gestational_age_days = ga_days or 0
+                case.save(update_fields=["gestational_age_weeks", "gestational_age_days"])
+
+        final_notes = " | ".join(x for x in [notes, ga_note] if x)
 
         with transaction.atomic():
             sample_type = original_cs.sample.sample_type
@@ -606,6 +624,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                 resample_of=original_cs,
                 resample_number=next_num,
                 arrival_date=arrival_date,
+                collection_notes=final_notes,
             )
             new_cs.test_sample_id = case.generate_test_sample_id(new_cs)
             new_cs.save(update_fields=["test_sample_id"])
