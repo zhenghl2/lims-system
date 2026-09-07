@@ -6,12 +6,12 @@ import {
   Card, Form, Input, Select, Button, message, Typography,
   Divider, Table, Tag, Modal, DatePicker, Row, Col,
   Radio, Space, Collapse, InputNumber, Upload,
-  Checkbox,
+  Checkbox, Descriptions,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, SendOutlined,
   SearchOutlined,
-  CopyOutlined, InboxOutlined,
+  CopyOutlined, InboxOutlined, SaveOutlined,
 } from "@ant-design/icons";
 
 import { casesApi } from "../api";
@@ -53,6 +53,64 @@ const SOURCE_OPTIONS = [
   { value: "YLH西班牙LABGENETICS", label: "YLH西班牙LABGENETICS" },
 ];
 
+// ===== 草稿保存（localStorage）=====
+const DRAFT_KEY = "nippt_reg_draft_v1";
+const DATE_FIELDS = ["female_arrival_date", "last_menstrual_period", "collection_date"];
+
+function saveDraft(values: any): { values: any; savedAt: string } {
+  const snapshot = JSON.parse(JSON.stringify(values ?? {}));
+  // dayjs 对象序列化为 YYYY-MM-DD
+  DATE_FIELDS.forEach((k) => {
+    if (snapshot[k]) snapshot[k] = dayjs(snapshot[k]).format("YYYY-MM-DD");
+  });
+  if (Array.isArray(snapshot.males)) {
+    snapshot.males = snapshot.males.map((m: any) => ({
+      ...m,
+      arrival_date: m?.arrival_date ? dayjs(m.arrival_date).format("YYYY-MM-DD") : undefined,
+      report_deadline: m?.report_deadline ? dayjs(m.report_deadline).format("YYYY-MM-DD") : undefined,
+    }));
+  }
+  const payload = { values: snapshot, savedAt: new Date().toISOString() };
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(payload));
+  return payload;
+}
+
+function loadDraft(): { values: any; savedAt: string } | null {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || !data.values) return null;
+    // 日期字符串 → dayjs
+    DATE_FIELDS.forEach((k) => {
+      if (data.values[k]) data.values[k] = dayjs(data.values[k]);
+    });
+    if (Array.isArray(data.values.males)) {
+      data.values.males = data.values.males.map((m: any) => ({
+        ...m,
+        arrival_date: m?.arrival_date ? dayjs(m.arrival_date) : undefined,
+        report_deadline: m?.report_deadline ? dayjs(m.report_deadline) : undefined,
+      }));
+    }
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY);
+}
+
+// 汇总显示工具
+const CM_LABEL: Record<string, string> = { "1": "1. 本室采集", "2": "2. 申请人送来", "3": "3. 邮寄样本" };
+const SIGNED_LABEL: Record<string, string> = { YES: "是", NO: "否", WECHAT: "微信授权" };
+const RISK_LABELS: [string, string][] = [
+  ["transfusion", "异体输血(一年内)"], ["transplant", "骨髓/器官移植(一年内)"],
+  ["immunotherapy", "免疫/干细胞治疗(一个月内)"], ["miscarriage", "流产史(三个月内)"],
+  ["reduction", "减胎"], ["surrogacy", "代孕"], ["ivf", "试管婴儿"], ["week5", "孕期已满5周"],
+];
+
 export default function NipptRegistration() {
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
@@ -64,6 +122,10 @@ export default function NipptRegistration() {
   // Recent cases
   const [recentCases, setRecentCases] = useState<any[]>([]);
   const [casesLoading, setCasesLoading] = useState(true);
+
+  // 草稿汇总快照
+  const [draftSummary, setDraftSummary] = useState<{ values: any; savedAt: string } | null>(null);
+  const [summaryVisible, setSummaryVisible] = useState(false);
 
   // Token modal
   const [tokenModal, setTokenModal] = useState<{
@@ -212,6 +274,27 @@ export default function NipptRegistration() {
     }
   };
 
+  // 自动恢复草稿：页面挂载或切回「首次检测」时（regType 变化触发）
+  useEffect(() => {
+    if (regType !== "FIRST") return;
+    const draft = loadDraft();
+    if (draft && draft.values && Object.keys(draft.values).length > 0) {
+      form.setFieldsValue(draft.values);
+      const t = dayjs(draft.savedAt).format("HH:mm");
+      message.info(`已恢复未提交的草稿（保存于 ${t}）`);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [regType]);
+
+  // 保存草稿
+  const handleSaveDraft = () => {
+    const values = form.getFieldsValue();
+    const payload = saveDraft(values);
+    setDraftSummary(payload);
+    setSummaryVisible(true);
+    message.success(`草稿已保存 ${dayjs().format("HH:mm:ss")}`);
+  };
+
   // Submit registration
   const handleSubmit = async () => {
     const values = await form.validateFields();
@@ -279,6 +362,9 @@ export default function NipptRegistration() {
       }
 
       form.resetFields();
+      clearDraft();
+      setDraftSummary(null);
+      setSummaryVisible(false);
       setSelectedCase(null);
       setPtSearch("");
       setResampleTarget(null);
@@ -673,10 +759,87 @@ export default function NipptRegistration() {
               <Input.TextArea rows={2} placeholder="内部备注" size="small" />
             </Form.Item>
 
-            <Button type="primary" icon={<PlusOutlined />} loading={loading}
-              onClick={handleSubmit} size="large" block>
-              提交登记
-            </Button>
+            <Row gutter={12} style={{ marginBottom: 0 }}>
+              <Col flex="auto">
+                <Button type="primary" icon={<PlusOutlined />} loading={loading}
+                  onClick={handleSubmit} size="large" block>
+                  提交登记
+                </Button>
+              </Col>
+              <Col flex="220px">
+                <Button icon={<SaveOutlined />} onClick={handleSaveDraft} size="large" block>
+                  保存草稿
+                </Button>
+              </Col>
+            </Row>
+
+            {summaryVisible && draftSummary && (
+              <Card size="small" style={{ marginTop: 16, background: "#fafcff", borderColor: "#d6e4ff" }}
+                title={<Text strong style={{ fontSize: 14 }}>📋 登记内容汇总（保存于 {dayjs(draftSummary.savedAt).format("YYYY-MM-DD HH:mm:ss")}）</Text>}
+                extra={<Button type="text" size="small" onClick={() => setSummaryVisible(false)}>关闭</Button>}>
+                <Descriptions size="small" column={2} bordered
+                  labelStyle={{ width: 110, fontSize: 12 }}
+                  contentStyle={{ fontSize: 12 }}>
+                  <Descriptions.Item label="采集方式" span={1}>{CM_LABEL[draftSummary.values?.collection_method] || "—"}</Descriptions.Item>
+                  <Descriptions.Item label="来源(国家)" span={1}>{draftSummary.values?.sample_source || "—"}</Descriptions.Item>
+                  <Descriptions.Item label="申请方" span={1}>{draftSummary.values?.applicant || "—"}</Descriptions.Item>
+                  <Descriptions.Item label="电话" span={1}>{draftSummary.values?.phone || "—"}</Descriptions.Item>
+                  <Descriptions.Item label="申请单签字" span={1}>{SIGNED_LABEL[draftSummary.values?.application_signed] || "—"}</Descriptions.Item>
+                  <Descriptions.Item label="报告截止日期" span={1}>
+                    {draftSummary.values?.report_deadline
+                      ? dayjs(draftSummary.values.report_deadline).format("YYYY-MM-DD") : "—"}
+                  </Descriptions.Item>
+
+                  <Descriptions.Item label="孕妇" span={2}>
+                    {draftSummary.values?.mother_name || "—"}
+                    {draftSummary.values?.mother_ethnicity ? `（${draftSummary.values.mother_ethnicity}）` : ""}
+                    {draftSummary.values?.female_arrival_date
+                      ? ` · 采集 ${dayjs(draftSummary.values.female_arrival_date).format("YYYY-MM-DD")}` : ""}
+                  </Descriptions.Item>
+                  {(draftSummary.values?.males || []).map((m: any, i: number) => (
+                    <Descriptions.Item label={`疑父${(draftSummary.values?.males || []).length > 1 ? i + 1 : ""}`} span={2} key={i}>
+                      {m?.name || "—"}
+                      {m?.ethnicity ? `（${m.ethnicity}）` : ""}
+                      {m?.sample_type?.length ? ` · ${m.sample_type.join("+")}` : ""}
+                      {m?.arrival_date ? ` · 采集 ${dayjs(m.arrival_date).format("YYYY-MM-DD")}` : ""}
+                      {m?.report_deadline ? ` · 截止 ${dayjs(m.report_deadline).format("YYYY-MM-DD")}` : ""}
+                    </Descriptions.Item>
+                  ))}
+
+                  <Descriptions.Item label="销售/代理" span={1}>{draftSummary.values?.sales_person || "—"}</Descriptions.Item>
+                  <Descriptions.Item label="外部编号" span={1}>{draftSummary.values?.external_id || "—"}</Descriptions.Item>
+                  <Descriptions.Item label="快递单号" span={1}>{draftSummary.values?.fedex_no || "—"}</Descriptions.Item>
+                  <Descriptions.Item label="邮箱" span={1}>{draftSummary.values?.email || "—"}</Descriptions.Item>
+                  <Descriptions.Item label="孕周" span={1}>
+                    {draftSummary.values?.gestational_age_weeks != null || draftSummary.values?.gestational_age_days != null
+                      ? `${draftSummary.values?.gestational_age_weeks ?? 0}周${draftSummary.values?.gestational_age_days ?? 0}天` : "—"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="计算方式" span={1}>
+                    {draftSummary.values?.calculation_method === "lmp" ? "末次月经" : draftSummary.values?.calculation_method === "ultrasound" ? "B超" : "—"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="末次月经" span={1}>
+                    {draftSummary.values?.last_menstrual_period ? dayjs(draftSummary.values.last_menstrual_period).format("YYYY-MM-DD") : "—"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="单双胎" span={1}>
+                    {draftSummary.values?.multiple_gestation === true ? "双胎"
+                      : draftSummary.values?.multiple_gestation === false ? "单胎" : "客户未填"}
+                    {draftSummary.values?.multiple_gestation === true
+                      ? (draftSummary.values?.twin_type === "monozygotic" ? "（同卵）" : draftSummary.values?.twin_type === "dizygotic" ? "（异卵）" : "") : ""}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="申请日期" span={1}>
+                    {draftSummary.values?.collection_date ? dayjs(draftSummary.values.collection_date).format("YYYY-MM-DD") : "—"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="诊所/医院" span={1}>{draftSummary.values?.clinic_name || "—"}</Descriptions.Item>
+                  <Descriptions.Item label="风险提示「是」" span={2}>
+                    {(() => {
+                      const yes = RISK_LABELS.filter(([k]) => draftSummary.values?.risk?.[k] === true);
+                      return yes.length ? yes.map(([, l]) => l).join("、") : "无";
+                    })()}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="备注" span={2}>{draftSummary.values?.notes || "—"}</Descriptions.Item>
+                </Descriptions>
+              </Card>
+            )}
           </Form>
         </Card>
       )}
