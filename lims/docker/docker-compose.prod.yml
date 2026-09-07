@@ -24,6 +24,7 @@ services:
       context: ../..
       dockerfile: lims/docker/Dockerfile.worker
     volumes:
+      - ../../:/app
       - media:/app/media
     env_file: ../../.env
     command: celery -A lims.celery_app worker --loglevel=info --concurrency=4
@@ -38,6 +39,8 @@ services:
     build:
       context: ../..
       dockerfile: lims/docker/Dockerfile.worker
+    volumes:
+      - ../../:/app
     env_file: ../../.env
     command: celery -A lims.celery_app beat --loglevel=info
     depends_on:

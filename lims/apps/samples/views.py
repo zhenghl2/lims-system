@@ -586,6 +586,15 @@ class SampleViewSet(viewsets.ModelViewSet):
         sample.experiment_history = history
         sample.save()
 
+        # CRM2 integration: notify recollection
+        from lims.apps.integration.webhooks import enqueue_webhook
+        enqueue_webhook("sample.recollect", {
+            "sample_id": sample.sample_id,
+            "lims_uuid": str(sample.id),
+            "vg_id": sample.vg_id or "",
+            "reason": reason,
+        })
+
         return Response({
             "status": "COMPLETED",
             "vg_id": sample.vg_id,

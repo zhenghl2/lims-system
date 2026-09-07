@@ -1,3 +1,4 @@
+import os
 """Production settings."""
 from .base import *  # noqa
 import environ
@@ -76,3 +77,23 @@ LOGGING = {
     },
 }
 
+
+
+# ===== CRM2 Integration (added for CRM system) =====
+def _env_or_file(key):
+    v = os.environ.get(key, "")
+    if v:
+        return v
+    try:
+        with open("/app/.env") as _f:
+            for _line in _f:
+                if _line.startswith(key + "="):
+                    return _line.strip().split("=", 1)[1]
+    except Exception:
+        pass
+    return ""
+
+LIMS_API_KEY = _env_or_file("LIMS_API_KEY")
+CRM_WEBHOOK_URL = _env_or_file("CRM_WEBHOOK_URL")
+CRM_WEBHOOK_KEY = _env_or_file("CRM_WEBHOOK_KEY")
+INSTALLED_APPS.append("lims.apps.integration")

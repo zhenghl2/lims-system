@@ -60,3 +60,8 @@ certs/
 lims/docker/certs/
 *.bak_*
 tmp_docs/
+/backups/
+/celerybeat-schedule
+/settings_patch.py
+/srv_hooks_patch.py
+/srv_settings_patch.py

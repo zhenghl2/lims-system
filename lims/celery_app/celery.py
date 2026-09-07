@@ -18,19 +18,19 @@ app.autodiscover_tasks()
 # Configure Celery Beat schedule
 app.conf.beat_schedule = {
     "create-audit-partition": {
-        "task": "celery_app.tasks.audit.create_monthly_partition",
+        "task": "lims.celery_app.tasks.audit.create_monthly_partition",
         "schedule": 86400,  # daily
     },
     "check-sample-retention": {
-        "task": "celery_app.tasks.samples.check_retention_expirations",
+        "task": "lims.celery_app.tasks.samples.check_retention_expirations",
         "schedule": 86400,  # daily
     },
     "check-reagent-expiry": {
-        "task": "celery_app.tasks.reagents.check_reagent_expirations",
+        "task": "lims.celery_app.tasks.reagents.check_reagent_expirations",
         "schedule": 86400,  # daily
     },
     "verify-audit-chain": {
-        "task": "celery_app.tasks.audit.verify_integrity",
+        "task": "lims.celery_app.tasks.audit.verify_integrity",
         "schedule": 86400,  # daily
     },
 }

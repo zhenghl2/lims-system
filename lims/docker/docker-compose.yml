@@ -17,7 +17,7 @@ services:
       - DJANGO_ALLOWED_HOSTS=123.56.45.184,localhost,web,docker-web-1
       - DJANGO_SECRET_KEY=***
       - DATABASE_URL=postgresql://lims:***@db:5432/lims
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:redis123!@redis:6379/0
     depends_on:
       - db
       - redis
@@ -45,8 +45,9 @@ services:
 
   redis:
     image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "redis123!"]
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis-data:/data
     networks:
@@ -74,7 +75,7 @@ services:
     ports:
       - "5555:5555"
     environment:
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_URL=redis://:redis123!@redis:6379/0
     depends_on:
       - redis
     networks:
