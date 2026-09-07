@@ -66,3 +66,5 @@ tmp_docs/
 /srv_hooks_patch.py
 /srv_settings_patch.py
 lims/apps/settings_patch.py
+*.bak-*
+*.bak
