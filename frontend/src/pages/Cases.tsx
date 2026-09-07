@@ -305,7 +305,7 @@ export default function Cases() {
           <>
             <Progress percent={selectedCase.progress || 0} style={{ marginBottom: 16 }} />
 
-            <Collapse defaultActiveKey={["basic"]} size="small" style={{ marginBottom: 12 }}>
+            <Collapse defaultActiveKey={["basic", "samples"]} size="small" style={{ marginBottom: 12 }}>
               <Collapse.Panel key="basic" header="基本信息">
                 <Space direction="vertical" size={2}>
                   <Text><Text type="secondary">母亲:</Text> {(selectedCase as any).mother_name || "-"}</Text>
