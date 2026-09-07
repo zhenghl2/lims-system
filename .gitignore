@@ -65,3 +65,4 @@ tmp_docs/
 /settings_patch.py
 /srv_hooks_patch.py
 /srv_settings_patch.py
+lims/apps/settings_patch.py
