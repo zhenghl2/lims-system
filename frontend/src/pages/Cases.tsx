@@ -166,7 +166,7 @@ export default function Cases() {
 
   const columns = [
     {
-      title: "Case 编号", dataIndex: "case_number", width: 180,
+      title: "Case 编号", dataIndex: "case_number", width: 170,
       render: (v: string) => <Text code>{v}</Text>,
     },
     {
@@ -194,7 +194,7 @@ export default function Cases() {
             : <Text type="secondary">-</Text>;
         },
       },
-      { title: "来源", dataIndex: "case_source", width: 120, responsive: ["md" as const],
+      { title: "来源", dataIndex: "case_source", width: 110, responsive: ["md" as const],
       render: (v: string) => v || "-",
     },
     {
@@ -211,7 +211,7 @@ export default function Cases() {
       },
     },
     {
-      title: "备注", key: "evts", width: 190,
+      title: "备注", key: "evts", width: 180,
       render: (_: any, r: any) => {
         const evts: { label: string; color: string; tip: string }[] = [];
         if (r.notes) {
@@ -251,22 +251,22 @@ export default function Cases() {
       render: (v: boolean) => v ? <Tag color="red">加急</Tag> : null,
     },
     {
-      title: "进度", dataIndex: "progress", width: 150, responsive: ["lg" as const],
+      title: "进度", dataIndex: "progress", width: 140, responsive: ["lg" as const],
       render: (v: number) => <Progress percent={v || 0} size="small" />,
     },
     {
-      title: "签收时间", width: 110, responsive: ["lg" as const],
+      title: "签收时间", width: 100, responsive: ["lg" as const],
         render: (_: any, r: any) => {
           const cs = r.case_samples?.find((s: any) => s.received_at);
           if (cs?.received_at) return dayjs(cs.received_at).format("MM-DD HH:mm");
           return <Text type="secondary">-</Text>;
         },
       },
-      { title: "创建时间", dataIndex: "created_at", width: 110, responsive: ["lg" as const],
+      { title: "创建时间", dataIndex: "created_at", width: 100, responsive: ["lg" as const],
       render: (v: string) => <Text style={{ fontSize: 12 }}>{fmtDate(v)}</Text>,
     },
     {
-      title: "操作", width: 120, align: "center" as const,
+      title: "操作", width: 120, align: "center" as const, fixed: "right" as const,
       render: (_: any, r: any) => (
         <Space size={0}>
           <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => openDetail(r.id)} />
@@ -286,7 +286,7 @@ export default function Cases() {
   ];
 
   return (
-    <div style={{ padding: 16, maxWidth: 1400, margin: "0 auto" }}>
+    <div style={{ padding: 16 }}>
       <Title level={4}><EyeOutlined style={{ marginRight: 8, color: "#1677ff" }} />案例管理</Title>
 
       <Space style={{ marginBottom: 16 }} wrap>
@@ -367,6 +367,7 @@ export default function Cases() {
         rowKey="id"
         loading={loading}
         size="small"
+        scroll={{ x: 1680, y: "calc(100vh - 280px)" }}
         pagination={{
           current: page, total, pageSize,
           showSizeChanger: true,
