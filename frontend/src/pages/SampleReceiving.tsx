@@ -72,6 +72,7 @@ interface CaseSampleRow {
   actualSampleType: string;
   collectionDate: string;
   sampleSource: string;
+  salesPerson: string;
   fedexNo: string;
   externalId: string;
   phone: string;
@@ -139,6 +140,7 @@ export default function SampleReceiving() {
           actualSampleType: cs.actual_sample_type || cs.sample_source || "BLOOD",
           collectionDate: cs.collection_date || "",
           sampleSource: cs.case_source || "",
+          salesPerson: c.sales_person || "",
           fedexNo: cs.fedex_no || "",
           externalId: cs.external_id || caseExtId || "",
           phone: c.phone || "",
@@ -489,6 +491,10 @@ export default function SampleReceiving() {
     {
       title: "样本来源", dataIndex: "sampleSource", key: "src", width: 90,
       render: (v: string) => v || "—",
+    },
+    {
+      title: "销售/代理", dataIndex: "salesPerson", key: "sales", width: 100,
+      render: (v: string) => v ? <Text style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">-</Text>,
     },
     {
       title: "快递", dataIndex: "fedexNo", key: "fx", width: 100,
