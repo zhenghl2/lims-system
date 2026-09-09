@@ -335,8 +335,16 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         now = datetime.datetime.now()
 
         prefix = f"NIPPT-{today.strftime('%Y%m%d')}"
-        count = Case.objects.filter(case_number__startswith=prefix).count() + 1
-        case_number = f"{prefix}-{count:04d}"
+        last_no = (Case.objects.filter(case_number__startswith=prefix)
+                   .order_by("-case_number").values_list("case_number", flat=True).first())
+        if last_no:
+            try:
+                seq = int(last_no.rsplit("-", 1)[1]) + 1
+            except (ValueError, IndexError):
+                seq = Case.objects.filter(case_number__startswith=prefix).count() + 1
+        else:
+            seq = 1
+        case_number = f"{prefix}-{seq:04d}"
 
         case = Case.objects.create(
             case_number=case_number,

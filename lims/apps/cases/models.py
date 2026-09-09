@@ -361,8 +361,16 @@ class NipptPreProcessingBatch(models.Model):
         from django.utils import timezone
         now = timezone.now()
         prefix = now.strftime("%Y%m%d-%H")
-        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
-        return f"{prefix}-{count:03d}"
+        last_no = (cls.objects.filter(batch_number__startswith=prefix)
+                   .order_by("-batch_number").values_list("batch_number", flat=True).first())
+        if last_no:
+            try:
+                seq = int(last_no.rsplit("-", 1)[1]) + 1
+            except (ValueError, IndexError):
+                seq = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        else:
+            seq = 1
+        return f"{prefix}-{seq:03d}"
 
 
 class NipptPreProcessingSample(models.Model):
@@ -477,8 +485,16 @@ class NipptExtractionBatch(models.Model):
         from django.utils import timezone
         now = timezone.now()
         prefix = now.strftime("%Y%m%d-%H")
-        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
-        return f"{prefix}-{count:03d}"
+        last_no = (cls.objects.filter(batch_number__startswith=prefix)
+                   .order_by("-batch_number").values_list("batch_number", flat=True).first())
+        if last_no:
+            try:
+                seq = int(last_no.rsplit("-", 1)[1]) + 1
+            except (ValueError, IndexError):
+                seq = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        else:
+            seq = 1
+        return f"{prefix}-{seq:03d}"
 
 
 class NipptExtractionSample(models.Model):
@@ -556,8 +572,16 @@ class NipptLibraryBatch(models.Model):
         from django.utils import timezone
         now = timezone.now()
         prefix = now.strftime("%Y%m%d-%H")
-        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
-        return f"{prefix}-{count:03d}"
+        last_no = (cls.objects.filter(batch_number__startswith=prefix)
+                   .order_by("-batch_number").values_list("batch_number", flat=True).first())
+        if last_no:
+            try:
+                seq = int(last_no.rsplit("-", 1)[1]) + 1
+            except (ValueError, IndexError):
+                seq = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        else:
+            seq = 1
+        return f"{prefix}-{seq:03d}"
 
 
 class NipptLibrarySample(models.Model):
@@ -632,8 +656,16 @@ class NipptPoolingBatch(models.Model):
         from django.utils import timezone
         now = timezone.now()
         prefix = now.strftime("%Y%m%d-%H")
-        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
-        return f"{prefix}-{count:03d}"
+        last_no = (cls.objects.filter(batch_number__startswith=prefix)
+                   .order_by("-batch_number").values_list("batch_number", flat=True).first())
+        if last_no:
+            try:
+                seq = int(last_no.rsplit("-", 1)[1]) + 1
+            except (ValueError, IndexError):
+                seq = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        else:
+            seq = 1
+        return f"{prefix}-{seq:03d}"
 
 
 class NipptPoolingSample(models.Model):
@@ -706,8 +738,16 @@ class NipptHybSeqBatch(models.Model):
         from django.utils import timezone
         now = timezone.now()
         prefix = now.strftime("%Y%m%d-%H")
-        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
-        return f"{prefix}-{count:03d}"
+        last_no = (cls.objects.filter(batch_number__startswith=prefix)
+                   .order_by("-batch_number").values_list("batch_number", flat=True).first())
+        if last_no:
+            try:
+                seq = int(last_no.rsplit("-", 1)[1]) + 1
+            except (ValueError, IndexError):
+                seq = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        else:
+            seq = 1
+        return f"{prefix}-{seq:03d}"
 
 
 class NipptHybSeqSample(models.Model):
@@ -781,8 +821,16 @@ class NipptBioinfoBatch(models.Model):
         from django.utils import timezone
         now = timezone.now()
         prefix = now.strftime("%Y%m%d-%H")
-        count = cls.objects.filter(batch_number__startswith=prefix).count() + 1
-        return f"{prefix}-{count:03d}"
+        last_no = (cls.objects.filter(batch_number__startswith=prefix)
+                   .order_by("-batch_number").values_list("batch_number", flat=True).first())
+        if last_no:
+            try:
+                seq = int(last_no.rsplit("-", 1)[1]) + 1
+            except (ValueError, IndexError):
+                seq = cls.objects.filter(batch_number__startswith=prefix).count() + 1
+        else:
+            seq = 1
+        return f"{prefix}-{seq:03d}"
 
 
 class NipptBioinfoSample(models.Model):

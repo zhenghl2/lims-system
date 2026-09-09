@@ -388,8 +388,16 @@ class CaseViewSet(viewsets.ModelViewSet):
             if protocol:
                 today_str = date.today().strftime("%Y%m%d")
                 prefix = f"RUN-{case.case_number}"
-                count = SampleRun.objects.filter(run_number__startswith=prefix).count() + 1
-                run_number = f"{prefix}-{count:04d}"
+                last_run = (SampleRun.objects.filter(run_number__startswith=prefix)
+                            .order_by("-run_number").values_list("run_number", flat=True).first())
+                if last_run:
+                    try:
+                        seq = int(last_run.rsplit("-", 1)[1]) + 1
+                    except (ValueError, IndexError):
+                        seq = SampleRun.objects.filter(run_number__startswith=prefix).count() + 1
+                else:
+                    seq = 1
+                run_number = f"{prefix}-{seq:04d}"
 
                 run = SampleRun.objects.create(
                     run_number=run_number,
