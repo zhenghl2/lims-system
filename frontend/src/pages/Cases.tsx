@@ -45,6 +45,7 @@ export default function Cases() {
   const [statusFilter, setStatusFilter] = useState<string>("");
   const [sourceFilter, setSourceFilter] = useState<string>("");
   const [dateRange, setDateRange] = useState<[any, any] | null>(null);
+  const [dateType, setDateType] = useState<string>("created");
   const [data, setData] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
@@ -62,10 +63,19 @@ export default function Cases() {
     try {
       const params: any = { page: p, page_size: 20 };
       if (search) params.search = search;
-      if (statusFilter) params.workflow_status = statusFilter;
+      if (statusFilter) {
+        if (statusFilter === "has_resample") params.has_resample = "true";
+        else params.workflow_status = statusFilter;
+      }
       if (sourceFilter) params.applicant = sourceFilter;
-      if (dateRange && dateRange[0]) params.created_after = dayjs(dateRange[0]).format("YYYY-MM-DD");
-      if (dateRange && dateRange[1]) params.created_before = dayjs(dateRange[1]).format("YYYY-MM-DD");
+      if (dateRange && dateRange[0]) {
+        const k1 = dateType === "received" ? "received_after" : "created_after";
+        params[k1] = dayjs(dateRange[0]).format("YYYY-MM-DD");
+      }
+      if (dateRange && dateRange[1]) {
+        const k2 = dateType === "received" ? "received_before" : "created_before";
+        params[k2] = dayjs(dateRange[1]).format("YYYY-MM-DD");
+      }
       const r = await casesApi.list(params);
       setData(r.data?.results || []);
       setTotal(r.data?.count || 0);
@@ -73,7 +83,7 @@ export default function Cases() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadData(1); }, [search, statusFilter, sourceFilter, dateRange, page]);
+  useEffect(() => { loadData(1); }, [search, statusFilter, sourceFilter, dateRange, dateType, page]);
 
   const doRedo = async () => {
     if (!redoTarget) return;
@@ -167,7 +177,13 @@ export default function Cases() {
       ),
     },
     {
-      title: "来源", dataIndex: "case_source", width: 120, responsive: ["md" as const],
+      title: "外部编号", width: 100, responsive: ["md" as const],
+        render: (_: any, r: any) => {
+          const cs = r.case_samples?.find((s: any) => s.role === "MOTHER") || r.case_samples?.[0];
+          return cs?.external_id ? <Text style={{ fontSize: 12 }}>{cs.external_id}</Text> : <Text type="secondary">-</Text>;
+        },
+      },
+      { title: "来源", dataIndex: "case_source", width: 120, responsive: ["md" as const],
       render: (v: string) => v || "-",
     },
     {
@@ -187,7 +203,14 @@ export default function Cases() {
       render: (v: number) => <Progress percent={v || 0} size="small" />,
     },
     {
-      title: "创建时间", dataIndex: "created_at", width: 110, responsive: ["lg" as const],
+      title: "签收时间", width: 110, responsive: ["lg" as const],
+        render: (_: any, r: any) => {
+          const cs = r.case_samples?.find((s: any) => s.received_at);
+          if (cs?.received_at) return dayjs(cs.received_at).format("MM-DD HH:mm");
+          return <Text type="secondary">-</Text>;
+        },
+      },
+      { title: "创建时间", dataIndex: "created_at", width: 110, responsive: ["lg" as const],
       render: (v: string) => <Text style={{ fontSize: 12 }}>{fmtDate(v)}</Text>,
     },
     {
@@ -263,6 +286,19 @@ export default function Cases() {
           <Select.Option value="REPORT_DRAFT">报告草稿</Select.Option>
           <Select.Option value="COMPLETED">已完成</Select.Option>
           <Select.Option value="REPORTED">已报告</Select.Option>
+          <Select.Option value="REJECTED">已拒收</Select.Option>
+          <Select.Option value="HAS_FAILURE">有失败</Select.Option>
+          <Select.Option value="CANCELLED">已取消</Select.Option>
+          <Select.Option value="has_resample">有重采</Select.Option>
+        </Select>
+        <Select
+          value={dateType}
+          onChange={(v) => { setDateType(v); setDateRange(null); setPage(1); }}
+          style={{ width: 100 }}
+          size="middle"
+        >
+          <Select.Option value="created">创建时间</Select.Option>
+          <Select.Option value="received">签收时间</Select.Option>
         </Select>
         <DatePicker.RangePicker
           placeholder={["开始日期", "结束日期"]}

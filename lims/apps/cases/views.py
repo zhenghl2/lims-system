@@ -68,6 +68,21 @@ class CaseViewSet(viewsets.ModelViewSet):
         date_before = self.request.query_params.get("created_before", "").strip()
         if date_before:
             qs = qs.filter(created_at__date__lte=date_before)
+
+        # 签收时间过滤（按首个样本 received_at）
+        received_after = self.request.query_params.get("received_after", "").strip()
+        if received_after:
+            qs = qs.filter(case_samples__received_at__date__gte=received_after).distinct()
+        received_before = self.request.query_params.get("received_before", "").strip()
+        if received_before:
+            qs = qs.filter(case_samples__received_at__date__lte=received_before).distinct()
+
+        # 有重采样本的 Case
+        has_resample = self.request.query_params.get("has_resample", "").strip().lower()
+        if has_resample == "true":
+            qs = qs.filter(case_samples__resample_of__isnull=False).distinct()
+        elif has_resample == "false":
+            qs = qs.exclude(case_samples__resample_of__isnull=False).distinct()
         if self.request.user.site_id:
             qs = qs.filter(site=self.request.user.site)
         return qs
