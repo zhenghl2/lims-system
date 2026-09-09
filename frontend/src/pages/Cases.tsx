@@ -174,8 +174,10 @@ export default function Cases() {
       render: (v: string) => v ? <Tag color="blue">{v}</Tag> : "-",
     },
     {
-      title: "母亲", dataIndex: "mother_name", width: 80,
-      render: (v: string) => v || "-",
+      title: "母亲", dataIndex: "mother_name", width: 180, ellipsis: true,
+      render: (v: string) => v
+        ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
+        : "-",
     },
     {
       title: "样本", width: 80, align: "center" as const,
@@ -184,10 +186,12 @@ export default function Cases() {
       ),
     },
     {
-      title: "外部编号", width: 100, responsive: ["md" as const],
+      title: "外部编号", width: 140, responsive: ["md" as const], ellipsis: true,
         render: (_: any, r: any) => {
           const cs = r.case_samples?.find((s: any) => s.role === "MOTHER") || r.case_samples?.[0];
-          return cs?.external_id ? <Text style={{ fontSize: 12 }}>{cs.external_id}</Text> : <Text type="secondary">-</Text>;
+          return cs?.external_id
+            ? <Tooltip title={cs.external_id}><span style={{ fontSize: 12, cursor: "default" }}>{cs.external_id}</span></Tooltip>
+            : <Text type="secondary">-</Text>;
         },
       },
       { title: "来源", dataIndex: "case_source", width: 120, responsive: ["md" as const],
@@ -499,7 +503,13 @@ export default function Cases() {
                 </div>
 
                 <Space size={8}>
-                  <Text style={{ fontSize: 12 }}>{cs.patient_name || cs.sample_id}</Text>
+                  <Tooltip title={cs.patient_name || cs.sample_id}>
+                    <Text style={{
+                      fontSize: 12, display: "inline-block", maxWidth: 240,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                      verticalAlign: "bottom",
+                    }}>{cs.patient_name || cs.sample_id}</Text>
+                  </Tooltip>
                   <Text type="secondary" style={{ fontSize: 11 }}>{cs.source_display || cs.sample_source}</Text>
                   {cs.received_at && <Text type="secondary" style={{ fontSize: 11 }}>接收: {fmtDate(cs.received_at)}</Text>}
                   {cs.collection_notes && <Tag color="orange" style={{ fontSize: 11, margin: 0 }}>备注: {cs.collection_notes}</Tag>}
