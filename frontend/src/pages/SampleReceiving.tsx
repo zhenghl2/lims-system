@@ -82,6 +82,7 @@ interface CaseSampleRow {
   ptBase: string;
   received: boolean;
   receivedAt: string;
+  receivedByName: string;
   caseHasPhoto?: boolean;
 }
 
@@ -148,6 +149,7 @@ export default function SampleReceiving() {
           ptBase: c.pt_number ? c.pt_number.replace(/^PT/i, "") : "",
           received: cs.received_at != null,
           receivedAt: cs.received_at || "",
+          receivedByName: cs.received_by_name || "",
         });
       }
     }
@@ -183,6 +185,16 @@ export default function SampleReceiving() {
         return !["REGISTERED", "REJECTED"].includes(r.status);
       });
       setData(rows);
+      // 回填历史签收人（已签收/拒收行展示用）
+      setReceiptPersons((prev) => {
+        const next = { ...prev };
+        for (const r of rows) {
+          if (r.receivedByName && (r.received || r.status === "REJECTED")) {
+            next[r.key] = r.receivedByName;
+          }
+        }
+        return next;
+      });
     } catch {
       message.error("加载失败");
     } finally {
@@ -225,6 +237,7 @@ export default function SampleReceiving() {
 
   // --- 签收前置校验：PT 编号 + 图片（Case 级） ---
   const validateBeforeReceipt = (row: CaseSampleRow): string | null => {
+    if (!receiptPersons[row.key]) return "请先选择签收人";
     if (!row.ptBase) return "请先填写 PT 编号";
     const hasPhoto = row.caseHasPhoto || data.some((r) => r.caseId === row.caseId && r.image);
     if (!hasPhoto) return "请先上传样本图片";
@@ -246,13 +259,18 @@ export default function SampleReceiving() {
       if (condition !== "OK") payload.rejection_note = rejectionNote;
       const personName = receiptPersons[row.key];
       if (personName) payload.received_by_name = personName;
-      await (casesApi as any).confirmReceipt(row.caseId, payload);
+      const resp = await (casesApi as any).confirmReceipt(row.caseId, payload);
       message.success(condition === "OK" ? `已签收 ${row.testSampleId || row.patientName}` : "已拒收");
       if (condition !== "OK") {
         fetchData();
       } else {
+        const rt = resp?.data?.received_at || new Date().toISOString();
         setData((prev) =>
-          prev.map((r) => (r.key === row.key ? { ...r, received: true, status: "RECEIVED" } : r))
+          prev.map((r) =>
+            r.key === row.key
+              ? { ...r, received: true, status: "RECEIVED", receivedAt: rt, receivedByName: receiptPersons[row.key] || r.receivedByName }
+              : r
+          )
         );
       }
     } catch (e: any) {
@@ -514,8 +532,8 @@ export default function SampleReceiving() {
       },
     },
     {
-      title: "签收时间", dataIndex: "receivedAt", key: "rt", width: 120,
-      render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : <Text type="secondary">—</Text>,
+      title: "签收时间", dataIndex: "receivedAt", key: "rt", width: 140,
+      render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD HH:mm") : <Text type="secondary">—</Text>,
     },
     {
       title: "签收人", key: "rp", width: 110,
@@ -528,7 +546,7 @@ export default function SampleReceiving() {
           onChange={(val) => setReceiptPersons(prev => ({ ...prev, [r.key]: val }))}
           options={RECEIPT_PERSONS.map(name => ({ label: name, value: name }))}
           allowClear
-          disabled={r.received}
+          disabled={r.received || r.status === "REJECTED"}
         />
       ),
     },
@@ -719,6 +737,17 @@ export default function SampleReceiving() {
           <div>
             <Text strong style={{ display: "block", marginBottom: 6 }}>样本名称</Text>
             <Text>{rejectTarget?.patientName}</Text>
+          </div>
+          <div>
+            <Text strong style={{ display: "block", marginBottom: 6 }}>签收人</Text>
+            <Select
+              placeholder="请选择签收人"
+              style={{ width: "100%" }}
+              size="middle"
+              value={rejectTarget ? receiptPersons[rejectTarget.key] || undefined : undefined}
+              onChange={(v) => rejectTarget && setReceiptPersons(prev => ({ ...prev, [rejectTarget.key]: v }))}
+              options={RECEIPT_PERSONS.map(name => ({ label: name, value: name }))}
+            />
           </div>
           <div>
             <Text strong style={{ display: "block", marginBottom: 6 }}>拒收原因</Text>

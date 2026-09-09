@@ -287,7 +287,10 @@ class CaseViewSet(viewsets.ModelViewSet):
         if not cs:
             raise NotFound("Sample not found in this case")
 
-        # ── 强制校验：PT 编号 + 图片（签收与拒收均要求）──
+        # ── 强制校验：签收人 + PT 编号 + 图片（签收与拒收均要求）──
+        received_by_name = (request.data.get("received_by_name") or "").strip()
+        if not received_by_name:
+            raise ValidationError("请先选择签收人")
         pt_number = (request.data.get("pt_number") or "").strip()
         if not pt_number and not case.pt_number:
             raise ValidationError("请先填写 PT 编号")
@@ -306,6 +309,9 @@ class CaseViewSet(viewsets.ModelViewSet):
 
         cs.confirm_receipt(request.user, condition=condition)
         # Save new receiving fields
+        if received_by_name:
+            cs.received_by_name = received_by_name
+            cs.save(update_fields=["received_by_name"])
         if actual_sample_type:
             cs.actual_sample_type = actual_sample_type
             cs.save(update_fields=["actual_sample_type"])

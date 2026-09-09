@@ -24,7 +24,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
         fields = [
             "id", "case", "sample", "sample_id", "patient_name", "sample_status",
             "role", "sample_source", "ethnicity", "relationship_to_mother",
-            "receipt_condition", "received_at", "received_by",
+            "receipt_condition", "received_at", "received_by", "received_by_name",
             "collection_site", "collection_notes",
             "test_sample_id", "resample_of", "resample_number",
             "redo_of", "redo_count",
