@@ -73,6 +73,7 @@ interface CaseSampleRow {
   collectionDate: string;
   sampleSource: string;
   fedexNo: string;
+  externalId: string;
   phone: string;
   preservationMethod: string;
   collectionNotes: string;
@@ -119,6 +120,7 @@ export default function SampleReceiving() {
     const rows: CaseSampleRow[] = [];
     for (const c of cases) {
       const caseSamples = c.case_samples || [];
+      const caseExtId = caseSamples.find((s: any) => s.role === "MOTHER")?.external_id || "";
       for (const cs of caseSamples) {
         const isMother = cs.role === "MOTHER";
         rows.push({
@@ -137,6 +139,7 @@ export default function SampleReceiving() {
           collectionDate: cs.collection_date || "",
           sampleSource: cs.case_source || "",
           fedexNo: cs.fedex_no || "",
+          externalId: cs.external_id || caseExtId || "",
           phone: c.phone || "",
           preservationMethod: cs.preservation_method || "",
           collectionNotes: cs.collection_notes || "",
@@ -405,6 +408,11 @@ export default function SampleReceiving() {
         }
         return { rowSpan: 0 };
       },
+    },
+    {
+      title: "外部编号", dataIndex: "externalId", key: "eid", width: 100,
+      render: (v: string) =>
+        v ? <Text style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">-</Text>,
     },
     {
       title: "PT编号", dataIndex: "testSampleId", key: "pt", width: 180,
