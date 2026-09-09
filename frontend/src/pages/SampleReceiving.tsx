@@ -736,7 +736,7 @@ export default function SampleReceiving() {
       {/* Table */}
       <style>{`
         .ant-table-tbody > tr.case-boundary-row > td {
-          border-bottom: 3px solid #1677ff !important;
+          border-bottom: 3px solid rgba(22, 119, 255, 0.85) !important;
         }
       `}</style>
       <Table
