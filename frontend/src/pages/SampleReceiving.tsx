@@ -745,7 +745,7 @@ export default function SampleReceiving() {
           const idx = data.indexOf(r);
           const nextRow = data[idx + 1];
           const isCaseBoundary = nextRow && r.caseId !== nextRow.caseId;
-          return isCaseBoundary ? { style: { borderBottom: "2px solid #d9d9d9" } } : {};
+          return isCaseBoundary ? { style: { borderBottom: "3px solid #1677ff" } } : {};
         }}
         rowSelection={activeTab === "pending" ? {
           selectedRowKeys,
