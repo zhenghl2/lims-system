@@ -187,6 +187,11 @@ export default function Cases() {
       render: (v: string) => v || "-",
     },
     {
+      title: "销售/代理", width: 100, responsive: ["md" as const],
+      render: (_: any, r: any) =>
+        r.sales_person ? <Text style={{ fontSize: 12 }}>{r.sales_person}</Text> : <Text type="secondary">-</Text>,
+    },
+    {
       title: "状态", dataIndex: "status", width: 100,
       render: (_v: string, r: any) => {
         const display = r.status_display || _v;
