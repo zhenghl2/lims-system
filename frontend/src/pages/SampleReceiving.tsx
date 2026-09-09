@@ -5,7 +5,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Table, Button, Tag, Input, Select, Space, Typography, message,
-  Modal, Tabs, Row, Col, Image,
+  Modal, Tabs, Row, Col, Image, Tooltip,
 } from "antd";
 import {
   CheckOutlined, CloseOutlined, CameraOutlined,
@@ -510,9 +510,11 @@ export default function SampleReceiving() {
       },
     },
     {
-      title: "外部编号", dataIndex: "externalId", key: "eid", width: 100,
+      title: "外部编号", dataIndex: "externalId", key: "eid", width: 140, ellipsis: true,
       render: (v: string) =>
-        v ? <Text style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">-</Text>,
+        v
+          ? <Tooltip title={v}><span style={{ fontSize: 12, cursor: "default" }}>{v}</span></Tooltip>
+          : <Text type="secondary">-</Text>,
     },
     {
       title: "PT编号", dataIndex: "testSampleId", key: "pt", width: 180,
@@ -529,7 +531,11 @@ export default function SampleReceiving() {
       ),
     },
     {
-      title: "姓名", dataIndex: "patientName", key: "name", width: 80,
+      title: "姓名", dataIndex: "patientName", key: "name", width: 180, ellipsis: true,
+      render: (v: string) =>
+        v
+          ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
+          : <Text type="secondary">-</Text>,
     },
     {
       title: "孕周", dataIndex: "gestationalWeeks", key: "gw", width: 60,
