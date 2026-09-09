@@ -72,6 +72,7 @@ class CaseListSerializer(serializers.ModelSerializer):
             "applicant", "case_source", "registration_type",
             "collection_method", "application_signed",
             "expected_completion", "workflow_status", "created_at",
+            "notes",
             "case_samples",
         ]
 

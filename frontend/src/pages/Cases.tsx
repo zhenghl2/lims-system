@@ -206,9 +206,12 @@ export default function Cases() {
       },
     },
     {
-      title: "备注", key: "evts", width: 170,
+      title: "备注", key: "evts", width: 190,
       render: (_: any, r: any) => {
         const evts: { label: string; color: string; tip: string }[] = [];
+        if (r.notes) {
+          evts.push({ label: "登记备注", color: "purple", tip: r.notes });
+        }
         for (const cs of r.case_samples || []) {
           const who = cs.patient_name ? `${cs.patient_name} · ` : "";
           if (cs.sample_status === "REJECTED") {
