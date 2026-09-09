@@ -3,7 +3,7 @@ import dayjs from "dayjs";
 import {
   Card, Table, Tag, Typography, Button, Input, Select, Space,
   Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse,
-  Modal, Timeline,
+  Modal, Timeline, Tooltip,
 } from "antd";
 import {
   EyeOutlined, LinkOutlined, RedoOutlined,
@@ -36,6 +36,12 @@ const fmtDate = (v: string | null | undefined) => {
   if (!v) return "-";
   return v.slice(0, 10);
 };
+const fmtDT = (v: string | null | undefined) => {
+  if (!v) return "-";
+  return `${v.slice(5, 10)} ${v.slice(11, 16)}`;  // MM-DD HH:mm
+};
+const rejectionLabel = (reason: string) =>
+  reason === "REJECTED" ? "拒收" : (REJECTION_REASONS[reason || ""] || reason || "");
 
 (casesApi as any).redo = (caseId: string, data: any) => api.post(`/cases/${caseId}/redo/`, data);
 (casesApi as any).sampleHistory = (caseId: string) => api.get(`/cases/${caseId}/sample_history/`);
@@ -197,6 +203,39 @@ export default function Cases() {
         const display = r.status_display || _v;
         const color = STATUS_COLORS[r.status] || STATUS_COLORS[_v] || "default";
         return <Tag color={color}>{display}</Tag>;
+      },
+    },
+    {
+      title: "备注", key: "evts", width: 170,
+      render: (_: any, r: any) => {
+        const evts: { label: string; color: string; tip: string }[] = [];
+        for (const cs of r.case_samples || []) {
+          const who = cs.patient_name ? `${cs.patient_name} · ` : "";
+          if (cs.sample_status === "REJECTED") {
+            const reason = rejectionLabel(cs.rejection_reason);
+            const note = cs.rejection_note ? `: ${cs.rejection_note}` : "";
+            evts.push({ label: "拒收", color: "red", tip: `${reason}${note} · ${who}${fmtDT(cs.received_at)}` });
+          }
+          if (cs.resample_of) {
+            evts.push({ label: `重采R${cs.resample_number || ""}`, color: "orange", tip: `重采样本 · ${who}${fmtDT(cs.created_at)}` });
+          }
+          if (cs.redo_count) {
+            evts.push({ label: `重做T${cs.redo_count}`, color: "cyan", tip: `重做样本 · ${who}${fmtDT(cs.created_at)}` });
+          }
+          if (cs.collection_notes) {
+            evts.push({ label: "备注", color: "gold", tip: cs.collection_notes });
+          }
+        }
+        if (!evts.length) return <Text type="secondary">-</Text>;
+        return (
+          <Space size={2} wrap>
+            {evts.map((e, i) => (
+              <Tooltip key={i} title={e.tip}>
+                <Tag color={e.color} style={{ fontSize: 11, margin: 0 }}>{e.label}</Tag>
+              </Tooltip>
+            ))}
+          </Space>
+        );
       },
     },
     {
