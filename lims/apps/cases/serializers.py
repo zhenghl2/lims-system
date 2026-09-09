@@ -4,6 +4,7 @@ from django.db.models import F
 from rest_framework import serializers
 from django.utils import timezone
 import datetime
+import re
 from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample
 
 
@@ -345,6 +346,15 @@ class CaseCreateSerializer(serializers.ModelSerializer):
                 seq = Case.objects.filter(case_number__startswith=prefix).count() + 1
         else:
             seq = 1
+        # 纳入 Sample 表：delete_case 为 soft-delete，sample_id 仍占用唯一键，
+        # 若被删 Case 的样本编号大于现存 Case 编号，必须跳过，否则建样本时撞 samples_barcode_key
+        from lims.apps.samples.models import Sample as _Sample
+        _last_sid = (_Sample.objects.filter(sample_id__startswith=prefix + "-")
+                     .order_by("-sample_id").values_list("sample_id", flat=True).first())
+        if _last_sid:
+            _m = re.match(rf"^{re.escape(prefix)}-(\d+)", _last_sid)
+            if _m:
+                seq = max(seq, int(_m.group(1)) + 1)
         case_number = f"{prefix}-{seq:04d}"
 
         case = Case.objects.create(
