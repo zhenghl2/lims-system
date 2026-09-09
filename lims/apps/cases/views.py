@@ -855,6 +855,22 @@ class CaseViewSet(viewsets.ModelViewSet):
             "test_sample_id": cs.test_sample_id or "", "updated_at": str(cs.updated_at),
         } for cs in rj]
 
+        # Urgent / near-deadline detail (top 20)
+        def _case_brief(c):
+            m = c.mother_sample
+            return {
+                "case_id": str(c.id), "case_number": c.case_number,
+                "pt_number": c.pt_number or "", "status": c.status,
+                "mother_name": (m.sample.patient_name if m and m.sample else "") or "",
+                "expected_completion": str(c.expected_completion or ""),
+                "created_at": str(c.created_at),
+            }
+        urgent_detail = [_case_brief(c) for c in qs.filter(is_urgent=True).order_by("-created_at")[:20]]
+        deadline_detail = [_case_brief(c) for c in qs.filter(
+            expected_completion__lte=now + timezone.timedelta(days=2),
+            status__in=["PRE_PROCESSING","EXTRACTION","LIBRARY_PREP","POOLING","HYB_SEQ","BIOINFO","REPORT_DRAFT","RECEIVED"],
+        ).order_by("expected_completion")[:20]]
+
         return Response({
             "total_cases": qs.count(),
             "total_samples": CaseSample.objects.count(),
@@ -865,7 +881,53 @@ class CaseViewSet(viewsets.ModelViewSet):
             "today_expected": today_expected,
             "workflow_stages": stage_counts,
             "stage_detail": stage_detail,
+            "urgent_detail": urgent_detail,
+            "deadline_detail": deadline_detail,
         })
+
+    @action(detail=False, methods=["get"])
+    def stats(self, request):
+        """可筛选统计：时间范围(登记/签收) x 维度(孕周/销售/来源/单双胎/状态)"""
+        from django.db.models import Count
+        qs = self.get_queryset()
+        dim = (request.query_params.get("dimension") or "gestational_age").strip()
+        time_type = (request.query_params.get("time_type") or "created").strip()
+        start = (request.query_params.get("start") or "").strip()
+        end = (request.query_params.get("end") or "").strip()
+
+        if start or end:
+            if time_type == "received":
+                if start: qs = qs.filter(case_samples__received_at__date__gte=start).distinct()
+                if end: qs = qs.filter(case_samples__received_at__date__lte=end).distinct()
+            else:
+                if start: qs = qs.filter(created_at__date__gte=start)
+                if end: qs = qs.filter(created_at__date__lte=end)
+
+        total = qs.count()
+        STATUS_MAP = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
+            "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
+            "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
+            "COMPLETED":"已完成","HAS_FAILURE":"有失败","REJECTED":"已拒收","CANCELLED":"已取消"}
+
+        if dim == "sales_person":
+            rows = qs.values("sales_person").annotate(n=Count("id")).order_by("-n")
+            buckets = [{"label": (r["sales_person"] or "未填写"), "count": r["n"]} for r in rows]
+        elif dim == "case_source":
+            rows = qs.filter(case_samples__role="MOTHER").values(
+                "case_samples__sample__sample_source"
+            ).annotate(n=Count("id", distinct=True)).order_by("-n")
+            buckets = [{"label": (r["case_samples__sample__sample_source"] or "未填写"), "count": r["n"]} for r in rows]
+        elif dim == "multiple_gestation":
+            rows = qs.values("multiple_gestation").annotate(n=Count("id")).order_by("-n")
+            buckets = [{"label": {True: "双胎", False: "单胎"}.get(r["multiple_gestation"], "未填写"), "count": r["n"]} for r in rows]
+        elif dim == "status":
+            rows = qs.values("status").annotate(n=Count("id")).order_by("-n")
+            buckets = [{"label": STATUS_MAP.get(r["status"], r["status"] or "未填写"), "count": r["n"]} for r in rows]
+        else:  # gestational_age
+            rows = qs.values("gestational_age_weeks").annotate(n=Count("id")).order_by("-n")
+            buckets = [{"label": f"{r['gestational_age_weeks']}周" if r["gestational_age_weeks"] is not None else "未填写", "count": r["n"]} for r in rows]
+
+        return Response({"total": total, "dimension": dim, "buckets": buckets})
 
 
 # ---- Public registration (no auth) ----

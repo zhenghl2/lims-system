@@ -197,6 +197,8 @@ export const casesApi = {
   confirmReceipt: (id: string, data: ConfirmReceiptPayload) =>
     api.post(`/cases/${id}/confirm_receipt/`, data),
   dashboard: () => api.get<CaseDashboard>("/cases/dashboard/"),
+  stats: (params?: Record<string, unknown>) =>
+    api.get("/cases/stats/", { params }),
   generateToken: (id: string) => api.post(`/cases/${id}/generate_token/`),
   supplement: (id: string, data: { role: string; patient_name: string; sample_source?: string; arrival_date?: string; external_id?: string; ethnicity?: string; relationship_to_mother?: string }) => api.post(`/cases/${id}/supplement/`, data),
   deleteCase: (id: string) => api.post(`/cases/${id}/delete_case/`),
