@@ -19,6 +19,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
     collection_date = serializers.CharField(source="sample.collection_date", read_only=True, allow_null=True)
     fedex_no = serializers.CharField(source="sample.fedex_no", read_only=True, allow_null=True, allow_blank=True)
     external_id = serializers.CharField(source="sample.external_id", read_only=True)
+    gender_info = serializers.CharField(source="sample.gender_info", read_only=True, allow_null=True, allow_blank=True)
 
     class Meta:
         model = CaseSample
@@ -34,7 +35,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
             "rejection_reason", "rejection_note", "external_id",
             "receipt_photo_url",
             "case_source",
-            "collection_date", "fedex_no",
+            "collection_date", "fedex_no", "gender_info",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at", "received_at"]

@@ -69,6 +69,17 @@ def _parse_date_dmy(v):
         return None
 
 
+def _map_gender(g):
+    """Gender 列 → Yes/No/空（与 Word extract_gender_info 输出格式一致）"""
+    g = (g or "").strip().lower()
+    g = g.replace("\u00e3", "a")  # ã
+    if g in ("sim", "yes", "s", "y"):
+        return "Yes"
+    if g in ("nao", "no", "n", "-"):
+        return "No"
+    return ""
+
+
 def _map_sample_types(sm):
     """'SANGUE/FTA' / 'SANGUE / FTA' → ['BLOOD','DBS']；'-'/空 → ['BLOOD']"""
     s = _to_text(sm).upper()
@@ -176,7 +187,7 @@ def parse_xlsx_bytes(data, filename=""):
         coll_date = norm(r[19]) if len(r) > 19 else ""
         coll_site = norm(r[20]) if len(r) > 20 else ""
         due = norm(r[27]) if len(r) > 27 else ""
-        gender = norm(r[31]) if len(r) > 31 else ""
+        gender = _map_gender(norm(r[31])) if len(r) > 31 else ""
         remarks = norm(r[32]) if len(r) > 32 else ""
 
         if not test_item and not client_code and not mother_name:

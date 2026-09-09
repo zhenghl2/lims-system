@@ -293,6 +293,7 @@ export interface CaseSample {
   received_by: string | null;
   collection_site: string;
   collection_notes: string;
+  gender_info: string | null;
   test_sample_id: string | null;
   resample_of: string | null;
   resample_number: number | null;
