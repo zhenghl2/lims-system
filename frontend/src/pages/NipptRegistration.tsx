@@ -55,7 +55,7 @@ const SOURCE_OPTIONS = [
 
 // ===== 草稿保存（localStorage）=====
 const DRAFT_KEY = "nippt_reg_draft_v1";
-const DATE_FIELDS = ["female_arrival_date", "last_menstrual_period", "collection_date"];
+const DATE_FIELDS = ["female_arrival_date", "last_menstrual_period", "collection_date", "report_deadline"];
 
 function saveDraft(values: any): { values: any; savedAt: string } {
   const snapshot = JSON.parse(JSON.stringify(values ?? {}));
