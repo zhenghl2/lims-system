@@ -583,8 +583,11 @@ export default function SampleReceiving() {
       render: (v: string) => v ? <Text style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">-</Text>,
     },
     {
-      title: "快递", dataIndex: "fedexNo", key: "fx", width: 100,
-      render: (v: string) => v || "—",
+      title: "快递", dataIndex: "fedexNo", key: "fx", width: 150, ellipsis: true,
+      render: (v: string) =>
+        v
+          ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
+          : "—",
     },
     {
       title: "手机", dataIndex: "phone", key: "ph", width: 110,
