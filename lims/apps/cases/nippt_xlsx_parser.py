@@ -186,6 +186,7 @@ def parse_xlsx_bytes(data, filename=""):
         balance = norm(r[15]) if len(r) > 15 else ""
         coll_date = norm(r[19]) if len(r) > 19 else ""
         coll_site = norm(r[20]) if len(r) > 20 else ""
+        fedex = norm(r[24]) if len(r) > 24 else ""
         due = norm(r[27]) if len(r) > 27 else ""
         gender = _map_gender(norm(r[31])) if len(r) > 31 else ""
         remarks = norm(r[32]) if len(r) > 32 else ""
@@ -234,6 +235,7 @@ def parse_xlsx_bytes(data, filename=""):
             "price": _clean_money(price),
             "balance": _clean_money(balance),
             "gender_info": gender,
+            "fedex_no": fedex,
             "notes": _translate_notes(remarks),
             "expected_completion": _first_part(due),
         })

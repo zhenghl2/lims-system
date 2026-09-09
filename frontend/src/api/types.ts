@@ -294,6 +294,9 @@ export interface CaseSample {
   collection_site: string;
   collection_notes: string;
   gender_info: string | null;
+  patient_dob: string | null;
+  last_menstrual_period: string | null;
+  fedex_no: string | null;
   test_sample_id: string | null;
   resample_of: string | null;
   resample_number: number | null;

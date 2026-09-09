@@ -20,6 +20,8 @@ class CaseSampleSerializer(serializers.ModelSerializer):
     fedex_no = serializers.CharField(source="sample.fedex_no", read_only=True, allow_null=True, allow_blank=True)
     external_id = serializers.CharField(source="sample.external_id", read_only=True)
     gender_info = serializers.CharField(source="sample.gender_info", read_only=True, allow_null=True, allow_blank=True)
+    patient_dob = serializers.CharField(source="sample.patient_dob", read_only=True, allow_null=True, allow_blank=True)
+    last_menstrual_period = serializers.CharField(source="sample.last_menstrual_period", read_only=True, allow_null=True, allow_blank=True)
 
     class Meta:
         model = CaseSample
@@ -36,6 +38,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
             "receipt_photo_url",
             "case_source",
             "collection_date", "fedex_no", "gender_info",
+            "patient_dob", "last_menstrual_period",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at", "received_at"]
@@ -192,6 +195,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
             "clinic_name", "clinic_contact", "sales_person",
             "applicant", "phone", "email", "multiple_gestation",
             "risk_warnings", "registration_type",
+            "collection_method", "application_signed",
             "notes", "is_urgent", "expected_completion",
             "registration_token", "registration_url",
             "case_samples", "site", "created_by",
@@ -448,6 +452,7 @@ class NipptImportCaseItemSerializer(serializers.Serializer):
     gestational_age_weeks = serializers.IntegerField(required=False, allow_null=True, default=None)
     collection_date = serializers.CharField(required=False, allow_blank=True, default="") # DD/MM/YYYY
     collection_site = serializers.CharField(required=False, allow_blank=True, default="")
+    fedex_no = serializers.CharField(required=False, allow_blank=True, default="")
     fathers = NipptImportFatherSerializer(many=True, required=False, default=list)
     sales_person = serializers.CharField(required=False, allow_blank=True, default="")
     price = serializers.CharField(required=False, allow_blank=True, default="")

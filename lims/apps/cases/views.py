@@ -250,9 +250,12 @@ class CaseViewSet(viewsets.ModelViewSet):
                         cd = parse_d(item["collection_date"])
                         if cd:
                             m.collection_date = cd
+                        fx = item.get("fedex_no", "") or ""
+                        if fx:
+                            m.fedex_no = fx
                         m.save(update_fields=[
                             "id_card", "price", "balance", "gender_info",
-                            "collection_date", "updated_at",
+                            "collection_date", "fedex_no", "updated_at",
                         ])
                     # 采集地点存母亲 CaseSample.collection_site
                     site = item.get("collection_site", "") or ""
@@ -269,7 +272,9 @@ class CaseViewSet(viewsets.ModelViewSet):
                         ).select_related("sample")
                         for cs in fcss:
                             cs.sample.id_card = f["id_card"]
-                            cs.sample.save(update_fields=["id_card", "updated_at"])
+                            if fx:
+                                cs.sample.fedex_no = fx
+                            cs.sample.save(update_fields=["id_card", "fedex_no", "updated_at"])
                     # 报告截止日期
                     due = parse_d(item["expected_completion"])
                     if due:

@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import {
   Card, Table, Tag, Typography, Button, Input, Select, Space,
-  Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse,
+  Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse, Descriptions,
   Modal, Timeline, Tooltip,
 } from "antd";
 import {
@@ -411,29 +411,48 @@ export default function Cases() {
 
             <Collapse defaultActiveKey={["basic", "samples"]} size="small" style={{ marginBottom: 12 }}>
               <Collapse.Panel key="basic" header="基本信息">
-                <Space direction="vertical" size={2}>
-                  <Text><Text type="secondary">母亲:</Text> {(selectedCase as any).mother_name || "-"}</Text>
-                  <Text><Text type="secondary">Panel:</Text> {selectedCase.panel_name || selectedCase.panel_code}</Text>
-                  <Text><Text type="secondary">孕周:</Text> {selectedCase.gestational_age_weeks ?? "-"}周{selectedCase.gestational_age_days ?? ""}天</Text>
-                  <Text><Text type="secondary">gender:</Text> {(() => {
-                    const g = selectedCase.case_samples?.find((s: any) => s.role === "MOTHER")?.gender_info;
-                    if (!g) return "-";
-                    return g === "Yes" ? "是" : g === "No" ? "否" : g;
-                  })()}</Text>
-                  <Text><Text type="secondary">诊所:</Text> {selectedCase.clinic_name || "-"}</Text>
-                  <Text><Text type="secondary">销售:</Text> {selectedCase.sales_person || "-"}</Text>
-                  <Text><Text type="secondary">联系方式:</Text> {selectedCase.clinic_contact || "-"}</Text>
-                  <Text><Text type="secondary">来源:</Text> {(selectedCase as any).case_source || "-"}</Text>
-                  <Text><Text type="secondary">申请方:</Text> {(selectedCase as any).applicant || "-"}</Text>
-                  <Text><Text type="secondary">登记类型:</Text> {(selectedCase as any).registration_type || "首次"}</Text>
-                  <Text><Text type="secondary">创建时间:</Text> {fmtDate(selectedCase.created_at)}</Text>
-                  {selectedCase.expected_completion && (
-                    <Text><Text type="secondary">预计完成:</Text> {selectedCase.expected_completion}</Text>
-                  )}
-                  {selectedCase.notes && (
-                    <Text><Text type="secondary">备注:</Text> {selectedCase.notes}</Text>
-                  )}
-                </Space>
+                {(() => {
+                  const mother = selectedCase.case_samples?.find((s: any) => s.role === "MOTHER");
+                  const g = mother?.gender_info;
+                  const cm: Record<string, string> = { "1": "1. 本室采集", "2": "2. 申请人送来", "3": "3. 邮寄样本" };
+                  const sg: Record<string, string> = { YES: "是", NO: "否", WECHAT: "微信授权" };
+                  const rt: Record<string, string> = { FIRST: "首次检测", SUPPLEMENT: "补充样本", RESAMPLE: "重采样本" };
+                  const mgv = (selectedCase as any).multiple_gestation;
+                  const mg = mgv === null || mgv === undefined ? "-" : mgv ? "双胎" : "单胎";
+                  const show = (v: any) => (v === null || v === undefined || v === "") ? "-" : String(v);
+                  const items: [string, any][] = [
+                    ["母亲", (selectedCase as any).mother_name],
+                    ["Panel", selectedCase.panel_name || selectedCase.panel_code],
+                    ["孕周", `${selectedCase.gestational_age_weeks ?? "-"}周${selectedCase.gestational_age_days ?? ""}天`],
+                    ["单双胎", mg],
+                    ["gender", g ? (g === "Yes" ? "是" : g === "No" ? "否" : g) : "-"],
+                    ["母亲生日", mother?.patient_dob],
+                    ["末次月经", mother?.last_menstrual_period],
+                    ["采集方式", cm[(selectedCase as any).collection_method] || "-"],
+                    ["申请单签字", sg[(selectedCase as any).application_signed] || "-"],
+                    ["快递", mother?.fedex_no],
+                    ["采集地点", mother?.collection_site],
+                    ["民族", mother?.ethnicity],
+                    ["诊所", selectedCase.clinic_name],
+                    ["销售", selectedCase.sales_person],
+                    ["联系方式", selectedCase.clinic_contact],
+                    ["电话", (selectedCase as any).phone],
+                    ["邮箱", (selectedCase as any).email],
+                    ["来源", (selectedCase as any).case_source],
+                    ["申请方", (selectedCase as any).applicant],
+                    ["登记类型", rt[(selectedCase as any).registration_type] || "-"],
+                    ["创建时间", fmtDate(selectedCase.created_at)],
+                    ["报告截止", selectedCase.expected_completion || "-"],
+                  ];
+                  return (
+                    <Descriptions bordered size="small" column={2}>
+                      {items.map(([k, v]) => (
+                        <Descriptions.Item key={k} label={k} span={1}>{show(v)}</Descriptions.Item>
+                      ))}
+                      <Descriptions.Item label="备注" span={2}>{show((selectedCase as any).notes)}</Descriptions.Item>
+                    </Descriptions>
+                  );
+                })()}
               </Collapse.Panel>
               <Collapse.Panel key="samples" header={`样本列表 (${selectedCase.case_samples?.length || 0})`}>
 
