@@ -101,10 +101,11 @@ class CaseViewSet(viewsets.ModelViewSet):
     def parse_nippt_docs(self, request):
         """巴西送检单 Word 解析：上传多个 .docx，解析并查重，不创建数据。"""
         from .nippt_docx_parser import parse_docx_bytes, NipptDocxParseError
+        from .nippt_xlsx_parser import parse_xlsx_bytes as parse_xlsx
 
         files = request.FILES.getlist("files")
         if not files:
-            raise ValidationError("请上传至少一个 .docx 文件")
+            raise ValidationError("请上传至少一个文件（.docx 或 .xlsx）")
 
         cases = []
         nipt_files = []
@@ -114,13 +115,29 @@ class CaseViewSet(viewsets.ModelViewSet):
 
         for f in files:
             fname = f.name
-            if not fname.lower().endswith(".docx"):
-                error_files.append({"file": fname, "error": "非 .docx 文件"})
-                continue
+            lower = fname.lower()
             try:
                 data = f.read()
                 if len(data) > 20 * 1024 * 1024:
-                    raise NipptDocxParseError("文件超过 20MB")
+                    raise ValidationError("文件超过 20MB")
+                if lower.endswith(".xlsx"):
+                    parsed_cases, nipt_rows = parse_xlsx(data, fname)
+                    for nr in nipt_rows:
+                        nipt_files.append({"file": fname, "test_item": nr.get("test_item", "")})
+                    for r in parsed_cases:
+                        seq = r["seq"]
+                        if seq in seen_seq_files:
+                            duplicate_files.append({"file": fname, "seq": seq, "merged_with": seen_seq_files[seq]})
+                            existing = next((c for c in cases if c["seq"] == seq), None)
+                            if existing:
+                                existing["fathers"].extend(r["fathers"])
+                            continue
+                        seen_seq_files[seq] = fname
+                        cases.append(r)
+                    continue
+                if not lower.endswith(".docx"):
+                    error_files.append({"file": fname, "error": "仅支持 .docx / .xlsx 文件"})
+                    continue
                 r = parse_docx_bytes(data, fname)
             except NipptDocxParseError as e:
                 error_files.append({"file": fname, "error": str(e)})
@@ -237,6 +254,11 @@ class CaseViewSet(viewsets.ModelViewSet):
                             "id_card", "price", "balance", "gender_info",
                             "collection_date", "updated_at",
                         ])
+                    # 采集地点存母亲 CaseSample.collection_site
+                    site = item.get("collection_site", "") or ""
+                    if site and mother_cs:
+                        mother_cs.collection_site = site
+                        mother_cs.save(update_fields=["collection_site", "updated_at"])
                     # 附加字段：疑父 id_card
                     for f in item["fathers"]:
                         if not f["name"] or f["name"] == "-" or not f["id_card"]:

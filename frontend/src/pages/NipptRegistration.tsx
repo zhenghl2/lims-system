@@ -11,7 +11,7 @@ import {
 import {
   PlusOutlined, ReloadOutlined, SendOutlined,
   SearchOutlined,
-  CopyOutlined, InboxOutlined, SaveOutlined,
+  CopyOutlined, InboxOutlined, SaveOutlined, FileExcelOutlined,
 } from "@ant-design/icons";
 
 import { casesApi } from "../api";
@@ -1097,23 +1097,41 @@ export default function NipptRegistration() {
       {regType === "IMPORT" && (
         <Card size="small">
           <div style={{ marginBottom: 12, color: "#666", fontSize: 12 }}>
-            上传送检单提取脚本生成的 <Text code>baxi_NIPPT.xlsx</Text>，
-            系统将过滤 NIPT 项目，按 Seq 分组后批量登记首次检测 Case（来源：巴西）。
+            上传巴西送检单（Word 送检单 或 PLANILHA DE ENVIO 表格），
+            系统将过滤 NIPT 项目、合并多疑父，按 Client Code 分组后批量登记首次检测 Case（来源：巴西）。
           </div>
-          <Upload.Dragger
-            accept=".docx"
-            multiple
-            showUploadList={false}
-            beforeUpload={(_f: any, fileList: any) => {
-              handleImportFiles(fileList.map((f: any) => f.originFileObj || f));
-              return false;
-            }}
-            style={{ marginBottom: 16 }}
-          >
-            <p className="ant-upload-drag-icon"><InboxOutlined style={{ fontSize: 36, color: "#1677ff" }} /></p>
-            <p className="ant-upload-text">点击或拖拽送检单 Word 文件到此处（可多选）</p>
-            <p className="ant-upload-hint">支持批量上传 .docx，NIPT 送检单自动跳过</p>
-          </Upload.Dragger>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col xs={24} md={12}>
+              <Upload.Dragger
+                accept=".docx"
+                multiple
+                showUploadList={false}
+                beforeUpload={(_f: any, fileList: any) => {
+                  handleImportFiles(fileList.map((f: any) => f.originFileObj || f));
+                  return false;
+                }}
+              >
+                <p className="ant-upload-drag-icon"><InboxOutlined style={{ fontSize: 32, color: "#1677ff" }} /></p>
+                <p className="ant-upload-text">上传送检单 Word（.docx）</p>
+                <p className="ant-upload-hint">支持批量上传，NIPT 送检单自动跳过</p>
+              </Upload.Dragger>
+            </Col>
+            <Col xs={24} md={12}>
+              <Upload.Dragger
+                accept=".xlsx"
+                multiple
+                showUploadList={false}
+                beforeUpload={(_f: any, fileList: any) => {
+                  handleImportFiles(fileList.map((f: any) => f.originFileObj || f));
+                  return false;
+                }}
+              >
+                <p className="ant-upload-drag-icon"><FileExcelOutlined style={{ fontSize: 32, color: "#52c41a" }} /></p>
+                <p className="ant-upload-text">上传 PLANILHA DE ENVIO 表格（.xlsx）</p>
+                <p className="ant-upload-hint">前两行为表头，按 Client Code 分组登记</p>
+              </Upload.Dragger>
+            </Col>
+          </Row>
 
           {importFileName && (
             <div style={{ marginBottom: 8 }}>
