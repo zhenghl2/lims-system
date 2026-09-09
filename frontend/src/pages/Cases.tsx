@@ -56,6 +56,7 @@ export default function Cases() {
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedCase, setSelectedCase] = useState<CaseDetail | null>(null);
   const [drawerLoading, setDrawerLoading] = useState(false);
@@ -67,7 +68,7 @@ export default function Cases() {
   const loadData = async (p: number = page) => {
     setLoading(true);
     try {
-      const params: any = { page: p, page_size: 20 };
+      const params: any = { page: p, page_size: pageSize };
       if (search) params.search = search;
       if (statusFilter) {
         if (statusFilter === "has_resample") params.has_resample = "true";
@@ -89,7 +90,7 @@ export default function Cases() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadData(1); }, [search, statusFilter, sourceFilter, dateRange, dateType, page]);
+  useEffect(() => { loadData(page); }, [search, statusFilter, sourceFilter, dateRange, dateType, page, pageSize]);
 
   const doRedo = async () => {
     if (!redoTarget) return;
@@ -363,8 +364,17 @@ export default function Cases() {
         loading={loading}
         size="small"
         pagination={{
-          current: page, total, pageSize: 20,
-          onChange: (p) => setPage(p),
+          current: page, total, pageSize,
+          showSizeChanger: true,
+          pageSizeOptions: [10, 20, 50, 100],
+          onChange: (p: number, ps?: number) => {
+            if (ps && ps !== pageSize) {
+              setPage(1);
+              setPageSize(ps);
+            } else {
+              setPage(p);
+            }
+          },
           showTotal: (t) => `共 ${t} 个案例`,
         }}
       />
