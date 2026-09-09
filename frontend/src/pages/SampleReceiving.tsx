@@ -87,6 +87,46 @@ interface CaseSampleRow {
   caseHasPhoto?: boolean;
 }
 
+// ===== 待签收编辑草稿（sessionStorage：路由切换保留，F5 清空）=====
+const RECEIVING_DRAFT_KEY = "nippt_receiving_draft_v1";
+
+interface ReceivingDraft {
+  ptByCase: Record<string, string>;   // caseId -> PT 数字部分
+  persons: Record<string, string>;    // rowKey -> 签收人
+}
+
+function loadReceivingDraft(): ReceivingDraft | null {
+  try {
+    const raw = sessionStorage.getItem(RECEIVING_DRAFT_KEY);
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    return { ptByCase: d?.ptByCase || {}, persons: d?.persons || {} };
+  } catch {
+    return null;
+  }
+}
+
+function persistReceivingDraft(d: ReceivingDraft) {
+  try {
+    sessionStorage.setItem(RECEIVING_DRAFT_KEY, JSON.stringify({ ...d, savedAt: new Date().toISOString() }));
+  } catch { /* ignore */ }
+}
+
+/** 模块级：角色后缀（母亲W / 父亲H/HA..）— 提升供恢复逻辑复用 */
+function generateSuffix(role: string, allFathers: CaseSampleRow[], fatherName?: string): string {
+  if (role === "MOTHER") return "W";
+  const uniqueFathers: string[] = [];
+  for (const f of allFathers) {
+    if (f.role === "ALLEGED_FATHER" && f.patientName && !uniqueFathers.includes(f.patientName)) {
+      uniqueFathers.push(f.patientName);
+    }
+  }
+  if (uniqueFathers.length === 0) return "H";
+  if (uniqueFathers.length === 1) return "H";
+  const idx = fatherName ? uniqueFathers.indexOf(fatherName) : 0;
+  return `H${String.fromCharCode(65 + Math.max(0, idx))}`;
+}
+
 export default function SampleReceiving() {
   const [data, setData] = useState<CaseSampleRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -186,6 +226,39 @@ export default function SampleReceiving() {
         if (activeTab === "rejected") return r.status === "REJECTED";
         return !["REGISTERED", "REJECTED"].includes(r.status);
       });
+
+      // ── 恢复会话草稿（仅待签收 tab 的 REGISTERED 未签收行）──
+      if (activeTab === "pending") {
+        const draft = loadReceivingDraft();
+        if (draft && (Object.keys(draft.ptByCase).length || Object.keys(draft.persons).length)) {
+          // 1) PT（Case 级：同 case 行联动，与手输逻辑一致）
+          const ptEntries = Object.entries(draft.ptByCase);
+          if (ptEntries.length) {
+            for (const [caseId, ptBase] of ptEntries) {
+              const caseRows = rows.filter((r) => r.caseId === caseId);
+              if (!caseRows.length) continue;
+              const fathers = caseRows.filter((x) => x.role === "ALLEGED_FATHER");
+              for (const r of caseRows) {
+                if (r.received || r.status !== "REGISTERED") continue;
+                r.ptBase = ptBase;
+                r.testSampleId = ptBase ? `PT${ptBase}${generateSuffix(r.role, fathers, r.patientName)}` : "";
+              }
+            }
+          }
+          // 2) 签收人（行级）
+          const personEntries = Object.entries(draft.persons);
+          if (personEntries.length) {
+            setReceiptPersons((prev) => {
+              const next = { ...prev };
+              for (const [key, name] of personEntries) {
+                const r = rows.find((x) => x.key === key);
+                if (r && !r.received && r.status === "REGISTERED") next[key] = name;
+              }
+              return next;
+            });
+          }
+        }
+      }
       setData(rows);
       // 回填历史签收人（已签收/拒收行展示用）
       setReceiptPersons((prev) => {
@@ -207,20 +280,6 @@ export default function SampleReceiving() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   // --- PT number handling ---
-  const generateSuffix = (role: string, allFathers: CaseSampleRow[], fatherName?: string): string => {
-    if (role === "MOTHER") return "W";
-    const uniqueFathers: string[] = [];
-    for (const f of allFathers) {
-      if (f.role === "ALLEGED_FATHER" && f.patientName && !uniqueFathers.includes(f.patientName)) {
-        uniqueFathers.push(f.patientName);
-      }
-    }
-    if (uniqueFathers.length === 0) return "H";
-    if (uniqueFathers.length === 1) return "H";
-    const idx = fatherName ? uniqueFathers.indexOf(fatherName) : 0;
-    return `H${String.fromCharCode(65 + Math.max(0, idx))}`;
-  };
-
   const handlePtChange = (rowKey: string, newPtBase: string) => {
     const row = data.find((r) => r.key === rowKey);
     if (!row) return;
@@ -235,6 +294,20 @@ export default function SampleReceiving() {
         return r;
       })
     );
+    // 写入会话草稿（Case 级 PT）
+    const d = loadReceivingDraft() || { ptByCase: {}, persons: {} };
+    if (newPtBase) d.ptByCase[row.caseId] = newPtBase;
+    else delete d.ptByCase[row.caseId];
+    persistReceivingDraft(d);
+  };
+
+  /** 行级签收人变更 → 写入会话草稿 */
+  const handlePersonChange = (row: CaseSampleRow, name?: string) => {
+    setReceiptPersons((prev) => ({ ...prev, [row.key]: name || "" }));
+    const d = loadReceivingDraft() || { ptByCase: {}, persons: {} };
+    if (name) d.persons[row.key] = name;
+    else delete d.persons[row.key];
+    persistReceivingDraft(d);
   };
 
   // --- 签收前置校验：PT 编号 + 图片（Case 级） ---
@@ -263,6 +336,13 @@ export default function SampleReceiving() {
       if (personName) payload.received_by_name = personName;
       const resp = await (casesApi as any).confirmReceipt(row.caseId, payload);
       message.success(condition === "OK" ? `已签收 ${row.testSampleId || row.patientName}` : "已拒收");
+      // 清除该行草稿（已签收/拒收不再需要）
+      const d = loadReceivingDraft();
+      if (d) {
+        delete d.persons[row.key];
+        delete d.ptByCase[row.caseId];
+        persistReceivingDraft(d);
+      }
       if (condition !== "OK") {
         fetchData();
       } else {
@@ -549,7 +629,7 @@ export default function SampleReceiving() {
           size="small"
           style={{ width: 100 }}
           value={receiptPersons[r.key] || undefined}
-          onChange={(val) => setReceiptPersons(prev => ({ ...prev, [r.key]: val }))}
+          onChange={(val) => handlePersonChange(r, val)}
           options={RECEIPT_PERSONS.map(name => ({ label: name, value: name }))}
           allowClear
           disabled={r.received || r.status === "REJECTED"}
@@ -751,7 +831,7 @@ export default function SampleReceiving() {
               style={{ width: "100%" }}
               size="middle"
               value={rejectTarget ? receiptPersons[rejectTarget.key] || undefined : undefined}
-              onChange={(v) => rejectTarget && setReceiptPersons(prev => ({ ...prev, [rejectTarget.key]: v }))}
+              onChange={(v) => rejectTarget && handlePersonChange(rejectTarget, v)}
               options={RECEIPT_PERSONS.map(name => ({ label: name, value: name }))}
             />
           </div>
