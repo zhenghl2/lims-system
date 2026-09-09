@@ -211,6 +211,12 @@ export default function Cases() {
       },
     },
     {
+      title: "报告截止", dataIndex: "expected_completion", width: 90, align: "center" as const,
+      render: (v: string | null) => v
+        ? <Text style={{ fontSize: 12 }}>{v.slice(5)}</Text>
+        : <Text type="secondary">-</Text>,
+    },
+    {
       title: "备注", key: "evts", width: 180,
       render: (_: any, r: any) => {
         const evts: { label: string; color: string; tip: string }[] = [];
@@ -367,7 +373,7 @@ export default function Cases() {
         rowKey="id"
         loading={loading}
         size="small"
-        scroll={{ x: 1680, y: "calc(100vh - 280px)" }}
+        scroll={{ x: 1770, y: "calc(100vh - 280px)" }}
         pagination={{
           current: page, total, pageSize,
           showSizeChanger: true,
