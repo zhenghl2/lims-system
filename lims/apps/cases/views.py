@@ -308,6 +308,12 @@ class CaseViewSet(viewsets.ModelViewSet):
             case.save(update_fields=["pt_number", "updated_at"])
 
         cs.confirm_receipt(request.user, condition=condition)
+        # 生成样本级 test_sample_id（若缺失）：case.pt_number 手填/自动已存在时，
+        # 原逻辑因 all_samples_received and not case.pt_number 条件永不进入，
+        # 导致手填 PT 的样本 test_sample_id 永远为空。此处补生成。
+        if case.pt_number and not cs.test_sample_id:
+            cs.test_sample_id = case.generate_test_sample_id(cs)
+            cs.save(update_fields=["test_sample_id"])
         # Save new receiving fields
         if received_by_name:
             cs.received_by_name = received_by_name

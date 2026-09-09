@@ -632,7 +632,11 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                               });
                             }} />
                           <Text code style={{ fontSize: 11, width: 150 }}>{e.case_number}</Text>
-                          {e.test_sample_id && <Tag color="blue" style={{ fontSize: 11 }}>{e.test_sample_id}</Tag>}
+                          {e.test_sample_id ? (
+                            <Tag color="blue" style={{ fontSize: 11, minWidth: 90, textAlign: "center", marginRight: 0 }}>{e.test_sample_id}</Tag>
+                          ) : (
+                            <Text type="secondary" style={{ fontSize: 11, minWidth: 90, textAlign: "center" }}>-</Text>
+                          )}
                           <Text strong>{e.patient_name}</Text>
                           <Space size={2} wrap>
                             {e.sample_types.map((t: string) => {
