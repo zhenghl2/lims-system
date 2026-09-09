@@ -409,7 +409,7 @@ export default function Cases() {
                   <Text><Text type="secondary">母亲:</Text> {(selectedCase as any).mother_name || "-"}</Text>
                   <Text><Text type="secondary">Panel:</Text> {selectedCase.panel_name || selectedCase.panel_code}</Text>
                   <Text><Text type="secondary">孕周:</Text> {selectedCase.gestational_age_weeks ?? "-"}周{selectedCase.gestational_age_days ?? ""}天</Text>
-                  <Text><Text type="secondary">性别鉴定:</Text> {(() => {
+                  <Text><Text type="secondary">gender:</Text> {(() => {
                     const g = selectedCase.case_samples?.find((s: any) => s.role === "MOTHER")?.gender_info;
                     if (!g) return "-";
                     return g === "Yes" ? "是" : g === "No" ? "否" : g;
