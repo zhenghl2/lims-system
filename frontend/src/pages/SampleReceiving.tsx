@@ -734,6 +734,11 @@ export default function SampleReceiving() {
       />
 
       {/* Table */}
+      <style>{`
+        .ant-table-tbody > tr.case-boundary-row > td {
+          border-bottom: 3px solid #1677ff !important;
+        }
+      `}</style>
       <Table
         rowKey="key"
         dataSource={data}
@@ -745,7 +750,7 @@ export default function SampleReceiving() {
           const idx = data.indexOf(r);
           const nextRow = data[idx + 1];
           const isCaseBoundary = nextRow && r.caseId !== nextRow.caseId;
-          return isCaseBoundary ? { style: { borderBottom: "3px solid #1677ff" } } : {};
+          return isCaseBoundary ? { className: "case-boundary-row" } : {};
         }}
         rowSelection={activeTab === "pending" ? {
           selectedRowKeys,
