@@ -278,10 +278,16 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
           ? [...selectedBatch.male_blood_samples, ...selectedBatch.male_other_samples]
           : [...selectedBatch.female_samples, ...selectedBatch.male_blood_samples, ...selectedBatch.male_other_samples];
       const allSamples = srcSamples
-        .map(s => ({ id: s.id, extraction_method: s.extraction_method, well_position: s.well_position,
-          plasma_volume: s.plasma_volume, elution_volume: s.elution_volume,
-          dna_concentration: s.dna_concentration, aliquot_tubes: s.aliquot_tubes,
-          qc_status: s.qc_status, qc_note: s.qc_note }));
+        .map(s => {
+          const isF = selectedBatch.female_samples.some((f: any) => f.id === s.id);
+          const res = (isF ? femaleResults : maleResults)[s.id] || {};
+          return { id: s.id, extraction_method: s.extraction_method, well_position: s.well_position,
+            plasma_volume: s.plasma_volume,
+            elution_volume: res.elution ?? s.elution_volume,
+            dna_concentration: res.concentration ?? s.dna_concentration,
+            aliquot_tubes: s.aliquot_tubes,
+            qc_status: s.qc_status, qc_note: s.qc_note };
+        });
       const ed = {
         female: { method: femaleMethod, sample_results: femaleResults, plate_skip_coords: femaleSkipCoords,
           plate_kit_types: femaleKitTypes, magnetic_notes: femaleMagneticNotes.current,
@@ -426,7 +432,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   // ── Sample result helpers ──
   const setResult = (isFemale: boolean, sampleId: string, status: string, note: string, concentration?: number) => {
     const setter = isFemale ? setFemaleResults : setMaleResults;
-    setter((prev: any) => ({ ...prev, [sampleId]: { status, note, ...(concentration !== undefined ? { concentration } : {}) } }));
+    setter((prev: any) => ({ ...prev, [sampleId]: { ...(prev[sampleId] || {}), status, note, ...(concentration !== undefined ? { concentration } : {}) } }));
+  };
+
+  // 洗脱体积(μL)：存于 sample_results（与浓度同模式），默认显示 55
+  const setElution = (isFemale: boolean, sampleId: string, val?: number) => {
+    const setter = isFemale ? setFemaleResults : setMaleResults;
+    setter((prev: any) => ({ ...prev, [sampleId]: { ...(prev[sampleId] || { status: "pass", note: "" }), elution: val } }));
   };
 
   const getResult = (isFemale: boolean, sampleId: string) => {
@@ -671,6 +683,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                 { title: "#", width: 40, render: (_: any, __: any, i: number) => i + 1 },
                 { title: "PT编号", dataIndex: "test_sample_id", width: 120, render: (v: string) => v ? <Text code style={{ fontSize: 11 }}>{v}</Text> : "—" },
                 { title: "姓名", dataIndex: "patient_name", width: 100 },
+                { title: "洗脱体积(μL)", key: "ev", width: 100, render: (_: any, r: ExtractionSample) => {
+                  const res = getResult(isFemale, r.id);
+                  const v = res.elution ?? r.elution_volume ?? 55;
+                  return <InputNumber size="small" min={0} max={200} value={v}
+                    onChange={val => setElution(isFemale, r.id, val ?? undefined)} style={{ width: 65 }} />;
+                }},
                 { title: "QC", key: "qc", width: 120, render: (_: any, r: ExtractionSample) => {
                   const res = getResult(isFemale, r.id);
 
@@ -692,11 +710,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                   return <Tag color="green" style={{ fontSize: 11 }}>{SAMPLE_TYPE_LABELS[st] || st || "—"}</Tag>;
                 }},
                 { title: "洗脱体积(μL)", key: "ev", width: 100, render: (_: any, r: ExtractionSample) => {
-                  if (r.category === "MALE_OTHER") {
-                    return <InputNumber size="small" min={0} max={200} value={r.elution_volume || 30}
-                      onChange={() => {}} style={{ width: 65 }} />;
-                  }
-                  return <span style={{ color: "#ccc" }}>—</span>;
+                  const res = getResult(isFemale, r.id);
+                  const v = res.elution ?? r.elution_volume ?? 55;
+                  return <InputNumber size="small" min={0} max={200} value={v}
+                    onChange={val => setElution(isFemale, r.id, val ?? undefined)} style={{ width: 65 }} />;
                 }},
                 { title: "DNA浓度", key: "conc", width: 110, render: (_: any, r: ExtractionSample) => {
                   const res = getResult(isFemale, r.id);

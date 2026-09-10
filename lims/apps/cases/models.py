@@ -527,7 +527,7 @@ class NipptExtractionSample(models.Model):
     extraction_method = models.CharField(max_length=20, blank=True, default="")
     well_position = models.CharField(max_length=4, blank=True, default="")
     plasma_volume = models.FloatField(null=True, blank=True)
-    elution_volume = models.FloatField(default=30, null=True, blank=True)
+    elution_volume = models.FloatField(default=55, null=True, blank=True)
     dna_concentration = models.FloatField(null=True, blank=True)
     experiment_sample_type = models.CharField(max_length=20, blank=True, default="", help_text="来源前处理的实验样本类型")
 
