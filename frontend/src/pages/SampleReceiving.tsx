@@ -413,11 +413,14 @@ export default function SampleReceiving() {
       caseGroups.get(row.caseId)!.push(row);
     }
     let ptNum = parseInt(batchPtStart) || 1;
+    const drafts: Record<string, string> = {};
 
     setData((prev) => {
       const updated = [...prev];
-      for (const [, rows] of caseGroups) {
-        const base = `PT${String(ptNum).padStart(5, "0")}`;
+      for (const [caseId, rows] of caseGroups) {
+        const baseNum = String(ptNum).padStart(5, "0");  // 纯数字（ptBase 用）
+        const base = `PT${baseNum}`;
+        drafts[caseId] = baseNum;
         const fathers = rows.filter((r) => r.role === "ALLEGED_FATHER");
         for (const row of rows) {
           const idx = updated.findIndex((r) => r.key === row.key);
@@ -425,7 +428,7 @@ export default function SampleReceiving() {
             const suffix = generateSuffix(row.role, fathers, row.patientName);
             updated[idx] = {
               ...updated[idx],
-              ptBase: base,
+              ptBase: baseNum,
               testSampleId: `${base}${suffix}`,
             };
           }
@@ -434,6 +437,10 @@ export default function SampleReceiving() {
       }
       return updated;
     });
+    // 写入会话草稿（Case 级 PT，与单个填写一致）
+    const d = loadReceivingDraft() || { ptByCase: {}, persons: {} };
+    Object.assign(d.ptByCase, drafts);
+    persistReceivingDraft(d);
     setBatchPtOpen(false);
     setBatchPtStart("");
     message.success("PT 编号已批量分配");
