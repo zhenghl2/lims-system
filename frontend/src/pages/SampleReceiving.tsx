@@ -131,6 +131,7 @@ export default function SampleReceiving() {
   const [data, setData] = useState<CaseSampleRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("pending");
+  const [tabCounts, setTabCounts] = useState({ pending: 0, received: 0, rejected: 0 });
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [regTypeFilter, setRegTypeFilter] = useState("");
@@ -202,14 +203,8 @@ export default function SampleReceiving() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const params: any = { page_size: 100 };
-      if (activeTab === "pending") {
-        params.status = "REGISTERED";
-      } else if (activeTab === "rejected") {
-        params.status = "REJECTED";
-      } else {
-        params.status = "RECEIVED,PRE_PROCESSED,EXTRACTION,IN_PROCESS,COMPLETED,REPORTED,ACCEPTED";
-      }
+      // 全量拉取一次 → 本地分类（Tab 计数与列表同源，永不失配）
+      const params: any = { page_size: 500 };
       if (search.trim().length >= 2) params.search = search.trim();
       const _r = await (casesApi as any).list(params);
       const cases = _r.data?.results || [];
@@ -221,6 +216,12 @@ export default function SampleReceiving() {
         filtered = filtered.filter((c: any) => c.registration_type === regTypeFilter);
       }
       const allRows = flatCases(filtered);
+      // Tab 计数（跟随筛选，样本级）
+      setTabCounts({
+        pending: allRows.filter((r) => r.status === "REGISTERED").length,
+        rejected: allRows.filter((r) => r.status === "REJECTED").length,
+        received: allRows.filter((r) => !["REGISTERED", "REJECTED"].includes(r.status)).length,
+      });
       // 行级状态过滤：拒绝样本绝不出现于待签收/已签收 tab
       const rows = allRows.filter((r) => {
         if (activeTab === "pending") return r.status === "REGISTERED";
@@ -773,9 +774,9 @@ export default function SampleReceiving() {
         activeKey={activeTab}
         onChange={(k) => { setActiveTab(k); setSelectedRowKeys([]); }}
         items={[
-          { key: "pending", label: "待签收" },
-          { key: "received", label: "已签收" },
-          { key: "rejected", label: "已拒收" },
+          { key: "pending", label: `待签收（${tabCounts.pending}个）` },
+          { key: "received", label: `已签收（${tabCounts.received}个）` },
+          { key: "rejected", label: `已拒收（${tabCounts.rejected}个）` },
         ]}
         style={{ marginBottom: 0 }}
       />
