@@ -9,10 +9,9 @@ import {
 import {
   PlusOutlined, ReloadOutlined, CheckOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined,
-  CameraOutlined,
+  CameraOutlined, LoadingOutlined,
 } from "@ant-design/icons";
 import { casesApi } from "../api";
-import api from "../api/client";
 import dayjs from "dayjs";
 
 const { Text, Title } = Typography;
@@ -94,10 +93,27 @@ export default function NipptExtraction() {
   const [maleMethod, setMaleMethod] = useState("");
   const [extForm] = Form.useForm();
   const [stepConfirmations, setStepConfirmations] = useState<Record<string, boolean>>({});
-  const [photos, setPhotos] = useState<string[]>([]);
+  // 照片（男女独立）
+  const [photosF, setPhotosF] = useState<string[]>([]);
+  const [photosM, setPhotosM] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const pendingUploads = useRef<Promise<void>[]>([]);
+  const photosFRef = useRef<string[]>([]);
+  const photosMRef = useRef<string[]>([]);
+  const setPhotosFSync = (next: string[]) => { photosFRef.current = next; setPhotosF(next); };
+  const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhotosM(next); };
+  // 日期/时间（男女独立）
+  const [dateF, setDateF] = useState<string>("");
+  const [timeF, setTimeF] = useState<string>("");
+  const [dateM, setDateM] = useState<string>("");
+  const [timeM, setTimeM] = useState<string>("");
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦"];
+// 女性操作人/审核人
 const [operators, setOperators] = useState<Record<string,string>>({});
 const [reviewers, setReviewers] = useState<Record<string,string>>({});
+// 男性操作人/审核人
+const [operatorsM, setOperatorsM] = useState<Record<string,string>>({});
+const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   // sampleResults: { [sampleId]: { status: "pass"|"fail", note: string, concentration?: number } }
   const [femaleResults, setFemaleResults] = useState<Record<string, any>>({});
   const [maleResults, setMaleResults] = useState<Record<string, any>>({});
@@ -149,10 +165,21 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       setMaleAutoNotes(med.auto_notes || "");
       // Shared
       setStepConfirmations(ed.step_confirmations || {});
-      setPhotos(ed.photos || []);
+      // 照片（男女独立；旧 photos 归女性）
+      const legacyPhotos = Array.isArray(ed.photos) ? ed.photos : [];
+      setPhotosFSync(Array.isArray(ed.photos_female) ? ed.photos_female : legacyPhotos);
+      setPhotosMSync(Array.isArray(ed.photos_male) ? ed.photos_male : []);
+      // 人员（男女独立；旧批次字段归女性）
+      setOperators(prev => ({ ...prev, [id]: ed.operator_female ?? d.operator_name ?? "" }));
+      setReviewers(prev => ({ ...prev, [id]: ed.reviewer_female ?? d.reviewer ?? "" }));
+      setOperatorsM(prev => ({ ...prev, [id]: ed.operator_male ?? "" }));
+      setReviewersM(prev => ({ ...prev, [id]: ed.reviewer_male ?? "" }));
+      // 日期/时间（男女独立；旧值归女性）
+      setDateF(fed.extraction_date ?? ed.extraction_date ?? "");
+      setTimeF(fed.extraction_time ?? ed.extraction_time ?? "");
+      setDateM(med.extraction_date ?? "");
+      setTimeM(med.extraction_time ?? "");
       extForm.setFieldsValue({
-        extraction_date: ed.extraction_date ? dayjs(ed.extraction_date) : dayjs(),
-        extraction_time: ed.extraction_time ? dayjs(ed.extraction_time, "HH:mm") : dayjs(),
         equipment: ed.equipment || "", kit_type: ed.kit_type || undefined,
         reagent_lot: ed.reagent_lot || "",
         reagent_expiry: ed.reagent_expiry ? dayjs(ed.reagent_expiry) : undefined,
@@ -210,37 +237,37 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   };
 
   // ── Save / Complete / Delete ──
-  /** 保存前校验：返回缺失项列表（照片+操作人+审核人） */
+  /** 保存前校验：按侧校验（有样本的侧才校验；照片+操作人+审核人） */
   const validateBeforeSave = (): string[] => {
     const missing: string[] = [];
     if (!selectedBatch) return missing;
-    if (!photos.length) missing.push("上传实验照片");
-    if (!(operators[selectedBatch.id] || (selectedBatch as any).operator_name)) missing.push("选择操作人");
-    if (!(reviewers[selectedBatch.id] || (selectedBatch as any).reviewer)) missing.push("选择审核人");
+    const hasF = selectedBatch.female_samples.length > 0;
+    const hasM = selectedBatch.male_blood_count + selectedBatch.male_other_count > 0;
+    if (hasF) {
+      if (!photosFRef.current.length) missing.push("上传女性实验照片");
+      if (!operators[selectedBatch.id]) missing.push("选择女性操作人");
+      if (!reviewers[selectedBatch.id]) missing.push("选择女性审核人");
+    }
+    if (hasM) {
+      if (!photosMRef.current.length) missing.push("上传男性实验照片");
+      if (!operatorsM[selectedBatch.id]) missing.push("选择男性操作人");
+      if (!reviewersM[selectedBatch.id]) missing.push("选择男性审核人");
+    }
     return missing;
-  };
-
-  /** 保存操作人/审核人（主保存同步调用；独立保存按钮复用；走 axios 自动刷新 token） */
-  const savePersons = async (): Promise<boolean> => {
-    if (!selectedBatch) return false;
-    try {
-      await api.patch("/cases/extraction/" + selectedBatch.id + "/", {
-        operator_name: operators[selectedBatch.id] || (selectedBatch as any).operator_name || "",
-        reviewer: reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || "",
-      });
-      return true;
-    } catch { return false; }
   };
 
   const saveProcessing = async () => {
     if (!selectedBatch) return;
-    // 保存前校验：照片 + 操作人 + 审核人
+    // 竞态修复：等待所有照片读取/压缩完成再提交
+    if (pendingUploads.current.length) {
+      setBatchLoading(true);
+      await Promise.allSettled(pendingUploads.current);
+      setBatchLoading(false);
+    }
+    // 保存前校验：按侧（照片+操作人+审核人）
     const missing = validateBeforeSave();
     if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
     try {
-      // 一并保存操作人/审核人
-      const ok = await savePersons();
-      if (!ok) { message.error("操作人/审核人保存失败"); return; }
       const allSamples = [...selectedBatch.female_samples, ...selectedBatch.male_blood_samples, ...selectedBatch.male_other_samples]
         .map(s => ({ id: s.id, extraction_method: s.extraction_method, well_position: s.well_position,
           plasma_volume: s.plasma_volume, elution_volume: s.elution_volume,
@@ -249,11 +276,17 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const ed = {
         female: { method: femaleMethod, sample_results: femaleResults, plate_skip_coords: femaleSkipCoords,
           plate_kit_types: femaleKitTypes, magnetic_notes: femaleMagneticNotes.current,
-          manual_notes: femaleManualNotes, auto_notes: femaleAutoNotes },
+          manual_notes: femaleManualNotes, auto_notes: femaleAutoNotes,
+          extraction_date: dateF || "", extraction_time: timeF || "" },
         male: { method: maleMethod, sample_results: maleResults, plate_skip_coords: maleSkipCoords,
           plate_kit_types: maleKitTypes, magnetic_notes: maleMagneticNotes.current,
-          manual_notes: maleManualNotes, auto_notes: maleAutoNotes },
-        ...extForm.getFieldsValue(), step_confirmations: stepConfirmations, photos,
+          manual_notes: maleManualNotes, auto_notes: maleAutoNotes,
+          extraction_date: dateM || "", extraction_time: timeM || "" },
+        ...extForm.getFieldsValue(),
+        photos_female: photosFRef.current, photos_male: photosMRef.current,
+        operator_female: operators[selectedBatch.id] || "", reviewer_female: reviewers[selectedBatch.id] || "",
+        operator_male: operatorsM[selectedBatch.id] || "", reviewer_male: reviewersM[selectedBatch.id] || "",
+        step_confirmations: stepConfirmations,
       };
       await (casesApi as any).saveExtraction(selectedBatch.id, { samples: allSamples, extraction_data: ed });
       message.success("保存成功"); fetchDetail(selectedBatch.id);
@@ -272,7 +305,114 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   };
 
   // ── Photo ──
-  const handlePhoto = (file: File) => { const r = new FileReader(); r.onload = (e) => setPhotos(p => [...p, e.target?.result as string]); r.readAsDataURL(file); return false; };
+  // ===== Photo upload（压缩 + 男女分开）=====
+  /** 压缩图片：超过 1600px 或 800KB 转 JPEG 0.85 */
+  const compressImage = (dataUrl: string): Promise<string> => new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const maxDim = 1600;
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      if (scale >= 1 && dataUrl.length < 800000) { resolve(dataUrl); return; }
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { resolve(dataUrl); return; }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
+  const handlePhoto = (side: "f" | "m", file: File) => {
+    setUploading(c => c + 1);
+    const p = new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        compressImage(e.target?.result as string)
+          .then((url) => {
+            if (side === "f") setPhotosFSync([...photosFRef.current, url]);
+            else setPhotosMSync([...photosMRef.current, url]);
+            resolve();
+          })
+          .catch(() => resolve());
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
+    pendingUploads.current.push(p);
+    p.finally(() => {
+      pendingUploads.current = pendingUploads.current.filter(x => x !== p);
+      setUploading(c => c - 1);
+    });
+    return false;
+  };
+
+  const removePhoto = (side: "f" | "m", index: number) => {
+    if (side === "f") setPhotosFSync(photosFRef.current.filter((_, i) => i !== index));
+    else setPhotosMSync(photosMRef.current.filter((_, i) => i !== index));
+  };
+
+  /** 日期/时间 + 照片 + 操作人/审核人（男女各自一套） */
+  const renderPhotosPersons = (side: "f" | "m") => {
+    if (!selectedBatch) return null;
+    const who = side === "f" ? "女性" : "男性";
+    const ph = side === "f" ? photosF : photosM;
+    const dv = side === "f" ? dateF : dateM;
+    const tv = side === "f" ? timeF : timeM;
+    const opMap = side === "f" ? operators : operatorsM;
+    const setOpMap = side === "f" ? setOperators : setOperatorsM;
+    const rvMap = side === "f" ? reviewers : reviewersM;
+    const setRvMap = side === "f" ? setReviewers : setReviewersM;
+    return (
+      <Card size="small" title={`📋 ${who}实验记录`} style={{ marginTop: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, flexWrap: "wrap", marginBottom: 10 }}>
+          <span style={{ color: "#666" }}>日期:</span>
+          <DatePicker size="small" style={{ width: 130 }} value={dv ? dayjs(dv) : null}
+            onChange={(d: any) => (side === "f" ? setDateF : setDateM)(d ? d.format("YYYY-MM-DD") : "")} placeholder="选择日期" format="YYYY-MM-DD" />
+          <span style={{ color: "#666", marginLeft: 8 }}>时间:</span>
+          <TimePicker size="small" style={{ width: 100 }} format="HH:mm" value={tv ? dayjs(tv, "HH:mm") : null}
+            onChange={(d: any) => (side === "f" ? setTimeF : setTimeM)(d ? d.format("HH:mm") : "")} placeholder="选择时间" />
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {ph.map((url, i) => (
+            <div key={i} style={{ position: "relative", width: 104, height: 104 }}>
+              <Image src={url} width={104} height={104} style={{ objectFit: "cover", borderRadius: 4 }} />
+              <Button type="text" danger size="small" style={{ position: "absolute", top: -8, right: -8, background: "#fff", borderRadius: "50%" }}
+                onClick={() => removePhoto(side, i)}>✕</Button>
+            </div>
+          ))}
+          {uploading > 0 && (
+            <div style={{ width: 104, height: 104, border: "1px dashed #1677ff", borderRadius: 4,
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#1677ff" }}>
+              <LoadingOutlined style={{ fontSize: 22 }} />
+              <Text style={{ fontSize: 11 }}>处理中…</Text>
+            </div>
+          )}
+          <Upload beforeUpload={f => { handlePhoto(side, f); return false; }} showUploadList={false} accept="image/*">
+            <div style={{ width: 104, height: 104, border: "1px dashed #d9d9d9", borderRadius: 4, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
+              <CameraOutlined style={{ fontSize: 24, color: "#999" }} /><Text type="secondary" style={{ fontSize: 11 }}>拍照/上传</Text></div>
+          </Upload>
+        </div>
+        <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
+          <Text type="secondary">操作人: </Text>
+          <Select size="small" placeholder="选择" style={{ width: 100 }}
+            value={opMap[selectedBatch.id] || undefined}
+            onChange={v => setOpMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+            {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+          </Select>
+          <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
+          <Select size="small" placeholder="选择" style={{ width: 100 }}
+            value={rvMap[selectedBatch.id] || undefined}
+            onChange={v => setRvMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+            {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+          </Select>
+          <Button size="small" type="primary" style={{ marginLeft: 16 }} onClick={saveProcessing}>保存</Button>
+        </div>
+      </Card>
+    );
+  };
 
   // ── Sample result helpers ──
   const setResult = (isFemale: boolean, sampleId: string, status: string, note: string, concentration?: number) => {
@@ -468,12 +608,6 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             </div>
             <Form form={extForm}>
               <div style={{ display: "flex", gap: 8 }}>
-                <Form.Item name="extraction_date" label="日期" style={{ marginBottom: 4 }}>
-                  <DatePicker size="small" style={{ width: 140 }} />
-                </Form.Item>
-                <Form.Item name="extraction_time" label="时间" style={{ marginBottom: 4 }}>
-                  <TimePicker size="small" format="HH:mm" style={{ width: 120 }} />
-                </Form.Item>
                 <Form.Item name="temperature" label="温度(℃)" style={{ marginBottom: 4 }}>
                   <InputNumber size="small" style={{ width: 80 }} min={0} max={50} />
                 </Form.Item>
@@ -634,53 +768,24 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             </Space>}>
             <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
               { key: "female", label: `👩 女性 (${selectedBatch.female_count})`,
-                children: renderExtractionTab(selectedBatch.female_samples, true, femaleMethod, setFemaleMethod,
-                  femaleSkipCoords, setFemaleSkipCoords, femaleKitTypes, setFemaleKitTypes, femaleMagneticNotes,
-                  femaleManualNotes, setFemaleManualNotes, femaleAutoNotes, setFemaleAutoNotes) },
+                children: (
+                  <>
+                    {renderExtractionTab(selectedBatch.female_samples, true, femaleMethod, setFemaleMethod,
+                      femaleSkipCoords, setFemaleSkipCoords, femaleKitTypes, setFemaleKitTypes, femaleMagneticNotes,
+                      femaleManualNotes, setFemaleManualNotes, femaleAutoNotes, setFemaleAutoNotes)}
+                    {renderPhotosPersons("f")}
+                  </>
+                ) },
               { key: "male", label: `👨 男性 (${selectedBatch.male_blood_count + selectedBatch.male_other_count})`,
-                children: renderExtractionTab([...selectedBatch.male_blood_samples, ...selectedBatch.male_other_samples], false, maleMethod, setMaleMethod,
-                  maleSkipCoords, setMaleSkipCoords, maleKitTypes, setMaleKitTypes, maleMagneticNotes,
-                  maleManualNotes, setMaleManualNotes, maleAutoNotes, setMaleAutoNotes) },
+                children: (
+                  <>
+                    {renderExtractionTab([...selectedBatch.male_blood_samples, ...selectedBatch.male_other_samples], false, maleMethod, setMaleMethod,
+                      maleSkipCoords, setMaleSkipCoords, maleKitTypes, setMaleKitTypes, maleMagneticNotes,
+                      maleManualNotes, setMaleManualNotes, maleAutoNotes, setMaleAutoNotes)}
+                    {renderPhotosPersons("m")}
+                  </>
+                ) },
             ]} />
-            <Divider style={{ margin: "12px 0" }} />
-            <Card size="small" title="📷 实验照片">
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {photos.map((url, i) => (
-                  <div key={i} style={{ position: "relative", width: 104, height: 104 }}>
-                    <Image src={url} width={104} height={104} style={{ objectFit: "cover", borderRadius: 4 }} />
-                    <Button type="text" danger size="small" style={{ position: "absolute", top: -8, right: -8, background: "#fff", borderRadius: "50%" }}
-                      onClick={() => setPhotos(p => p.filter((_, j) => j !== i))}>✕</Button>
-                  </div>
-                ))}
-                <Upload beforeUpload={f => { handlePhoto(f); return false; }} showUploadList={false} accept="image/*">
-                  <div style={{ width: 104, height: 104, border: "1px dashed #d9d9d9", borderRadius: 4, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: "pointer" }}>
-                    <CameraOutlined style={{ fontSize: 24, color: "#999" }} /><Text type="secondary" style={{ fontSize: 11 }}>拍照/上传</Text></div>
-                </Upload>
-              </div>
-            <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
-              <Text type="secondary">操作人: </Text>
-              <Select size="small" placeholder="选择" style={{ width: 100 }}
-                value={operators[selectedBatch.id] || (selectedBatch as any).operator_name || undefined}
-                onChange={v => setOperators(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
-                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
-              </Select>
-              <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
-              <Select size="small" placeholder="选择" style={{ width: 100 }}
-                value={reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || undefined}
-                onChange={v => setReviewers(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
-                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
-              </Select>
-
-              <Button size="small" type="primary" style={{ marginLeft: 16 }}
-                onClick={async () => {
-                  const missing = validateBeforeSave();
-                  if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
-                  const ok = await savePersons();
-                  if (ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
-                  else message.error("保存失败");
-                }}>保存</Button>
-            </div>
-            </Card>
           </Card>
         ) : (
           <div style={{ textAlign: "center", paddingTop: 100, color: "#999" }}>
