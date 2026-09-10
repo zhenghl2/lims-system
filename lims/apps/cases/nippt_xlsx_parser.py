@@ -237,6 +237,7 @@ def parse_xlsx_bytes(data, filename=""):
             "gender_info": gender,
             "fedex_no": fedex,
             "notes": _translate_notes(remarks),
+            "remarks_raw": remarks,
             "expected_completion": _first_part(due),
         })
 

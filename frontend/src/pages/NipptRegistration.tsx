@@ -139,6 +139,7 @@ export default function NipptRegistration() {
   const [importRows, setImportRows] = useState<any[]>([]);
   const [importChecked, setImportChecked] = useState<Set<string>>(new Set());
   const [importExisting, setImportExisting] = useState<Set<string>>(new Set());
+  const [importKindMap, setImportKindMap] = useState<Record<string, { kind: string; case_number?: string }>>({});
   const [importNiptSkipped, setImportNiptSkipped] = useState(0);
   const [importFileName, setImportFileName] = useState("");
   const [importLoading, setImportLoading] = useState(false);
@@ -227,7 +228,17 @@ export default function NipptRegistration() {
       setImportErrorFiles(d.error_files || []);
       setImportFileName(files.map((f) => f.name).join("、"));
       setImportExisting(new Set(d.existing || []));
-      setImportChecked(new Set((d.cases || []).map((r: any) => r.seq)));
+      const kindMap: Record<string, { kind: string; case_number?: string }> = {};
+      for (const ei of (d.existing_info || [])) kindMap[ei.seq] = { kind: ei.kind, case_number: ei.case_number };
+      setImportKindMap(kindMap);
+      const existingSet = new Set<string>(d.existing || []);
+      const supSeqs = (d.existing_info || [])
+        .filter((e: any) => e.kind && e.kind !== "DUPLICATE")
+        .map((e: any) => e.seq);
+      setImportChecked(new Set([
+        ...(d.cases || []).map((r: any) => r.seq).filter((sq: string) => !existingSet.has(sq)),
+        ...supSeqs,
+      ]));
       setImportResult(null);
       if (d.error_count > 0) {
         message.warning(`解析完成：${d.case_count} 个Case，${d.nipt_count ?? 0} 个NIPT跳过，${d.error_count} 个文件解析失败`);
@@ -244,7 +255,11 @@ export default function NipptRegistration() {
 
   const handleImportSubmit = async () => {
     if (importChecked.size === 0) { message.warning("请先勾选要导入的行"); return; }
-    const selected = importRows.filter((r) => importChecked.has(r.seq));
+    const selected = importRows.filter((r) => importChecked.has(r.seq)).map((r: any) => {
+      const info = importKindMap[r.seq];
+      if (!info) return r;
+      return { ...r, merge_kind: info.kind === "DUPLICATE" ? "FORCE" : info.kind };
+    });
     setImportLoading(true);
     try {
       const res = await (casesApi as any).batchImportNippt({ cases: selected });
@@ -252,12 +267,13 @@ export default function NipptRegistration() {
       const createdCount = d.created_count ?? d.created?.length ?? 0;
       const skippedCount = d.skipped_count ?? d.skipped?.length ?? 0;
       const errCount = d.error_count ?? d.errors?.length ?? 0;
+      const mergedCount = d.merged_count ?? d.merged?.length ?? 0;
       if (errCount > 0) {
-        message.warning(`导入完成：成功 ${createdCount}，跳过 ${skippedCount}，失败 ${errCount}（详见下方结果）`);
+        message.warning(`导入完成：成功 ${createdCount}，合并 ${mergedCount}，跳过 ${skippedCount}，失败 ${errCount}（详见下方结果）`);
         setImportResult(d);
         refreshCases();
       } else {
-        message.success(`导入成功 ${createdCount} 个Case${skippedCount > 0 ? `，跳过 ${skippedCount}` : ""}`);
+        message.success(`导入成功 ${createdCount} 个Case${mergedCount > 0 ? `，合并 ${mergedCount} 个补样` : ""}${skippedCount > 0 ? `，跳过 ${skippedCount}` : ""}`);
         // 成功才清空
         setImportRows([]);
         setImportFileName("");
@@ -1188,9 +1204,9 @@ export default function NipptRegistration() {
                 pagination={false}
                 scroll={{ x: 900, y: 400 }}
                 columns={[
-                  { title: "导入", width: 50, render: (_: any, r: any) => {
-                      if (importExisting.has(r.seq)) return <Tag color="orange">已存在</Tag>;
-                      return (
+                  { title: "导入", width: 110, render: (_: any, r: any) => {
+                      const info = importKindMap[r.seq];
+                      const cb = (
                         <Checkbox checked={importChecked.has(r.seq)}
                           onChange={(e) => setImportChecked((prev) => {
                             const next = new Set(prev);
@@ -1198,6 +1214,20 @@ export default function NipptRegistration() {
                             return next;
                           })} />
                       );
+                      if (info) {
+                        const labelMap: Record<string, string> = { MOTHER: "补孕妇", FATHER: "补疑父", FATHER2: "补疑父二", DUPLICATE: "重复" };
+                        const colorMap: Record<string, string> = { MOTHER: "magenta", FATHER: "blue", FATHER2: "purple", DUPLICATE: "orange" };
+                        return (
+                          <Space size={2} direction="vertical" style={{ alignItems: "center", maxWidth: 100 }}>
+                            <Tag color={colorMap[info.kind] || "orange"} style={{ fontSize: 10, margin: 0, whiteSpace: "normal", lineHeight: "14px" }}>
+                              {labelMap[info.kind] || "已存在"}
+                              {info.case_number ? <span style={{ fontSize: 9, opacity: 0.8 }}>{` (${info.case_number.slice(-4)})`}</span> : null}
+                            </Tag>
+                            {cb}
+                          </Space>
+                        );
+                      }
+                      return cb;
                     } },
                   { title: "Seq", dataIndex: "seq", width: 90,
                     render: (v: string) => <Text code>{v}</Text> },

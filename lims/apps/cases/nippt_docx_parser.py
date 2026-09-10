@@ -309,5 +309,6 @@ def parse_docx_bytes(data, filename=""):
         "balance": balance,
         "gender_info": gender_info,
         "notes": observacoes,
+        "remarks_raw": observacoes,
         "expected_completion": report_due_date,
     }

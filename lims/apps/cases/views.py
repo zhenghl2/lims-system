@@ -26,6 +26,20 @@ from datetime import date
 import datetime
 
 
+def _classify_supplement_kind(text):
+    """巴西补样备注判定: MOTHER=补孕妇 / FATHER=补疑父 / FATHER2=补疑父二 / DUPLICATE=重复"""
+    t = (text or "").upper()
+    t = t.replace("º", "º").replace("°", "º")
+    if "RECOLETA DA GESTANTE" in t or "RECOLETA GESTANTE" in t:
+        return "MOTHER"
+    if ("2º SUPOSTO PAI" in t or "2O SUPOSTO PAI" in t or "2 SUPOSTO PAI" in t
+            or "SEGUNDO SUPOSTO PAI" in t or "SEGUNDA SUPOSTO PAI" in t):
+        return "FATHER2"
+    if "SUPOSTO PAI" in t:
+        return "FATHER"
+    return "DUPLICATE"
+
+
 class CaseViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
@@ -181,13 +195,28 @@ class CaseViewSet(viewsets.ModelViewSet):
             seen_seq_files[seq] = fname
             cases.append(r)
 
-        # 查重：库中已存在的 Seq
+        # 查重：库中已存在的 Seq（附补样判定）
         existing_seqs = []
+        existing_info = []
         if cases:
             seqs = [c["seq"] for c in cases]
             existing_seqs = list(
                 Sample.objects.filter(external_id__in=seqs).values_list("external_id", flat=True)
             )
+            existing_set = set(existing_seqs)
+            for c in cases:
+                if c["seq"] not in existing_set:
+                    continue
+                cs = CaseSample.objects.filter(
+                    sample__external_id=c["seq"]
+                ).select_related("case").first()
+                if not cs:
+                    continue
+                kind = _classify_supplement_kind(c.get("remarks_raw") or c.get("notes") or "")
+                existing_info.append({
+                    "seq": c["seq"], "kind": kind,
+                    "case_number": cs.case.case_number,
+                })
 
         return Response({
             "cases": cases,
@@ -195,6 +224,7 @@ class CaseViewSet(viewsets.ModelViewSet):
             "error_files": error_files,
             "duplicate_files": duplicate_files,
             "existing": existing_seqs,
+            "existing_info": existing_info,
             "case_count": len(cases),
             "nipt_count": len(nipt_files),
             "error_count": len(error_files),
@@ -228,11 +258,55 @@ class CaseViewSet(viewsets.ModelViewSet):
                 except (ValueError, AttributeError):
                     return None
 
-        created, skipped, errors = [], [], []
+        created, skipped, errors, merged = [], [], [], []
         for item in serializer.validated_data["cases"]:
             seq = item["seq"]
+            merge_kind = (item.get("merge_kind") or "").strip()
             if Sample.objects.filter(external_id=seq).exists():
-                skipped.append({"seq": seq, "reason": "exists"})
+                if not merge_kind:
+                    skipped.append({"seq": seq, "reason": "exists"})
+                    continue
+                # ── 补样/重采合并到原 Case ──
+                try:
+                    with transaction.atomic():
+                        existing_cs = CaseSample.objects.filter(
+                            sample__external_id=seq
+                        ).select_related("case").first()
+                        if not existing_cs:
+                            skipped.append({"seq": seq, "reason": "exists"})
+                            continue
+                        case = existing_cs.case
+                        kind = merge_kind
+                        if kind == "FORCE":
+                            kind = "MOTHER" if (item.get("mother_name") or "").strip() else "FATHER"
+                        created_father = 0
+                        if kind == "MOTHER":
+                            sup = SupplementSerializer(data={
+                                "role": "MOTHER",
+                                "patient_name": item["mother_name"],
+                                "sample_types": ["BLOOD"],
+                                "external_id": seq,
+                                "notes": item.get("notes") or "",
+                            }, context={"case": case, "request": request})
+                            sup.is_valid(raise_exception=True)
+                            sup.save()
+                        else:
+                            for f in item["fathers"]:
+                                if not f["name"] or f["name"] == "-":
+                                    continue
+                                sup = SupplementSerializer(data={
+                                    "role": "ALLEGED_FATHER",
+                                    "patient_name": f["name"],
+                                    "sample_types": f.get("sample_types") or ["BLOOD"],
+                                    "external_id": seq,
+                                    "notes": item.get("notes") or "",
+                                }, context={"case": case, "request": request})
+                                sup.is_valid(raise_exception=True)
+                                sup.save()
+                                created_father += 1
+                        merged.append({"seq": seq, "case_number": case.case_number, "kind": kind})
+                except Exception as e:
+                    errors.append({"seq": seq, "error": str(e)[:300]})
                 continue
             try:
                 with transaction.atomic():
@@ -309,9 +383,11 @@ class CaseViewSet(viewsets.ModelViewSet):
             "created": created,
             "skipped": skipped,
             "errors": errors,
+            "merged": merged,
             "created_count": len(created),
             "skipped_count": len(skipped),
             "error_count": len(errors),
+            "merged_count": len(merged),
         })
 
     @action(detail=True, methods=["post"])

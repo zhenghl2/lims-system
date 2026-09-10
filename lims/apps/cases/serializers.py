@@ -464,6 +464,7 @@ class NipptImportCaseItemSerializer(serializers.Serializer):
     gender_info = serializers.CharField(required=False, allow_blank=True, default="")
     notes = serializers.CharField(required=False, allow_blank=True, default="")
     expected_completion = serializers.CharField(required=False, allow_blank=True, default="")  # DD/MM/YYYY
+    merge_kind = serializers.CharField(required=False, allow_blank=True, default="")  # 补样合并: MOTHER/FATHER/FATHER2/FORCE
 
 
 class NipptBatchImportSerializer(serializers.Serializer):
