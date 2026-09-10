@@ -773,15 +773,15 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                     kwargs["aliquot_tubes"] = 3
                 # MALE_OTHER: no aliquot_tubes
                 # Filter case_sample_ids by experiment_sample_type if set
-            exp_type = gdata.get("experiment_sample_type", "")
-            if exp_type:
-                matching = []
-                for cid in kwargs.get("case_sample_ids", []):
-                    cs = CaseSample.objects.filter(id=cid).first()
-                    if cs and cs.sample_source == exp_type:
-                        matching.append(cid)
-                kwargs["case_sample_ids"] = matching
-            NipptPreProcessingSample.objects.create(**kwargs)
+                exp_type = gdata.get("experiment_sample_type", "")
+                if exp_type:
+                    matching = []
+                    for cid in kwargs.get("case_sample_ids", []):
+                        cs = CaseSample.objects.filter(id=cid).first()
+                        if cs and cs.sample_source == exp_type:
+                            matching.append(cid)
+                    kwargs["case_sample_ids"] = matching
+                NipptPreProcessingSample.objects.create(**kwargs)
 
             CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="PRE_PROCESSING")
             from .models import WorkflowLog
