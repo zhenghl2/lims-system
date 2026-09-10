@@ -13,6 +13,9 @@ const SAMPLE_TYPE_LABELS:Record<string,string>={BLOOD:"血液",DBS:"血痕",HAIR
 const DEFAULT_POOLING_AMOUNT=0;
 const YIELD_THRESHOLD=60;
 const DEFAULT_ELUTION=30;
+/** 淘汰判定：仅当浓度有值(>0)时按产量判定（浓度未填不淘汰）*/
+const computeEliminated = (conc: number | null, elution: number) =>
+  (typeof conc === "number" && conc > 0) ? (conc * elution) < YIELD_THRESHOLD : false;
 const MAX_PER_GROUP=34;
 const AMOUNT_MAP:Record<string,number>={BLOODSTAIN:250,HAIR:300,NAIL:160,SWAB:120,TOOTHBRUSH:450,CIGARETTE:120,BEARD:230};
 const getDefaultAmount=(category:string,sampleType:string):number=>{
@@ -183,7 +186,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
           id:s.id, ptId:s.test_sample_id||"?", index:savedIdx[s.id]||"", sampleType:sampleType2, category:s.category,
           concentration:conc, elutionVolume:elution, yield:Math.round(y*10)/10,
           poolingAmount:pa, poolingVolume:Math.round(pv*100)/100,
-          eliminated:sr.eliminated||false, qc:sr.qc||"PASS",
+          eliminated:computeEliminated(conc??null, elution), qc:sr.qc||"PASS",
         };
       });
       setRows(poolRows);
@@ -215,7 +218,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         const conc=field==="concentration"?val:r.concentration;
         const ev=field==="elutionVolume"?val:r.elutionVolume;
         r.yield=Math.round((conc??0)*ev*10)/10;
-        
+        r.eliminated=computeEliminated(conc??null, ev);
       }
       if(field==="poolingAmount"||field==="concentration"){
         const pa=field==="poolingAmount"?val:r.poolingAmount;
@@ -398,7 +401,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                     <Text style={{color:"#666",fontSize:11}}>胡须</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["BEARD"]??230} onChange={v=>{const val=v??230;setCustomAmounts(p=>({...p,BEARD:val}));setRows(prev=>prev.map(r=>r.category==="MALE_OTHER"&&r.sampleType==="BEARD"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
                     <Button size="small" style={{fontSize:11,padding:"0 4px"}} onClick={()=>{setCustomAmounts({});setRows(prev=>prev.map(r=>{const da=getDefaultAmount(r.category,r.sampleType);return{...r,poolingAmount:da,poolingVolume:(r.concentration??0)>0?Math.round(da/(r.concentration??1)*100)/100:0}}))}}>重置</Button>
                     <Text style={{fontSize:11,color:"#999",marginLeft:4}}>洗脱:</Text>
-                    <InputNumber size="small" min={1} step={1} style={{width:50}} value={groupElutions[gi]??globalElutionVol} onChange={v=>{if(v!==null){setGroupElutions(p=>({...p,[gi]:v}));setRows(prev=>prev.map(r=>{if(g.rows.find(gr=>gr.id===r.id)){r.elutionVolume=v;r.yield=Math.round((r.concentration??0)*v*10)/10;r.eliminated=r.yield<YIELD_THRESHOLD;}return r}))}}}/>μL
+                    <InputNumber size="small" min={1} step={1} style={{width:50}} value={groupElutions[gi]??globalElutionVol} onChange={v=>{if(v!==null){setGroupElutions(p=>({...p,[gi]:v}));setRows(prev=>prev.map(r=>{if(g.rows.find(gr=>gr.id===r.id)){r.elutionVolume=v;r.yield=Math.round((r.concentration??0)*v*10)/10;r.eliminated=computeEliminated(r.concentration??null, v);}return r}))}}}/>μL
                   </Space>
                 </div>
                 <div style={{overflowX:"auto"}}>
