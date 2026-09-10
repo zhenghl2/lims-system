@@ -1,5 +1,5 @@
 // NipptPreProcessing.tsx — NIPPT 前处理模块
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Card, Table, Button, Tag, Tabs, Modal, message, Typography,
   Input, Select, InputNumber, Space, Popconfirm,
@@ -8,10 +8,9 @@ import {
 import {
   PlusOutlined, ReloadOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined,
-  CameraOutlined,
+  CameraOutlined, LoadingOutlined,
 } from "@ant-design/icons";
 import { casesApi } from "../api";
-import api from "../api/client";
 import dayjs from "dayjs";
 
 const { Text, Title } = Typography;
@@ -111,11 +110,24 @@ export default function NipptPreProcessing() {
   // Active tab
   const [activeTab, setActiveTab] = useState("female");
 
-  // Photo upload
-  const [photos, setPhotos] = useState<string[]>([]);
+  // Photo upload（男女独立）
+  const [photosF, setPhotosF] = useState<string[]>([]);
+  const [photosM, setPhotosM] = useState<string[]>([]);
+  const [uploading, setUploading] = useState(0);
+  const pendingUploads = useRef<Promise<void>[]>([]);
+  const draftSkipRef = useRef(false);
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦"];
+// 女性操作人/审核人
 const [operators, setOperators] = useState<Record<string,string>>({});
 const [reviewers, setReviewers] = useState<Record<string,string>>({});
+// 男性操作人/审核人
+const [operatorsM, setOperatorsM] = useState<Record<string,string>>({});
+const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
+// 照片 ref 镜像：保证保存/校验时读到最新值（防闭包旧快照）
+const photosFRef = useRef<string[]>([]);
+const photosMRef = useRef<string[]>([]);
+const setPhotosFSync = (next: string[]) => { photosFRef.current = next; setPhotosF(next); };
+const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhotosM(next); };
 
   // ===== Data fetching =====
   const deleteBatch = async (id: string, batchNumber: string) => {
@@ -162,20 +174,114 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     }
   };
 
+  // ===== 草稿（sessionStorage）：照片+操作人+审核人 切页不丢 =====
+  const PP_DRAFT_KEY = "nippt_pp_draft_v1";
+  const loadPpDraft = (): any => {
+    try { return JSON.parse(sessionStorage.getItem(PP_DRAFT_KEY) || "{}") || {}; } catch { return {}; }
+  };
+  const savePpDraft = (patch: any) => {
+    if (!selectedBatch) return;
+    try {
+      const d = loadPpDraft();
+      d[selectedBatch.id] = { ...(d[selectedBatch.id] || {}), ...patch, savedAt: Date.now() };
+      sessionStorage.setItem(PP_DRAFT_KEY, JSON.stringify(d));
+    } catch { /* ignore */ }
+  };
+
+  // ===== 草稿照片：IndexedDB（大容量，防 sessionStorage 超限丢图）=====
+  const idbOpen = (): Promise<IDBDatabase> => new Promise((resolve, reject) => {
+    const req = indexedDB.open("nippt_pp_big", 1);
+    req.onupgradeneeded = () => { req.result.createObjectStore("kv"); };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  const idbPut = async (key: string, val: any): Promise<void> => {
+    const db = await idbOpen();
+    await new Promise<void>((res, rej) => {
+      const tx = db.transaction("kv", "readwrite");
+      tx.objectStore("kv").put(val, key);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+    db.close();
+  };
+  const idbGet = async (key: string): Promise<any> => {
+    const db = await idbOpen();
+    const val = await new Promise<any>((res, rej) => {
+      const tx = db.transaction("kv", "readonly");
+      const rq = tx.objectStore("kv").get(key);
+      rq.onsuccess = () => res(rq.result);
+      rq.onerror = () => rej(rq.error);
+    });
+    db.close();
+    return val;
+  };
+  const idbDel = async (key: string): Promise<void> => {
+    try {
+      const db = await idbOpen();
+      await new Promise<void>((res) => {
+        const tx = db.transaction("kv", "readwrite");
+        tx.objectStore("kv").delete(key);
+        tx.oncomplete = () => res();
+        tx.onerror = () => res();
+      });
+      db.close();
+    } catch { /* ignore */ }
+  };
+  const clearPpDraft = (batchId: string) => {
+    try { const d = loadPpDraft(); delete d[batchId]; sessionStorage.setItem(PP_DRAFT_KEY, JSON.stringify(d)); } catch { /* ignore */ }
+  };
+
   const fetchDetail = async (id: string) => {
     setBatchLoading(true);
     try {
       const res = await (casesApi as any).getPreprocessingBatch(id);
       autoFillExperimentType(res.data);
       setSelectedBatch(res.data);
-      // Load saved photos
-      setPhotos(res.data?.processing_data?.photos || []);
+      // Load photos/persons（男女独立；兼容旧结构：旧 photos/operator_name 归女性）
+      const pd = res.data?.processing_data || {};
+      const legacyPhotos = Array.isArray(pd.photos) ? pd.photos : [];
+      draftSkipRef.current = true;
+      setPhotosFSync(Array.isArray(pd.photos_female) ? pd.photos_female : legacyPhotos);
+      setPhotosMSync(Array.isArray(pd.photos_male) ? pd.photos_male : []);
+      setOperators(prev => ({ ...prev, [id]: pd.operator_female ?? res.data?.operator_name ?? "" }));
+      setReviewers(prev => ({ ...prev, [id]: pd.reviewer_female ?? res.data?.reviewer ?? "" }));
+      setOperatorsM(prev => ({ ...prev, [id]: pd.operator_male ?? "" }));
+      setReviewersM(prev => ({ ...prev, [id]: pd.reviewer_male ?? "" }));
+      // 草稿恢复：人员（sessionStorage）+ 照片（IndexedDB，异步）
+      const draft = loadPpDraft()[id];
+      if (draft) {
+        if (typeof draft.operator_female === "string") setOperators(prev => ({ ...prev, [id]: draft.operator_female }));
+        if (typeof draft.reviewer_female === "string") setReviewers(prev => ({ ...prev, [id]: draft.reviewer_female }));
+        if (typeof draft.operator_male === "string") setOperatorsM(prev => ({ ...prev, [id]: draft.operator_male }));
+        if (typeof draft.reviewer_male === "string") setReviewersM(prev => ({ ...prev, [id]: draft.reviewer_male }));
+      }
+      idbGet("pp_photos_" + id).then((v) => {
+        if (v) {
+          if (Array.isArray(v.photosF)) setPhotosFSync(v.photosF);
+          if (Array.isArray(v.photosM)) setPhotosMSync(v.photosM);
+        }
+      }).catch(() => { /* ignore */ });
+      setTimeout(() => { draftSkipRef.current = false; }, 0);
     } catch {
       message.error("加载批次详情失败");
     } finally {
       setBatchLoading(false);
     }
   };
+
+  // 草稿写入：人员→sessionStorage；照片→IndexedDB（跳过 fetchDetail/恢复 触发的那次）
+  useEffect(() => {
+    if (!selectedBatch || draftSkipRef.current) return;
+    savePpDraft({
+      operator_female: operators[selectedBatch.id] || "",
+      reviewer_female: reviewers[selectedBatch.id] || "",
+      operator_male: operatorsM[selectedBatch.id] || "",
+      reviewer_male: reviewersM[selectedBatch.id] || "",
+    });
+    idbPut("pp_photos_" + selectedBatch.id, { photosF, photosM }).catch(() => { /* ignore */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photosF, photosM, operators, reviewers, operatorsM, reviewersM, selectedBatch]);
 
   // ===== New batch =====
   const openNewBatch = async () => {
@@ -262,34 +368,37 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     return payload;
   };
 
-  /** 保存前校验：返回缺失项列表（照片+操作人+审核人） */
-  const validateBeforeSave = (): string[] => {
+  /** 保存前校验（side: f=女性 m=男性）：照片+操作人+审核人 */
+  const validateBeforeSave = (side: "f" | "m"): string[] => {
     const missing: string[] = [];
     if (!selectedBatch) return missing;
-    if (!photos.length) missing.push("上传实验照片");
-    if (!(operators[selectedBatch.id] || (selectedBatch as any).operator_name)) missing.push("选择操作人");
-    if (!(reviewers[selectedBatch.id] || (selectedBatch as any).reviewer)) missing.push("选择审核人");
+    const who = side === "f" ? "女性" : "男性";
+    const ph = side === "f" ? photosFRef.current : photosMRef.current;
+    const opMap = side === "f" ? operators : operatorsM;
+    const rvMap = side === "f" ? reviewers : reviewersM;
+    if (!ph.length) missing.push(`上传${who}实验照片`);
+    if (!opMap[selectedBatch.id]) missing.push(`选择${who}操作人`);
+    if (!rvMap[selectedBatch.id]) missing.push(`选择${who}审核人`);
     return missing;
   };
 
-  /** 保存操作人/审核人（主保存同步调用；独立保存按钮复用；走 axios 自动刷新 token） */
-  const savePersons = async (): Promise<boolean> => {
-    if (!selectedBatch) return false;
-    try {
-      await api.patch("/cases/preprocessing/" + selectedBatch.id + "/", {
-        operator_name: operators[selectedBatch.id] || (selectedBatch as any).operator_name || "",
-        reviewer: reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || "",
-      });
-      return true;
-    } catch { return false; }
-  };
-
-  const doSave = async (label: string, samples: PreSample[]) => {
+  /** 保存（side: f=女性 m=男性）：等待图片处理完成后校验并提交全量 */
+  const doSave = async (side: "f" | "m") => {
     if (!selectedBatch) return;
+    const who = side === "f" ? "女性" : "男性";
+    // 竞态修复：等待所有照片读取/压缩完成再提交
+    if (pendingUploads.current.length) {
+      setBatchLoading(true);
+      await Promise.allSettled(pendingUploads.current);
+      setBatchLoading(false);
+    }
     // 保存前校验：照片 + 操作人 + 审核人
-    const missing = validateBeforeSave();
+    const missing = validateBeforeSave(side);
     if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
     // 保存前校验：实验样本类型必填
+    const samples = side === "f"
+      ? selectedBatch.female_samples
+      : [...selectedBatch.male_blood_samples, ...selectedBatch.male_other_samples];
     const noType = samples.filter((s) => !s.experiment_sample_type);
     if (noType.length) {
       const names = noType.slice(0, 5).map((s) => s.patient_name).join("、");
@@ -297,23 +406,32 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       return;
     }
     try {
-      // 一并保存操作人/审核人
-      const ok = await savePersons();
-      if (!ok) { message.error("操作人/审核人保存失败"); return; }
+      // 全量合并（两边照片/人员都带上，互不覆盖）
+      const pd = {
+        ...selectedBatch.processing_data,
+        photos_female: photosFRef.current,
+        photos_male: photosMRef.current,
+        operator_female: operators[selectedBatch.id] || "",
+        reviewer_female: reviewers[selectedBatch.id] || "",
+        operator_male: operatorsM[selectedBatch.id] || "",
+        reviewer_male: reviewersM[selectedBatch.id] || "",
+      };
       await (casesApi as any).savePreprocessing(selectedBatch.id, {
         samples: buildSamplePayload(samples),
-        processing_data: { ...selectedBatch.processing_data, photos },
+        processing_data: pd,
         ...buildPpDatePayload(),
       });
-      message.success(`${label}保存成功`);
+      clearPpDraft(selectedBatch.id);
+      idbDel("pp_photos_" + selectedBatch.id).catch(() => { /* ignore */ });
+      message.success(`${who}保存成功`);
       fetchDetail(selectedBatch.id);
     } catch {
-      message.error(`${label}保存失败`);
+      message.error(`${who}保存失败`);
     }
   };
 
-  const saveFemaleSamples = () => doSave("女性", selectedBatch!.female_samples);
-  const saveMaleSamples = () => doSave("男性", [...selectedBatch!.male_blood_samples, ...selectedBatch!.male_other_samples]);
+  const saveFemaleSamples = () => doSave("f");
+  const saveMaleSamples = () => doSave("m");
 
   const completeBatch = async () => {
     if (!selectedBatch) return;
@@ -356,18 +474,112 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     });
   };
 
-  // ===== Photo upload =====
-  const handlePhotoUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setPhotos(prev => [...prev, e.target?.result as string]);
+  // ===== Photo upload（压缩 + 男女分开）=====
+  /** 压缩图片：超过 1600px 或 800KB 转 JPEG 0.85 */
+  const compressImage = (dataUrl: string): Promise<string> => new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const maxDim = 1600;
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      if (scale >= 1 && dataUrl.length < 800000) { resolve(dataUrl); return; }
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { resolve(dataUrl); return; }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      resolve(canvas.toDataURL("image/jpeg", 0.85));
     };
-    reader.readAsDataURL(file);
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
+
+  const handlePhotoUpload = (side: "f" | "m", file: File) => {
+    setUploading(c => c + 1);
+    const p = new Promise<void>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        compressImage(e.target?.result as string)
+          .then((url) => {
+            if (side === "f") setPhotosFSync([...photosFRef.current, url]);
+            else setPhotosMSync([...photosMRef.current, url]);
+            resolve();
+          })
+          .catch(() => resolve());
+      };
+      reader.onerror = () => resolve();
+      reader.readAsDataURL(file);
+    });
+    pendingUploads.current.push(p);
+    p.finally(() => {
+      pendingUploads.current = pendingUploads.current.filter(x => x !== p);
+      setUploading(c => c - 1);
+    });
     return false; // Prevent auto upload
   };
 
-  const removePhoto = (index: number) => {
-    setPhotos(prev => prev.filter((_, i) => i !== index));
+  const removePhoto = (side: "f" | "m", index: number) => {
+    if (side === "f") setPhotosFSync(photosFRef.current.filter((_, i) => i !== index));
+    else setPhotosMSync(photosMRef.current.filter((_, i) => i !== index));
+  };
+
+  /** 照片区 + 操作人/审核人（男女各自一套） */
+  const renderPhotosPersons = (side: "f" | "m") => {
+    if (!selectedBatch) return null;
+    const who = side === "f" ? "女性" : "男性";
+    const ph = side === "f" ? photosF : photosM;
+    const opMap = side === "f" ? operators : operatorsM;
+    const setOpMap = side === "f" ? setOperators : setOperatorsM;
+    const rvMap = side === "f" ? reviewers : reviewersM;
+    const setRvMap = side === "f" ? setReviewers : setReviewersM;
+    return (
+      <Card size="small" title={`📷 ${who}实验照片`} style={{ marginTop: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {ph.map((url, i) => (
+            <div key={i} style={{ position: "relative", width: 104, height: 104 }}>
+              <Image src={url} width={104} height={104} style={{ objectFit: "cover", borderRadius: 4 }} />
+              <Button type="text" danger size="small"
+                style={{ position: "absolute", top: -8, right: -8, background: "#fff", borderRadius: "50%" }}
+                onClick={() => removePhoto(side, i)}>✕</Button>
+            </div>
+          ))}
+          {uploading > 0 && (
+            <div style={{ width: 104, height: 104, border: "1px dashed #1677ff", borderRadius: 4,
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", color: "#1677ff" }}>
+              <LoadingOutlined style={{ fontSize: 22 }} />
+              <Text style={{ fontSize: 11 }}>处理中…</Text>
+            </div>
+          )}
+          <Upload beforeUpload={(f) => { handlePhotoUpload(side, f); return false; }}
+            showUploadList={false} accept="image/*">
+            <div style={{
+              width: 104, height: 104, border: "1px dashed #d9d9d9", borderRadius: 4,
+              display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              cursor: "pointer",
+            }}>
+              <CameraOutlined style={{ fontSize: 24, color: "#999" }} />
+              <Text type="secondary" style={{ fontSize: 11 }}>拍照/上传</Text>
+            </div>
+          </Upload>
+        </div>
+        <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
+          <Text type="secondary">操作人: </Text>
+          <Select size="small" placeholder="选择" style={{ width: 100 }}
+            value={opMap[selectedBatch.id] || undefined}
+            onChange={v => setOpMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+            {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+          </Select>
+          <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
+          <Select size="small" placeholder="选择" style={{ width: 100 }}
+            value={rvMap[selectedBatch.id] || undefined}
+            onChange={v => setRvMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+            {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
+          </Select>
+          <Button size="small" type="primary" style={{ marginLeft: 16 }}
+            onClick={() => doSave(side)}>保存</Button>
+        </div>
+      </Card>
+    );
   };
 
   // ===== Column builders =====
@@ -522,6 +734,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                   <>
                     <Table dataSource={selectedBatch.female_samples} rowKey="id"
                       columns={femaleBloodColumns()} size="small" pagination={false} scroll={{ x: 600 }} />
+                    {renderPhotosPersons("f")}
                   </>
                 ),
               },
@@ -529,12 +742,15 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                 key: "male",
                 label: `👨 男性 (${selectedBatch.male_blood_count + selectedBatch.male_other_count})`,
                 children: (
-                  selectedBatch.male_blood_count + selectedBatch.male_other_count > 0 ? (
+                  <>
+                  {selectedBatch.male_blood_count + selectedBatch.male_other_count > 0 ? (
                     <Table dataSource={[...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])]} rowKey="id"
                       columns={maleColumns()} size="small" pagination={false} scroll={{ x: 900 }} />
                   ) : (
                     <Text type="secondary">无男性样本</Text>
-                  )
+                  )}
+                  {renderPhotosPersons("m")}
+                  </>
                 ),
               },
             ]} />
@@ -548,52 +764,6 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
               <TimePicker size="small" style={{width:100}} format="HH:mm" value={ppTime?dayjs(ppTime,"HH:mm"):null} onChange={(d:any)=>setPpTime(d?d.format("HH:mm"):"")} placeholder="选择时间"/>
             </div>
 
-        <Card size="small" title="📷 实验照片" style={{ marginTop: 8 }}>
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {photos.map((url, i) => (
-                  <div key={i} style={{ position: "relative", width: 104, height: 104 }}>
-                    <Image src={url} width={104} height={104} style={{ objectFit: "cover", borderRadius: 4 }} />
-                    <Button type="text" danger size="small"
-                      style={{ position: "absolute", top: -8, right: -8, background: "#fff", borderRadius: "50%" }}
-                      onClick={() => removePhoto(i)}>✕</Button>
-                  </div>
-                ))}
-                <Upload beforeUpload={(f) => { handlePhotoUpload(f); return false; }}
-                  showUploadList={false} accept="image/*">
-                  <div style={{
-                    width: 104, height: 104, border: "1px dashed #d9d9d9", borderRadius: 4,
-                    display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
-                    cursor: "pointer",
-                  }}>
-                    <CameraOutlined style={{ fontSize: 24, color: "#999" }} />
-                    <Text type="secondary" style={{ fontSize: 11 }}>拍照/上传</Text>
-                  </div>
-                </Upload>
-              </div>
-            <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
-              <Text type="secondary">操作人: </Text>
-              <Select size="small" placeholder="选择" style={{ width: 100 }}
-                value={operators[selectedBatch.id] || (selectedBatch as any).operator_name || undefined}
-                onChange={v => setOperators(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
-                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
-              </Select>
-              <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
-              <Select size="small" placeholder="选择" style={{ width: 100 }}
-                value={reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || undefined}
-                onChange={v => setReviewers(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
-                {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
-              </Select>
-
-              <Button size="small" type="primary" style={{ marginLeft: 16 }}
-                onClick={async () => {
-                  const missing = validateBeforeSave();
-                  if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
-                  const ok = await savePersons();
-                  if (ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
-                  else message.error("保存失败");
-                }}>保存</Button>
-            </div>
-            </Card>
           </Card>
         ) : (
           <div style={{ textAlign: "center", paddingTop: 100, color: "#999" }}>
