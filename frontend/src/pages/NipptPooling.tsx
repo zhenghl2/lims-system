@@ -5,6 +5,7 @@ import { Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumbe
   Space, Popconfirm, Select, Checkbox, DatePicker, TimePicker } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
+import api from "../api/client";
 import dayjs from "dayjs";
 const { Text, Title } = Typography;
 
@@ -225,8 +226,34 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     });
   };
 
+  /** 保存前校验：返回缺失项列表（操作人+审核人） */
+  const validateBeforeSave = (): string[] => {
+    const missing: string[] = [];
+    if (!selectedBatch) return missing;
+    if (!(operators[selectedBatch.id] || (selectedBatch as any).operator_name)) missing.push("选择操作人");
+    if (!(reviewers[selectedBatch.id] || (selectedBatch as any).reviewer)) missing.push("选择审核人");
+    return missing;
+  };
+
+  /** 保存操作人/审核人（主保存同步调用；独立保存按钮复用；走 axios 自动刷新 token） */
+  const savePersons = async (): Promise<boolean> => {
+    if (!selectedBatch) return false;
+    try {
+      await api.patch("/cases/pooling/" + selectedBatch.id + "/", {
+        operator_name: operators[selectedBatch.id] || (selectedBatch as any).operator_name || "",
+        reviewer: reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || "",
+      });
+      return true;
+    } catch { return false; }
+  };
+
   const save = async()=>{
     if(!selectedBatch)return;
+    // 保存前校验：操作人 + 审核人
+    const missing = validateBeforeSave();
+    if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
+    // 一并保存操作人/审核人
+    if (!(await savePersons())) { message.error("操作人/审核人保存失败"); return; }
     setSaving(true);
     try{
       const samples = rows.map(r=>({id:r.id,qc_status:r.qc,qc_note:""}));
@@ -442,13 +469,10 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
               <Button size="small" type="primary" style={{ marginLeft: 16 }}
                 onClick={async () => {
-                  const data = { operator_name: operators[selectedBatch.id] || "", reviewer: reviewers[selectedBatch.id] || "" };
-                  const url = "/api/v1/cases/pooling/" + selectedBatch.id + "/";
-                  const r = await fetch(url, { method: "PATCH",
-                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("access_token") },
-                    body: JSON.stringify(data)
-                  });
-                  if (r.ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
+                  const missing = validateBeforeSave();
+                  if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
+                  const ok = await savePersons();
+                  if (ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
                   else message.error("保存失败");
                 }}>保存</Button>
             </div>
