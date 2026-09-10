@@ -602,11 +602,32 @@ export default function Cases() {
                       }
                       return {
                         color: s.action === "COMPLETE" ? "green" : s.action === "FAIL" ? "red" : "blue",
-                        children: <span style={{ fontSize: 12 }}>
-                          <Text strong>{s.stage}</Text> — {s.action}
-                          {s.batch_number && <Text type="secondary"> ({s.batch_number})</Text>}
+                        children: <div style={{ fontSize: 12 }}>
+                          <Space size={4}>
+                            <Text strong>{s.stage}</Text>
+                            <Text>— {s.action}</Text>
+                            {s.batch_number && <Text type="secondary"> ({s.batch_number})</Text>}
+                            {s.qc_status ? (
+                              <Tag color={s.qc_status === "PASS" ? "green" : s.qc_status === "FAIL" ? "red" : "default"} style={{ fontSize: 11, margin: 0 }}>
+                                质控:{s.qc_status === "PASS" ? "通过" : s.qc_status === "FAIL" ? "失败" : s.qc_status}
+                              </Tag>
+                            ) : (
+                              <Text type="secondary" style={{ fontSize: 11 }}>质控: -</Text>
+                            )}
+                          </Space>
                           <br /><Text type="secondary" style={{ fontSize: 11 }}>{s.timestamp?.slice(0, 19)}</Text>
-                        </span>
+                          <br /><Text type="secondary" style={{ fontSize: 11 }}>实验人: {s.operator || "-"} | 审核人: {s.reviewer || "-"}</Text>
+                          <br /><Text type="secondary" style={{ fontSize: 11 }}>备注: {s.qc_note || "-"}</Text>
+                          {Array.isArray(s.photos) && s.photos.length > 0 && (
+                            <div style={{ marginTop: 4, display: "flex", gap: 4, flexWrap: "wrap" }}>
+                              {s.photos.map((url: string, i: number) => (
+                                <img key={i} src={url} alt={`实验照片${i + 1}`}
+                                  style={{ maxWidth: 120, maxHeight: 80, cursor: "pointer", borderRadius: 4, border: "1px solid #eee" }}
+                                  onClick={() => window.open(url, "_blank")} />
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       };
                     })
                   } />

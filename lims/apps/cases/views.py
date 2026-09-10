@@ -607,12 +607,80 @@ class CaseViewSet(viewsets.ModelViewSet):
             cs_id = str(log.case_sample_id)
             if cs_id not in history:
                 history[cs_id] = {"test_sample_id": log.case_sample.test_sample_id or "", "stages": []}
+            extra = self._stage_extras(log)
             history[cs_id]["stages"].append({
                 "stage": log.stage, "action": log.action,
                 "batch_number": log.batch_number or "",
                 "timestamp": str(log.created_at),
+                **extra,
             })
         return Response(history)
+
+    def _stage_extras(self, log):
+        """各步骤的质控结果/备注/实验人/审核人/照片（前处理/提取/文库按样本取，混样步骤批次级）"""
+        from .models import (NipptPreProcessingBatch, NipptExtractionBatch,
+                             NipptLibraryBatch, NipptPoolingBatch,
+                             NipptHybSeqBatch, NipptBioinfoBatch)
+        out = {"qc_status": "", "qc_note": "", "operator": "", "reviewer": "", "photos": []}
+        cs = log.case_sample
+        is_mother = bool(cs and cs.role == "MOTHER")
+        bn = (log.batch_number or "").strip()
+        if not bn:
+            return out
+        csid = str(cs.id) if cs else ""
+
+        def _find_sp(batch):
+            for x in batch.samples.all():
+                ids = x.case_sample_ids or []
+                if csid and csid in [str(i) for i in ids]:
+                    return x
+            return None
+
+        try:
+            if log.stage == "PRE_PROCESSING":
+                b = NipptPreProcessingBatch.objects.filter(batch_number=bn).first()
+                if b:
+                    pd = b.processing_data or {}
+                    sp = _find_sp(b)
+                    if sp:
+                        out["qc_status"] = sp.qc_status or ""
+                        out["qc_note"] = sp.qc_note or ""
+                    out["operator"] = ((pd.get("operator_female") if is_mother else pd.get("operator_male")) or b.operator_name or "")
+                    out["reviewer"] = ((pd.get("reviewer_female") if is_mother else pd.get("reviewer_male")) or b.reviewer or "")
+                    out["photos"] = list((pd.get("photos_female") if is_mother else pd.get("photos_male")) or pd.get("photos") or [])
+            elif log.stage == "EXTRACTION":
+                b = NipptExtractionBatch.objects.filter(batch_number=bn).first()
+                if b:
+                    ed = b.extraction_data or {}
+                    sp = _find_sp(b)
+                    if sp:
+                        out["qc_status"] = sp.qc_status or ""
+                        out["qc_note"] = sp.qc_note or ""
+                    out["operator"] = ((ed.get("operator_female") if is_mother else ed.get("operator_male")) or b.operator_name or "")
+                    out["reviewer"] = ((ed.get("reviewer_female") if is_mother else ed.get("reviewer_male")) or b.reviewer or "")
+                    out["photos"] = list((ed.get("photos_female") if is_mother else ed.get("photos_male")) or ed.get("photos") or [])
+            elif log.stage == "LIBRARY_PREP":
+                b = NipptLibraryBatch.objects.filter(batch_number=bn).first()
+                if b:
+                    ld = b.library_data or {}
+                    sp = _find_sp(b)
+                    if sp:
+                        out["qc_status"] = sp.qc_status or ""
+                        out["qc_note"] = sp.qc_note or ""
+                    out["operator"] = ((ld.get("operator_female") if is_mother else ld.get("operator_male")) or b.operator_name or "")
+                    out["reviewer"] = ((ld.get("reviewer_female") if is_mother else ld.get("reviewer_male")) or b.reviewer or "")
+                    out["photos"] = list((ld.get("photos_female") if is_mother else ld.get("photos_male")) or ld.get("photos") or [])
+            else:
+                # 混样/下游步骤：批次级实验人/审核人
+                for M in (NipptPoolingBatch, NipptHybSeqBatch, NipptBioinfoBatch):
+                    b = M.objects.filter(batch_number=bn).first()
+                    if b:
+                        out["operator"] = getattr(b, "operator_name", "") or ""
+                        out["reviewer"] = getattr(b, "reviewer", "") or ""
+                        break
+        except Exception:
+            pass
+        return out
 
     @action(detail=True, methods=["post"])
     def resample(self, request, pk=None):
