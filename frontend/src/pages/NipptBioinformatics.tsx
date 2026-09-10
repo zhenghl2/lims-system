@@ -179,7 +179,10 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   ];
 
   const pairColumns = [
-    { title: "Case#", dataIndex: "case_number", key: "c", width: 140, ellipsis: true },
+    { title: "Case#", dataIndex: "case_number", key: "c", width: 180, ellipsis: true,
+      render: (v: string) => v
+        ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
+        : emptyText },
     { title: "PT#", dataIndex: "pt_number", key: "pt", width: 85 },
     { title: "来源", dataIndex: "case_source", key: "src2", width: 70, render: (v: string) => <Text style={{fontSize:12}}>{v || "—"}</Text> },
     { title: "Mother", key: "m", width: 130,
@@ -243,7 +246,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const emptyText = <Text type="secondary" style={{fontSize:12}}>—</Text>;
 
   const unpairedColumns = [
-    { title: "Case#", key: "uc", width: 140, render: (_:any,r:any)=>{const s=r.mother||r.father;return s?<Text>{s.case_number||"—"}</Text>:emptyText}},
+    { title: "Case#", key: "uc", width: 180, ellipsis: true, render: (_:any,r:any)=>{const s=r.mother||r.father;return s && s.case_number?<Tooltip title={s.case_number}><span style={{ cursor: "default" }}>{s.case_number}</span></Tooltip>:emptyText}},
     { title: "PT#", key: "upt", width: 85, render: (_:any,r:any)=>{const s=r.mother||r.father;return s?<Text>{s.pt_number||"—"}</Text>:emptyText}},
     { title: "来源", key: "usrc", width: 70, render: () => emptyText },
     { title: "Mother", key: "um", width: 130,
@@ -318,7 +321,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
               </Upload>
               {selectedBatch.status !== "COMPLETED" && <Popconfirm title="Delete?" onConfirm={() => handleDelete(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>}
             </Space>}>
-            <Table dataSource={selectedBatch.pairs || []} columns={pairColumns} rowKey="id" size="small" pagination={false} loading={batchLoading} scroll={{ x: 1800 }} style={{ marginBottom: hasUnpaired ? 12 : 0 }} />
+            <Table dataSource={selectedBatch.pairs || []} columns={pairColumns} rowKey="id" size="small" pagination={false} loading={batchLoading} scroll={{ x: 1840 }} style={{ marginBottom: hasUnpaired ? 12 : 0 }} />
 
             {hasUnpaired && selectedBatch.status !== "COMPLETED" && (
               <Card size="small" title={<Text type="warning">Unpaired Samples ({unpairedRows.length})</Text>} style={{ marginBottom: 12 }}>
