@@ -794,12 +794,14 @@ export default function SampleReceiving() {
         width={400}
       >
         <div style={{ marginBottom: 8 }}>
-          <Text type="secondary">输入起始 PT 号，每个 Case 自动递增。同 Case 内自动加后缀 (W/H/HA...)</Text>
+          <Text type="secondary">输入起始数字即可（无需输入 PT 前缀），每个 Case 自动递增。同 Case 内自动加后缀 (W/H/HA...)</Text>
         </div>
         <Input
-          placeholder="如 PT00088"
+          prefix="PT"
+          placeholder="如 00088"
+          maxLength={6}
           value={batchPtStart}
-          onChange={(e) => setBatchPtStart(e.target.value.replace(/\D/g, ""))}
+          onChange={(e) => setBatchPtStart(e.target.value.replace(/\D/g, "").slice(0, 6))}
           style={{ fontFamily: "monospace" }}
         />
         <div style={{ marginTop: 8 }}>
