@@ -97,6 +97,26 @@ class CaseViewSet(viewsets.ModelViewSet):
     def perform_create(self, serializer):
         serializer.save()
 
+    def partial_update(self, request, *args, **kwargs):
+        """行内编辑保存：请求带 case_sample_id 时，更新指定样本的可编辑字段。
+        （原实现被 DRF 默认逻辑忽略，导致签收页行内编辑静默不保存）"""
+        cs_id = request.data.get("case_sample_id")
+        if cs_id:
+            case = self.get_object()
+            cs = case.case_samples.filter(id=cs_id).first()
+            if not cs:
+                raise NotFound("Sample not found in this case")
+            EDITABLE = ["receipt_note", "actual_sample_type", "preservation_method"]
+            updated = []
+            for field in EDITABLE:
+                if field in request.data:
+                    setattr(cs, field, request.data.get(field) or "")
+                    updated.append(field)
+            if updated:
+                cs.save(update_fields=updated + ["updated_at"])
+            return self.retrieve(request, *args, **kwargs)
+        return super().partial_update(request, *args, **kwargs)
+
     @action(detail=False, methods=["post"], parser_classes=[MultiPartParser, FormParser, JSONParser])
     def parse_nippt_docs(self, request):
         """巴西送检单 Word 解析：上传多个 .docx，解析并查重，不创建数据。"""
@@ -599,6 +619,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                     "receipt_photo_url": cs.receipt_photo.url if cs.receipt_photo else "",
                     "received_by": cs.received_by.username if cs.received_by else "",
                     "condition": cs.receipt_condition or "OK",
+                    "receipt_note": cs.receipt_note or "",
                 }]
             }
 

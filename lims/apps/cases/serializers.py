@@ -34,6 +34,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
             "redo_of", "redo_count",
             "workflow_stage", "is_active",
             "arrival_date", "actual_sample_type", "preservation_method",
+            "receipt_note",
             "rejection_reason", "rejection_note", "external_id",
             "receipt_photo_url",
             "case_source",

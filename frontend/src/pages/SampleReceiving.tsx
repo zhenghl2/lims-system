@@ -77,6 +77,7 @@ interface CaseSampleRow {
   externalId: string;
   phone: string;
   preservationMethod: string;
+  receiptNote: string;
   collectionNotes: string;
   status: string;
   image: string | null;
@@ -84,7 +85,6 @@ interface CaseSampleRow {
   received: boolean;
   receivedAt: string;
   receivedByName: string;
-  workflowStage: string;
   caseHasPhoto?: boolean;
 }
 
@@ -132,7 +132,6 @@ export default function SampleReceiving() {
   const [data, setData] = useState<CaseSampleRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("pending");
-  const [tabCounts, setTabCounts] = useState({ pending: 0, received: 0, rejected: 0 });
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
   const [regTypeFilter, setRegTypeFilter] = useState("");
@@ -188,9 +187,9 @@ export default function SampleReceiving() {
           externalId: cs.external_id || caseExtId || "",
           phone: c.phone || "",
           preservationMethod: cs.preservation_method || "",
+          receiptNote: cs.receipt_note || "",
           collectionNotes: c.notes || cs.collection_notes || "",
           status: cs.sample_status || "REGISTERED",
-          workflowStage: cs.workflow_stage || "",
           image: cs.receipt_photo_url || null,
           ptBase: c.pt_number ? c.pt_number.replace(/^PT/i, "") : "",
           received: cs.received_at != null,
@@ -205,8 +204,14 @@ export default function SampleReceiving() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      // 全量拉取一次 → 本地分类（Tab 计数与列表同源，永不失配）
-      const params: any = { page_size: 500 };
+      const params: any = { page_size: 100 };
+      if (activeTab === "pending") {
+        params.status = "REGISTERED";
+      } else if (activeTab === "rejected") {
+        params.status = "REJECTED";
+      } else {
+        params.status = "RECEIVED,PRE_PROCESSED,EXTRACTION,IN_PROCESS,COMPLETED,REPORTED,ACCEPTED";
+      }
       if (search.trim().length >= 2) params.search = search.trim();
       const _r = await (casesApi as any).list(params);
       const cases = _r.data?.results || [];
@@ -218,18 +223,11 @@ export default function SampleReceiving() {
         filtered = filtered.filter((c: any) => c.registration_type === regTypeFilter);
       }
       const allRows = flatCases(filtered);
-      // Tab 计数（跟随筛选，样本级）
-      setTabCounts({
-        pending: allRows.filter((r) => r.status === "REGISTERED").length,
-        rejected: allRows.filter((r) => r.status === "REJECTED").length,
-        received: allRows.filter((r) => r.workflowStage === "RECEIVED").length,
-      });
       // 行级状态过滤：拒绝样本绝不出现于待签收/已签收 tab
       const rows = allRows.filter((r) => {
         if (activeTab === "pending") return r.status === "REGISTERED";
         if (activeTab === "rejected") return r.status === "REJECTED";
-        // 已签收 = 仅待前处理（进前处理批次即隐藏，删批次回退后自动重现）
-        return r.workflowStage === "RECEIVED";
+        return !["REGISTERED", "REJECTED"].includes(r.status);
       });
 
       // ── 恢复会话草稿（仅待签收 tab 的 REGISTERED 未签收行）──
@@ -510,6 +508,12 @@ export default function SampleReceiving() {
   };
 
   // --- Inline field update ---
+  // 前端字段名（驼峰）→ 后端 API 字段名（下划线）
+  const FIELD_TO_API: Record<string, string> = {
+    actualSampleType: "actual_sample_type",
+    preservationMethod: "preservation_method",
+    receiptNote: "receipt_note",
+  };
   const updateField = async (row: CaseSampleRow, field: string, value: string) => {
     setEditingField(null);
     setData((prev) =>
@@ -518,7 +522,7 @@ export default function SampleReceiving() {
     try {
       await (casesApi as any).update(row.caseId, {
         case_sample_id: row.csId,
-        [field]: value,
+        [FIELD_TO_API[field] || field]: value,
       });
     } catch {
       // Silent fail
@@ -651,6 +655,29 @@ export default function SampleReceiving() {
       render: (v: string) => v ? <Tooltip title={v}><span style={{ color: "#d46b08", cursor: "default" }}>{v}</span></Tooltip> : "—",
     },
     {
+      title: "签收备注", dataIndex: "receiptNote", key: "rn", width: 160, ellipsis: true,
+      render: (v: string, r: CaseSampleRow) =>
+        editingField?.key === r.key && editingField?.field === "receiptNote" ? (
+          <Input.TextArea
+            autoSize={{ minRows: 1, maxRows: 3 }}
+            defaultValue={v || ""}
+            placeholder="如：样本与登记不一致…"
+            autoFocus
+            onBlur={(e) => updateField(r, "receiptNote", e.target.value)}
+            style={{ width: 150, fontSize: 12 }}
+          />
+        ) : (
+          <Tooltip title={v || "点击填写"}>
+            <span
+              style={{ color: v ? "#d46b08" : "#bbb", cursor: "pointer", fontSize: 12 }}
+              onClick={() => setEditingField({ key: r.key, field: "receiptNote" })}
+            >
+              {v || "点击填写"}
+            </span>
+          </Tooltip>
+        ),
+    },
+    {
       title: "保温措施", dataIndex: "preservationMethod", key: "pm", width: 110,
       render: (v: string, r: CaseSampleRow) =>
         editingField?.key === r.key && editingField?.field === "preservationMethod" ? (
@@ -777,9 +804,9 @@ export default function SampleReceiving() {
         activeKey={activeTab}
         onChange={(k) => { setActiveTab(k); setSelectedRowKeys([]); }}
         items={[
-          { key: "pending", label: `待签收（${tabCounts.pending}个）` },
-          { key: "received", label: `已签收（${tabCounts.received}个）` },
-          { key: "rejected", label: `已拒收（${tabCounts.rejected}个）` },
+          { key: "pending", label: "待签收" },
+          { key: "received", label: "已签收" },
+          { key: "rejected", label: "已拒收" },
         ]}
         style={{ marginBottom: 0 }}
       />

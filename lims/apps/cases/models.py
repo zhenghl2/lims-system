@@ -263,6 +263,10 @@ class CaseSample(models.Model):
         max_length=20, blank=True, default="",
         help_text="保温措施: 无/冰袋/暖宝宝"
     )
+    receipt_note = models.TextField(
+        blank=True, default="",
+        help_text="签收备注（样本情况/与登记不一致等注意事项）"
+    )
 
     # Dual-ID system
     test_sample_id = models.CharField(

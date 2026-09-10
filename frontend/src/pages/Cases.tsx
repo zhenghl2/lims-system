@@ -253,6 +253,9 @@ export default function Cases() {
           if (cs.collection_notes) {
             evts.push({ label: "备注", color: "gold", tip: cs.collection_notes });
           }
+          if (cs.receipt_note) {
+            evts.push({ label: "签收备注", color: "volcano", tip: cs.receipt_note });
+          }
         }
         if (!evts.length) return <Text type="secondary">-</Text>;
         return (
@@ -587,6 +590,7 @@ export default function Cases() {
                             <br />
                             <Text type="secondary">时间: {s.timestamp?.slice(0, 19)}</Text>
                             {s.received_by && <Text type="secondary"> | 签收人: {s.received_by}</Text>}
+                            {s.receipt_note && <><br /><Text type="secondary">签收备注: {s.receipt_note}</Text></>}
                             {s.receipt_photo_url && (
                               <div style={{ marginTop: 4 }}>
                                 <Image
