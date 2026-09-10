@@ -139,6 +139,7 @@ export default function SampleReceiving() {
   // Batch PT modal
   const [batchPtOpen, setBatchPtOpen] = useState(false);
   const [batchPtStart, setBatchPtStart] = useState("");
+  const [batchPerson, setBatchPerson] = useState<string | undefined>(undefined);
 
   // Photo upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -309,6 +310,27 @@ export default function SampleReceiving() {
     else delete d.persons[row.key];
     persistReceivingDraft(d);
   };
+
+  /** 批量签收人 → 立即应用到所有选中行 */
+  const handleBatchPerson = (name?: string) => {
+    setBatchPerson(name);
+    if (!name) return;
+    const selected = data.filter((r) => selectedRowKeys.includes(r.key) && !r.received && r.status !== "REJECTED");
+    setReceiptPersons((prev) => {
+      const next = { ...prev };
+      for (const row of selected) next[row.key] = name;
+      return next;
+    });
+    const d = loadReceivingDraft() || { ptByCase: {}, persons: {} };
+    for (const row of selected) d.persons[row.key] = name;
+    persistReceivingDraft(d);
+    message.success(`已应用签收人「${name}」到 ${selected.length} 个样本`);
+  };
+
+  // 选中清空时重置批量签收人控件（便于下一批重新选择）
+  useEffect(() => {
+    if (selectedRowKeys.length === 0) setBatchPerson(undefined);
+  }, [selectedRowKeys]);
 
   // --- 签收前置校验：PT 编号 + 图片（Case 级） ---
   const validateBeforeReceipt = (row: CaseSampleRow): string | null => {
@@ -732,6 +754,15 @@ export default function SampleReceiving() {
       {activeTab === "pending" && selectedRowKeys.length >= 2 && (
         <div style={{ marginBottom: 8, padding: "6px 12px", background: "#e6f7ff", borderRadius: 6, display: "flex", gap: 8, alignItems: "center" }}>
           <Text strong>已选 {selectedRowKeys.length} 个样本</Text>
+          <Select
+            placeholder="批量签收人（应用到所选）"
+            size="small"
+            style={{ width: 200 }}
+            value={batchPerson}
+            onChange={handleBatchPerson}
+            options={RECEIPT_PERSONS.map((name) => ({ label: name, value: name }))}
+            allowClear
+          />
           <Button size="small" icon={<NumberOutlined />} onClick={() => setBatchPtOpen(true)}>批量填写PT</Button>
           <Button size="small" type="primary" icon={<CheckOutlined />} onClick={batchReceive}>批量签收</Button>
         </div>
