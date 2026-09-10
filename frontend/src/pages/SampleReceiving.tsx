@@ -531,6 +531,26 @@ export default function SampleReceiving() {
       ),
     },
     {
+      title: "签收人", key: "rp", width: 110,
+      render: (_: any, r: CaseSampleRow) => (
+        <Select
+          placeholder="签收人"
+          size="small"
+          style={{ width: 100 }}
+          value={receiptPersons[r.key] || undefined}
+          onChange={(val) => handlePersonChange(r, val)}
+          options={RECEIPT_PERSONS.map(name => ({ label: name, value: name }))}
+          allowClear
+          disabled={r.received || r.status === "REJECTED"}
+        />
+      ),
+    },
+    {
+      title: "图片", dataIndex: "image", key: "img", width: 60,
+      render: (v: string | null) =>
+        v ? <Image src={v} width={40} height={40} style={{ objectFit: "cover", borderRadius: 4 }} preview /> : "—",
+    },
+    {
       title: "姓名", dataIndex: "patientName", key: "name", width: 180, ellipsis: true,
       render: (v: string) =>
         v
@@ -629,26 +649,6 @@ export default function SampleReceiving() {
     {
       title: "签收时间", dataIndex: "receivedAt", key: "rt", width: 140,
       render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD HH:mm") : <Text type="secondary">—</Text>,
-    },
-    {
-      title: "签收人", key: "rp", width: 110,
-      render: (_: any, r: CaseSampleRow) => (
-        <Select
-          placeholder="签收人"
-          size="small"
-          style={{ width: 100 }}
-          value={receiptPersons[r.key] || undefined}
-          onChange={(val) => handlePersonChange(r, val)}
-          options={RECEIPT_PERSONS.map(name => ({ label: name, value: name }))}
-          allowClear
-          disabled={r.received || r.status === "REJECTED"}
-        />
-      ),
-    },
-    {
-      title: "图片", dataIndex: "image", key: "img", width: 60,
-      render: (v: string | null) =>
-        v ? <Image src={v} width={40} height={40} style={{ objectFit: "cover", borderRadius: 4 }} preview /> : "—",
     },
     {
       title: "操作", key: "act", width: 180, fixed: "right" as const,
