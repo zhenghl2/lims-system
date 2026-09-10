@@ -288,11 +288,13 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const getWellLabel = (s: ExtractionSample) => {
     if (s.is_qc) return `${s.test_sample_id || "QC"} 🔬`;
     const tid = s.test_sample_id || "?";
-    if (s.category === "MALE_OTHER") {
+    // 男性（血液+其他）统一在 PT 编号后标注样本类型；女性不标
+    if (s.category === "MALE_BLOOD" || s.category === "MALE_OTHER") {
       const est = (s as any).experiment_sample_type || "";
       const types = (s as any).sample_types || [];
-      const st = est || (types.length ? types[0] : "");
-      return `${tid}（${SAMPLE_TYPE_LABELS[st] || st || ""}）`;
+      const st = est || (s.category === "MALE_BLOOD" ? "BLOOD" : (types.length ? types[0] : ""));
+      const label = SAMPLE_TYPE_LABELS[st] || st || "";
+      if (label) return (<>{tid}<span style={{ display: "inline-block" }}>（{label}）</span></>);
     }
     return tid;
   };
@@ -338,7 +340,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   return (
       <Popover content={popContent} trigger="click" open={open} onOpenChange={v => { setOpen(v); if (v) { setLocalStatus(status); setLocalNote(note); setLocalConc(r.concentration); } }}
         placement="bottomLeft" destroyTooltipOnHide>
-        <td style={{ background: bg, cursor: "pointer", width: 80, height: 42, textAlign: "center", fontSize: 11, color, padding: 2 }}>
+        <td style={{ background: bg, cursor: "pointer", width: 80, height: 42, textAlign: "center", fontSize: 11, color, padding: 2, lineHeight: 1.25, wordBreak: "break-all" }}>
           {getWellLabel(sample)}
         </td>
       </Popover>
