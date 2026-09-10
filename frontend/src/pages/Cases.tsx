@@ -3,7 +3,7 @@ import dayjs from "dayjs";
 import {
   Card, Table, Tag, Typography, Button, Input, Select, Space,
   Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse, Descriptions,
-  Modal, Timeline, Tooltip,
+  Modal, Timeline, Tooltip, Image,
 } from "antd";
 import {
   EyeOutlined, LinkOutlined, RedoOutlined,
@@ -589,11 +589,13 @@ export default function Cases() {
                             {s.received_by && <Text type="secondary"> | 签收人: {s.received_by}</Text>}
                             {s.receipt_photo_url && (
                               <div style={{ marginTop: 4 }}>
-                                <img
+                                <Image
                                   src={s.receipt_photo_url}
                                   alt="签收照片"
-                                  style={{ maxWidth: 120, maxHeight: 80, cursor: "pointer", borderRadius: 4 }}
-                                  onClick={() => window.open(s.receipt_photo_url, "_blank")}
+                                  width={120}
+                                  height={80}
+                                  style={{ borderRadius: 4, objectFit: "cover" }}
+                                  preview={{ maskClosable: true }}
                                 />
                               </div>
                             )}
@@ -621,9 +623,10 @@ export default function Cases() {
                           {Array.isArray(s.photos) && s.photos.length > 0 && (
                             <div style={{ marginTop: 4, display: "flex", gap: 4, flexWrap: "wrap" }}>
                               {s.photos.map((url: string, i: number) => (
-                                <img key={i} src={url} alt={`实验照片${i + 1}`}
-                                  style={{ maxWidth: 120, maxHeight: 80, cursor: "pointer", borderRadius: 4, border: "1px solid #eee" }}
-                                  onClick={() => window.open(url, "_blank")} />
+                                <Image key={i} src={url} alt={`实验照片${i + 1}`}
+                                  width={120} height={80}
+                                  style={{ borderRadius: 4, border: "1px solid #eee", objectFit: "cover" }}
+                                  preview={{ maskClosable: true }} />
                               ))}
                             </div>
                           )}
