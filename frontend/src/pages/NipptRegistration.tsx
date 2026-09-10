@@ -481,8 +481,18 @@ export default function NipptRegistration() {
                 </Form.Item>
               </Col>
               <Col xs={24} sm={8}>
+                <Form.Item name="clinic_name" label="诊所/医院" style={{ marginBottom: 8 }}>
+                  <Input placeholder="诊所或医院名称" size="small" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
                 <Form.Item name="applicant" label="申请方" style={{ marginBottom: 8 }}>
                   <Input placeholder="申请方" size="small" />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item name="collection_date" label="申请日期" style={{ marginBottom: 8 }}>
+                  <DatePicker style={{ width: "100%" }} size="small" placeholder="选择日期" />
                 </Form.Item>
               </Col>
               <Col xs={24} sm={8}>
@@ -647,22 +657,22 @@ export default function NipptRegistration() {
             </div>
 
             <Row gutter={[16, 8]} style={{ marginLeft: 16 }}>
-              <Col xs={24} sm={8}>
+              <Col xs={24} sm={12}>
                 <Form.Item name="sales_person" label="销售/代理" style={{ marginBottom: 8 }}>
                   <Input placeholder="销售或代理名称" size="small" />
                 </Form.Item>
                 <Form.Item name="external_id" label="外部编号" style={{ marginBottom: 8 }}>
                   <Input placeholder="外部编号" size="small" />
                 </Form.Item>
-                <Form.Item name="fedex_no" label="快递单号" style={{ marginBottom: 0 }}>
+                <Form.Item name="fedex_no" label="快递单号" style={{ marginBottom: 8 }}>
                   <Input placeholder="快递单号" size="small" />
+                </Form.Item>
+                <Form.Item name="email" label="邮箱" style={{ marginBottom: 0 }}>
+                  <Input placeholder="邮箱地址" size="small" />
                 </Form.Item>
               </Col>
 
-              <Col xs={24} sm={8}>
-                <Form.Item name="email" label="邮箱" style={{ marginBottom: 8 }}>
-                  <Input placeholder="邮箱地址" size="small" />
-                </Form.Item>
+              <Col xs={24} sm={12}>
                 <Form.Item label="孕周" style={{ marginBottom: 8 }}>
                   <Space>
                     <Form.Item name="gestational_age_weeks" style={{ margin: 0 }}>
@@ -675,15 +685,12 @@ export default function NipptRegistration() {
                     <Text>天</Text>
                   </Space>
                 </Form.Item>
-                <Form.Item name="calculation_method" label="计算方式" style={{ marginBottom: 0 }} initialValue="lmp">
+                <Form.Item name="calculation_method" label="计算方式" style={{ marginBottom: 8 }} initialValue="lmp">
                   <Radio.Group size="small">
                     <Radio value="lmp">末次月经</Radio>
                     <Radio value="ultrasound">B超</Radio>
                   </Radio.Group>
                 </Form.Item>
-              </Col>
-
-              <Col xs={24} sm={8}>
                 <Form.Item name="last_menstrual_period" label="末次月经" style={{ marginBottom: 8 }}>
                   <DatePicker style={{ width: "100%" }} size="small" placeholder="选择日期" />
                 </Form.Item>
@@ -706,12 +713,6 @@ export default function NipptRegistration() {
                       </Form.Item>
                     ) : null
                   }
-                </Form.Item>
-                <Form.Item name="collection_date" label="申请日期" style={{ marginBottom: 8 }}>
-                  <DatePicker style={{ width: "100%" }} size="small" placeholder="选择日期" />
-                </Form.Item>
-                <Form.Item name="clinic_name" label="诊所/医院" style={{ marginBottom: 0 }}>
-                  <Input placeholder="诊所或医院名称" size="small" />
                 </Form.Item>
               </Col>
             </Row>
