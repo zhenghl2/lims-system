@@ -646,7 +646,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         next_num = (max_existing or 0) + 1
 
         if not patient_name:
-            patient_name = original_cs.patient_name or original_cs.sample.patient_name
+            patient_name = (original_cs.sample.patient_name or "") if original_cs.sample else ""
 
         # 孕妇重采：孕周更新 Case（旧值轨迹记入备注，便于统计重采时孕周）
         ga_note = ""
@@ -690,6 +690,10 @@ class CaseViewSet(viewsets.ModelViewSet):
             )
             new_cs.test_sample_id = case.generate_test_sample_id(new_cs)
             new_cs.save(update_fields=["test_sample_id"])
+            # 备注同步案例级 Case.notes（签收页"登记备注"列与案例管理共用）
+            if final_notes:
+                case.notes = (case.notes + "\n" if case.notes else "") + f"[重采] {final_notes}"
+                case.save(update_fields=["notes", "updated_at"])
 
         return Response(CaseSampleSerializer(new_cs).data, status=status.HTTP_201_CREATED)
 

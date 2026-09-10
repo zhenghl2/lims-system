@@ -558,6 +558,10 @@ class SupplementSerializer(serializers.Serializer):
             )
             css.append(cs_obj)
         # test_sample_id assigned during receipt confirmation
+        # 备注同步案例级 Case.notes（签收页"登记备注"列与案例管理共用）
+        if notes:
+            case.notes = (case.notes + "\n" if case.notes else "") + f"[补充样本] {notes}"
+            case.save(update_fields=["notes", "updated_at"])
 
         return css[0] if css else None
 

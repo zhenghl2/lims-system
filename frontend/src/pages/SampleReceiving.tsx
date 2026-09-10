@@ -185,7 +185,7 @@ export default function SampleReceiving() {
           externalId: cs.external_id || caseExtId || "",
           phone: c.phone || "",
           preservationMethod: cs.preservation_method || "",
-          collectionNotes: cs.collection_notes || "",
+          collectionNotes: c.notes || cs.collection_notes || "",
           status: cs.sample_status || "REGISTERED",
           image: cs.receipt_photo_url || null,
           ptBase: c.pt_number ? c.pt_number.replace(/^PT/i, "") : "",
@@ -594,8 +594,8 @@ export default function SampleReceiving() {
       render: (v: string) => v || "—",
     },
     {
-      title: "备注", dataIndex: "collectionNotes", key: "notes", width: 130, ellipsis: true,
-      render: (v: string) => v ? <span style={{ color: "#d46b08" }}>{v}</span> : "—",
+      title: "登记备注", dataIndex: "collectionNotes", key: "notes", width: 140, ellipsis: true,
+      render: (v: string) => v ? <Tooltip title={v}><span style={{ color: "#d46b08", cursor: "default" }}>{v}</span></Tooltip> : "—",
     },
     {
       title: "保温措施", dataIndex: "preservationMethod", key: "pm", width: 110,
