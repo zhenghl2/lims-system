@@ -149,10 +149,13 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const types = s.received_sample_types || [];
       if (types.length === 1) {
         s.experiment_sample_type = types[0];
-        s.remaining_sample_types = [];
+        // 男性血液可分2-3次实验：选"血液"时血液保留在剩余中
+        s.remaining_sample_types = (types[0] === "BLOOD" && s.category === "MALE_BLOOD") ? [...types] : [];
       } else if (types.length > 1 && types.includes("BLOOD")) {
         s.experiment_sample_type = "BLOOD";
-        s.remaining_sample_types = types.filter((t: string) => t !== "BLOOD");
+        s.remaining_sample_types = s.category === "MALE_BLOOD"
+          ? [...types]
+          : types.filter((t: string) => t !== "BLOOD");
       }
       // other cases: leave empty for operator
     }
@@ -298,9 +301,14 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         // Auto-compute remaining_sample_types when experiment type changes
         if (field === "experiment_sample_type") {
           const received = s.received_sample_types || [];
-          updated.remaining_sample_types = value
-            ? received.filter((t: string) => t !== value)
-            : received;
+          // 男性血液可分2-3次实验：选"血液"时血液保留在剩余中
+          if (value === "BLOOD" && s.category === "MALE_BLOOD" && received.includes("BLOOD")) {
+            updated.remaining_sample_types = [...received];
+          } else {
+            updated.remaining_sample_types = value
+              ? received.filter((t: string) => t !== value)
+              : received;
+          }
         }
         return updated;
       });

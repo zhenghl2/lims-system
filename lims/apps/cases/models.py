@@ -444,7 +444,10 @@ class NipptPreProcessingSample(models.Model):
         if self.remaining_override is not None:
             return self.remaining_override
         received = self.received_sample_types
-        if self.experiment_sample_type and self.experiment_sample_type in received:
+        # 男性血液可分2-3次实验：实验类型选"血液"时血液保留在剩余中（不扣除）
+        if (self.experiment_sample_type
+                and self.experiment_sample_type in received
+                and not (self.category == "MALE_BLOOD" and self.experiment_sample_type == "BLOOD")):
             received = [t for t in received if t != self.experiment_sample_type]
         return received
 
