@@ -5,6 +5,7 @@ import { Card, Table, Button, Tag, Modal, message, Typography, Input, Select, In
   Popover, Row, Col } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, CameraOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
+import api from "../api/client";
 import dayjs from "dayjs";
 
 const { Text, Title } = Typography;
@@ -216,8 +217,28 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     catch(e:any){message.error(e?.response?.data?.detail||"创建失败")}
   };
 
+  /** 保存操作人/审核人（主保存同步调用；独立保存按钮复用；走 axios 自动刷新 token） */
+  const savePersons = async (): Promise<boolean> => {
+    if (!selectedBatch) return false;
+    try {
+      await api.patch("/cases/library/" + selectedBatch.id + "/", {
+        operator_name: operators[selectedBatch.id] || (selectedBatch as any).operator_name || "",
+        reviewer: reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || "",
+      });
+      return true;
+    } catch { return false; }
+  };
+
   const saveProcessing = async()=>{
     if(!selectedBatch)return;
+    // 保存前校验：照片 + 操作人 + 审核人（基础资料优先）
+    const missing: string[] = [];
+    if (!photos.length) missing.push("上传实验照片");
+    if (!(operators[selectedBatch.id] || (selectedBatch as any).operator_name)) missing.push("选择操作人");
+    if (!(reviewers[selectedBatch.id] || (selectedBatch as any).reviewer)) missing.push("选择审核人");
+    if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
+    // 一并保存操作人/审核人
+    if (!(await savePersons())) { message.error("操作人/审核人保存失败"); return; }
     // Validate index
     const currentPlate = region==="XIAMEN"?xiamenPlate:(region==="HONGKONG"?femalePlate.concat(malePlate):femalePlate);
     const missingIndex = currentPlate.some(row=>row.some(cell=>cell.vgId&&!cell.index));
@@ -409,13 +430,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
               <Button size="small" type="primary" style={{ marginLeft: 16 }}
                 onClick={async () => {
-                  const data = { operator_name: operators[selectedBatch.id] || "", reviewer: reviewers[selectedBatch.id] || "" };
-                  const url = "/api/v1/cases/library/" + selectedBatch.id + "/";
-                  const r = await fetch(url, { method: "PATCH",
-                    headers: { "Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("access_token") },
-                    body: JSON.stringify(data)
-                  });
-                  if (r.ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
+                  const ok = await savePersons();
+                  if (ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
                   else message.error("保存失败");
                 }}>保存</Button>
             </div>
