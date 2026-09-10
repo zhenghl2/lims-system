@@ -246,35 +246,39 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     catch(e:any){message.error(e?.response?.data?.detail||"创建失败")}
   };
 
-  /** 保存前校验：按侧校验（有样本的侧才校验；照片+操作人+审核人） */
-  const validateBeforeSave = (): string[] => {
+  /** 保存前校验（side: f=女性 m=男性 all=两侧；有样本的侧才校验；照片+操作人+审核人） */
+  const validateBeforeSave = (side: "f" | "m" | "all" = "all"): string[] => {
     const missing: string[] = [];
     if (!selectedBatch) return missing;
-    const hasF = selectedBatch.female_samples.length > 0;
-    const hasM = selectedBatch.male_blood_count + selectedBatch.male_other_count > 0;
-    if (hasF) {
-      if (!photosFRef.current.length) missing.push("上传女性实验照片");
-      if (!operators[selectedBatch.id]) missing.push("选择女性操作人");
-      if (!reviewers[selectedBatch.id]) missing.push("选择女性审核人");
-    }
-    if (hasM) {
-      if (!photosMRef.current.length) missing.push("上传男性实验照片");
-      if (!operatorsM[selectedBatch.id]) missing.push("选择男性操作人");
-      if (!reviewersM[selectedBatch.id]) missing.push("选择男性审核人");
-    }
+    const check = (s: "f" | "m") => {
+      const who = s === "f" ? "女性" : "男性";
+      const has = s === "f"
+        ? selectedBatch.female_samples.length > 0
+        : selectedBatch.male_blood_count + selectedBatch.male_other_count > 0;
+      if (!has) return;
+      const ph = s === "f" ? photosFRef.current : photosMRef.current;
+      const opMap = s === "f" ? operators : operatorsM;
+      const rvMap = s === "f" ? reviewers : reviewersM;
+      if (!ph.length) missing.push(`上传${who}实验照片`);
+      if (!opMap[selectedBatch.id]) missing.push(`选择${who}操作人`);
+      if (!rvMap[selectedBatch.id]) missing.push(`选择${who}审核人`);
+    };
+    if (side === "f" || side === "all") check("f");
+    if (side === "m" || side === "all") check("m");
     return missing;
   };
 
-  const saveProcessing = async()=>{
+  const saveProcessing = async(side: "f" | "m" | "all" = "all")=>{
     if(!selectedBatch)return;
+    const who = side === "f" ? "女性" : side === "m" ? "男性" : "";
     // 竞态修复：等待所有照片读取/压缩完成再提交
     if (pendingUploads.current.length) {
       setBatchLoading(true);
       await Promise.allSettled(pendingUploads.current);
       setBatchLoading(false);
     }
-    // 保存前校验：按侧（照片+操作人+审核人）
-    const missing = validateBeforeSave();
+    // 保存前校验：按侧
+    const missing = validateBeforeSave(side);
     if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
     // Validate index
     const currentPlate = region==="XIAMEN"?xiamenPlate:(region==="HONGKONG"?femalePlate.concat(malePlate):femalePlate);
@@ -298,8 +302,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
         female_plate:femalePlate,male_plate:malePlate,xiamen_plate:xiamenPlate,
       };
       await(casesApi as any).saveLibrary(selectedBatch.id,{library_data:ld});
-      message.success("保存成功");fetchDetail(selectedBatch.id);
-    }catch{message.error("保存失败")}
+      message.success(who ? `${who}保存成功` : "保存成功");fetchDetail(selectedBatch.id);
+    }catch{message.error(who ? `${who}保存失败` : "保存失败")}
     finally{setSaving(false)}
   };
 
@@ -408,7 +412,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
             onChange={v => setRvMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
             {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
           </Select>
-          <Button size="small" type="primary" style={{ marginLeft: 16 }} onClick={saveProcessing}>保存</Button>
+          <Button size="small" type="primary" style={{ marginLeft: 16 }} onClick={() => saveProcessing(side)}>保存</Button>
         </div>
       </Card>
     );
@@ -486,7 +490,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
               {selectedBatch.status!=="COMPLETED"&&<Popconfirm title="删除？" onConfirm={()=>deleteBatch(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm>}
               <Button icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               {selectedBatch.status!=="COMPLETED"&&<>
-                <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={saveProcessing}>保存</Button>
+                <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={() => saveProcessing("all")}>保存全部</Button>
                 <Popconfirm title="完成批次？" onConfirm={completeBatch}><Button type="primary" size="small" danger>完成</Button></Popconfirm>
               </>}
             </Space>}>
