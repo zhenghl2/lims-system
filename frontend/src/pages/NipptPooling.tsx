@@ -60,6 +60,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const [pendingAlloc, setPendingAlloc] = useState<{female:number;male:number}[]>([]);
   const [showAllocInputs, setShowAllocInputs] = useState(false);
   const [customAmounts, setCustomAmounts] = useState<Record<string,number>>({});
+  const [hkDoubled, setHkDoubled] = useState(false);
   const [useManualAlloc, setUseManualAlloc] = useState(false);
   const [savedIndexes, setSavedIndexes] = useState<Record<string,string>>({});
 
@@ -157,10 +158,11 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const savedAlloc = pd.manual_alloc;
       if (savedAlloc && savedAlloc.length > 0) {
         setManualAlloc(savedAlloc); setUseManualAlloc(true);
-      setCustomAmounts(pd.customAmounts||{});
       } else {
         setManualAlloc([]); setUseManualAlloc(false);
       }
+      setCustomAmounts(pd.customAmounts||{});
+      setHkDoubled(pd.hk_doubled ?? false);
       const savedRows = pd.rows||[];
       // Index from library plate or saved data
       let savedIdx:Record<string,string> = pd.indexes||{};
@@ -261,7 +263,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     try{
       const samples = rows.map(r=>({id:r.id,qc_status:r.qc,qc_note:""}));
       const pd = {
-        quant_kit:quantKit,poolingBase,globalElutionVol,groupBases,groupElutions,manual_alloc:manualAlloc,customAmounts,
+        quant_kit:quantKit,poolingBase,globalElutionVol,groupBases,groupElutions,manual_alloc:manualAlloc,customAmounts,hk_doubled:hkDoubled,
         rows:rows.map(r=>({concentration:r.concentration,elutionVolume:r.elutionVolume,yield:r.yield,poolingAmount:r.poolingAmount,poolingVolume:r.poolingVolume,eliminated:r.eliminated,qc:r.qc})),
         indexes:savedIndexes,
       };
@@ -399,7 +401,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                     <Text style={{color:"#666",fontSize:11}}>牙刷</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["TOOTHBRUSH"]??450} onChange={v=>{const val=v??450;setCustomAmounts(p=>({...p,TOOTHBRUSH:val}));setRows(prev=>prev.map(r=>r.category==="MALE_OTHER"&&r.sampleType==="TOOTHBRUSH"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
                     <Text style={{color:"#666",fontSize:11}}>烟头</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["CIGARETTE"]??120} onChange={v=>{const val=v??120;setCustomAmounts(p=>({...p,CIGARETTE:val}));setRows(prev=>prev.map(r=>r.category==="MALE_OTHER"&&r.sampleType==="CIGARETTE"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
                     <Text style={{color:"#666",fontSize:11}}>胡须</Text><InputNumber size="small" min={1} style={{width:42,fontSize:11}} value={customAmounts["BEARD"]??230} onChange={v=>{const val=v??230;setCustomAmounts(p=>({...p,BEARD:val}));setRows(prev=>prev.map(r=>r.category==="MALE_OTHER"&&r.sampleType==="BEARD"?{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}:r))}}/>
-                    <Button size="small" style={{fontSize:11,padding:"0 4px"}} onClick={()=>{setCustomAmounts({});setRows(prev=>prev.map(r=>{const da=getDefaultAmount(r.category,r.sampleType);return{...r,poolingAmount:da,poolingVolume:(r.concentration??0)>0?Math.round(da/(r.concentration??1)*100)/100:0}}))}}>重置</Button>
+                    <Button size="small" style={{fontSize:11,padding:"0 4px"}} disabled={hkDoubled} onClick={()=>{if(hkDoubled)return;const keys:Record<string,number>={FEMALE_BLOOD:(customAmounts["FEMALE_BLOOD"]??200)*2,MALE_BLOOD:(customAmounts["MALE_BLOOD"]??120)*2,BLOODSTAIN:(customAmounts["BLOODSTAIN"]??250)*2,HAIR:(customAmounts["HAIR"]??300)*2,NAIL:(customAmounts["NAIL"]??160)*2,TOOTHBRUSH:(customAmounts["TOOTHBRUSH"]??450)*2,CIGARETTE:(customAmounts["CIGARETTE"]??120)*2,BEARD:(customAmounts["BEARD"]??230)*2};setCustomAmounts(p=>({...p,...keys}));setRows(prev=>prev.map(r=>{const k=r.category==="FEMALE_BLOOD"?"FEMALE_BLOOD":r.category==="MALE_BLOOD"?"MALE_BLOOD":r.sampleType;const val=keys[k as string];if(val===undefined)return r;return{...r,poolingAmount:val,poolingVolume:(r.concentration??0)>0?Math.round(val/(r.concentration??1)*100)/100:0}}));setHkDoubled(true);}}>香港翻倍</Button>
+                    <Button size="small" style={{fontSize:11,padding:"0 4px"}} onClick={()=>{setHkDoubled(false);setCustomAmounts({});setRows(prev=>prev.map(r=>{const da=getDefaultAmount(r.category,r.sampleType);return{...r,poolingAmount:da,poolingVolume:(r.concentration??0)>0?Math.round(da/(r.concentration??1)*100)/100:0}}))}}>重置</Button>
                     <Text style={{fontSize:11,color:"#999",marginLeft:4}}>洗脱:</Text>
                     <InputNumber size="small" min={1} step={1} style={{width:50}} value={groupElutions[gi]??globalElutionVol} onChange={v=>{if(v!==null){setGroupElutions(p=>({...p,[gi]:v}));setRows(prev=>prev.map(r=>{if(g.rows.find(gr=>gr.id===r.id)){r.elutionVolume=v;r.yield=Math.round((r.concentration??0)*v*10)/10;r.eliminated=computeEliminated(r.concentration??null, v);}return r}))}}}/>μL
                   </Space>
