@@ -192,6 +192,10 @@ export const casesApi = {
     api.post("/cases/batch_import_nippt/", data),
   parseNipptDocs: (formData: FormData, config?: Record<string, unknown>) =>
     api.post("/cases/parse_nippt_docs/", formData, config),
+  parseCnDocs: (formData: FormData, config?: Record<string, unknown>) =>
+    api.post("/cases/parse_cn_docs/", formData, config),
+  batchImportCn: (data: Record<string, unknown>) =>
+    api.post("/cases/batch_import_cn/", data),
   update: (id: string, data: Record<string, unknown>) =>
     api.patch<CaseDetail>(`/cases/${id}/`, data),
   confirmReceipt: (id: string, data: ConfirmReceiptPayload) =>

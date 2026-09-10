@@ -147,6 +147,15 @@ export default function NipptRegistration() {
   const [importErrorFiles, setImportErrorFiles] = useState<any[]>([]);
   const [importResult, setImportResult] = useState<any>(null);
 
+  // ── 国内导入 ──
+  const [cnRows, setCnRows] = useState<any[]>([]);
+  const [cnChecked, setCnChecked] = useState<Set<number>>(new Set());
+  const [cnExisting, setCnExisting] = useState<any[]>([]);
+  const [cnErrors, setCnErrors] = useState<any[]>([]);
+  const [cnFileName, setCnFileName] = useState("");
+  const [cnLoading, setCnLoading] = useState(false);
+  const [cnResult, setCnResult] = useState<any>(null);
+
   useEffect(() => { refreshCases(); }, []);
 
   const refreshCases = useCallback(() => {
@@ -210,6 +219,59 @@ export default function NipptRegistration() {
 
   const copyLink = (url: string) => {
     navigator.clipboard.writeText(url).then(() => message.success("Link copied!"));
+  };
+
+  // ── 国内导入 handlers ──
+  const handleCnImportFiles = async (files: File[]) => {
+    if (!files || !files.length) return;
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    setCnLoading(true);
+    try {
+      const res = await (casesApi as any).parseCnDocs(fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const d = res.data;
+      const rows = d.cases || [];
+      setCnRows(rows);
+      setCnErrors(d.errors || []);
+      setCnFileName(files.map((f) => f.name).join("、"));
+      const existingRows = new Set((d.existing_info || []).map((e: any) => e.row_no));
+      setCnExisting(d.existing_info || []);
+      setCnChecked(new Set(rows.filter((r: any) => !existingRows.has(r.row_no)).map((r: any) => r.row_no)));
+      setCnResult(null);
+    } catch (e: any) {
+      message.error("解析失败: " + (e?.response?.data?.detail || e?.message || "未知错误"));
+    } finally {
+      setCnLoading(false);
+    }
+  };
+
+  const handleCnImportSubmit = async () => {
+    const selected = cnRows.filter((r) => cnChecked.has(r.row_no));
+    if (!selected.length) { message.warning("请先勾选要导入的行"); return; }
+    setCnLoading(true);
+    try {
+      const res = await (casesApi as any).batchImportCn({ cases: selected });
+      const d = res.data;
+      const createdCount = d.created_count ?? 0;
+      const skippedCount = d.skipped_count ?? 0;
+      const errCount = d.error_count ?? 0;
+      if (errCount > 0 || skippedCount > 0) {
+        message.warning(`导入完成：成功 ${createdCount}，跳过 ${skippedCount}，失败 ${errCount}（详见下方结果）`);
+      } else {
+        message.success(`导入成功 ${createdCount} 个Case`);
+      }
+      setCnResult(d);
+      // 成功行从预览表移除
+      const doneRows = new Set((d.created || []).map((c: any) => c.row_no));
+      setCnRows((prev: any[]) => prev.filter((r: any) => !doneRows.has(r.row_no)));
+      setCnChecked((prev) => { const n = new Set(prev); doneRows.forEach((rn) => n.delete(rn as number)); return n; });
+    } catch (e: any) {
+      message.error("导入失败: " + (e?.response?.data?.detail || e?.message || "未知错误"));
+    } finally {
+      setCnLoading(false);
+    }
   };
 
   const handleImportFiles = async (files: File[]) => {
@@ -449,6 +511,7 @@ export default function NipptRegistration() {
           <Radio.Button value="SUPPLEMENT">补充样本</Radio.Button>
           <Radio.Button value="RESAMPLE">重采样本</Radio.Button>
           <Radio.Button value="IMPORT">巴西导入</Radio.Button>
+          <Radio.Button value="IMPORT_CN">国内导入</Radio.Button>
         </Radio.Group>
 
         {/* PT Search for supplement/resample */}
@@ -1257,6 +1320,132 @@ export default function NipptRegistration() {
                       Seq {e.seq}: {e.error}
                     </div>
                   ))}
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* === 国内导入 === */}
+      {regType === "IMPORT_CN" && (
+        <Card size="small">
+          <div style={{ marginBottom: 12, color: "#666", fontSize: 12 }}>
+            上传国内送检表（.xlsx，一行 = 一个案例：孕妇 + 疑父），
+            按「孕妇姓名 + 疑父姓名」查重后批量登记首次检测 Case（来源：国内）。
+          </div>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col xs={24} md={12}>
+              <Upload.Dragger
+                accept=".xlsx"
+                multiple
+                showUploadList={false}
+                beforeUpload={(_f: any, fileList: any) => {
+                  handleCnImportFiles(fileList.map((f: any) => f.originFileObj || f));
+                  return false;
+                }}
+              >
+                <p className="ant-upload-drag-icon"><FileExcelOutlined style={{ fontSize: 32, color: "#52c41a" }} /></p>
+                <p className="ant-upload-text">上传国内送检表（.xlsx）</p>
+                <p className="ant-upload-hint">支持批量上传，按表头「孕妇姓名」「疑父姓名」解析</p>
+              </Upload.Dragger>
+            </Col>
+          </Row>
+
+          {cnFileName && (
+            <div style={{ marginBottom: 8 }}>
+              <Tag color="green">{cnFileName}</Tag>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                共 {cnRows.length} 个Case{cnExisting.length > 0 ? `，已存在 ${cnExisting.length} 个` : ""}
+                {cnErrors.length > 0 ? `，解析失败 ${cnErrors.length} 行` : ""}
+              </Text>
+            </div>
+          )}
+
+          {cnErrors.length > 0 && (
+            <div style={{ marginBottom: 8, padding: "6px 10px", background: "#fff1f0", borderRadius: 6 }}>
+              <Text type="danger" style={{ fontSize: 12 }}>解析失败:</Text>
+              {cnErrors.map((f: any, i: number) => (
+                <Tag key={i} color="red" style={{ marginLeft: 4, marginBottom: 2 }}>{f.file} 行{f.row_no}: {f.error}</Tag>
+              ))}
+            </div>
+          )}
+
+          {cnRows.length > 0 && (
+            <>
+              <Table
+                dataSource={cnRows}
+                rowKey="row_no"
+                size="small"
+                pagination={false}
+                scroll={{ x: 1100, y: 400 }}
+                columns={[
+                  { title: "导入", width: 90, render: (_: any, r: any) => {
+                      const ex = cnExisting.find((e: any) => e.row_no === r.row_no);
+                      const cb = (
+                        <Checkbox checked={cnChecked.has(r.row_no)}
+                          onChange={(e) => setCnChecked((prev) => {
+                            const next = new Set(prev);
+                            e.target.checked ? next.add(r.row_no) : next.delete(r.row_no);
+                            return next;
+                          })} />
+                      );
+                      if (ex) {
+                        return (
+                          <Space size={2} direction="vertical" style={{ alignItems: "center", maxWidth: 86 }}>
+                            <Tag color="orange" style={{ fontSize: 10, margin: 0, whiteSpace: "normal", lineHeight: "14px" }}>
+                              重复<span style={{ fontSize: 9, opacity: 0.8 }}>{` (${String(ex.case_number).slice(-4)})`}</span>
+                            </Tag>
+                            {cb}
+                          </Space>
+                        );
+                      }
+                      return cb;
+                    } },
+                  { title: "行", dataIndex: "row_no", width: 44 },
+                  { title: "孕妇", dataIndex: "mother_name", width: 130, ellipsis: true },
+                  { title: "疑父", dataIndex: "father_name", width: 130, ellipsis: true },
+                  { title: "类型", dataIndex: "father_sample_type", width: 60,
+                    render: (v: string) => { const m: Record<string, string> = { BLOOD: "血液", DBS: "血痕", HAIR: "毛发", NAIL: "指甲", SWAB: "口拭子", SEMEN: "精液", SEMSTAIN: "精斑", TOOTHBRUSH: "牙刷", CIGARETTE: "烟头", BOTTLE: "水瓶", BEARD: "胡须", FLOSS: "牙线", GUM: "口香糖" }; return m[v] || v || "—"; } },
+                  { title: "编号", dataIndex: "external_id", width: 100, ellipsis: true },
+                  { title: "来源", dataIndex: "applicant", width: 100, ellipsis: true },
+                  { title: "人员", dataIndex: "sales_person", width: 70, ellipsis: true },
+                  { title: "电话", dataIndex: "phone", width: 110, ellipsis: true },
+                  { title: "孕周", key: "gw", width: 70,
+                    render: (_: any, r: any) => r.gestational_age_weeks != null ? `${r.gestational_age_weeks}周${r.gestational_age_days ? `${r.gestational_age_days}天` : ""}` : "—" },
+                  { title: "申请日期", dataIndex: "collection_date", width: 100 },
+                  { title: "预计报告", dataIndex: "expected_completion", width: 100,
+                    render: (v: string) => v || "—" },
+                  { title: "备注", dataIndex: "notes", ellipsis: true,
+                    render: (v: string) => v || "—" },
+                  { title: "PT参考", dataIndex: "pt_ref", width: 80,
+                    render: (v: string) => <Text type="secondary" style={{ fontSize: 11 }}>{v || "—"}</Text> },
+                ]}
+              />
+              <div style={{ marginTop: 12 }}>
+                <Button type="primary" icon={<PlusOutlined />} loading={cnLoading}
+                  onClick={handleCnImportSubmit} size="large">
+                  批量导入（{cnChecked.size} 个Case）
+                </Button>
+              </div>
+              {cnResult && (cnResult.errors?.length > 0 || cnResult.skipped?.length > 0) && (
+                <div style={{ marginTop: 8 }}>
+                  {cnResult.errors?.length > 0 && (
+                    <>
+                      <Text type="danger" style={{ fontSize: 12 }}>失败明细：</Text>
+                      {cnResult.errors.map((e: any, i: number) => (
+                        <div key={i} style={{ fontSize: 11, color: "#cf1322" }}>行 {e.row_no}: {e.error}</div>
+                      ))}
+                    </>
+                  )}
+                  {cnResult.skipped?.length > 0 && (
+                    <>
+                      <Text type="warning" style={{ fontSize: 12, display: "block", marginTop: 4 }}>跳过明细：</Text>
+                      {cnResult.skipped.map((s: any, i: number) => (
+                        <div key={i} style={{ fontSize: 11, color: "#d46b08" }}>行 {s.row_no}: {s.case_number ? `已存在（${s.case_number}）` : s.reason}</div>
+                      ))}
+                    </>
+                  )}
                 </div>
               )}
             </>

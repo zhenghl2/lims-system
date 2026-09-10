@@ -471,6 +471,30 @@ class NipptBatchImportSerializer(serializers.Serializer):
     """巴西送检单批量导入"""
     cases = NipptImportCaseItemSerializer(many=True)
 
+
+class NipptCnImportCaseItemSerializer(serializers.Serializer):
+    """国内送检表单行（一行 = 一个案例：孕妇 + 单疑父）"""
+    row_no = serializers.IntegerField(required=False)
+    file = serializers.CharField(required=False, allow_blank=True, default="")
+    mother_name = serializers.CharField(required=False, allow_blank=True, default="")
+    father_name = serializers.CharField(required=False, allow_blank=True, default="")
+    father_sample_type = serializers.CharField(required=False, allow_blank=True, default="BLOOD")
+    external_id = serializers.CharField(required=False, allow_blank=True, default="")
+    applicant = serializers.CharField(required=False, allow_blank=True, default="")
+    sales_person = serializers.CharField(required=False, allow_blank=True, default="")
+    phone = serializers.CharField(required=False, allow_blank=True, default="")
+    gestational_age_weeks = serializers.IntegerField(required=False, allow_null=True, default=None)
+    gestational_age_days = serializers.IntegerField(required=False, allow_null=True, default=None)
+    collection_date = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")  # YYYY-MM-DD
+    expected_completion = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")  # YYYY-MM-DD
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
+    pt_ref = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class NipptCnBatchImportSerializer(serializers.Serializer):
+    """国内送检表批量导入"""
+    cases = NipptCnImportCaseItemSerializer(many=True)
+
 class SupplementSerializer(serializers.Serializer):
     """补充样本：给已有 Case 添加新的 CaseSample (母亲或父亲)."""
     role = serializers.ChoiceField(choices=[("MOTHER", "Mother"), ("ALLEGED_FATHER", "Alleged Father")])
