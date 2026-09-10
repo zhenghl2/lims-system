@@ -335,6 +335,7 @@ export default function NipptRegistration() {
           collection_date: values.collection_date
             ? dayjs(values.collection_date).format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD"),
           notes: values.notes,
+          is_urgent: values.is_urgent === true,
         };
         const res = await (casesApi as any).create(payload);
         message.success(`Case ${res.data.case_number} created`);
@@ -495,6 +496,14 @@ export default function NipptRegistration() {
                     <Radio value="YES">是</Radio>
                     <Radio value="NO">否</Radio>
                     <Radio value="WECHAT">微信授权</Radio>
+                  </Radio.Group>
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={8}>
+                <Form.Item name="is_urgent" label="加急" style={{ marginBottom: 0 }}>
+                  <Radio.Group size="small">
+                    <Radio value={true}>是</Radio>
+                    <Radio value={false}>否</Radio>
                   </Radio.Group>
                 </Form.Item>
               </Col>

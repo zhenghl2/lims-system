@@ -141,6 +141,20 @@ export default function Cases() {
     }
   };
 
+  const toggleUrgent = async () => {
+    if (!selectedCase) return;
+    const next = !selectedCase.is_urgent;
+    try {
+      await casesApi.update(selectedCase.id, { is_urgent: next });
+      message.success(next ? "已标记加急" : "已取消加急");
+      const r = await casesApi.get(selectedCase.id);
+      setSelectedCase(r.data);
+      loadData();
+    } catch (e: any) {
+      message.error(String(e?.response?.data?.detail || "操作失败"));
+    }
+  };
+
   const doResample = async (caseId: string, csId: string) => {
     try {
       await casesApi.resample(caseId, { case_sample_id: csId });
@@ -398,6 +412,14 @@ export default function Cases() {
             {selectedCase.pt_number && <Tag color="blue">{selectedCase.pt_number}</Tag>}
             <Tag color={STATUS_COLORS[selectedCase.status]}>{STATUS_DISPLAY[selectedCase.status] || selectedCase.status}</Tag>
             {selectedCase.is_urgent && <Tag color="red">加急</Tag>}
+            <Button
+              size="small"
+              type={selectedCase.is_urgent ? "default" : "primary"}
+              danger={selectedCase.is_urgent}
+              onClick={toggleUrgent}
+            >
+              {selectedCase.is_urgent ? "取消加急" : "标记加急"}
+            </Button>
           </Space>
         ) : "案例详情"}
         open={drawerOpen}
