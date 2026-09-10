@@ -93,8 +93,10 @@ export default function NipptPreProcessing() {
   const [loading, setLoading] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<BatchDetail | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
-  const [ppDate, setPpDate] = useState<string>("");
-  const [ppTime, setPpTime] = useState<string>("");
+  const [ppDate, setPpDate] = useState<string>("");      // 女性日期
+  const [ppTime, setPpTime] = useState<string>("");      // 女性时间
+  const [ppDateM, setPpDateM] = useState<string>("");    // 男性日期
+  const [ppTimeM, setPpTimeM] = useState<string>("");    // 男性时间
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // New batch modal
@@ -248,6 +250,11 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       setReviewers(prev => ({ ...prev, [id]: pd.reviewer_female ?? res.data?.reviewer ?? "" }));
       setOperatorsM(prev => ({ ...prev, [id]: pd.operator_male ?? "" }));
       setReviewersM(prev => ({ ...prev, [id]: pd.reviewer_male ?? "" }));
+      // 日期/时间（男女独立；旧值归女性）
+      setPpDate((pd.pp_date_female ?? pd.pp_date) || "");
+      setPpTime((pd.pp_time_female ?? pd.pp_time) || "");
+      setPpDateM(pd.pp_date_male || "");
+      setPpTimeM(pd.pp_time_male || "");
       // 草稿恢复：人员（sessionStorage）+ 照片（IndexedDB，异步）
       const draft = loadPpDraft()[id];
       if (draft) {
@@ -255,6 +262,10 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
         if (typeof draft.reviewer_female === "string") setReviewers(prev => ({ ...prev, [id]: draft.reviewer_female }));
         if (typeof draft.operator_male === "string") setOperatorsM(prev => ({ ...prev, [id]: draft.operator_male }));
         if (typeof draft.reviewer_male === "string") setReviewersM(prev => ({ ...prev, [id]: draft.reviewer_male }));
+        if (typeof draft.pp_date_female === "string") setPpDate(draft.pp_date_female);
+        if (typeof draft.pp_time_female === "string") setPpTime(draft.pp_time_female);
+        if (typeof draft.pp_date_male === "string") setPpDateM(draft.pp_date_male);
+        if (typeof draft.pp_time_male === "string") setPpTimeM(draft.pp_time_male);
       }
       idbGet("pp_photos_" + id).then((v) => {
         if (v) {
@@ -278,10 +289,12 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       reviewer_female: reviewers[selectedBatch.id] || "",
       operator_male: operatorsM[selectedBatch.id] || "",
       reviewer_male: reviewersM[selectedBatch.id] || "",
+      pp_date_female: ppDate, pp_time_female: ppTime,
+      pp_date_male: ppDateM, pp_time_male: ppTimeM,
     });
     idbPut("pp_photos_" + selectedBatch.id, { photosF, photosM }).catch(() => { /* ignore */ });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [photosF, photosM, operators, reviewers, operatorsM, reviewersM, selectedBatch]);
+  }, [photosF, photosM, operators, reviewers, operatorsM, reviewersM, ppDate, ppTime, ppDateM, ppTimeM, selectedBatch]);
 
   // ===== New batch =====
   const openNewBatch = async () => {
@@ -361,13 +374,6 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       qc_note: s.qc_note,
     }));
 
-  const buildPpDatePayload = () => {
-    const payload: any = {};
-    if (ppDate) payload.pp_date = ppDate;
-    if (ppTime) payload.pp_time = ppTime;
-    return payload;
-  };
-
   /** 保存前校验（side: f=女性 m=男性）：照片+操作人+审核人 */
   const validateBeforeSave = (side: "f" | "m"): string[] => {
     const missing: string[] = [];
@@ -415,11 +421,12 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
         reviewer_female: reviewers[selectedBatch.id] || "",
         operator_male: operatorsM[selectedBatch.id] || "",
         reviewer_male: reviewersM[selectedBatch.id] || "",
+        pp_date_female: ppDate, pp_time_female: ppTime,
+        pp_date_male: ppDateM, pp_time_male: ppTimeM,
       };
       await (casesApi as any).savePreprocessing(selectedBatch.id, {
         samples: buildSamplePayload(samples),
         processing_data: pd,
-        ...buildPpDatePayload(),
       });
       clearPpDraft(selectedBatch.id);
       idbDel("pp_photos_" + selectedBatch.id).catch(() => { /* ignore */ });
@@ -533,7 +540,15 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     const rvMap = side === "f" ? reviewers : reviewersM;
     const setRvMap = side === "f" ? setReviewers : setReviewersM;
     return (
-      <Card size="small" title={`📷 ${who}实验照片`} style={{ marginTop: 8 }}>
+      <Card size="small" title={`📋 ${who}实验记录`} style={{ marginTop: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, flexWrap: "wrap", marginBottom: 10 }}>
+          <span style={{ color: "#666" }}>日期:</span>
+          <DatePicker size="small" style={{ width: 130 }} value={(side === "f" ? ppDate : ppDateM) ? dayjs(side === "f" ? ppDate : ppDateM) : null}
+            onChange={(d: any) => (side === "f" ? setPpDate : setPpDateM)(d ? d.format("YYYY-MM-DD") : "")} placeholder="选择日期" format="YYYY-MM-DD" />
+          <span style={{ color: "#666", marginLeft: 8 }}>时间:</span>
+          <TimePicker size="small" style={{ width: 100 }} format="HH:mm" value={(side === "f" ? ppTime : ppTimeM) ? dayjs(side === "f" ? ppTime : ppTimeM, "HH:mm") : null}
+            onChange={(d: any) => (side === "f" ? setPpTime : setPpTimeM)(d ? d.format("HH:mm") : "")} placeholder="选择时间" />
+        </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {ph.map((url, i) => (
             <div key={i} style={{ position: "relative", width: 104, height: 104 }}>
@@ -754,15 +769,6 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                 ),
               },
             ]} />
-
-            {/* Photo upload section */}
-            <Divider style={{ margin: "12px 0" }} />
-            <div style={{display:"flex",alignItems:"center",gap:12,fontSize:12,flexWrap:"wrap"}}>
-              <span style={{color:"#666"}}>日期:</span>
-              <DatePicker size="small" style={{width:130}} value={ppDate?dayjs(ppDate):null} onChange={(d:any)=>setPpDate(d?d.format("YYYY-MM-DD"):"")} placeholder="选择日期" format="YYYY-MM-DD"/>
-              <span style={{color:"#666",marginLeft:16}}>时间:</span>
-              <TimePicker size="small" style={{width:100}} format="HH:mm" value={ppTime?dayjs(ppTime,"HH:mm"):null} onChange={(d:any)=>setPpTime(d?d.format("HH:mm"):"")} placeholder="选择时间"/>
-            </div>
 
           </Card>
         ) : (
