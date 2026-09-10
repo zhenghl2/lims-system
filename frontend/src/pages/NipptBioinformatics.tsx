@@ -1,7 +1,7 @@
 // NipptBioinformatics.tsx — NIPPT Bioinformatics (Pair-based CPI Analysis + QC + Metrics)
 import { useState, useEffect, useCallback } from "react";
 import { Card, Table, Button, Tag, Modal, message, Typography, InputNumber,
-  Space, Popconfirm, Select, Alert, Input, Upload } from "antd";
+  Space, Popconfirm, Select, Alert, Input, Upload, Tooltip } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, DeleteOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, SwapOutlined, LinkOutlined,
   DownloadOutlined, UploadOutlined } from "@ant-design/icons";
@@ -194,8 +194,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     { title: "", dataIndex: "father_label", key: "lbl", width: 42, render: (v: string) => <Tag style={{margin:0}}>{v}</Tag> },
     { title: "", key: "src", width: 55,
       render: (_: any, r: PairItem) => r.is_cross_batch
-        ? <Tag icon={<SwapOutlined />} color="orange" style={{margin:0}} />
-        : <Tag icon={<LinkOutlined />} color="green" style={{margin:0}}>{r.mother_source_batch?.slice(-6)}</Tag> },
+        ? <Tooltip title="跨批次配对"><Tag icon={<SwapOutlined />} color="orange" style={{margin:0}} /></Tooltip>
+        : <Tooltip title={`来源批次: ${r.mother_source_batch || "—"}`}><Tag icon={<LinkOutlined />} color="green" style={{margin:0}}>{r.mother_source_batch?.slice(-6)}</Tag></Tooltip> },
     // Mother metrics
     { title: "M.Layers", key: "ml", width: 70, render: (_: any, r: PairItem) => metricInput(r.id, "mother_layers", r.mother_layers) },
     { title: "M.Conc", key: "mc", width: 70, render: (_: any, r: PairItem) => metricInput(r.id, "mother_concentration", r.mother_concentration) },
