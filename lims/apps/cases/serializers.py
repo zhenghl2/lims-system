@@ -269,7 +269,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
     """Lab staff creates a case manually (supports 首次/补充/重采)."""
     # Write-only fields (not on Case model directly)
     sample_id = serializers.CharField(write_only=True, required=False, allow_blank=True)
-    mother_name = serializers.CharField(write_only=True)
+    mother_name = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
     mother_dob = serializers.DateField(write_only=True, required=False)
     father_names = serializers.ListField(
         child=serializers.CharField(), write_only=True, required=False, default=list
@@ -323,10 +323,12 @@ class CaseCreateSerializer(serializers.ModelSerializer):
 
         request = self.context["request"]
         custom_sample_id = validated_data.pop("sample_id", "").strip()
-        mother_name = validated_data.pop("mother_name")
+        mother_name = validated_data.pop("mother_name", "") or ""
         mother_dob = validated_data.pop("mother_dob", None)
         father_names = validated_data.pop("father_names", [])
         father_sample_types = validated_data.pop("father_sample_types", [])
+        if not mother_name.strip() and not any((n or "").strip() for n in father_names):
+            raise serializers.ValidationError("至少需要一个样本：孕妇或疑父（至少填写一个姓名）")
         external_id = validated_data.pop("external_id", "") or ""
         sample_source = validated_data.pop("sample_source", "") or ""
         fedex_no = validated_data.pop("fedex_no", "") or ""
@@ -377,30 +379,31 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             defaults={"name": "Peripheral Blood"},
         )
 
-        # Create mother sample
-        mother_sample = Sample.objects.create(
-            sample_id=custom_sample_id or f"{case_number}-M",
-            sample_type=sample_type,
-            panel=panel,
-            patient_name=mother_name,
-            patient_dob=mother_dob,
-            external_id=external_id,
-            sample_source=sample_source,
-            fedex_no=fedex_no,
-            last_menstrual_period=last_menstrual_period,
-            multiple_gestation=bool(validated_data.get("multiple_gestation")),
-            collection_date=today,
-            receipt_date=today,
-            receipt_time=now.time(),
-            status="REGISTERED",
-            site=request.user.site,
-            created_by=request.user,
-        )
-        mother_cs = CaseSample.objects.create(
-            case=case, sample=mother_sample, role=CaseSample.Role.MOTHER,
-            arrival_date=female_arrival,
-        )
-        # test_sample_id assigned later during receipt confirmation
+        # Create mother sample（无孕妇姓名时跳过——"至少一个样本"由校验保证）
+        if mother_name.strip():
+            mother_sample = Sample.objects.create(
+                sample_id=custom_sample_id or f"{case_number}-M",
+                sample_type=sample_type,
+                panel=panel,
+                patient_name=mother_name,
+                patient_dob=mother_dob,
+                external_id=external_id,
+                sample_source=sample_source,
+                fedex_no=fedex_no,
+                last_menstrual_period=last_menstrual_period,
+                multiple_gestation=bool(validated_data.get("multiple_gestation")),
+                collection_date=today,
+                receipt_date=today,
+                receipt_time=now.time(),
+                status="REGISTERED",
+                site=request.user.site,
+                created_by=request.user,
+            )
+            CaseSample.objects.create(
+                case=case, sample=mother_sample, role=CaseSample.Role.MOTHER,
+                arrival_date=female_arrival,
+            )
+            # test_sample_id assigned later during receipt confirmation
 
         # Create father samples (one CaseSample per sample type)
         for i, name in enumerate(father_names, 1):

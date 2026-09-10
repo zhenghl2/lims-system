@@ -298,11 +298,20 @@ export default function NipptRegistration() {
   // Submit registration
   const handleSubmit = async () => {
     const values = await form.validateFields();
+    // 首次登记：至少一个样本（孕妇或任一男性姓名）
+    if (regType === "FIRST") {
+      const hasMother = !!(values.mother_name || "").trim();
+      const hasMale = (values.males || []).some((m: any) => (m?.name || "").trim());
+      if (!hasMother && !hasMale) {
+        message.warning("请至少填写一个样本（孕妇或男性姓名）");
+        return;
+      }
+    }
     setLoading(true);
     try {
       if (regType === "FIRST") {
         const payload: any = {
-          mother_name: values.mother_name,
+          mother_name: values.mother_name || "",
           mother_dob: values.mother_dob ? dayjs(values.mother_dob).format("YYYY-MM-DD") : undefined,
           father_names: (values.males || []).map((m: any) => m.name).filter(Boolean),
           father_sample_types: (values.males || []).map((m: any) => m.sample_type || ["BLOOD"]),
@@ -548,8 +557,7 @@ export default function NipptRegistration() {
                   render: () => <Text strong style={{ fontSize: 13 }}>孕妇</Text> },
                 { title: "姓名", width: 120,
                   render: () => (
-                    <Form.Item name="mother_name" style={{ margin: 0 }}
-                      rules={[{ required: true, message: "必填" }]}>
+                    <Form.Item name="mother_name" style={{ margin: 0 }}>
                       <Input placeholder="孕妇姓名" size="small" bordered={false}
                         style={{ background: "#fafafa", borderRadius: 0 }} />
                     </Form.Item>
@@ -602,9 +610,8 @@ export default function NipptRegistration() {
                       render: (_r: any, row: any) => <Text strong style={{ fontSize: 13 }}>{row.role}</Text> },
                     { title: "", width: 120,
                       render: (_r: any, row: any) => (
-                        <Form.Item {...row.field} name={[row.field.name, "name"]} style={{ margin: 0 }}
-                          rules={row.maleIndex === 0 ? [{ required: true, message: "必填" }] : []}>
-                          <Input placeholder={row.maleIndex === 0 ? "姓名" : "姓名(选填)"} size="small" bordered={false}
+                        <Form.Item {...row.field} name={[row.field.name, "name"]} style={{ margin: 0 }}>
+                          <Input placeholder="姓名" size="small" bordered={false}
                             style={{ background: "#fafafa", borderRadius: 0 }} />
                         </Form.Item>
                       ) },
