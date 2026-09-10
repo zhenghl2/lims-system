@@ -289,6 +289,13 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     // 保存前校验：照片 + 操作人 + 审核人
     const missing = validateBeforeSave();
     if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
+    // 保存前校验：实验样本类型必填
+    const noType = samples.filter((s) => !s.experiment_sample_type);
+    if (noType.length) {
+      const names = noType.slice(0, 5).map((s) => s.patient_name).join("、");
+      message.warning(`保存前请先填写实验样本类型：${names}${noType.length > 5 ? " 等" : ""}`);
+      return;
+    }
     try {
       // 一并保存操作人/审核人
       const ok = await savePersons();

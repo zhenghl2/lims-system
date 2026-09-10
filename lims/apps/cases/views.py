@@ -1400,6 +1400,11 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         samples_data = request.data.get("samples", [])
 
+        # 校验：所有样本必须填写实验样本类型
+        no_type = [sd for sd in samples_data if not (sd.get("experiment_sample_type") or "").strip()]
+        if no_type:
+            return Response({"detail": "存在未填写实验样本类型的样本，请填写后再保存"}, status=400)
+
         for sd in samples_data:
             sample_id = sd.get("id")
             if not sample_id:
@@ -1496,14 +1501,16 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
     def pending(self, request):
         from .models import NipptExtractionBatch, NipptExtractionSample
         passed_ids = set()
-        exp_type_map = {}  # case_sample_id -> experiment_sample_type from PP
         for pp in NipptPreProcessingSample.objects.filter(batch__status="COMPLETED", qc_status="PASS", aliquot_tubes__gte=1):
-            if pp.case_sample_ids:
-                passed_ids.update(pp.case_sample_ids)
-                exp_type = pp.experiment_sample_type or ""
-                for cid in pp.case_sample_ids:
-                    if exp_type:
-                        exp_type_map[cid] = exp_type
+            if not pp.case_sample_ids:
+                continue
+            exp_type = pp.experiment_sample_type or ""
+            # 女性全进；男性只进"实验样本类型"对应的样本（类型通用：BLOOD/NAIL/HAIR/DBS...）
+            for _cs in CaseSample.objects.filter(id__in=pp.case_sample_ids):
+                if _cs.role == "MOTHER":
+                    passed_ids.add(str(_cs.id))
+                elif exp_type and _cs.sample_source == exp_type:
+                    passed_ids.add(str(_cs.id))
         excluded_ids = set()
         for b in NipptExtractionBatch.objects.all().prefetch_related("samples"):
             for sp in b.samples.all():
