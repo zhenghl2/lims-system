@@ -419,7 +419,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   return (
                           <tr key={r.id} style={{background:r.qc==="FAIL"?"#fff1f0":r.eliminated?"#fffbe6":"#e8f5e9"}}>
                             <td style={td}>{ri+1}</td>
-                            <td style={td}><Text code style={{fontSize:11}}>{r.ptId}</Text></td>
+                            <td style={td}><Text strong style={{fontSize:13}}>{r.ptId}</Text></td>
                             <td style={td}><Input size="small" style={{width:60}} value={savedIndexes[r.id]||""} onChange={e=>setSavedIndexes(p=>({...p,[r.id]:e.target.value}))} placeholder="ix"/></td>
                             <td style={td}>{stLabel}</td>
                             <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.concentration} onChange={v=>updateCell(ri,"concentration",v)} style={{width:70}} placeholder="0"/></td>
