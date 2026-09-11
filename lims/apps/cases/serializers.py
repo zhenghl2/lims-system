@@ -1364,7 +1364,21 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
                     f_all = pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS").count()
                     m_all = pb.samples.filter(qc_status="PASS").count() - f_all
                     if not groups:
-                        groups = [{"female":f_all//2,"male":m_all//2},{"female":f_all-f_all//2,"male":m_all-m_all//2}]
+                        # 与 Pooling 页 / pending_mixes 一致：≤34 默认 1 组；超出才按 34/组拆分
+                        _total = f_all + m_all
+                        _num = 1 if _total <= 34 else (_total + 33) // 34
+                        if _num == 1:
+                            groups = [{"female": f_all, "male": m_all}]
+                        else:
+                            _f_per = (f_all + _num - 1) // _num
+                            _m_per = (m_all + _num - 1) // _num
+                            groups = []
+                            for _g in range(_num):
+                                _tf = max(0, min(f_all - _g * _f_per, _f_per))
+                                _tm = max(0, min(m_all - _g * _m_per, _m_per))
+                                if _tf == 0 and _tm == 0:
+                                    break
+                                groups.append({"female": _tf, "male": _tm})
                     if gi >= len(groups): continue
                     grp = groups[gi]
                     f_take = grp.get("female", 0)
