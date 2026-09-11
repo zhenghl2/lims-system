@@ -442,6 +442,19 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
 
   const completeBatch = async () => {
     if (!selectedBatch) return;
+    // ── 完成前校验：有样本的侧必须已保存（实验照片+操作人+审核人）──
+    const pd = selectedBatch.processing_data || {};
+    const cMissing: string[] = [];
+    if ((selectedBatch.female_samples || []).length > 0) {
+      if (!pd.operator_female || !pd.reviewer_female || !(pd.photos_female || []).length) cMissing.push("女性");
+    }
+    if (((selectedBatch.male_blood_samples || []).length + (selectedBatch.male_other_samples || []).length) > 0) {
+      if (!pd.operator_male || !pd.reviewer_male || !(pd.photos_male || []).length) cMissing.push("男性");
+    }
+    if (cMissing.length) {
+      message.warning(`完成批次前需先保存：${cMissing.join("、")}实验数据（实验照片+操作人+审核人）`);
+      return;
+    }
     try {
       await (casesApi as any).completePreprocessing(selectedBatch.id);
       message.success(`批次 ${selectedBatch.batch_number} 已完成`);

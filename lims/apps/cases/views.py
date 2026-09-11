@@ -1767,6 +1767,18 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
         if batch.status == NipptPreProcessingBatch.Status.COMPLETED:
             raise ValidationError("Batch already completed")
 
+        # ── 完成前校验：有样本的侧必须已保存（实验照片+操作人+审核人）──
+        pd = batch.processing_data or {}
+        missing = []
+        if batch.samples.filter(category="FEMALE_BLOOD").exists():
+            if not (pd.get("operator_female") and pd.get("reviewer_female") and (pd.get("photos_female") or [])):
+                missing.append("女性")
+        if batch.samples.filter(category__in=["MALE_BLOOD", "MALE_OTHER"]).exists():
+            if not (pd.get("operator_male") and pd.get("reviewer_male") and (pd.get("photos_male") or [])):
+                missing.append("男性")
+        if missing:
+            raise ValidationError(f"请先保存{'、'.join(missing)}实验数据（实验照片+操作人+审核人）后再完成批次")
+
         with transaction.atomic():
             batch.status = NipptPreProcessingBatch.Status.COMPLETED
             batch.save(update_fields=["status", "updated_at"])
@@ -1897,6 +1909,17 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
     def complete(self, request, pk=None):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
+        # ── 完成前校验：有样本的侧必须已保存（实验照片+操作人+审核人）──
+        ed = batch.extraction_data or {}
+        missing = []
+        if batch.samples.filter(category="FEMALE_BLOOD").exists():
+            if not (ed.get("operator_female") and ed.get("reviewer_female") and (ed.get("photos_female") or [])):
+                missing.append("女性")
+        if batch.samples.filter(category__in=["MALE_BLOOD", "MALE_OTHER"]).exists():
+            if not (ed.get("operator_male") and ed.get("reviewer_male") and (ed.get("photos_male") or [])):
+                missing.append("男性")
+        if missing:
+            raise ValidationError(f"请先保存{'、'.join(missing)}实验数据（实验照片+操作人+审核人）后再完成批次")
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
         advance_batch(batch, "EXTRACTION", request.user)
         return Response({"message": f"Completed {batch.samples.count()} samples"})

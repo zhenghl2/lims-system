@@ -310,6 +310,19 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
 
   const completeBatch = async () => {
     if (!selectedBatch) return;
+    // ── 完成前校验：有样本的侧必须已保存（实验照片+操作人+审核人）──
+    const ed = selectedBatch.extraction_data || {};
+    const cMissing: string[] = [];
+    if ((selectedBatch.female_samples || []).length > 0) {
+      if (!ed.operator_female || !ed.reviewer_female || !(ed.photos_female || []).length) cMissing.push("女性");
+    }
+    if (((selectedBatch.male_blood_count || 0) + (selectedBatch.male_other_count || 0)) > 0) {
+      if (!ed.operator_male || !ed.reviewer_male || !(ed.photos_male || []).length) cMissing.push("男性");
+    }
+    if (cMissing.length) {
+      message.warning(`完成批次前需先保存：${cMissing.join("、")}实验数据（实验照片+操作人+审核人）`);
+      return;
+    }
     try { await (casesApi as any).completeExtraction(selectedBatch.id); message.success("已完成"); setSelectedBatch(null); fetchBatches(); }
     catch { message.error("操作失败"); }
   };
