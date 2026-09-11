@@ -1,6 +1,6 @@
 // NipptLibrary.tsx — Library Prep module (NIPT-style table + reagents)
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Card, Table, Button, Tag, Modal, message, Typography, Input, Select, InputNumber,
+import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, Select, InputNumber,
   Space, Popconfirm, Radio, Checkbox, Upload, Image, DatePicker, TimePicker, Form,
   Popover, Row, Col } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, CameraOutlined, LoadingOutlined } from "@ant-design/icons";
@@ -321,7 +321,15 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     finally{setSaving(false)}
   };
 
-  const completeBatch = async()=>{if(!selectedBatch)return;try{await(casesApi as any).completeLibrary(selectedBatch.id);message.success("已完成");setSelectedBatch(null);fetchBatches()}catch{message.error("失败")}};
+  const completeBatch = async()=>{
+    if(!selectedBatch)return;
+    // 完成前校验：① 保存要求全满足（照片+日期+操作人+审核人，按地区/侧）
+    const miss = validateBeforeSave("all");
+    if (miss.length) { message.warning(`完成前请先：${miss.join("、")}`); return; }
+    // ② 服务器保存检查（至少保存过一次）
+    const ld = (selectedBatch as any).library_data || {};
+    if (!(ld.operator_female || ld.operator_male)) { message.warning("完成前请先点击保存"); return; }
+    try{await(casesApi as any).completeLibrary(selectedBatch.id);message.success("已完成");setSelectedBatch(null);fetchBatches()}catch{message.error("失败")}};
   const deleteBatch = async(id:string)=>{try{await(casesApi as any).deleteLibraryBatch(id);message.success("已删除");setSelectedBatch(null);fetchBatches()}catch(e:any){message.error(e?.response?.data?.detail||"删除失败")}};
   // ===== Photo upload（压缩 + 男女分开）=====
   /** 压缩图片：超过 1600px 或 800KB 转 JPEG 0.85 */
@@ -455,8 +463,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
               const bg = failBg||passBg||baseBg;
 
   return (
-                <td key={col} style={{...cellStyle,background:bg,cursor:cell.vgId?"pointer":"default"}}>
-                  <Popover trigger="click" content={
+                <td key={col} style={{...cellStyle,background:bg,cursor:(cell.vgId&&selectedBatch?.status!=="COMPLETED")?"pointer":"default"}}>
+                  <Popover trigger={selectedBatch?.status==="COMPLETED"?[]:"click"} content={
                     <div style={{minWidth:180}}>
                       <Radio.Group value={sr?.status||""} onChange={e=>{const v=e.target.value;setSampleResults((p:any)=>({...p,[String(sIdx)]:{status:v,note:v==="fail"?(p[String(sIdx)]?.note||""):""}}))}}>
                         <Radio value="pass" style={{color:"#52c41a"}}>Pass</Radio>
@@ -466,7 +474,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                     </div>
                   }>
                     <div style={{display:"flex",alignItems:"stretch",minHeight:30}}>
-                      <input type="text" value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value,plate)} style={inputStyle} placeholder="ix"/>
+                      <input type="text" disabled={selectedBatch?.status==="COMPLETED"} value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value,plate)} style={inputStyle} placeholder="ix"/>
                       <div style={{...vgIdStyle}}>{cell.vgId||""}{cell.isQC?<span style={{color:"#13c2c2",fontWeight:600,marginLeft:1}}>QC</span>:null}</div>
                     </div>
                   </Popover>
@@ -499,10 +507,11 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       </Card>
       <div style={{flex:1,overflow:"auto"}}>
         {selectedBatch?(
-          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag></Space>}
+          <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
+          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}</Space>}
             extra={<Space>
               {selectedBatch.status!=="COMPLETED"&&<Popconfirm title="删除？" onConfirm={()=>deleteBatch(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm>}
-              <Button icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
+              <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               {selectedBatch.status!=="COMPLETED"&&<>
                 <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={() => saveProcessing("all")}>保存全部</Button>
                 <Popconfirm title="完成批次？" onConfirm={completeBatch}><Button type="primary" size="small" danger>完成</Button></Popconfirm>
@@ -575,6 +584,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
 
             {region==="XIAMEN"?renderPhotosPersons("f", true):(<>{renderPhotosPersons("f")}{renderPhotosPersons("m")}</>)}
           </Card>
+          </ConfigProvider>
         ):(
           <div style={{textAlign:"center",paddingTop:100,color:"#999"}}><Title level={5} type="secondary">选择批次查看详情</Title><Button type="primary" icon={<PlusOutlined/>} onClick={openNewBatch}>新建文库批次</Button></div>
         )}

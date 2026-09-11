@@ -1,6 +1,6 @@
 // NipptHybSeq.tsx — Hybridization & Sequencing (NIPT-style + Mix dilution table)
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
+import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
   Space, Popconfirm, Select, Checkbox, Form, DatePicker, TimePicker, Radio, Tooltip } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
@@ -207,7 +207,17 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     }catch{message.error("保存失败")}finally{setSaving(false)}
   };
 
-  const completeBatch = async()=>{if(!selectedBatch)return;try{await(casesApi as any).completeHybSeq(selectedBatch.id);message.success("已完成");setSelectedBatch(null);fetchBatches()}catch{message.error("失败")}};
+  const completeBatch = async()=>{
+    if(!selectedBatch)return;
+    // 完成前校验：操作人+审核人 + 平台/日期/试剂/Chip号
+    const miss = validateBeforeSave();
+    const fv = form.getFieldsValue();
+    if (!platform) miss.push("选择测序平台");
+    if (!fv.seq_date) miss.push("选择日期");
+    if (!seqKit) miss.push("选择测序试剂");
+    if (!fv.chip_number) miss.push("填写Chip号");
+    if (miss.length) { message.warning(`完成前请先：${miss.join("、")}`); return; }
+    try{await(casesApi as any).completeHybSeq(selectedBatch.id);message.success("已完成");setSelectedBatch(null);fetchBatches()}catch{message.error("失败")}};
   const deleteBatch = async(id:string)=>{try{await(casesApi as any).deleteHybSeqBatch(id);message.success("已删除");setSelectedBatch(null);fetchBatches()}catch(e:any){message.error(e?.response?.data?.detail||"删除失败")}};
 
   const batchColumns=[
@@ -232,10 +242,11 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       </Card>
       <div style={{flex:1,overflow:"auto"}}>
         {selectedBatch?(
-          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag></Space>}
+          <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
+          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}</Space>}
             extra={<Space>
               {selectedBatch.status!=="COMPLETED"&&<Popconfirm title="删除？" onConfirm={()=>deleteBatch(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm>}
-              <Button icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
+              <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               {selectedBatch.status!=="COMPLETED"&&<>
                 <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={save}>保存</Button>
                 <Popconfirm title="完成批次？" onConfirm={completeBatch}><Button type="primary" size="small" danger>完成</Button></Popconfirm>
@@ -413,6 +424,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                 }}>保存</Button>
             </div>
           </Card>
+          </ConfigProvider>
         ):(
           <div style={{textAlign:"center",paddingTop:100,color:"#999"}}><Title level={5} type="secondary">选择批次查看详情</Title><Button type="primary" icon={<PlusOutlined/>} onClick={openNewBatch}>新建上机批次</Button></div>
         )}

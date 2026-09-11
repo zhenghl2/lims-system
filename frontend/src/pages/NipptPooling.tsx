@@ -1,7 +1,7 @@
 // NipptPooling.tsx — Library QC & Pooling (NIPT-style + grouping)
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import React from "react";
-import { Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
+import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
   Space, Popconfirm, Select, Checkbox, DatePicker, TimePicker } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
@@ -338,10 +338,11 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       </Card>
       <div style={{flex:1,overflow:"auto"}}>
         {selectedBatch?(
-          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag></Space>}
+          <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
+          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}</Space>}
             extra={<Space>
               {selectedBatch.status!=="COMPLETED"&&<Popconfirm title="删除？" onConfirm={()=>deleteBatch(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm>}
-              <Button icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
+              <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               {selectedBatch.status!=="COMPLETED"&&<>
                 <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={save}>保存</Button>
                 <Button type="primary" size="small" danger onClick={onCompleteClick}>完成</Button>
@@ -518,6 +519,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                 onClick={save}>保存</Button>
             </div>
           </Card>
+          </ConfigProvider>
         ):(
           <div style={{textAlign:"center",paddingTop:100,color:"#999"}}><Title level={5} type="secondary">选择批次查看详情</Title><Button type="primary" icon={<PlusOutlined/>} onClick={openNewBatch}>新建Pooling批次</Button></div>
         )}

@@ -1,7 +1,7 @@
 // NipptPreProcessing.tsx — NIPPT 前处理模块
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Card, Table, Button, Tag, Tabs, Modal, message, Typography,
+  ConfigProvider, Card, Table, Button, Tag, Tabs, Modal, message, Typography,
   Input, Select, InputNumber, Space, Popconfirm,
   Checkbox, Divider, Upload, Image, DatePicker, TimePicker,
 } from "antd";
@@ -742,21 +742,25 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       {/* Main area */}
       <div style={{ flex: 1, overflow: "auto" }}>
         {selectedBatch ? (
+          <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
           <Card size="small" title={
             <Space>
               <Text strong>{selectedBatch.batch_number}</Text>
               <Tag color={selectedBatch.status === "COMPLETED" ? "green" : selectedBatch.status === "IN_PROGRESS" ? "blue" : "default"}>
                 {selectedBatch.status_display}
               </Tag>
+              {selectedBatch.status === "COMPLETED" && <Tag color="default">🔒 只读</Tag>}
             </Space>
           } extra={
             <Space>
-              <Button icon={<ReloadOutlined />} size="small" loading={batchLoading}
+              <Button disabled={false} icon={<ReloadOutlined />} size="small" loading={batchLoading}
                 onClick={() => fetchDetail(selectedBatch.id)}>刷新</Button>
-              <Button type="primary" size="small"
-                onClick={saveFemaleSamples} loading={batchLoading}>💾 保存女性</Button>
-              <Button size="small"
-                onClick={saveMaleSamples} loading={batchLoading}>💾 保存男性</Button>
+              {selectedBatch.status !== "COMPLETED" && (<>
+                <Button type="primary" size="small"
+                  onClick={saveFemaleSamples} loading={batchLoading}>💾 保存女性</Button>
+                <Button size="small"
+                  onClick={saveMaleSamples} loading={batchLoading}>💾 保存男性</Button>
+              </>)}
               {selectedBatch.status !== "COMPLETED" && (<>
                 <Popconfirm title="确定删除该批次？样本将回到待处理" onConfirm={() => deleteBatch(selectedBatch.id, selectedBatch.batch_number)}>
                   <Button type="primary" size="small" danger>删除批次</Button>
@@ -797,6 +801,7 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
             ]} />
 
           </Card>
+          </ConfigProvider>
         ) : (
           <div style={{ textAlign: "center", paddingTop: 100, color: "#999" }}>
             <Title level={5} type="secondary">选择左侧批次查看详情</Title>

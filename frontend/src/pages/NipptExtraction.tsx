@@ -1,7 +1,7 @@
 // NipptExtraction.tsx — DNA Extraction module (refactored: NIPT-style 3 methods)
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
-  Card, Table, Button, Tag, Tabs, Modal, message, Typography,
+  ConfigProvider, Card, Table, Button, Tag, Tabs, Modal, message, Typography,
   Input, Select, InputNumber, Space, Popconfirm, Radio,
   Checkbox, Divider, Upload, Image, DatePicker, TimePicker, Form,
   Popover,
@@ -805,14 +805,15 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       {/* Main */}
       <div style={{ flex: 1, overflow: "auto" }}>
         {selectedBatch ? (
+          <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
           <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text>
-            <Tag color={selectedBatch.status === "COMPLETED" ? "green" : selectedBatch.status === "IN_PROGRESS" ? "blue" : "default"}>{selectedBatch.status_display}</Tag></Space>}
+            <Tag color={selectedBatch.status === "COMPLETED" ? "green" : selectedBatch.status === "IN_PROGRESS" ? "blue" : "default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}</Space>}
             extra={<Space>
               {selectedBatch.status !== "COMPLETED" && (
                 <Popconfirm title="确定删除该批次？管数将恢复" onConfirm={() => deleteBatch(selectedBatch.id)}>
                   <Button size="small" danger icon={<DeleteOutlined />}>删除</Button></Popconfirm>
               )}
-              <Button icon={<ReloadOutlined />} size="small" loading={batchLoading} onClick={() => fetchDetail(selectedBatch.id)}>刷新</Button>
+              <Button disabled={false} icon={<ReloadOutlined />} size="small" loading={batchLoading} onClick={() => fetchDetail(selectedBatch.id)}>刷新</Button>
               {selectedBatch.status !== "COMPLETED" && (<>
                 <Button type="primary" icon={<CheckOutlined />} size="small" onClick={() => saveProcessing("all")}>保存全部</Button>
                 <Popconfirm title="确定完成该批次？" onConfirm={completeBatch}><Button type="primary" size="small" danger>完成批次</Button></Popconfirm>
@@ -839,6 +840,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                 ) },
             ]} />
           </Card>
+          </ConfigProvider>
         ) : (
           <div style={{ textAlign: "center", paddingTop: 100, color: "#999" }}>
             <Title level={5} type="secondary">选择左侧批次查看详情</Title>
