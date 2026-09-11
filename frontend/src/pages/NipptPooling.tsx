@@ -473,14 +473,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                 {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
               </Select>
 
-              <Button size="small" type="primary" style={{ marginLeft: 16 }}
-                onClick={async () => {
-                  const missing = validateBeforeSave();
-                  if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
-                  const ok = await savePersons();
-                  if (ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
-                  else message.error("保存失败");
-                }}>保存</Button>
+              <Button size="small" type="primary" style={{ marginLeft: 16 }} loading={saving}
+                onClick={save}>保存</Button>
             </div>
           </Card>
         ):(
