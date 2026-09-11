@@ -395,13 +395,23 @@ export default function SampleReceiving() {
 
   const batchReceive = async () => {
     const selected = data.filter((r) => selectedRowKeys.includes(r.key));
+    // ── ① 批量前预检：收集所有问题行，一次性列出（不逐行弹错）──
+    const problems: string[] = [];
+    for (const row of selected) {
+      const preErr = validateBeforeReceipt(row);
+      if (preErr) problems.push(`${row.testSampleId || row.patientName || "?"}：${preErr}`);
+    }
+    if (problems.length) {
+      const shown = problems.slice(0, 3).join("；");
+      const more = problems.length > 3 ? `；…等共 ${problems.length} 个问题` : "";
+      message.error({ content: `以下样本无法签收 —— ${shown}${more}`, duration: 6 });
+      return;
+    }
+    // ── ② 执行签收：失败带具体原因 ──
+    let okCount = 0;
+    const fails: string[] = [];
     for (const row of selected) {
       try {
-        const preErr = validateBeforeReceipt(row);
-        if (preErr) {
-          message.error(`${row.patientName}: ${preErr}`);
-          continue;
-        }
         const payload: any = { sample_id: row.sampleUuid, condition: "OK" };
         if (row.ptBase) payload.pt_number = "PT" + row.ptBase;
         if (row.actualSampleType) payload.actual_sample_type = row.actualSampleType;
@@ -409,11 +419,21 @@ export default function SampleReceiving() {
         const personName = receiptPersons[row.key];
         if (personName) payload.received_by_name = personName;
         await (casesApi as any).confirmReceipt(row.caseId, payload);
-      } catch {
-        message.error(`${row.patientName} 签收失败`);
+        okCount++;
+      } catch (e: any) {
+        const d = e?.response?.data;
+        const detail = (Array.isArray(d) ? d[0] : d?.detail) || "网络或服务器错误";
+        fails.push(`${row.testSampleId || row.patientName || "?"}：${detail}`);
       }
     }
-    message.success("批量签收完成");
+    // ── ③ 汇总结果 ──
+    if (fails.length) {
+      const shown = fails.slice(0, 3).join("；");
+      const more = fails.length > 3 ? `；…等共 ${fails.length} 个失败` : "";
+      message.error({ content: `成功 ${okCount} 个，失败 ${fails.length} 个 —— ${shown}${more}`, duration: 6 });
+    } else {
+      message.success(`批量签收完成（共 ${okCount} 个样本）`);
+    }
     setSelectedRowKeys([]);
     fetchData();
   };
@@ -593,8 +613,11 @@ export default function SampleReceiving() {
     },
     {
       title: "图片", dataIndex: "image", key: "img", width: 60,
-      render: (v: string | null) =>
-        v ? <Image src={v} width={40} height={40} style={{ objectFit: "cover", borderRadius: 4 }} preview /> : "—",
+      render: (v: string | null, r: CaseSampleRow) => {
+        // Case 级显示：本行无照片时回退显示同案例其他样本的照片（与后端校验口径一致）
+        const eff = v || data.find((x) => x.caseId === r.caseId && x.image)?.image || null;
+        return eff ? <Image src={eff} width={40} height={40} style={{ objectFit: "cover", borderRadius: 4 }} preview /> : "—";
+      },
     },
     {
       title: "姓名", dataIndex: "patientName", key: "name", width: 180, ellipsis: true,
