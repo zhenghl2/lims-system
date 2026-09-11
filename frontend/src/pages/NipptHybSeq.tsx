@@ -233,17 +233,9 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     }catch{message.error("保存失败")}finally{setSaving(false)}
   };
 
-  const completeBatch = async()=>{
-    if(!selectedBatch)return;
-    // 完成前校验：操作人+审核人 + 平台/日期/试剂/Chip号
-    const miss = validateBeforeSave();
-    const fv = form.getFieldsValue();
-    if (!platform) miss.push("选择测序平台");
-    if (!fv.seq_date) miss.push("选择日期");
-    if (!seqKit) miss.push("选择测序试剂");
-    if (!fv.chip_number) miss.push("填写Chip号");
-    if (miss.length) { message.warning(`完成前请先：${miss.join("、")}`); return; }
-    // ── 未保存改动检测：与服务器最新数据对比，防止完成时丢失未保存修改 ──
+  /** 未保存改动检测（完成 / 切换批次共用）：与服务器最新数据深度对比 */
+  const checkUnsaved = async (): Promise<boolean> => {
+    if (!selectedBatch) return false;
     try {
       const fr = await (casesApi as any).getHybSeqBatch(selectedBatch.id);
       const fresh = fr.data;
@@ -259,12 +251,43 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       delete (sdFresh as any).pooling_batch_id; delete (sdFresh as any).pooling_batch_ids;
       if (sdFresh.seq_date == null) delete (sdCur as any).seq_date;
       if (sdFresh.seq_time == null) delete (sdCur as any).seq_time;
-      if (JSON.stringify(canon(sdCur)) !== JSON.stringify(canon(sdFresh))
-        || curOp !== (fresh.operator_name || "") || curRv !== (fresh.reviewer || "")) {
-        message.warning("有未保存的修改，请先点击保存再完成");
-        return;
-      }
-    } catch { /* 拉取失败不阻塞（原有校验仍生效） */ }
+      return JSON.stringify(canon(sdCur)) !== JSON.stringify(canon(sdFresh))
+        || curOp !== (fresh.operator_name || "") || curRv !== (fresh.reviewer || "");
+    } catch { return false; /* 拉取失败不阻塞 */ }
+  };
+
+  /** 切换批次（含未保存改动确认，防静默丢失编辑） */
+  const switchBatch = async (id: string) => {
+    if (id === selectedBatch?.id) return;
+    if (batchLoading) return; /* 加载中忽略点击，防竞态 */
+
+    if (selectedBatch && await checkUnsaved()) {
+      Modal.confirm({
+        title: "有未保存的修改",
+        content: "当前批次有未保存的修改，切换后将丢失。是否继续切换？",
+        okText: "继续切换", cancelText: "取消", okButtonProps: { danger: true },
+        onOk: () => { fetchDetail(id); },
+      });
+      return;
+    }
+    fetchDetail(id);
+  };
+
+  const completeBatch = async()=>{
+    if(!selectedBatch)return;
+    // 完成前校验：操作人+审核人 + 平台/日期/试剂/Chip号
+    const miss = validateBeforeSave();
+    const fv = form.getFieldsValue();
+    if (!platform) miss.push("选择测序平台");
+    if (!fv.seq_date) miss.push("选择日期");
+    if (!seqKit) miss.push("选择测序试剂");
+    if (!fv.chip_number) miss.push("填写Chip号");
+    if (miss.length) { message.warning(`完成前请先：${miss.join("、")}`); return; }
+    // ── 未保存改动检测：与服务器最新数据对比，防止完成时丢失未保存修改 ──
+    if (await checkUnsaved()) {
+      message.warning("有未保存的修改，请先点击保存再完成");
+      return;
+    }
     try{await(casesApi as any).completeHybSeq(selectedBatch.id);message.success("已完成");setSelectedBatch(null);fetchBatches()}catch{message.error("失败")}};
   const deleteBatch = async(id:string)=>{try{await(casesApi as any).deleteHybSeqBatch(id);message.success("已删除");setSelectedBatch(null);fetchBatches()}catch(e:any){message.error(e?.response?.data?.detail||"删除失败")}};
 
@@ -285,7 +308,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         {!sidebarCollapsed&&(<>
           <Button type="primary" icon={<PlusOutlined/>} block onClick={openNewBatch} style={{marginBottom:8}}>新建上机批次</Button>
           <Table dataSource={batches} rowKey="id" loading={loading} size="small" pagination={false} scroll={{y:"calc(100vh - 280px)"}}
-            onRow={(r:BatchItem)=>({onClick:()=>fetchDetail(r.id),style:{background:selectedBatch?.id===r.id?"#e6f4ff":undefined,cursor:"pointer"}})} columns={batchColumns}/>
+            onRow={(r:BatchItem)=>({onClick:()=>switchBatch(r.id),style:{background:selectedBatch?.id===r.id?"#e6f4ff":undefined,cursor:"pointer"}})} columns={batchColumns}/>
         </>)}
       </Card>
       <div style={{flex:1,overflow:"auto"}}>
@@ -462,14 +485,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                 {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
               </Select>
 
-              <Button size="small" type="primary" style={{ marginLeft: 16 }}
-                onClick={async () => {
-                  const missing = validateBeforeSave();
-                  if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
-                  const ok = await savePersons();
-                  if (ok) { message.success("已保存"); fetchDetail(selectedBatch.id); }
-                  else message.error("保存失败");
-                }}>保存</Button>
+              <Button size="small" type="primary" style={{ marginLeft: 16 }} loading={saving} onClick={save}>保存</Button>
             </div>
           </Card>
           </ConfigProvider>
