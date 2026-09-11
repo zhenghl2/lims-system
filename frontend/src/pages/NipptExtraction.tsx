@@ -236,6 +236,19 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     else { setSelectedKeys(new Set()); }
   };
 
+  /** 按性别替换式全选：f=只选女性，m=只选男性（血液+其他），另一性别清掉 */
+  const selectByGender = (g: "f" | "m") => {
+    if (!pendingData) return;
+    const next = new Set<string>();
+    for (const e of pendingData.entries) {
+      const isF = e.category === "FEMALE_BLOOD";
+      if ((g === "f" && isF) || (g === "m" && !isF)) {
+        for (const id of e.case_sample_ids) next.add(id);
+      }
+    }
+    setSelectedKeys(next);
+  };
+
   // ── Save / Complete / Delete ──
   /** 保存前校验（side: f=女性 m=男性 all=两侧；有样本的侧才校验；照片+操作人+审核人） */
   const validateBeforeSave = (side: "f" | "m" | "all" = "all"): string[] => {
@@ -843,7 +856,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
           <Input.Search placeholder="搜索姓名/PT号/Case号..." allowClear value={pendingSearch} onChange={(e: any) => setPendingSearch(e.target.value)} style={{ marginBottom: 8 }} />
           <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <Space><Tag color="magenta">👩 女性: {pendingData.female_count}</Tag><Tag color="blue">👨 男性: {pendingData.male_blood_count + pendingData.male_other_count}</Tag></Space>
-            <Space><Button size="small" onClick={() => toggleAll(true)}>全选</Button><Button size="small" onClick={() => toggleAll(false)}>取消全选</Button></Space></div>
+            <Space><Button size="small" onClick={() => selectByGender("f")}>👩 全选女性</Button><Button size="small" onClick={() => selectByGender("m")}>👨 全选男性</Button><Button size="small" onClick={() => toggleAll(true)}>全选</Button><Button size="small" onClick={() => toggleAll(false)}>取消全选</Button></Space></div>
           <Divider style={{ margin: "8px 0" }} />
           <div style={{ maxHeight: 300, overflow: "auto", marginBottom: 16 }}>
             {(["FEMALE_BLOOD","MALE_BLOOD","MALE_OTHER"] as const).map(cat => {
