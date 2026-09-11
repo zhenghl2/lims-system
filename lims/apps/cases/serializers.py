@@ -868,7 +868,20 @@ class NipptExtractionSampleSerializer(serializers.ModelSerializer):
             if pp:
                 if "BLOOD" in obj.category:
                     return "BLOOD"
-                return pp.experiment_sample_type or ""
+                if pp.experiment_sample_type:
+                    return pp.experiment_sample_type
+        # 兜底（历史数据 src_pp 缺失时）：
+        # MALE_OTHER：按 csids 找到前处理记录的 experiment_sample_type；再退回 cs.sample_source
+        if "BLOOD" in obj.category:
+            return "BLOOD"
+        if obj.case_sample_ids:
+            for cid in obj.case_sample_ids:
+                for cand in NipptPreProcessingSample.objects.filter(case_sample_ids__contains=[str(cid)]).order_by("-created_at")[:1]:
+                    if cand.experiment_sample_type:
+                        return cand.experiment_sample_type
+            cs0 = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
+            if cs0:
+                return cs0.sample_source or ""
         return ""
 
 
@@ -946,7 +959,7 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                 groups[key]["ids"].append(str(cs.id))
             for (_, name, cat), gdata in groups.items():
                 pp_sample = None
-                for pp in NipptPreProcessingSample.objects.filter(batch__status="COMPLETED", qc_status="PASS", category=cat):
+                for pp in NipptPreProcessingSample.objects.filter(batch__status="COMPLETED", qc_status="PASS"):
                     if pp.case_sample_ids and any(cid in pp.case_sample_ids for cid in gdata["ids"]):
                         pp_sample = pp; break
                 kwargs = {"batch": batch, "case": gdata["case"], "patient_name": name,
