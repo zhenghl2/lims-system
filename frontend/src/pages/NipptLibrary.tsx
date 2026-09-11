@@ -199,18 +199,22 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       if(Array.isArray(ld.index_kits)){setSelectedIndexKits(ld.index_kits.map((k:any)=>k.kit));const dt:any={};ld.index_kits.forEach((k:any)=>{dt[k.kit]={lot:k.lot||"",expiry:k.expiry||""}});setIndexKitDetails(dt)}
       else{setSelectedIndexKits([]);setIndexKitDetails({})}
       setStepConfirmations(ld.step_confirmations||{});
-      // 照片（男女独立；旧 photos 归女性）
+      // 照片（男女独立；旧 photos 归女性；厦门合并记录：female 空时合并 male）
       const legacyPhotos = Array.isArray(ld.photos) ? ld.photos : [];
-      setPhotosFSync(Array.isArray(ld.photos_female) ? ld.photos_female : legacyPhotos);
+      const isXmLoad = (ld.region || "XIAMEN") === "XIAMEN";
+      const xmPhotos = isXmLoad
+        ? [...(Array.isArray(ld.photos_female) ? ld.photos_female : legacyPhotos), ...(Array.isArray(ld.photos_male) ? ld.photos_male : [])]
+        : null;
+      setPhotosFSync(isXmLoad ? xmPhotos : (Array.isArray(ld.photos_female) ? ld.photos_female : legacyPhotos));
       setPhotosMSync(Array.isArray(ld.photos_male) ? ld.photos_male : []);
-      // 人员（男女独立；旧批次字段归女性）
-      setOperators(prev => ({ ...prev, [id]: ld.operator_female ?? d.operator_name ?? "" }));
-      setReviewers(prev => ({ ...prev, [id]: ld.reviewer_female ?? d.reviewer ?? "" }));
+      // 人员（男女独立；旧批次字段归女性；厦门合并记录：female 空时取 male）
+      setOperators(prev => ({ ...prev, [id]: ld.operator_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.operator_male || "") : "") || d.operator_name || "" }));
+      setReviewers(prev => ({ ...prev, [id]: ld.reviewer_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.reviewer_male || "") : "") || d.reviewer || "" }));
       setOperatorsM(prev => ({ ...prev, [id]: ld.operator_male ?? "" }));
       setReviewersM(prev => ({ ...prev, [id]: ld.reviewer_male ?? "" }));
-      // 日期/时间（男女独立；旧值归女性）
-      setDateF(ld.lib_date_female ?? ld.lib_date ?? "");
-      setTimeF(ld.lib_time_female ?? ld.lib_time ?? "");
+      // 日期/时间（男女独立；旧值归女性；厦门合并记录：female 空时取 male）
+      setDateF(ld.lib_date_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.lib_date_male || "") : "") || ld.lib_date || "");
+      setTimeF(ld.lib_time_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.lib_time_male || "") : "") || ld.lib_time || "");
       setDateM(ld.lib_date_male ?? "");
       setTimeM(ld.lib_time_male ?? "");
       setSampleResults(ld.sample_results||{});
@@ -250,27 +254,37 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   const validateBeforeSave = (side: "f" | "m" | "all" = "all"): string[] => {
     const missing: string[] = [];
     if (!selectedBatch) return missing;
-    const check = (s: "f" | "m") => {
-      const who = s === "f" ? "女性" : "男性";
-      const has = s === "f"
-        ? selectedBatch.female_samples.length > 0
-        : selectedBatch.male_blood_count + selectedBatch.male_other_count > 0;
+    const xiamen = region === "XIAMEN";
+    const check = (s: "f" | "m", label?: string) => {
+      const who = label ?? (s === "f" ? "女性" : "男性");
+      const has = xiamen
+        ? (selectedBatch.female_samples.length > 0 || selectedBatch.male_blood_count + selectedBatch.male_other_count > 0)
+        : (s === "f"
+            ? selectedBatch.female_samples.length > 0
+            : selectedBatch.male_blood_count + selectedBatch.male_other_count > 0);
       if (!has) return;
       const ph = s === "f" ? photosFRef.current : photosMRef.current;
+      const dv = s === "f" ? dateF : dateM;
       const opMap = s === "f" ? operators : operatorsM;
       const rvMap = s === "f" ? reviewers : reviewersM;
       if (!ph.length) missing.push(`上传${who}实验照片`);
+      if (!dv) missing.push(`选择${who}日期`);
       if (!opMap[selectedBatch.id]) missing.push(`选择${who}操作人`);
       if (!rvMap[selectedBatch.id]) missing.push(`选择${who}审核人`);
     };
-    if (side === "f" || side === "all") check("f");
-    if (side === "m" || side === "all") check("m");
+    if (xiamen) {
+      // 厦门：合并记录（承载在 female 字段），只校验一套
+      check("f", "");
+    } else {
+      if (side === "f" || side === "all") check("f");
+      if (side === "m" || side === "all") check("m");
+    }
     return missing;
   };
 
   const saveProcessing = async(side: "f" | "m" | "all" = "all")=>{
     if(!selectedBatch)return;
-    const who = side === "f" ? "女性" : side === "m" ? "男性" : "";
+    const who = region === "XIAMEN" ? "" : (side === "f" ? "女性" : side === "m" ? "男性" : "");
     // 竞态修复：等待所有照片读取/压缩完成再提交
     if (pendingUploads.current.length) {
       setBatchLoading(true);
@@ -358,10 +372,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     else setPhotosMSync(photosMRef.current.filter((_, i) => i !== index));
   };
 
-  /** 日期/时间 + 照片 + 操作人/审核人（男女各自一套） */
-  const renderPhotosPersons = (side: "f" | "m") => {
+  /** 日期/时间 + 照片 + 操作人/审核人（男女各自一套；merged=厦门：单套不区分男女） */
+  const renderPhotosPersons = (side: "f" | "m", merged?: boolean) => {
     if (!selectedBatch) return null;
-    const who = side === "f" ? "女性" : "男性";
+    const who = merged ? "" : (side === "f" ? "女性" : "男性");
     const ph = side === "f" ? photosF : photosM;
     const dv = side === "f" ? dateF : dateM;
     const tv = side === "f" ? timeF : timeM;
@@ -370,7 +384,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     const rvMap = side === "f" ? reviewers : reviewersM;
     const setRvMap = side === "f" ? setReviewers : setReviewersM;
     return (
-      <Card size="small" title={`📋 ${who}实验记录`} style={{ marginBottom: 12 }}>
+      <Card size="small" title={merged ? "📋 实验记录" : `📋 ${who}实验记录`} style={{ marginBottom: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, flexWrap: "wrap", marginBottom: 10 }}>
           <span style={{ color: "#666" }}>日期:</span>
           <DatePicker size="small" style={{ width: 130 }} value={dv ? dayjs(dv) : null}
@@ -559,8 +573,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
               </Space>
             )}
 
-            {renderPhotosPersons("f")}
-            {renderPhotosPersons("m")}
+            {region==="XIAMEN"?renderPhotosPersons("f", true):(<>{renderPhotosPersons("f")}{renderPhotosPersons("m")}</>)}
           </Card>
         ):(
           <div style={{textAlign:"center",paddingTop:100,color:"#999"}}><Title level={5} type="secondary">选择批次查看详情</Title><Button type="primary" icon={<PlusOutlined/>} onClick={openNewBatch}>新建文库批次</Button></div>
