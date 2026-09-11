@@ -2138,7 +2138,21 @@ class NipptHybSeqViewSet(viewsets.ModelViewSet):
             f_samples = pb.samples.filter(category="FEMALE_BLOOD").count()
             m_samples = pb.samples.count() - f_samples
             if not groups:
-                groups = [{"female":f_samples//2,"male":m_samples//2},{"female":f_samples-f_samples//2,"male":m_samples-m_samples//2}]
+                # 与 Pooling 页分组逻辑保持一致：≤34 样本默认 1 组（全部同 mix）；超出才按 34/组均分
+                total = f_samples + m_samples
+                num = 1 if total <= 34 else (total + 33) // 34
+                if num == 1:
+                    groups = [{"female": f_samples, "male": m_samples}]
+                else:
+                    f_per = (f_samples + num - 1) // num
+                    m_per = (m_samples + num - 1) // num
+                    groups = []
+                    for g in range(num):
+                        tf = max(0, min(f_samples - g * f_per, f_per))
+                        tm = max(0, min(m_samples - g * m_per, m_per))
+                        if tf == 0 and tm == 0:
+                            break
+                        groups.append({"female": tf, "male": tm})
             for gi, grp in enumerate(groups):
                 mid = f"{pb.id}_{gi}"
                 if mid in used_mix_ids: continue
