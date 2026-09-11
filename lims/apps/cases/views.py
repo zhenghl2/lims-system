@@ -2181,6 +2181,11 @@ class NipptHybSeqViewSet(viewsets.ModelViewSet):
     def save_processing(self, request, pk=None):
         batch = self.get_object()
         sd = request.data.get("hyb_seq_data", {})
+        # 保留创建时的元数据键（前端保存 payload 不含，防被清空）
+        old = batch.hyb_seq_data or {}
+        for k in ("mix_ids", "mix_sources", "pooling_batch_id", "pooling_batch_ids", "chip_number"):
+            if k not in sd and k in old:
+                sd[k] = old[k]
         if sd: batch.hyb_seq_data = sd; batch.save(update_fields=["hyb_seq_data","updated_at"])
         return Response({"message":"Saved"})
 
