@@ -2144,15 +2144,14 @@ class NipptHybSeqViewSet(viewsets.ModelViewSet):
                 if num == 1:
                     groups = [{"female": f_samples, "male": m_samples}]
                 else:
-                    f_per = (f_samples + num - 1) // num
-                    m_per = (m_samples + num - 1) // num
                     groups = []
+                    _fr, _mr = f_samples, m_samples
                     for g in range(num):
-                        tf = max(0, min(f_samples - g * f_per, f_per))
-                        tm = max(0, min(m_samples - g * m_per, m_per))
-                        if tf == 0 and tm == 0:
-                            break
-                        groups.append({"female": tf, "male": tm})
+                        _rg = num - g
+                        _tf = -(-_fr // _rg) if _rg > 0 else _fr
+                        _tm = -(-_mr // _rg) if _rg > 0 else _mr
+                        groups.append({"female": _tf, "male": _tm})
+                        _fr -= _tf; _mr -= _tm
             for gi, grp in enumerate(groups):
                 mid = f"{pb.id}_{gi}"
                 if mid in used_mix_ids: continue

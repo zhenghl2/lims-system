@@ -1346,48 +1346,79 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
         with transaction.atomic():
             batch_number = NipptHybSeqBatch.generate_batch_number()
             pooling_batch_id = mix_ids[0].split("_")[0] if mix_ids else ""
+            _pb_ids = []
+            for _m in mix_ids:
+                _pid = _m.split("_")[0]
+                if _pid and _pid not in _pb_ids:
+                    _pb_ids.append(_pid)
             batch = NipptHybSeqBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
             mix_sources = validated_data.pop("mix_sources", [])
-            batch.hyb_seq_data = {"pooling_batch_id": pooling_batch_id, "mix_ids": mix_ids, "mix_sources": mix_sources, "chip_number": chip}
+            batch.hyb_seq_data = {"pooling_batch_id": pooling_batch_id, "pooling_batch_ids": _pb_ids, "mix_ids": mix_ids, "mix_sources": mix_sources, "chip_number": chip}
             batch.save(update_fields=["hyb_seq_data"])
             # Create samples only for selected mixes
             # Parse mix_ids: {pooling_batch_id}_{group_index}
-            used_f_ids = set()
-            used_m_ids = set()
+            def _build_groups(pb, pd, f_all, m_all):
+                """组拆分：manual_alloc 优先；否则 ≤34=1组，超出按'剩余均摊'拆分（与前端一致）"""
+                _groups = pd.get("manual_alloc") or []
+                if _groups:
+                    return _groups
+                _total = f_all + m_all
+                _num = 1 if _total <= 34 else (_total + 33) // 34
+                _groups = []
+                _fr, _mr = f_all, m_all
+                for _g in range(_num):
+                    _rg = _num - _g
+                    _tf = -(-_fr // _rg) if _rg > 0 else _fr
+                    _tm = -(-_mr // _rg) if _rg > 0 else _mr
+                    _groups.append({"female": _tf, "male": _tm})
+                    _fr -= _tf; _mr -= _tm
+                return _groups
+
+            def _group_lane(lane, groups, gi, override, gender_key):
+                """确定性分组取样本：① mixOverride 指定到本组的优先 ② 其余按'未指定池'顺序依次填各组缺口。
+                结果与请求次数无关——跨批次分批创建不会重复取样本。"""
+                n = len(groups)
+                if not (0 <= gi < n):
+                    return []
+                buckets = [[] for _ in range(n)]
+                rest = []
+                for _s in lane:
+                    _mo = override.get(str(_s.id))
+                    if _mo and 1 <= _mo <= n:
+                        buckets[_mo - 1].append(_s)
+                    else:
+                        rest.append(_s)
+                _ri = 0
+                for _g in range(n):
+                    _target = (groups[_g].get(gender_key, 0) or 0)
+                    _need = max(0, _target - len(buckets[_g]))
+                    _take = rest[_ri:_ri + _need]
+                    buckets[_g].extend(_take)
+                    _ri += len(_take)
+                return buckets[gi]
+
             for mix_id in mix_ids:
                 try:
                     pb_id, gi_str = mix_id.rsplit("_", 1)
                     gi = int(gi_str)
                     pb = NipptPoolingBatch.objects.get(id=pb_id, status="COMPLETED")
                     pd = pb.pooling_data or {}
-                    groups = pd.get("manual_alloc") or []
                     f_all = pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS").count()
                     m_all = pb.samples.filter(qc_status="PASS").count() - f_all
-                    if not groups:
-                        # 与 Pooling 页 / pending_mixes 一致：≤34 默认 1 组；超出才按 34/组拆分
-                        _total = f_all + m_all
-                        _num = 1 if _total <= 34 else (_total + 33) // 34
-                        if _num == 1:
-                            groups = [{"female": f_all, "male": m_all}]
-                        else:
-                            _f_per = (f_all + _num - 1) // _num
-                            _m_per = (m_all + _num - 1) // _num
-                            groups = []
-                            for _g in range(_num):
-                                _tf = max(0, min(f_all - _g * _f_per, _f_per))
-                                _tm = max(0, min(m_all - _g * _m_per, _m_per))
-                                if _tf == 0 and _tm == 0:
-                                    break
-                                groups.append({"female": _tf, "male": _tm})
+                    groups = _build_groups(pb, pd, f_all, m_all)
                     if gi >= len(groups): continue
-                    grp = groups[gi]
-                    f_take = grp.get("female", 0)
-                    m_take = grp.get("male", 0)
-                    # Get all available samples, skip already assigned ones
-                    f_pool = list(pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS").exclude(id__in=used_f_ids).order_by("patient_name")[:f_take])
-                    m_pool = list(pb.samples.filter(category__in=["MALE_BLOOD","MALE_OTHER"], qc_status="PASS").exclude(id__in=used_m_ids).order_by("patient_name")[:m_take])
-                    used_f_ids.update(ps.id for ps in f_pool)
-                    used_m_ids.update(ps.id for ps in m_pool)
+                    # mixOverride：从 pooling_data.rows 读取（样本级手动指定）
+                    _override = {}
+                    for _r in (pd.get("rows") or []):
+                        if _r.get("id") and _r.get("mixOverride"):
+                            try:
+                                _override[str(_r.get("id"))] = int(_r.get("mixOverride"))
+                            except (TypeError, ValueError):
+                                pass
+                    f_lane = list(pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS").order_by("patient_name"))
+                    m_lane = list(pb.samples.filter(category__in=["MALE_BLOOD","MALE_OTHER"], qc_status="PASS").order_by("patient_name"))
+                    f_pool = _group_lane(f_lane, groups, gi, _override, "female")
+                    m_pool = _group_lane(m_lane, groups, gi, _override, "male")
                     for ps in f_pool + m_pool:
                         if not NipptHybSeqSample.objects.filter(batch=batch, source_pooling_sample_id=ps.id).exists():
                             NipptHybSeqSample.objects.create(

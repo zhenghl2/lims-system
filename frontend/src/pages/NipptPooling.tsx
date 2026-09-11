@@ -192,6 +192,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
           concentration:conc, elutionVolume:elution, yield:Math.round(y*10)/10,
           poolingAmount:pa, poolingVolume:Math.round(pv*100)/100,
           eliminated:computeEliminated(conc??null, elution), qc:sr.qc||"PASS",
+          mixOverride: (typeof sr.mixOverride === "number" && sr.mixOverride >= 1) ? sr.mixOverride : undefined,
         };
       });
       setRows(poolRows);
@@ -279,7 +280,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const samples = rows.map(r=>({id:r.id,qc_status:r.qc,qc_note:""}));
       const pd = {
         quant_kit:quantKit,poolingBase,globalElutionVol,groupBases,groupElutions,manual_alloc:manualAlloc,customAmounts,hk_doubled:hkDoubled,
-        rows:rows.map(r=>({concentration:r.concentration,elutionVolume:r.elutionVolume,yield:r.yield,poolingAmount:r.poolingAmount,poolingVolume:r.poolingVolume,eliminated:r.eliminated,qc:r.qc})),
+        rows:rows.map(r=>({concentration:r.concentration,elutionVolume:r.elutionVolume,yield:r.yield,poolingAmount:r.poolingAmount,poolingVolume:r.poolingVolume,eliminated:r.eliminated,qc:r.qc,mixOverride:r.mixOverride??null})),
         indexes:savedIndexes,
       };
       await(casesApi as any).savePooling(selectedBatch.id,{pooling_data:pd,samples});
