@@ -360,6 +360,19 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     }
   };
 
+  /** 按性别替换式全选：f=只选女性，m=只选男性（血液+其他），另一性别清掉 */
+  const selectByGender = (g: "f" | "m") => {
+    if (!pendingData) return;
+    const next = new Set<string>();
+    for (const e of pendingData.entries) {
+      const isF = e.category === "FEMALE_BLOOD";
+      if ((g === "f" && isF) || (g === "m" && !isF)) {
+        for (const id of e.case_sample_ids) next.add(id);
+      }
+    }
+    setSelectedKeys(next);
+  };
+
   // ===== Save & Complete =====
   const buildSamplePayload = (samples: PreSample[]) =>
     samples.map(s => ({
@@ -814,6 +827,8 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                 <Tag color="blue">👨 男性: {pendingData.male_blood_count + pendingData.male_other_count}</Tag>
               </Space>
               <Space>
+                <Button size="small" onClick={() => selectByGender("f")}>👩 全选女性</Button>
+                <Button size="small" onClick={() => selectByGender("m")}>👨 全选男性</Button>
                 <Button size="small" onClick={() => toggleAll(true)}>全选</Button>
                 <Button size="small" onClick={() => toggleAll(false)}>取消全选</Button>
               </Space>
