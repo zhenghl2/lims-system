@@ -214,7 +214,7 @@ export default function SampleReceiving() {
       const cases = _r.data?.results || [];
       let filtered = cases;
       if (sourceFilter) {
-        filtered = filtered.filter((c: any) => c.sample_source === sourceFilter);
+        filtered = filtered.filter((c: any) => c.case_source === sourceFilter);
       }
       if (regTypeFilter) {
         filtered = filtered.filter((c: any) => c.registration_type === regTypeFilter);
