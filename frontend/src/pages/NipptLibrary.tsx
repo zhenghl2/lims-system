@@ -282,6 +282,36 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     return missing;
   };
 
+  // 深度规范化（键排序 / 去 undefined）——JSONB 读回时键序会变，对比需先规范化
+  const canon = (o:any):any => {
+    if (Array.isArray(o)) return o.map(canon);
+    if (o && typeof o === "object") {
+      const acc:any = {};
+      Object.keys(o).sort().forEach(k => { if (o[k] !== undefined) acc[k] = canon(o[k]); });
+      return acc;
+    }
+    return o;
+  };
+
+  // 构建与保存完全一致的 library_data（保存 / 完成前未保存检测共用）
+  const buildLibraryData = ():any => {
+    const sid = selectedBatch?.id || "";
+    return {region,female_start_coord:femaleStartCoord,male_start_coord:maleStartCoord,
+      hk_female_start:hkFemaleStart,hk_male_start:hkMaleStart,
+      female_lib_kit:femaleLibKit,male_lib_kit:maleLibKit,
+      lib_kits:libKits.map(k=>({kit:k,lot:libKitDetails[k]?.lot||"",expiry:libKitDetails[k]?.expiry||""})),
+      index_kits:selectedIndexKits.map(k=>({kit:k,lot:indexKitDetails[k]?.lot||"",expiry:indexKitDetails[k]?.expiry||""})),
+      positive_control:positiveControl,negative_control:negativeControl,
+      lib_date_female: dateF || "", lib_time_female: timeF || "",
+      lib_date_male: dateM || "", lib_time_male: timeM || "",
+      ...libForm.getFieldsValue(),step_confirmations:stepConfirmations,sample_results:sampleResults,
+      photos_female: photosFRef.current, photos_male: photosMRef.current,
+      operator_female: operators[sid] || "", reviewer_female: reviewers[sid] || "",
+      operator_male: operatorsM[sid] || "", reviewer_male: reviewersM[sid] || "",
+      female_plate:femalePlate,male_plate:malePlate,xiamen_plate:xiamenPlate,
+    };
+  };
+
   const saveProcessing = async(side: "f" | "m" | "all" = "all")=>{
     if(!selectedBatch)return;
     const who = region === "XIAMEN" ? "" : (side === "f" ? "女性" : side === "m" ? "男性" : "");
@@ -301,20 +331,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     if(selectedIndexKits.length===0){message.warning("请选择 Index 接头试剂盒");return}
     setSaving(true);
     try{
-      const ld:any = {region,female_start_coord:femaleStartCoord,male_start_coord:maleStartCoord,
-        hk_female_start:hkFemaleStart,hk_male_start:hkMaleStart,
-        female_lib_kit:femaleLibKit,male_lib_kit:maleLibKit,
-        lib_kits:libKits.map(k=>({kit:k,lot:libKitDetails[k]?.lot||"",expiry:libKitDetails[k]?.expiry||""})),
-        index_kits:selectedIndexKits.map(k=>({kit:k,lot:indexKitDetails[k]?.lot||"",expiry:indexKitDetails[k]?.expiry||""})),
-        positive_control:positiveControl,negative_control:negativeControl,
-        lib_date_female: dateF || "", lib_time_female: timeF || "",
-        lib_date_male: dateM || "", lib_time_male: timeM || "",
-        ...libForm.getFieldsValue(),step_confirmations:stepConfirmations,sample_results:sampleResults,
-        photos_female: photosFRef.current, photos_male: photosMRef.current,
-        operator_female: operators[selectedBatch.id] || "", reviewer_female: reviewers[selectedBatch.id] || "",
-        operator_male: operatorsM[selectedBatch.id] || "", reviewer_male: reviewersM[selectedBatch.id] || "",
-        female_plate:femalePlate,male_plate:malePlate,xiamen_plate:xiamenPlate,
-      };
+      const ld:any = buildLibraryData();
       await(casesApi as any).saveLibrary(selectedBatch.id,{library_data:ld});
       message.success(who ? `${who}保存成功` : "保存成功");fetchDetail(selectedBatch.id);
     }catch{message.error(who ? `${who}保存失败` : "保存失败")}
@@ -326,9 +343,15 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     // 完成前校验：① 保存要求全满足（照片+日期+操作人+审核人，按地区/侧）
     const miss = validateBeforeSave("all");
     if (miss.length) { message.warning(`完成前请先：${miss.join("、")}`); return; }
-    // ② 服务器保存检查（至少保存过一次）
-    const ld = (selectedBatch as any).library_data || {};
-    if (!(ld.operator_female || ld.operator_male)) { message.warning("完成前请先点击保存"); return; }
+    // ② Index 完整性（与保存要求一致）
+    const curPlate = region==="XIAMEN"?xiamenPlate:(region==="HONGKONG"?femalePlate.concat(malePlate):femalePlate);
+    const missIdx = curPlate.some(row=>row.some(cell=>cell.vgId&&!cell.index));
+    if(missIdx){message.warning("完成前请先：填写所有 Index");return}
+    if(selectedIndexKits.length===0){message.warning("完成前请先：选择 Index 接头试剂盒");return}
+    // ③ 必须保存过 + 无未保存改动（深度对比服务器数据）
+    const serverLd = (selectedBatch as any).library_data || {};
+    if (!(serverLd.operator_female || serverLd.operator_male)) { message.warning("完成前请先点击保存"); return; }
+    if (JSON.stringify(canon(buildLibraryData())) !== JSON.stringify(canon(serverLd))) { message.warning("有未保存的修改，请先点击保存再完成"); return; }
     try{await(casesApi as any).completeLibrary(selectedBatch.id);message.success("已完成");setSelectedBatch(null);fetchBatches()}catch{message.error("失败")}};
   const deleteBatch = async(id:string)=>{try{await(casesApi as any).deleteLibraryBatch(id);message.success("已删除");setSelectedBatch(null);fetchBatches()}catch(e:any){message.error(e?.response?.data?.detail||"删除失败")}};
   // ===== Photo upload（压缩 + 男女分开）=====
