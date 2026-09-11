@@ -531,6 +531,25 @@ class CaseViewSet(viewsets.ModelViewSet):
             "error_count": len(errors),
         })
 
+    @action(detail=False, methods=["get"])
+    def latest_pt(self, request):
+        """最新（数字最大）PT 编号：供签收页手编 PT 参考，避免重复。"""
+        import re as _re
+        latest_pt, latest_num = "", 0
+        for pt in Case.objects.exclude(pt_number__isnull=True).exclude(pt_number="").values_list("pt_number", flat=True):
+            m = _re.search(r"(\d+)", pt or "")
+            if not m:
+                continue
+            n = int(m.group(1))
+            if n > latest_num:
+                latest_num = n
+                latest_pt = pt
+        return Response({
+            "latest_pt": latest_pt,
+            "latest_number": latest_num,
+            "next_number": latest_num + 1 if latest_num else None,
+        })
+
     @action(detail=True, methods=["post"])
     def generate_token(self, request, pk=None):
         """Generate a public registration token for this case."""

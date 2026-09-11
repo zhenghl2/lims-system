@@ -136,6 +136,7 @@ export default function SampleReceiving() {
   const [tabCounts, setTabCounts] = useState({ pending: 0, received: 0, rejected: 0 });
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
+  const [latestPt, setLatestPt] = useState<{ pt: string; next: number | null } | null>(null);
   const [regTypeFilter, setRegTypeFilter] = useState("");
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
@@ -212,6 +213,10 @@ export default function SampleReceiving() {
       if (search.trim().length >= 2) params.search = search.trim();
       const _r = await (casesApi as any).list(params);
       const cases = _r.data?.results || [];
+      // 最新 PT 编号（手编参考，独立轻接口）
+      (casesApi as any).latestPt().then((lr: any) => {
+        setLatestPt({ pt: lr.data?.latest_pt || "", next: lr.data?.next_number ?? null });
+      }).catch(() => {});
       let filtered = cases;
       if (sourceFilter) {
         filtered = filtered.filter((c: any) => c.case_source === sourceFilter);
@@ -800,6 +805,15 @@ export default function SampleReceiving() {
           />
           <Button size="small" icon={<NumberOutlined />} onClick={() => setBatchPtOpen(true)}>批量填写PT</Button>
           <Button size="small" type="primary" icon={<CheckOutlined />} onClick={batchReceive}>批量签收</Button>
+        </div>
+      )}
+
+      {/* 最新 PT 编号（手编参考） */}
+      {latestPt && latestPt.pt && (
+        <div style={{ marginBottom: 6 }}>
+          <Tag color="geekblue" style={{ fontSize: 13, padding: "2px 10px", fontWeight: 600 }}>
+            最新 PT：{latestPt.pt}{latestPt.next ? `（下一个从 ${latestPt.next} 开始）` : ""}
+          </Tag>
         </div>
       )}
 

@@ -196,6 +196,7 @@ export const casesApi = {
     api.post("/cases/parse_cn_docs/", formData, config),
   batchImportCn: (data: Record<string, unknown>) =>
     api.post("/cases/batch_import_cn/", data),
+  latestPt: () => api.get("/cases/latest_pt/"),
   update: (id: string, data: Record<string, unknown>) =>
     api.patch<CaseDetail>(`/cases/${id}/`, data),
   confirmReceipt: (id: string, data: ConfirmReceiptPayload) =>
