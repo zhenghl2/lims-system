@@ -1522,7 +1522,7 @@ def register_redo_samples(case_sample, target_stage, new_cs, operator, sample_so
         case_sample_ids=[str(new_cs.id)],
         qc_status="PASS",
         category="FEMALE_BLOOD" if case_sample.role=="MOTHER"
-                 else ("MALE_BLOOD" if sample_source in ("BLOOD","DBS") else "MALE_OTHER"),
+                 else ("MALE_BLOOD" if sample_source == "BLOOD" else "MALE_OTHER"),
     )
     logs = []
 
@@ -1681,7 +1681,7 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
         for cs in qs:
             if cs.role == "MOTHER":
                 cat = "FEMALE_BLOOD"
-            elif cs.sample_source in ("BLOOD", "DBS"):
+            elif cs.sample_source == "BLOOD":
                 cat = "MALE_BLOOD"
             else:
                 cat = "MALE_OTHER"
@@ -1862,7 +1862,7 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
         for cs in qs:
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
             else:
-                if cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+                if cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
             key = (str(cs.case_id), cs.sample.patient_name, cs.sample_source)
             if key not in groups:
@@ -1987,7 +1987,7 @@ class NipptLibraryViewSet(viewsets.ModelViewSet):
         for cs in qs:
             es = id2es.get(str(cs.id))
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
-            elif cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+            elif cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
             else: cat = "MALE_OTHER"
             key = (str(cs.case_id), cs.sample.patient_name, cs.sample_source)
             if key not in groups:
@@ -2067,7 +2067,7 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
         for cs in qs:
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
             else:
-                if cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+                if cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
             key = (str(cs.case_id), cs.sample.patient_name, cs.sample_source)
             if key not in groups:

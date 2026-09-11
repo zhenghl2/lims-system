@@ -779,7 +779,7 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                 if key not in groups:
                     if cs.role == "MOTHER":
                         cat = "FEMALE_BLOOD"
-                    elif cs.sample_source in ("BLOOD", "DBS"):
+                    elif cs.sample_source == "BLOOD":
                         cat = "MALE_BLOOD"
                     else:
                         cat = "MALE_OTHER"
@@ -939,7 +939,7 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
             groups = {}
             for cs in css:
                 if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
-                elif cs.sample_source in ("BLOOD", "DBS"): cat = "MALE_BLOOD"
+                elif cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
                 key = (str(cs.case_id), cs.sample.patient_name, cat)
                 if key not in groups: groups[key] = {"case": cs.case, "ids": [], "role": cs.role}
@@ -955,6 +955,7 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                     if pp_sample.plasma_volume: kwargs["plasma_volume"] = pp_sample.plasma_volume
                     kwargs["aliquot_tubes"] = pp_sample.aliquot_tubes
                     kwargs["source_preprocessing_sample_id"] = pp_sample.id
+                    kwargs["experiment_sample_type"] = pp_sample.experiment_sample_type or ""
                 es = NipptExtractionSample.objects.create(**kwargs)
                 for cid in kwargs.get("case_sample_ids", []):
                     WorkflowLog.objects.create(
@@ -1061,7 +1062,7 @@ class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
             groups = {}
             for cs in css:
                 if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
-                elif cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+                elif cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
                 key = (str(cs.case_id), cs.sample.patient_name, cat)
                 if key not in groups: groups[key] = {"case":cs.case,"ids":[],"role":cs.role}
@@ -1209,7 +1210,7 @@ class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
             groups = {}
             for cs in css:
                 if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
-                elif cs.sample_source in ("BLOOD","DBS"): cat = "MALE_BLOOD"
+                elif cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
                 key = (str(cs.case_id), cs.sample.patient_name, cat)
                 if key not in groups: groups[key] = {"case":cs.case,"ids":[],"role":cs.role}
