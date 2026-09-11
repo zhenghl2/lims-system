@@ -1,5 +1,5 @@
 // NipptPooling.tsx — Library QC & Pooling (NIPT-style + grouping)
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import React from "react";
 import { Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
   Space, Popconfirm, Select, Checkbox, DatePicker, TimePicker } from "antd";
@@ -63,6 +63,9 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const [hkDoubled, setHkDoubled] = useState(false);
   const [useManualAlloc, setUseManualAlloc] = useState(false);
   const [savedIndexes, setSavedIndexes] = useState<Record<string,string>>({});
+  // ── 未保存改动检测（完成批次守卫用）
+  const baselineRef = useRef<string>("");
+  const [loadStamp, setLoadStamp] = useState(0);
 
   // ── Computed females/males for allocation UI
   const females = rows.filter(r=>r.category==="FEMALE_BLOOD");
@@ -192,6 +195,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         };
       });
       setRows(poolRows);
+      setLoadStamp(x=>x+1);
     }catch{message.error("加载失败")}finally{setBatchLoading(false)}
   };
 
@@ -231,6 +235,17 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     });
   };
 
+  /** 当前数据快照（用于检测未保存的改动） */
+  const snap = () => JSON.stringify({
+    quantKit, poolingBase, globalElutionVol, groupBases, groupElutions, manualAlloc,
+    customAmounts, hkDoubled, savedIndexes, poolDate, poolTime,
+    rows: rows.map(r=>({id:r.id,concentration:r.concentration,elutionVolume:r.elutionVolume,poolingAmount:r.poolingAmount,eliminated:r.eliminated,qc:r.qc,mixOverride:r.mixOverride??null})),
+    persons: {op: selectedBatch ? (operators[selectedBatch.id]||"") : "", rv: selectedBatch ? (reviewers[selectedBatch.id]||"") : ""},
+  });
+
+  /** 数据加载完成（切换批次/刷新）后重置基线 */
+  useEffect(() => { if (loadStamp > 0) baselineRef.current = snap(); }, [loadStamp]); // eslint-disable-line
+
   /** 保存前校验：返回缺失项列表（操作人+审核人） */
   const validateBeforeSave = (): string[] => {
     const missing: string[] = [];
@@ -268,11 +283,36 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         indexes:savedIndexes,
       };
       await(casesApi as any).savePooling(selectedBatch.id,{pooling_data:pd,samples});
-      message.success("保存成功");fetchDetail(selectedBatch.id);
+      baselineRef.current = snap();  // 保存成功即为新基线（不重拉，避免覆盖本地）
+      message.success("保存成功");
     }catch{message.error("保存失败")}finally{setSaving(false)}
   };
 
-  const completeBatch = async()=>{if(!selectedBatch)return;try{await(casesApi as any).completePooling(selectedBatch.id);message.success("已完成");setSelectedBatch(null);fetchBatches()}catch{message.error("失败")}};
+  /** 点“完成”：① 有未保存改动→拦截 ② 每个未淘汰样本需浓度+Index→缺则拦截 ③ 通过后出确认 */
+  const onCompleteClick = () => {
+    if(!selectedBatch) return;
+    if (snap() !== baselineRef.current) { message.warning("有未保存的修改，请先点击「保存」"); return; }
+    const noConc = rows.filter(r=>!r.eliminated && (r.concentration==null || r.concentration<=0));
+    const noIdx = rows.filter(r=>!r.eliminated && !(savedIndexes[r.id]||"").trim());
+    if (noConc.length || noIdx.length) {
+      const parts:string[] = [];
+      if (noConc.length) parts.push(`${noConc.length} 个样本未填浓度（${noConc.slice(0,3).map(r=>r.ptId).join("、")}${noConc.length>3?"…":""}）`);
+      if (noIdx.length) parts.push(`${noIdx.length} 个样本未选 Index（${noIdx.slice(0,3).map(r=>r.ptId).join("、")}${noIdx.length>3?"…":""}）`);
+      message.warning("完成前请先补全：" + parts.join("；")); return;
+    }
+    const valid = rows.filter(r=>!r.eliminated).length;
+    Modal.confirm({
+      title: "完成批次？",
+      content: `共 ${valid} 个有效样本，完成后不可再修改。`,
+      okText: "完成", cancelText: "取消",
+      onOk: async () => {
+        try{
+          await(casesApi as any).completePooling(selectedBatch.id);
+          message.success("已完成"); setSelectedBatch(null); fetchBatches();
+        }catch{ message.error("失败") }
+      },
+    });
+  };
   const deleteBatch = async(id:string)=>{try{await(casesApi as any).deletePoolingBatch(id);message.success("已删除");setSelectedBatch(null);fetchBatches()}catch(e:any){message.error(e?.response?.data?.detail||"删除失败")}};
 
   const batchColumns=[
@@ -303,7 +343,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
               <Button icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               {selectedBatch.status!=="COMPLETED"&&<>
                 <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={save}>保存</Button>
-                <Popconfirm title="完成批次？" onConfirm={completeBatch}><Button type="primary" size="small" danger>完成</Button></Popconfirm>
+                <Button type="primary" size="small" danger onClick={onCompleteClick}>完成</Button>
               </>}
             </Space>}>
             {/* 实验日期 & 试剂 */}
