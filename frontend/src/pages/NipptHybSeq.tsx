@@ -1,7 +1,7 @@
 // NipptHybSeq.tsx — Hybridization & Sequencing (NIPT-style + Mix dilution table)
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
-  Space, Popconfirm, Select, Checkbox, Form, DatePicker, TimePicker, Radio } from "antd";
+  Space, Popconfirm, Select, Checkbox, Form, DatePicker, TimePicker, Radio, Tooltip } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import api from "../api/client";
@@ -260,7 +260,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                       {mixRows.map((r,i)=>(
                         <tr key={i} style={{background:"#e8f5e9"}}>
                           <td style={td}><Tag color="blue">{r.mix_name}</Tag></td>
-                          <td style={td}><Input size="small" value={r.source} onChange={e=>updateMixCell(i,"source",e.target.value)} style={{width:140}} placeholder="例:20260723-03-001-mix1"/></td>
+                          <td style={{...td,overflow:"hidden"}}><Tooltip title={r.source||""}><div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.source||"-"}</div></Tooltip></td>
                           <td style={td}><InputNumber size="small" min={0} step={0.001} value={r.library_conc} onChange={v=>updateMixCell(i,"library_conc",v)} style={{width:80}} placeholder="0"/></td>
                           <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.input_amount} onChange={v=>updateMixCell(i,"input_amount",v)} style={{width:60}}/></td>
                           <td style={{...td,fontFamily:"monospace"}}>{r.input_vol>0?r.input_vol.toFixed(2):"-"}</td>
