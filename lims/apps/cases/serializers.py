@@ -813,11 +813,13 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                 NipptPreProcessingSample.objects.create(**kwargs)
 
             CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="PRE_PROCESSING")
-            from .models import WorkflowLog
+            from .models import WorkflowLog, sync_case_status_for_samples
             WorkflowLog.objects.bulk_create([
                 WorkflowLog(case_sample_id=cid, stage="PRE_PROCESSING", action="ENTER", batch_number=batch_number)
                 for cid in case_sample_ids
             ])
+            # Sync Case status（进入前处理批次后同步案例级状态）
+            sync_case_status_for_samples(case_sample_ids)
 
         return batch
 

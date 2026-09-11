@@ -1499,6 +1499,9 @@ def update_wf(case_sample_ids, stage, action, batch_num="", operator=None):
                 CaseSample.objects.filter(case=cs.case, role="ALLEGED_FATHER", workflow_stage="PENDING_ACTIVATION").update(
                     workflow_stage="CANCELLED", is_active=False
                 )
+    # Sync Case status（样本阶段变化后同步案例级状态）
+    from .models import sync_case_status_for_samples
+    sync_case_status_for_samples(case_sample_ids)
 
 def register_redo_samples(case_sample, target_stage, new_cs, operator, sample_source):
     """Create upstream module Sample records so the redo'd sample appears in pending lists."""
@@ -1805,9 +1808,14 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
         if batch.status == "COMPLETED":
             return Response({"detail": "Cannot delete completed batch"}, status=400)
         # Revert workflow_stage for all samples back to RECEIVED
+        reverted_ids = []
         for sp in batch.samples.all():
             if sp.case_sample_ids:
                 CaseSample.objects.filter(id__in=sp.case_sample_ids).update(workflow_stage="RECEIVED")
+                reverted_ids.extend(sp.case_sample_ids)
+        # Sync Case status（回退后同步案例级状态）
+        from .models import sync_case_status_for_samples
+        sync_case_status_for_samples(reverted_ids)
         batch.delete()
         return Response({"message": "Batch deleted, samples returned to pending"})
 

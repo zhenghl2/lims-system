@@ -324,6 +324,21 @@ class CaseSample(models.Model):
 
 
 # ============================================================
+# 辅助：案例状态同步
+# ============================================================
+
+def sync_case_status_for_samples(case_sample_ids):
+    """样本阶段变化后同步关联案例的 Case.status（防案例级状态滞后）。"""
+    case_ids = set(
+        CaseSample.objects.filter(id__in=case_sample_ids).values_list("case_id", flat=True)
+    )
+    if not case_ids:
+        return
+    for case in Case.objects.filter(id__in=case_ids):
+        case.update_status()
+
+
+# ============================================================
 # NIPPT Pre-Processing (前处理)
 # ============================================================
 
