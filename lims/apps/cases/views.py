@@ -752,6 +752,9 @@ class CaseViewSet(viewsets.ModelViewSet):
         if hasattr(case, '_prefetched_objects_cache'):
             case._prefetched_objects_cache.pop('case_samples', None)
 
+        # Sync Case status from CaseSample states
+        case.update_status()
+
         return Response(CaseSampleSerializer(cs).data)
 
     @action(detail=True, methods=["post"])

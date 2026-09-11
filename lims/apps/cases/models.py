@@ -126,14 +126,14 @@ class Case(models.Model):
     @property
     def computed_status(self):
         """从 CaseSample 实时推导 Case 状态."""
-        active = self.case_samples.filter(is_active=True)
+        active = self.case_samples.filter(is_active=True).exclude(sample__status="REJECTED")
         if not active.exists():
-            active = self.case_samples.all()
+            active = self.case_samples.exclude(sample__status="REJECTED")
+        # 全部样本被拒收 → REJECTED（放在空检查前，兼容全拒收场景）
+        if self.case_samples.exists() and all(cs.sample.status == "REJECTED" for cs in self.case_samples.all()):
+            return "REJECTED"
         if not active.exists():
             return "REGISTERED"
-        # 全部样本被拒收
-        if all(cs.sample.status == "REJECTED" for cs in self.case_samples.all()):
-            return "REJECTED"
 
         if active.filter(workflow_stage__endswith="_FAILED").exists():
             return "HAS_FAILURE"
@@ -311,7 +311,10 @@ class CaseSample(models.Model):
         self.receipt_condition = condition
         self.received_at = timezone.now()
         self.received_by = user
-        self.workflow_stage = "RECEIVED"
+        # 仅正常签收推进到 RECEIVED；拒收不推进工作流（由 sample.status=REJECTED 表达，
+        # 否则拒收样本会错误地出现在"已签收"列表/计数中）
+        if condition == "OK":
+            self.workflow_stage = "RECEIVED"
         if photo:
             self.receipt_photo = photo
         self.save(update_fields=[

@@ -229,14 +229,14 @@ export default function SampleReceiving() {
       setTabCounts({
         pending: allRows.filter((r) => r.status === "REGISTERED").length,
         rejected: allRows.filter((r) => r.status === "REJECTED").length,
-        received: allRows.filter((r) => r.workflowStage === "RECEIVED").length,
+        received: allRows.filter((r) => r.workflowStage === "RECEIVED" && r.status !== "REJECTED").length,
       });
       // 行级状态过滤：拒绝样本绝不出现于待签收/已签收 tab
       const rows = allRows.filter((r) => {
         if (activeTab === "pending") return r.status === "REGISTERED";
         if (activeTab === "rejected") return r.status === "REJECTED";
-        // 已签收 = 仅待前处理（进前处理批次即隐藏，删批次回退后自动重现）
-        return r.workflowStage === "RECEIVED";
+        // 已签收 = 仅待前处理（进前处理批次即隐藏，删批次回退后自动重现）；拒收样本绝不出现
+        return r.workflowStage === "RECEIVED" && r.status !== "REJECTED";
       });
 
       // ── 恢复会话草稿（仅待签收 tab 的 REGISTERED 未签收行）──
