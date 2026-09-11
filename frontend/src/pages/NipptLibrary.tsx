@@ -284,13 +284,20 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
 
   // 深度规范化（键排序 / 去 undefined）——JSONB 读回时键序会变，对比需先规范化
   const canon = (o:any):any => {
-    if (Array.isArray(o)) return o.map(canon);
-    if (o && typeof o === "object") {
+    if (o === undefined || o === null) return undefined;
+    if (Array.isArray(o)) { const r = o.map(canon); return r.length === 0 ? undefined : r; }
+    if (typeof o === "object") {
+      if (typeof o.toJSON === "function") { try { return canon(o.toJSON()); } catch { return undefined; } }
       const acc:any = {};
-      Object.keys(o).sort().forEach(k => { if (o[k] !== undefined) acc[k] = canon(o[k]); });
-      return acc;
+      Object.keys(o).sort().forEach(k => {
+        const v = o[k];
+        if (v === undefined || v === null || v === "") return;
+        const cv = canon(v);
+        if (cv !== undefined) acc[k] = cv;
+      });
+      return Object.keys(acc).length === 0 ? undefined : acc;
     }
-    return o;
+    return o === "" ? undefined : o;
   };
 
   // 构建与保存完全一致的 library_data（保存 / 完成前未保存检测共用）

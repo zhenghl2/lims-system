@@ -102,6 +102,20 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const fetchBatches = useCallback(async()=>{setLoading(true);try{const r=await(casesApi as any).listHybSeqBatches();setBatches(r.data?.results||[])}catch{}finally{setLoading(false)}},[]);
   useEffect(()=>{fetchBatches()},[fetchBatches]);
 
+  // 从服务器数据构建 mix rows（加载 / 完成前对比共用，防构建产物误报）
+  const buildMixRowsFromServer = (sd:any, d:any): any[] => {
+    let rows = sd.mix_rows || [];
+    if (rows.length === 0 && sd.mix_ids && sd.mix_ids.length > 0) {
+      const mixSrc = d.mix_sources || sd.mix_sources || [];
+      const chip = sd.chip_number || "";
+      rows = sd.mix_ids.map((_:string, i:number) => ({
+        mix_name: chip ? `${chip}Mix${i+1}` : `mix${i+1}`,
+        source: mixSrc[i] || "", library_conc: null, input_amount: 10, input_vol: 0, expected_conc: 0.8, water_added: 0,
+      }));
+    }
+    return rows;
+  };
+
   const fetchDetail = async(id:string)=>{
     setBatchLoading(true);
     try{
@@ -109,16 +123,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const d=r.data; setSelectedBatch(d);
       const sd=d.hyb_seq_data||{};
       setPlatform(sd.platform||""); setChip(sd.chip||""); setReadType(sd.read_type||""); setSeqKit(sd.sequencing_kit||""); setStepConfirmations(sd.step_confirmations||{});
-      // Auto-init mix rows from saved or from mix_ids
-      let rows = sd.mix_rows||[];
-      if (rows.length===0 && sd.mix_ids && sd.mix_ids.length>0) {
-        const mixSrc = d.mix_sources || sd.mix_sources || [];
-        const chip = sd.chip_number || "";
-        rows = sd.mix_ids.map((_:string,i:number)=>{
-          return {mix_name:chip?`${chip}Mix${i+1}`:`mix${i+1}`,source:mixSrc[i]||"",library_conc:null,input_amount:10,input_vol:0,expected_conc:0.8,water_added:0};
-        });
-      }
-      setMixRows(rows); setFinalConc(sd.final_conc??0.783);
+      setMixRows(buildMixRowsFromServer(sd, d)); setFinalConc(sd.final_conc??0.783);
       form.setFieldsValue({
         seq_date:sd.seq_date?dayjs(sd.seq_date):dayjs(), seq_time:sd.seq_time?dayjs(sd.seq_time,"HH:mm"):dayjs(),
         equipment:sd.equipment||"", chip:sd.chip||"", read_type:sd.read_type||"",
@@ -190,6 +195,30 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     } catch { return false; }
   };
 
+  // 深度规范化（键排序 / 去 undefined）——JSONB 读回时键序会变，对比需先规范化
+  const canon = (o:any):any => {
+    if (o === undefined || o === null) return undefined;
+    if (Array.isArray(o)) { const r = o.map(canon); return r.length === 0 ? undefined : r; }
+    if (typeof o === "object") {
+      if (typeof o.toJSON === "function") { try { return canon(o.toJSON()); } catch { return undefined; } }
+      const acc:any = {};
+      Object.keys(o).sort().forEach(k => {
+        const v = o[k];
+        if (v === undefined || v === null || v === "") return;
+        const cv = canon(v);
+        if (cv !== undefined) acc[k] = cv;
+      });
+      return Object.keys(acc).length === 0 ? undefined : acc;
+    }
+    return o === "" ? undefined : o;
+  };
+
+  // 构建与保存一致的 hyb_seq_data（保存 / 完成前未保存检测共用）
+  const buildSd = ():any => ({
+    platform, sequencing_kit:seqKit, step_confirmations:stepConfirmations,
+    ...form.getFieldsValue(), mix_rows:mixRows, final_conc:finalConc,
+  });
+
   const save = async()=>{
     if(!selectedBatch)return;
     // 保存前校验：操作人 + 审核人
@@ -198,10 +227,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     // 一并保存操作人/审核人
     if (!(await savePersons())) { message.error("操作人/审核人保存失败"); return; } setSaving(true);
     try{
-      const sd = {
-        platform, sequencing_kit:seqKit, step_confirmations:stepConfirmations,
-        ...form.getFieldsValue(), mix_rows:mixRows, final_conc:finalConc,
-      };
+      const sd = buildSd();
       await(casesApi as any).saveHybSeq(selectedBatch.id,{hyb_seq_data:sd});
       message.success("保存成功"); fetchDetail(selectedBatch.id);
     }catch{message.error("保存失败")}finally{setSaving(false)}
@@ -217,6 +243,28 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     if (!seqKit) miss.push("选择测序试剂");
     if (!fv.chip_number) miss.push("填写Chip号");
     if (miss.length) { message.warning(`完成前请先：${miss.join("、")}`); return; }
+    // ── 未保存改动检测：与服务器最新数据对比，防止完成时丢失未保存修改 ──
+    try {
+      const fr = await (casesApi as any).getHybSeqBatch(selectedBatch.id);
+      const fresh = fr.data;
+      const curOp = operators[selectedBatch.id] || (selectedBatch as any).operator_name || "";
+      const curRv = reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || "";
+      // 与加载路径对齐（构建产物 / 系统默认值不算未保存修改）
+      const sdCur = buildSd();
+      const sdFresh = JSON.parse(JSON.stringify(fresh.hyb_seq_data || {}));
+      sdFresh.mix_rows = buildMixRowsFromServer(sdFresh, fresh);
+      if (sdFresh.final_conc == null) sdFresh.final_conc = 0.783;
+      // 旧格式键（保存后被 mix_rows 取代 / 后端维护），对比时忽略
+      delete (sdFresh as any).mix_ids; delete (sdFresh as any).mix_sources;
+      delete (sdFresh as any).pooling_batch_id; delete (sdFresh as any).pooling_batch_ids;
+      if (sdFresh.seq_date == null) delete (sdCur as any).seq_date;
+      if (sdFresh.seq_time == null) delete (sdCur as any).seq_time;
+      if (JSON.stringify(canon(sdCur)) !== JSON.stringify(canon(sdFresh))
+        || curOp !== (fresh.operator_name || "") || curRv !== (fresh.reviewer || "")) {
+        message.warning("有未保存的修改，请先点击保存再完成");
+        return;
+      }
+    } catch { /* 拉取失败不阻塞（原有校验仍生效） */ }
     try{await(casesApi as any).completeHybSeq(selectedBatch.id);message.success("已完成");setSelectedBatch(null);fetchBatches()}catch{message.error("失败")}};
   const deleteBatch = async(id:string)=>{try{await(casesApi as any).deleteHybSeqBatch(id);message.success("已删除");setSelectedBatch(null);fetchBatches()}catch(e:any){message.error(e?.response?.data?.detail||"删除失败")}};
 

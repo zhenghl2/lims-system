@@ -401,6 +401,40 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     return missing;
   };
 
+  // 深度规范化（键排序 / 去 undefined）——JSONB 读回时键序会变，对比需先规范化
+  const canon = (o:any):any => {
+    if (o === undefined || o === null) return undefined;
+    if (Array.isArray(o)) { const r = o.map(canon); return r.length === 0 ? undefined : r; }
+    if (typeof o === "object") {
+      if (typeof o.toJSON === "function") { try { return canon(o.toJSON()); } catch { return undefined; } }
+      const acc:any = {};
+      Object.keys(o).sort().forEach(k => {
+        const v = o[k];
+        if (v === undefined || v === null || v === "") return;
+        const cv = canon(v);
+        if (cv !== undefined) acc[k] = cv;
+      });
+      return Object.keys(acc).length === 0 ? undefined : acc;
+    }
+    return o === "" ? undefined : o;
+  };
+
+  // 构建与保存完全一致的 processing_data（保存 / 完成前未保存检测共用）
+  const buildPpData = ():any => {
+    const sid = selectedBatch?.id || "";
+    return {
+      ...(selectedBatch?.processing_data || {}),
+      photos_female: photosFRef.current,
+      photos_male: photosMRef.current,
+      operator_female: operators[sid] || "",
+      reviewer_female: reviewers[sid] || "",
+      operator_male: operatorsM[sid] || "",
+      reviewer_male: reviewersM[sid] || "",
+      pp_date_female: ppDate, pp_time_female: ppTime,
+      pp_date_male: ppDateM, pp_time_male: ppTimeM,
+    };
+  };
+
   /** 保存（side: f=女性 m=男性）：等待图片处理完成后校验并提交全量 */
   const doSave = async (side: "f" | "m") => {
     if (!selectedBatch) return;
@@ -426,17 +460,7 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     }
     try {
       // 全量合并（两边照片/人员都带上，互不覆盖）
-      const pd = {
-        ...selectedBatch.processing_data,
-        photos_female: photosFRef.current,
-        photos_male: photosMRef.current,
-        operator_female: operators[selectedBatch.id] || "",
-        reviewer_female: reviewers[selectedBatch.id] || "",
-        operator_male: operatorsM[selectedBatch.id] || "",
-        reviewer_male: reviewersM[selectedBatch.id] || "",
-        pp_date_female: ppDate, pp_time_female: ppTime,
-        pp_date_male: ppDateM, pp_time_male: ppTimeM,
-      };
+      const pd = buildPpData();
       await (casesApi as any).savePreprocessing(selectedBatch.id, {
         samples: buildSamplePayload(samples),
         processing_data: pd,
@@ -468,6 +492,21 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       message.warning(`完成批次前需先保存：${cMissing.join("、")}实验数据（实验照片+操作人+审核人）`);
       return;
     }
+    // ── 未保存改动检测：与服务器最新数据对比，防止完成时丢失未保存修改 ──
+    try {
+      const fr = await (casesApi as any).getPreprocessingBatch(selectedBatch.id);
+      const fresh = fr.data;
+      const curSamples = buildSamplePayload([...(selectedBatch.female_samples || []), ...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])]);
+      // fresh 侧同样应用 autoFill（自动带出属系统行为，不算未保存修改；两侧对齐）
+      const freshCopy = JSON.parse(JSON.stringify(fresh));
+      autoFillExperimentType(freshCopy);
+      const freshSamples = buildSamplePayload([...(freshCopy.female_samples || []), ...(freshCopy.male_blood_samples || []), ...(freshCopy.male_other_samples || [])]);
+      if (JSON.stringify(canon(curSamples)) !== JSON.stringify(canon(freshSamples))
+        || JSON.stringify(canon(buildPpData())) !== JSON.stringify(canon(fresh.processing_data || {}))) {
+        message.warning("有未保存的修改，请先点击保存再完成");
+        return;
+      }
+    } catch { /* 拉取失败不阻塞（原有校验仍生效） */ }
     try {
       await (casesApi as any).completePreprocessing(selectedBatch.id);
       message.success(`批次 ${selectedBatch.batch_number} 已完成`);

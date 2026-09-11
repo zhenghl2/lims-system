@@ -272,6 +272,63 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     return missing;
   };
 
+  // 深度规范化（键排序 / 去 undefined）——JSONB 读回时键序会变，对比需先规范化
+  const canon = (o:any):any => {
+    if (o === undefined || o === null) return undefined;
+    if (Array.isArray(o)) { const r = o.map(canon); return r.length === 0 ? undefined : r; }
+    if (typeof o === "object") {
+      if (typeof o.toJSON === "function") { try { return canon(o.toJSON()); } catch { return undefined; } }
+      const acc:any = {};
+      Object.keys(o).sort().forEach(k => {
+        const v = o[k];
+        if (v === undefined || v === null || v === "") return;
+        const cv = canon(v);
+        if (cv !== undefined) acc[k] = cv;
+      });
+      return Object.keys(acc).length === 0 ? undefined : acc;
+    }
+    return o === "" ? undefined : o;
+  };
+
+  // 构建与保存一致的 extraction_data（保存 / 完成前未保存检测共用）
+  const buildExData = ():any => {
+    const sid = selectedBatch?.id || "";
+    return {
+      female: { method: femaleMethod, sample_results: femaleResults, plate_skip_coords: femaleSkipCoords,
+        plate_kit_types: femaleKitTypes, magnetic_notes: femaleMagneticNotes.current,
+        manual_notes: femaleManualNotes, auto_notes: femaleAutoNotes,
+        extraction_date: dateF || "", extraction_time: timeF || "" },
+      male: { method: maleMethod, sample_results: maleResults, plate_skip_coords: maleSkipCoords,
+        plate_kit_types: maleKitTypes, magnetic_notes: maleMagneticNotes.current,
+        manual_notes: maleManualNotes, auto_notes: maleAutoNotes,
+        extraction_date: dateM || "", extraction_time: timeM || "" },
+      ...extForm.getFieldsValue(),
+      photos_female: photosFRef.current, photos_male: photosMRef.current,
+      operator_female: operators[sid] || "", reviewer_female: reviewers[sid] || "",
+      operator_male: operatorsM[sid] || "", reviewer_male: reviewersM[sid] || "",
+      step_confirmations: stepConfirmations,
+    };
+  };
+
+  // 保存用样本 payload（当前侧：inline 编辑结果优先）
+  const buildExSamples = (srcSamples: any[]): any[] =>
+    srcSamples.map(s => {
+      const isF = (selectedBatch?.female_samples || []).some((f: any) => f.id === s.id);
+      const res = (isF ? femaleResults : maleResults)[s.id] || {};
+      return { id: s.id, extraction_method: s.extraction_method, well_position: s.well_position,
+        plasma_volume: s.plasma_volume,
+        elution_volume: res.elution ?? s.elution_volume,
+        dna_concentration: res.concentration ?? s.dna_concentration,
+        aliquot_tubes: s.aliquot_tubes,
+        qc_status: s.qc_status, qc_note: s.qc_note };
+    });
+
+  // 对比用直读版（服务器样本字段原值）
+  const buildExSamplesDirect = (srcSamples: any[]): any[] =>
+    srcSamples.map(s => ({ id: s.id, extraction_method: s.extraction_method, well_position: s.well_position,
+      plasma_volume: s.plasma_volume, elution_volume: s.elution_volume, dna_concentration: s.dna_concentration,
+      aliquot_tubes: s.aliquot_tubes, qc_status: s.qc_status, qc_note: s.qc_note }));
+
   const saveProcessing = async (side: "f" | "m" | "all" = "all") => {
     if (!selectedBatch) return;
     const who = side === "f" ? "女性" : side === "m" ? "男性" : "";
@@ -290,32 +347,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
         : side === "m"
           ? [...selectedBatch.male_blood_samples, ...selectedBatch.male_other_samples]
           : [...selectedBatch.female_samples, ...selectedBatch.male_blood_samples, ...selectedBatch.male_other_samples];
-      const allSamples = srcSamples
-        .map(s => {
-          const isF = selectedBatch.female_samples.some((f: any) => f.id === s.id);
-          const res = (isF ? femaleResults : maleResults)[s.id] || {};
-          return { id: s.id, extraction_method: s.extraction_method, well_position: s.well_position,
-            plasma_volume: s.plasma_volume,
-            elution_volume: res.elution ?? s.elution_volume,
-            dna_concentration: res.concentration ?? s.dna_concentration,
-            aliquot_tubes: s.aliquot_tubes,
-            qc_status: s.qc_status, qc_note: s.qc_note };
-        });
-      const ed = {
-        female: { method: femaleMethod, sample_results: femaleResults, plate_skip_coords: femaleSkipCoords,
-          plate_kit_types: femaleKitTypes, magnetic_notes: femaleMagneticNotes.current,
-          manual_notes: femaleManualNotes, auto_notes: femaleAutoNotes,
-          extraction_date: dateF || "", extraction_time: timeF || "" },
-        male: { method: maleMethod, sample_results: maleResults, plate_skip_coords: maleSkipCoords,
-          plate_kit_types: maleKitTypes, magnetic_notes: maleMagneticNotes.current,
-          manual_notes: maleManualNotes, auto_notes: maleAutoNotes,
-          extraction_date: dateM || "", extraction_time: timeM || "" },
-        ...extForm.getFieldsValue(),
-        photos_female: photosFRef.current, photos_male: photosMRef.current,
-        operator_female: operators[selectedBatch.id] || "", reviewer_female: reviewers[selectedBatch.id] || "",
-        operator_male: operatorsM[selectedBatch.id] || "", reviewer_male: reviewersM[selectedBatch.id] || "",
-        step_confirmations: stepConfirmations,
-      };
+      const allSamples = buildExSamples(srcSamples);
+      const ed = buildExData();
       await (casesApi as any).saveExtraction(selectedBatch.id, { samples: allSamples, extraction_data: ed });
       message.success(who ? `${who}保存成功` : "保存成功"); fetchDetail(selectedBatch.id);
     } catch { message.error(who ? `${who}保存失败` : "保存失败"); }
@@ -336,6 +369,18 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       message.warning(`完成批次前需先保存：${cMissing.join("、")}实验数据（实验照片+操作人+审核人）`);
       return;
     }
+    // ── 未保存改动检测：与服务器最新数据对比，防止完成时丢失未保存修改 ──
+    try {
+      const fr = await (casesApi as any).getExtractionBatch(selectedBatch.id);
+      const fresh = fr.data;
+      const curSamples = buildExSamples([...(selectedBatch.female_samples || []), ...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])]);
+      const freshSamples = buildExSamplesDirect([...(fresh.female_samples || []), ...(fresh.male_blood_samples || []), ...(fresh.male_other_samples || [])]);
+      if (JSON.stringify(canon(curSamples)) !== JSON.stringify(canon(freshSamples))
+        || JSON.stringify(canon(buildExData())) !== JSON.stringify(canon(fresh.extraction_data || {}))) {
+        message.warning("有未保存的修改，请先点击保存再完成");
+        return;
+      }
+    } catch { /* 拉取失败不阻塞（原有校验仍生效） */ }
     try { await (casesApi as any).completeExtraction(selectedBatch.id); message.success("已完成"); setSelectedBatch(null); fetchBatches(); }
     catch { message.error("操作失败"); }
   };
