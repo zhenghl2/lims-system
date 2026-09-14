@@ -479,7 +479,24 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   const inputStyle:React.CSSProperties = {width:50,border:"none",borderRadius:0,textAlign:"center",padding:"2px 4px",fontSize:11,background:"#fffbe6",borderRight:"1px solid #e0e0e0"};
   const vgIdStyle:React.CSSProperties = {fontSize:11,padding:"2px 4px",textAlign:"center",whiteSpace:"nowrap",maxWidth:80,background:"#fafafa",flex:1,display:"flex",alignItems:"center",justifyContent:"center"};
 
-  const renderNiptPlate = (plate:PlateGrid, setter:any) => (
+  // ── 拖拽换位：按住拖动交换两孔样本（vgId/sampleIdx/isQC 随样本走；Index 留在原孔）──
+  const dragSrcRef = useRef<{plate:string;row:number;col:number}|null>(null);
+  const touchDragRef = useRef<{plate:string;row:number;col:number;x:number;y:number;active:boolean}|null>(null);
+  const [dragOverCell, setDragOverCell] = useState<{plate:string;row:number;col:number}|null>(null);
+
+  const swapPlateCells = (plateKey:string, fromR:number, fromC:number, toR:number, toC:number) => {
+    if (fromR===toR && fromC===toC) return;
+    const setter = plateKey==="f"?setFemalePlate : plateKey==="m"?setMalePlate : setXiamenPlate;
+    setter((prev:PlateGrid)=>{
+      const next = prev.map(r=>r.map(c=>({...c})));
+      const a = next[fromR][fromC], b = next[toR][toC];
+      next[fromR][fromC] = {vgId:b.vgId, index:a.index, sampleIdx:b.sampleIdx, isQC:b.isQC};
+      next[toR][toC] = {vgId:a.vgId, index:b.index, sampleIdx:a.sampleIdx, isQC:a.isQC};
+      return next;
+    });
+  };
+
+  const renderNiptPlate = (plate:PlateGrid, setter:any, plateKey:string) => (
     <div style={{overflowX:"auto"}}>
       <table style={{borderCollapse:"collapse",fontSize:12,margin:"0 auto"}}>
         <thead><tr><th style={rowLabelStyle}></th>{COLS.map(c=><th key={c} style={thStyle}>{c}</th>)}</tr></thead>
@@ -495,7 +512,18 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
               const bg = failBg||passBg||baseBg;
 
   return (
-                <td key={col} style={{...cellStyle,background:bg,cursor:(cell.vgId&&selectedBatch?.status!=="COMPLETED")?"pointer":"default"}}>
+                <td key={col}
+                  data-plate-key={plateKey} data-plate-cell={row+","+col}
+                  draggable={!!cell.vgId && selectedBatch?.status!=="COMPLETED"}
+                  onDragStart={(e)=>{ dragSrcRef.current={plate:plateKey,row,col}; try{e.dataTransfer.setData("text/plain","");}catch{} e.dataTransfer.effectAllowed="move"; }}
+                  onDragEnd={()=>{ dragSrcRef.current=null; setDragOverCell(null); }}
+                  onDragOver={(e)=>{ const s0=dragSrcRef.current; if(!s0||s0.plate!==plateKey) return; if(s0.row===row&&s0.col===col) return; e.preventDefault(); e.dataTransfer.dropEffect="move"; if(!dragOverCell||dragOverCell.plate!==plateKey||dragOverCell.row!==row||dragOverCell.col!==col) setDragOverCell({plate:plateKey,row,col}); }}
+                  onDragLeave={()=>{ setDragOverCell(p=>p&&p.plate===plateKey&&p.row===row&&p.col===col?null:p); }}
+                  onDrop={(e)=>{ e.preventDefault(); const s0=dragSrcRef.current; if(s0&&s0.plate===plateKey) swapPlateCells(plateKey,s0.row,s0.col,row,col); dragSrcRef.current=null; setDragOverCell(null); }}
+                  onTouchStart={(e)=>{ if(!cell.vgId||selectedBatch?.status==="COMPLETED") return; const t=e.touches[0]; touchDragRef.current={plate:plateKey,row,col,x:t.clientX,y:t.clientY,active:false}; }}
+                  onTouchMove={(e)=>{ const d=touchDragRef.current; if(!d||d.plate!==plateKey) return; const t=e.touches[0]; if(!d.active&&(Math.abs(t.clientX-d.x)>8||Math.abs(t.clientY-d.y)>8)){ d.active=true; dragSrcRef.current={plate:d.plate,row:d.row,col:d.col}; } if(d.active){ e.preventDefault(); const el=document.elementFromPoint(t.clientX,t.clientY) as HTMLElement|null; const cellEl=el?.closest?.("[data-plate-cell]") as HTMLElement|null; if(cellEl){ const pk=cellEl.getAttribute("data-plate-key")||""; const rc=(cellEl.getAttribute("data-plate-cell")||"").split(","); if(pk===plateKey) setDragOverCell({plate:pk,row:parseInt(rc[0]),col:parseInt(rc[1])}); } } }}
+                  onTouchEnd={(e)=>{ const d=touchDragRef.current; touchDragRef.current=null; if(d&&d.active){ dragSrcRef.current=null; const t=e.changedTouches[0]; const el=document.elementFromPoint(t.clientX,t.clientY) as HTMLElement|null; const cellEl=el?.closest?.("[data-plate-cell]") as HTMLElement|null; setDragOverCell(null); if(cellEl){ const pk=cellEl.getAttribute("data-plate-key")||""; const rc=(cellEl.getAttribute("data-plate-cell")||"").split(","); if(pk===d.plate) swapPlateCells(d.plate,d.row,d.col,parseInt(rc[0]),parseInt(rc[1])); } } else { dragSrcRef.current=null; setDragOverCell(null); } }}
+                  style={{...cellStyle,background:bg,cursor:(cell.vgId&&selectedBatch?.status!=="COMPLETED")?"pointer":"default",outline:(dragOverCell&&dragOverCell.plate===plateKey&&dragOverCell.row===row&&dragOverCell.col===col)?"2px dashed #1677ff":undefined,outlineOffset:-2}}>
                   <Popover trigger={selectedBatch?.status==="COMPLETED"?[]:"click"} content={
                     <div style={{minWidth:180}}>
                       <Radio.Group value={sr?.status||""} onChange={e=>{const v=e.target.value;setSampleResults((p:any)=>({...p,[String(sIdx)]:{status:v,note:v==="fail"?(p[String(sIdx)]?.note||""):""}}))}}>
@@ -600,16 +628,16 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
 
             {/* Plate(s) */}
             {region==="XIAMEN"?(
-              <Card size="small" title={<Space>{`🧬 96孔板 — 👩${selectedBatch.female_count}+👨${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`}<Text type="secondary" style={{fontSize:11}}>女起:</Text><Input size="small" style={{width:50}} value={femaleStartCoord} onChange={e=>setFemaleStartCoord(e.target.value.toUpperCase())} placeholder="居中"/><Text type="secondary" style={{fontSize:11}}>男起:</Text><Input size="small" style={{width:50}} value={maleStartCoord} onChange={e=>setMaleStartCoord(e.target.value.toUpperCase())} placeholder="居中"/></Space>}>
-                {renderNiptPlate(xiamenPlate, setXiamenPlate)}
+              <Card size="small" title={<Space>{`🧬 96孔板 — 👩${selectedBatch.female_count}+👨${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`}<Text type="secondary" style={{fontSize:11}}>（按住拖动样本可换位）</Text><Text type="secondary" style={{fontSize:11}}>女起:</Text><Input size="small" style={{width:50}} value={femaleStartCoord} onChange={e=>setFemaleStartCoord(e.target.value.toUpperCase())} placeholder="居中"/><Text type="secondary" style={{fontSize:11}}>男起:</Text><Input size="small" style={{width:50}} value={maleStartCoord} onChange={e=>setMaleStartCoord(e.target.value.toUpperCase())} placeholder="居中"/></Space>}>
+                {renderNiptPlate(xiamenPlate, setXiamenPlate, "x")}
               </Card>
             ):(
               <Space direction="vertical" style={{width:"100%"}}>
-                <Card size="small" title={<Space>{`👩 女性板 — ${selectedBatch.female_count} 样本`}<Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkFemaleStart} onChange={e=>setHkFemaleStart(e.target.value.toUpperCase())} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
-                  {renderNiptPlate(femalePlate, setFemalePlate)}
+                <Card size="small" title={<Space>{`👩 女性板 — ${selectedBatch.female_count} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkFemaleStart} onChange={e=>setHkFemaleStart(e.target.value.toUpperCase())} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
+                  {renderNiptPlate(femalePlate, setFemalePlate, "f")}
               </Card>
-                <Card size="small" title={<Space>{`👨 男性板 — ${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`}<Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkMaleStart} onChange={e=>setHkMaleStart(e.target.value.toUpperCase())} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
-                  {renderNiptPlate(malePlate, setMalePlate)}
+                <Card size="small" title={<Space>{`👨 男性板 — ${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkMaleStart} onChange={e=>setHkMaleStart(e.target.value.toUpperCase())} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
+                  {renderNiptPlate(malePlate, setMalePlate, "m")}
               </Card>
               </Space>
             )}
