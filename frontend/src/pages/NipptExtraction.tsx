@@ -9,10 +9,11 @@ import {
 import {
   PlusOutlined, ReloadOutlined, CheckOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined,
-  CameraOutlined, LoadingOutlined,
+  CameraOutlined, LoadingOutlined, DownloadOutlined,
 } from "@ant-design/icons";
 import { casesApi } from "../api";
 import dayjs from "dayjs";
+import * as XLSX from "xlsx";
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -826,6 +827,121 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     );
   };
 
+  // ── 导出 Excel（两个 sheet：女性/男性；实验记录 + 96孔板图 + 样本明细 + 磁棒Plate）──
+  const exportExcel = () => {
+    if (!selectedBatch) return;
+    const sid = selectedBatch.id;
+    const methodLabel = (m: string) => EXTRACTION_METHODS.find(x => x.value === m)?.label || m || "—";
+    const parseSkip = (str: string) => new Set((str || "").split(",").map((x: string) => x.trim().toUpperCase()).filter((x: string) => /^[A-H](1[0-2]|[1-9])$/.test(x)));
+    const buildSheet = (isF: boolean) => {
+      const who = isF ? "女性" : "男性";
+      const samples: ExtractionSample[] = isF ? (selectedBatch.female_samples || []) : [...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])];
+      const method = isF ? femaleMethod : maleMethod;
+      const date = isF ? dateF : dateM;
+      const time = isF ? timeF : timeM;
+      const photos = isF ? photosF : photosM;
+      const operator = (isF ? operators : operatorsM)[sid] || "";
+      const reviewer = (isF ? reviewers : reviewersM)[sid] || "";
+      const skipCoords: any = isF ? femaleSkipCoords : maleSkipCoords;
+      const kitTypes: any = isF ? femaleKitTypes : maleKitTypes;
+      const magNotes: any = (isF ? femaleMagneticNotes : maleMagneticNotes).current || {};
+      const results: any = isF ? femaleResults : maleResults;
+      const aoa: any[][] = [];
+      aoa.push([`${selectedBatch.batch_number} — ${who}核酸提取记录`]);
+      aoa.push([]);
+      // 一、实验记录
+      aoa.push(["一、实验记录"]);
+      aoa.push(["日期", date || ""]);
+      aoa.push(["时间", time || ""]);
+      aoa.push(["提取方法", methodLabel(method)]);
+      aoa.push(["操作人", operator]);
+      aoa.push(["审核人", reviewer]);
+      aoa.push(["照片数量", photos.length]);
+      if (method === "MANUAL") aoa.push(["备注", isF ? femaleManualNotes : maleManualNotes]);
+      if (method === "AUTOMATED") aoa.push(["备注", isF ? femaleAutoNotes : maleAutoNotes]);
+      aoa.push([]);
+      // 二、96孔板图
+      aoa.push(["二、96孔板图（孔位 → 样本）"]);
+      aoa.push(["", ...COLS_12.map(String)]);
+      {
+        const map: Record<string, ExtractionSample> = {};
+        let si = 0;
+        for (let r = 0; r < 8; r++) for (let c = 0; c < 12; c++) {
+          if (si < samples.length) { map[`${ROWS_8[r]}${COLS_12[c]}`] = samples[si]; si++; }
+        }
+        for (const row of ROWS_8) {
+          const line: any[] = [row];
+          for (const col of COLS_12) {
+            const smp = map[`${row}${col}`];
+            line.push(smp ? `${smp.test_sample_id || ""} ${smp.patient_name || ""}`.trim() : "");
+          }
+          aoa.push(line);
+        }
+      }
+      aoa.push([]);
+      // 三、样本明细
+      aoa.push(["三、样本明细"]);
+      if (isF) aoa.push(["#", "PT编号", "姓名", "洗脱体积(μL)", "DNA浓度", "QC", "备注"]);
+      else aoa.push(["#", "PT编号", "姓名", "类型", "洗脱体积(μL)", "DNA浓度", "QC", "备注"]);
+      samples.forEach((smp, i) => {
+        const res: any = results[smp.id] || {};
+        const ev = res.elution ?? smp.elution_volume ?? 55;
+        const qc = (res.status || "pass") === "fail" ? "FAIL" : "PASS";
+        if (isF) {
+          aoa.push([i + 1, smp.test_sample_id || "", smp.patient_name || "", ev, res.concentration ?? smp.dna_concentration ?? "", qc, res.note || ""]);
+        } else {
+          const est = (smp as any).experiment_sample_type || "";
+          const types = (smp as any).sample_types || [];
+          const st = est || types[0] || "";
+          const typeLabel = smp.category === "MALE_BLOOD" ? "血液" : (SAMPLE_TYPE_LABELS[st] || st || "—");
+          aoa.push([i + 1, smp.test_sample_id || "", smp.patient_name || "", typeLabel, ev, res.concentration ?? smp.dna_concentration ?? "", qc, res.note || ""]);
+        }
+      });
+      // 四、磁棒法Plate
+      {
+        const hasMag = Object.keys(skipCoords || {}).length > 0 || Object.keys(kitTypes || {}).length > 0 || Object.keys(magNotes || {}).length > 0 || method === "MAGNETIC_ROD";
+        if (hasMag && samples.length > 0) {
+          aoa.push([]);
+          aoa.push(["四、磁棒法Plate（每板：1列 + 7列上样）"]);
+          const plates: { cells: { row: number; col: number; idx: number }[] }[] = [];
+          let si = 0, pi = 0;
+          while (si < samples.length) {
+            const sk = parseSkip(skipCoords?.[pi] || "");
+            const cells: { row: number; col: number; idx: number }[] = [];
+            for (let r = 0; r < 8; r++) if (!sk.has(`${ROWS_8[r]}1`) && si < samples.length) cells.push({ row: r, col: 1, idx: si++ });
+            for (let r = 0; r < 8; r++) if (!sk.has(`${ROWS_8[r]}7`) && si < samples.length) cells.push({ row: r, col: 7, idx: si++ });
+            if (cells.length > 0) { plates.push({ cells }); pi++; } else break;
+          }
+          plates.forEach((plate, pIdx) => {
+            const kt = kitTypes?.[pIdx];
+            aoa.push([`P${pIdx + 1}`, "跳过孔位:", skipCoords?.[pIdx] || "无", "试剂盒:", kt === "round" ? "圆底" : kt === "conical" ? "锥底" : "—", "备注:", magNotes?.[pIdx] || ""]);
+            const cm = new Map<string, number>();
+            plate.cells.forEach(c => cm.set(`${ROWS_8[c.row]}${c.col}`, c.idx));
+            const sk2 = parseSkip(skipCoords?.[pIdx] || "");
+            aoa.push(["", "孔1", "孔7"]);
+            for (const row of ROWS_8) {
+              const line: any[] = [row];
+              for (const col of [1, 7]) {
+                if (sk2.has(`${row}${col}`)) { line.push("SKIP"); continue; }
+                const idx = cm.get(`${row}${col}`);
+                const smp = idx !== undefined ? samples[idx] : null;
+                line.push(smp ? `${smp.test_sample_id || ""} ${smp.patient_name || ""}`.trim() : "");
+              }
+              aoa.push(line);
+            }
+            aoa.push([]);
+          });
+        }
+      }
+      return XLSX.utils.aoa_to_sheet(aoa);
+    };
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, buildSheet(true), "女性");
+    XLSX.utils.book_append_sheet(wb, buildSheet(false), "男性");
+    XLSX.writeFile(wb, `${selectedBatch.batch_number}_核酸提取.xlsx`);
+    message.success("已导出Excel");
+  };
+
   // ── Sidebar columns ──
   const batchColumns = [
     { title: "批次号", dataIndex: "batch_number", key: "bn", width: 140, render: (v: string) => <Text code style={{ fontSize: 12 }}>{v}</Text> },
@@ -860,6 +976,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                 <Popconfirm title="确定删除该批次？管数将恢复" onConfirm={() => deleteBatch(selectedBatch.id)}>
                   <Button size="small" danger icon={<DeleteOutlined />}>删除</Button></Popconfirm>
               )}
+              <Button disabled={false} icon={<DownloadOutlined />} size="small" onClick={exportExcel}>导出Excel</Button>
               <Button disabled={false} icon={<ReloadOutlined />} size="small" loading={batchLoading} onClick={() => fetchDetail(selectedBatch.id)}>刷新</Button>
               {selectedBatch.status !== "COMPLETED" && (<>
                 <Button type="primary" icon={<CheckOutlined />} size="small" onClick={() => saveProcessing("all")}>保存全部</Button>
