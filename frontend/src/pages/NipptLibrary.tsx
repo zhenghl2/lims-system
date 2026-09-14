@@ -498,7 +498,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
 
   const renderNiptPlate = (plate:PlateGrid, setter:any, plateKey:string) => (
     <div style={{overflowX:"auto"}}>
-      <table style={{borderCollapse:"collapse",fontSize:12,margin:"0 auto"}}>
+      <table data-plate-grid={plateKey} style={{borderCollapse:"collapse",fontSize:12,margin:"0 auto"}}>
         <thead><tr><th style={rowLabelStyle}></th>{COLS.map(c=><th key={c} style={thStyle}>{c}</th>)}</tr></thead>
         <tbody>{ROWS.map((label,row)=>(
           <tr key={row}><td style={rowLabelStyle}>{label}</td>
@@ -534,7 +534,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                     </div>
                   }>
                     <div style={{display:"flex",alignItems:"stretch",minHeight:30}}>
-                      <input type="text" disabled={selectedBatch?.status==="COMPLETED"} value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value,plate)} style={inputStyle} placeholder="ix"/>
+                      <input type="text" data-ix-cell={row+"_"+col} disabled={selectedBatch?.status==="COMPLETED"} value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value,plate)} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); const ni=col*8+row+1; if(ni<96){ const nr=ni%8, nc=Math.floor(ni/8); const root=document.querySelector(`[data-plate-grid="${plateKey}"]`); const el=root?.querySelector(`[data-ix-cell="${nr}_${nc}"]`) as HTMLInputElement|null; if(el){ el.focus(); el.select(); } } } }} style={inputStyle} placeholder="ix"/>
                       <div style={{...vgIdStyle}}>{cell.vgId||""}{cell.isQC?<span style={{color:"#13c2c2",fontWeight:600,marginLeft:1}}>QC</span>:null}</div>
                     </div>
                   </Popover>
