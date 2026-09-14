@@ -222,6 +222,14 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     catch(e:any){message.error(e?.response?.data?.detail||"创建失败")}
   };
 
+  /** 回车跳本列下一格（Mix 表：浓度/洗脱/投入；跨组自动衔接，到底停住） */
+  const focusNextPoolCell = (ri:number, field:string) => {
+    const el = document.querySelector(`[data-pool-cell="${ri+1}_${field}"]`) as HTMLElement|null;
+    if (!el) return;
+    const inp = (el.tagName === "INPUT" ? el : el.querySelector("input")) as HTMLInputElement|null;
+    if (inp) { inp.focus(); inp.select(); }
+  };
+
   const updateCell = (i:number, field:string, val:any)=>{
     setRows(prev=>{
       const next=[...prev];const r={...next[i]};
@@ -473,10 +481,10 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                             <td style={td}><Text strong style={{fontSize:13}}>{r.ptId}</Text></td>
                             <td style={td}><Input size="small" style={{width:60}} value={savedIndexes[r.id]||""} onChange={e=>setSavedIndexes(p=>({...p,[r.id]:e.target.value}))} placeholder="ix"/></td>
                             <td style={td}>{stLabel}</td>
-                            <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.concentration} onChange={v=>updateCell(ri,"concentration",v)} style={{width:70}} placeholder="0"/></td>
-                            <td style={td}><InputNumber size="small" min={0} step={1} value={r.elutionVolume} onChange={v=>updateCell(ri,"elutionVolume",v)} style={{width:60}}/></td>
+                            <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.concentration} data-pool-cell={ri+"_conc"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(ri,"conc");}}} onChange={v=>updateCell(ri,"concentration",v)} style={{width:70}} placeholder="0"/></td>
+                            <td style={td}><InputNumber size="small" min={0} step={1} value={r.elutionVolume} data-pool-cell={ri+"_elu"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(ri,"elu");}}} onChange={v=>updateCell(ri,"elutionVolume",v)} style={{width:60}}/></td>
                             <td style={{...td,fontWeight:r.yield>0?600:400,color:r.eliminated?"#faad14":"#333"}}>{r.yield>0?r.yield.toFixed(1):"-"}{r.eliminated&&<Tag color="gold" style={{marginLeft:4,fontSize:10}}>淘汰</Tag>}</td>
-                            <td style={td}><InputNumber size="small" min={0} step={1} value={r.poolingAmount} onChange={v=>updateCell(ri,"poolingAmount",v)} style={{width:70}}/></td>
+                            <td style={td}><InputNumber size="small" min={0} step={1} value={r.poolingAmount} data-pool-cell={ri+"_amt"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(ri,"amt");}}} onChange={v=>updateCell(ri,"poolingAmount",v)} style={{width:70}}/></td>
                             <td style={{...td,fontFamily:"monospace"}}>{r.poolingVolume>0?r.poolingVolume.toFixed(2):"-"}</td>
                             <td style={td}><Select size="small" value={r.qc} onChange={v=>updateCell(ri,"qc",v)} style={{width:90}} options={[{value:"PASS",label:"PASS"},{value:"FAIL",label:"FAIL"}]}/></td>
                             <td style={td}>
