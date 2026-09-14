@@ -831,6 +831,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   const exportExcel = () => {
     if (!selectedBatch) return;
     const sid = selectedBatch.id;
+    const fv: any = extForm.getFieldsValue();
+    const KIT_LABELS: Record<string, string> = {
+      MAGEN_CFDNA: "Magen cfDNA提取试剂盒 (12919w-480)",
+      MAGEN_ROUND: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)",
+      MAGEN_CONICAL: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)",
+    };
+    const kitLabel = KIT_LABELS[fv.kit_type as string] || fv.kit_type || "";
     const methodLabel = (m: string) => EXTRACTION_METHODS.find(x => x.value === m)?.label || m || "—";
     const parseSkip = (str: string) => new Set((str || "").split(",").map((x: string) => x.trim().toUpperCase()).filter((x: string) => /^[A-H](1[0-2]|[1-9])$/.test(x)));
     const buildSheet = (isF: boolean) => {
@@ -857,13 +864,80 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       aoa.push(["操作人", operator]);
       aoa.push(["审核人", reviewer]);
       aoa.push(["照片数量", photos.length]);
+      aoa.push(["温度(℃)", fv.temperature ?? ""]);
+      aoa.push(["湿度(%)", fv.humidity ?? ""]);
+      aoa.push(["设备", fv.equipment || ""]);
+      aoa.push(["试剂盒", kitLabel]);
+      aoa.push(["批号", fv.reagent_lot || ""]);
+      aoa.push(["有效期", fv.reagent_expiry ? dayjs(fv.reagent_expiry).format("YYYY-MM-DD") : ""]);
       if (method === "MANUAL") aoa.push(["备注", isF ? femaleManualNotes : maleManualNotes]);
       if (method === "AUTOMATED") aoa.push(["备注", isF ? femaleAutoNotes : maleAutoNotes]);
       aoa.push([]);
-      // 二、96孔板图
-      aoa.push(["二、96孔板图（孔位 → 样本）"]);
-      aoa.push(["", ...COLS_12.map(String)]);
-      {
+      // 二、按系统方法显示（手工=样本表；磁棒法=磁棒板；自动化=全板图）
+      if (method === "MANUAL") {
+        aoa.push(["二、样本明细（手工提取）"]);
+        if (isF) aoa.push(["#", "PT编号", "姓名", "洗脱体积(μL)", "QC", "备注"]);
+        else aoa.push(["#", "PT编号", "姓名", "类型", "洗脱体积(μL)", "DNA浓度", "QC", "备注"]);
+        samples.forEach((smp, i) => {
+          const res: any = results[smp.id] || {};
+          const ev = res.elution ?? smp.elution_volume ?? 55;
+          const qc = (res.status || "pass") === "fail" ? "FAIL" : "PASS";
+          if (isF) {
+            aoa.push([i + 1, smp.test_sample_id || "", smp.patient_name || "", ev, qc, res.note || ""]);
+          } else {
+            const est = (smp as any).experiment_sample_type || "";
+            const types = (smp as any).sample_types || [];
+            const st = est || types[0] || "";
+            const typeLabel = smp.category === "MALE_BLOOD" ? "血液" : (SAMPLE_TYPE_LABELS[st] || st || "—");
+            aoa.push([i + 1, smp.test_sample_id || "", smp.patient_name || "", typeLabel, ev, res.concentration ?? smp.dna_concentration ?? "", qc, res.note || ""]);
+          }
+        });
+      } else if (method === "MAGNETIC_ROD") {
+        aoa.push(["二、磁棒法Plate（每板：孔1 + 孔7 上样）"]);
+        const plates: { cells: { row: number; col: number; idx: number }[] }[] = [];
+        let si = 0, pi = 0;
+        while (si < samples.length) {
+          const sk0 = parseSkip(skipCoords?.[pi] || "");
+          const cells: { row: number; col: number; idx: number }[] = [];
+          for (let r = 0; r < 8; r++) if (!sk0.has(`${ROWS_8[r]}1`) && si < samples.length) cells.push({ row: r, col: 1, idx: si++ });
+          for (let r = 0; r < 8; r++) if (!sk0.has(`${ROWS_8[r]}7`) && si < samples.length) cells.push({ row: r, col: 7, idx: si++ });
+          if (cells.length > 0) { plates.push({ cells }); pi++; } else break;
+        }
+        plates.forEach((plate, pIdx) => {
+          const kt = kitTypes?.[pIdx];
+          aoa.push([`P${pIdx + 1}`, "跳过孔位:", skipCoords?.[pIdx] || "无", "试剂盒:", kt === "round" ? "圆底" : kt === "conical" ? "锥底" : "—", "备注:", magNotes?.[pIdx] || ""]);
+          const cm = new Map<string, number>();
+          plate.cells.forEach(c => cm.set(`${ROWS_8[c.row]}:${c.col}`, c.idx));
+          const sk2 = parseSkip(skipCoords?.[pIdx] || "");
+          aoa.push(["", ...COLS_12.map(String)]);
+          for (const row of ROWS_8) {
+            const line: any[] = [row];
+            for (const col of COLS_12) {
+              if (col === 1 || col === 7) {
+                if (sk2.has(`${row}${col}`)) { line.push("SKIP"); continue; }
+                const idx = cm.get(`${row}:${col}`);
+                const smp = idx !== undefined ? samples[idx] : null;
+                line.push(smp ? `${smp.test_sample_id || ""} ${smp.patient_name || ""}`.trim() : "");
+              } else if (!isF && (col === 6 || col === 12)) {
+                const pairCol = col === 6 ? 1 : 7;
+                const pi2 = cm.get(`${row}:${pairCol}`);
+                const pSmp = pi2 !== undefined ? samples[pi2] : null;
+                if (pSmp) {
+                  const r2: any = results[pSmp.id] || {};
+                  const v = r2.concentration ?? pSmp.dna_concentration;
+                  line.push(v ?? "");
+                } else line.push("");
+              } else {
+                line.push("");
+              }
+            }
+            aoa.push(line);
+          }
+          aoa.push([]);
+        });
+      } else {
+        aoa.push(["二、96孔板图（孔位 → 样本）"]);
+        aoa.push(["", ...COLS_12.map(String)]);
         const map: Record<string, ExtractionSample> = {};
         let si = 0;
         for (let r = 0; r < 8; r++) for (let c = 0; c < 12; c++) {
@@ -876,61 +950,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
             line.push(smp ? `${smp.test_sample_id || ""} ${smp.patient_name || ""}`.trim() : "");
           }
           aoa.push(line);
-        }
-      }
-      aoa.push([]);
-      // 三、样本明细
-      aoa.push(["三、样本明细"]);
-      if (isF) aoa.push(["#", "PT编号", "姓名", "洗脱体积(μL)", "DNA浓度", "QC", "备注"]);
-      else aoa.push(["#", "PT编号", "姓名", "类型", "洗脱体积(μL)", "DNA浓度", "QC", "备注"]);
-      samples.forEach((smp, i) => {
-        const res: any = results[smp.id] || {};
-        const ev = res.elution ?? smp.elution_volume ?? 55;
-        const qc = (res.status || "pass") === "fail" ? "FAIL" : "PASS";
-        if (isF) {
-          aoa.push([i + 1, smp.test_sample_id || "", smp.patient_name || "", ev, res.concentration ?? smp.dna_concentration ?? "", qc, res.note || ""]);
-        } else {
-          const est = (smp as any).experiment_sample_type || "";
-          const types = (smp as any).sample_types || [];
-          const st = est || types[0] || "";
-          const typeLabel = smp.category === "MALE_BLOOD" ? "血液" : (SAMPLE_TYPE_LABELS[st] || st || "—");
-          aoa.push([i + 1, smp.test_sample_id || "", smp.patient_name || "", typeLabel, ev, res.concentration ?? smp.dna_concentration ?? "", qc, res.note || ""]);
-        }
-      });
-      // 四、磁棒法Plate
-      {
-        const hasMag = Object.keys(skipCoords || {}).length > 0 || Object.keys(kitTypes || {}).length > 0 || Object.keys(magNotes || {}).length > 0 || method === "MAGNETIC_ROD";
-        if (hasMag && samples.length > 0) {
-          aoa.push([]);
-          aoa.push(["四、磁棒法Plate（每板：1列 + 7列上样）"]);
-          const plates: { cells: { row: number; col: number; idx: number }[] }[] = [];
-          let si = 0, pi = 0;
-          while (si < samples.length) {
-            const sk = parseSkip(skipCoords?.[pi] || "");
-            const cells: { row: number; col: number; idx: number }[] = [];
-            for (let r = 0; r < 8; r++) if (!sk.has(`${ROWS_8[r]}1`) && si < samples.length) cells.push({ row: r, col: 1, idx: si++ });
-            for (let r = 0; r < 8; r++) if (!sk.has(`${ROWS_8[r]}7`) && si < samples.length) cells.push({ row: r, col: 7, idx: si++ });
-            if (cells.length > 0) { plates.push({ cells }); pi++; } else break;
-          }
-          plates.forEach((plate, pIdx) => {
-            const kt = kitTypes?.[pIdx];
-            aoa.push([`P${pIdx + 1}`, "跳过孔位:", skipCoords?.[pIdx] || "无", "试剂盒:", kt === "round" ? "圆底" : kt === "conical" ? "锥底" : "—", "备注:", magNotes?.[pIdx] || ""]);
-            const cm = new Map<string, number>();
-            plate.cells.forEach(c => cm.set(`${ROWS_8[c.row]}${c.col}`, c.idx));
-            const sk2 = parseSkip(skipCoords?.[pIdx] || "");
-            aoa.push(["", "孔1", "孔7"]);
-            for (const row of ROWS_8) {
-              const line: any[] = [row];
-              for (const col of [1, 7]) {
-                if (sk2.has(`${row}${col}`)) { line.push("SKIP"); continue; }
-                const idx = cm.get(`${row}${col}`);
-                const smp = idx !== undefined ? samples[idx] : null;
-                line.push(smp ? `${smp.test_sample_id || ""} ${smp.patient_name || ""}`.trim() : "");
-              }
-              aoa.push(line);
-            }
-            aoa.push([]);
-          });
         }
       }
       return XLSX.utils.aoa_to_sheet(aoa);
