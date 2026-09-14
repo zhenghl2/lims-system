@@ -218,7 +218,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
   // 构建与保存一致的 hyb_seq_data（保存 / 完成前未保存检测共用）
   const buildSd = ():any => ({
-    platform, sequencing_kit:seqKit, step_confirmations:stepConfirmations,
+    platform, chip, read_type:readType, sequencing_kit:seqKit, step_confirmations:stepConfirmations,
     ...form.getFieldsValue(), mix_rows:mixRows, final_conc:finalConc,
   });
 
