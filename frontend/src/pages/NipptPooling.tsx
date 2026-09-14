@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import React from "react";
 import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
-  Space, Popconfirm, Select, Checkbox, DatePicker, TimePicker } from "antd";
+  Space, Popconfirm, Select, Checkbox, DatePicker, TimePicker, Tooltip } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import api from "../api/client";
@@ -39,6 +39,7 @@ export default function NipptPooling() {
   const [batchLoading, setBatchLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
+  const [dueSort, setDueSort] = useState(false);  // 新建弹窗：按到期时间排序
   const [pendingData, setPendingData] = useState<any>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [batchNumberPreview, setBatchNumberPreview] = useState("");
@@ -532,10 +533,11 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       <Modal title="新建文库定量及Pooling批次" open={modalOpen} onOk={createBatch} onCancel={()=>setModalOpen(false)} width={700} okText={`创建批次 (${selectedKeys.size}个样本)`}>
         {pendingData&&(<div>
           <div style={{marginBottom:12,padding:"8px 12px",background:"#f6ffed",borderRadius:6}}><Text strong>批次号：</Text><Text code style={{fontSize:16}}>{batchNumberPreview}</Text></div>
-          <Space style={{marginBottom:8}}><Tag color="magenta">👩 {pendingData.female_count}</Tag><Tag color="blue">👨 {pendingData.male_blood_count+pendingData.male_other_count}</Tag></Space>
+          <Space style={{marginBottom:8}}><Tag color="magenta">👩 {pendingData.female_count}</Tag><Tag color="blue">👨 {pendingData.male_blood_count+pendingData.male_other_count}</Tag><Button size="small" onClick={()=>setDueSort(v=>!v)}>{dueSort?"恢复原排序":"按到期时间排序"}</Button></Space>
           <div style={{maxHeight:350,overflow:"auto"}}>
             {(["FEMALE_BLOOD","MALE_BLOOD","MALE_OTHER"] as const).map(cat=>{
-              const entries = pendingData.entries.filter((e:any)=>e.category===cat);
+              const rawEntries = pendingData.entries.filter((e:any)=>e.category===cat);
+              const entries = dueSort ? [...rawEntries].sort((a:any,b:any)=>{const da=a.expected_completion||"",db=b.expected_completion||"";if(da&&db){if(da!==db)return da<db?-1:1;}else if(da)return -1;else if(db)return 1;return String(a.test_sample_id||"").localeCompare(String(b.test_sample_id||""),undefined,{numeric:true});}) : rawEntries;
               if(!entries.length)return null;
               const labels:Record<string,string>={FEMALE_BLOOD:"👩 女性",MALE_BLOOD:"🩸 男性血液",MALE_OTHER:"🧬 男性其他"};
 
@@ -544,7 +546,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
   return (<div key={e.case_sample_ids.join(",")} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
                     <Checkbox checked={allIn} indeterminate={!allIn&&someIn} onChange={()=>{setSelectedKeys(prev=>{const n=new Set(prev);if(allIn)e.case_sample_ids.forEach((id:string)=>n.delete(id));else e.case_sample_ids.forEach((id:string)=>n.add(id));return n})}}/>
-                    <Text code style={{fontSize:11,width:150}}>{e.case_number}</Text>{e.test_sample_id&&<Tag color="blue" style={{fontSize:11}}>{e.test_sample_id}</Tag>}<Text strong>{e.patient_name}</Text></div>)})}</div>)
+                    <Text code style={{fontSize:11,width:150}}>{e.case_number}</Text>{e.test_sample_id&&<Tag color="blue" style={{fontSize:11}}>{e.test_sample_id}</Tag>}<Text strong>{e.patient_name}</Text><Tooltip title={e.expected_completion||""}><Text type="secondary" style={{fontSize:11,maxWidth:70,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"inline-block"}}>{e.expected_completion||""}</Text></Tooltip></div>)})}</div>)
             })}
           </div>
         </div>)}
