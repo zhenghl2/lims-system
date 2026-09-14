@@ -561,7 +561,7 @@ export default function SampleReceiving() {
   // --- Columns ---
   const columns: any[] = [
     {
-      title: "号", dataIndex: "caseNumber", key: "cn", width: 160,
+      title: "case编号", dataIndex: "caseNumber", key: "cn", width: 160,
       render: (v: string, _r: CaseSampleRow) => (
         <Text code style={{ fontSize: 12 }}>{v}</Text>
       ),
@@ -574,6 +574,17 @@ export default function SampleReceiving() {
         }
         return { rowSpan: 0 };
       },
+    },
+    {
+      title: "样本来源", dataIndex: "sampleSource", key: "src", width: 90,
+      render: (v: string) => v || "—",
+    },
+    {
+      title: "快递", dataIndex: "fedexNo", key: "fx", width: 150, ellipsis: true,
+      render: (v: string) =>
+        v
+          ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
+          : "—",
     },
     {
       title: "外部编号", dataIndex: "externalId", key: "eid", width: 140, ellipsis: true,
@@ -597,19 +608,11 @@ export default function SampleReceiving() {
       ),
     },
     {
-      title: "签收人", key: "rp", width: 110,
-      render: (_: any, r: CaseSampleRow) => (
-        <Select
-          placeholder="签收人"
-          size="small"
-          style={{ width: 100 }}
-          value={receiptPersons[r.key] || undefined}
-          onChange={(val) => handlePersonChange(r, val)}
-          options={RECEIPT_PERSONS.map(name => ({ label: name, value: name }))}
-          allowClear
-          disabled={r.received || r.status === "REJECTED"}
-        />
-      ),
+      title: "姓名", dataIndex: "patientName", key: "name", width: 180, ellipsis: true,
+      render: (v: string) =>
+        v
+          ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
+          : <Text type="secondary">-</Text>,
     },
     {
       title: "图片", dataIndex: "image", key: "img", width: 60,
@@ -618,17 +621,6 @@ export default function SampleReceiving() {
         const eff = v || data.find((x) => x.caseId === r.caseId && x.image)?.image || null;
         return eff ? <Image src={eff} width={40} height={40} style={{ objectFit: "cover", borderRadius: 4 }} preview /> : "—";
       },
-    },
-    {
-      title: "姓名", dataIndex: "patientName", key: "name", width: 180, ellipsis: true,
-      render: (v: string) =>
-        v
-          ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
-          : <Text type="secondary">-</Text>,
-    },
-    {
-      title: "孕周", dataIndex: "gestationalWeeks", key: "gw", width: 60,
-      render: (v: number | null) => v ? `${v}w` : <Text type="secondary">—</Text>,
     },
     {
       title: "样本类型", dataIndex: "sampleType", key: "st", width: 80,
@@ -660,31 +652,39 @@ export default function SampleReceiving() {
         ),
     },
     {
-      title: "采集日期", dataIndex: "collectionDate", key: "cd", width: 110,
-      render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : "—",
+      title: "登记备注", dataIndex: "collectionNotes", key: "notes", width: 140, ellipsis: true,
+      render: (v: string) => v ? <Tooltip title={v}><span style={{ color: "#d46b08", cursor: "default" }}>{v}</span></Tooltip> : "—",
     },
     {
-      title: "样本来源", dataIndex: "sampleSource", key: "src", width: 90,
-      render: (v: string) => v || "—",
+      title: "签收人", key: "rp", width: 110,
+      render: (_: any, r: CaseSampleRow) => (
+        <Select
+          placeholder="签收人"
+          size="small"
+          style={{ width: 100 }}
+          value={receiptPersons[r.key] || undefined}
+          onChange={(val) => handlePersonChange(r, val)}
+          options={RECEIPT_PERSONS.map(name => ({ label: name, value: name }))}
+          allowClear
+          disabled={r.received || r.status === "REJECTED"}
+        />
+      ),
+    },
+    {
+      title: "孕周", dataIndex: "gestationalWeeks", key: "gw", width: 60,
+      render: (v: number | null) => v ? `${v}w` : <Text type="secondary">—</Text>,
+    },
+    {
+      title: "采集日期", dataIndex: "collectionDate", key: "cd", width: 110,
+      render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : "—",
     },
     {
       title: "销售/代理", dataIndex: "salesPerson", key: "sales", width: 100,
       render: (v: string) => v ? <Text style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">-</Text>,
     },
     {
-      title: "快递", dataIndex: "fedexNo", key: "fx", width: 150, ellipsis: true,
-      render: (v: string) =>
-        v
-          ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
-          : "—",
-    },
-    {
       title: "手机", dataIndex: "phone", key: "ph", width: 110,
       render: (v: string) => v || "—",
-    },
-    {
-      title: "登记备注", dataIndex: "collectionNotes", key: "notes", width: 140, ellipsis: true,
-      render: (v: string) => v ? <Tooltip title={v}><span style={{ color: "#d46b08", cursor: "default" }}>{v}</span></Tooltip> : "—",
     },
     {
       title: "签收备注", dataIndex: "receiptNote", key: "rn", width: 160, ellipsis: true,
