@@ -1357,7 +1357,14 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
                     _pb_ids.append(_pid)
             batch = NipptHybSeqBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
             mix_sources = validated_data.pop("mix_sources", [])
-            batch.hyb_seq_data = {"pooling_batch_id": pooling_batch_id, "pooling_batch_ids": _pb_ids, "mix_ids": mix_ids, "mix_sources": mix_sources, "chip_number": chip}
+            # 继承最近一个设置过测序平台的批次的测序参数（平台/芯片/ReadType/试剂盒/设备，仅继承非空值）
+            _inherit = {}
+            for _pb0 in NipptHybSeqBatch.objects.exclude(id=batch.id).order_by("-created_at")[:50]:
+                _sd0 = _pb0.hyb_seq_data or {}
+                if _sd0.get("platform"):
+                    _inherit = {_k: _sd0[_k] for _k in ("platform","chip","read_type","sequencing_kit","equipment") if _sd0.get(_k)}
+                    break
+            batch.hyb_seq_data = {"pooling_batch_id": pooling_batch_id, "pooling_batch_ids": _pb_ids, "mix_ids": mix_ids, "mix_sources": mix_sources, "chip_number": chip, **_inherit}
             batch.save(update_fields=["hyb_seq_data"])
             # Create samples only for selected mixes
             # Parse mix_ids: {pooling_batch_id}_{group_index}
