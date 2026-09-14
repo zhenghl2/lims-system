@@ -83,6 +83,7 @@ export default function NipptHybSeq() {
   const [pendingMixes, setPendingMixes] = useState<MixItem[]>([]);
   const [selectedMixIds, setSelectedMixIds] = useState<Set<string>>(new Set());
   const [chipNumber, setChipNumber] = useState("");
+  const [lastChipInfo, setLastChipInfo] = useState<{batch:string;chip:string}|null>(null);
   const [batchNumberPreview, setBatchNumberPreview] = useState("");
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
@@ -136,6 +137,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     try{
       const r=await(casesApi as any).pendingHybSeqMixes();
       setPendingMixes(r.data?.mixes||[]); setSelectedMixIds(new Set()); setChipNumber("");
+      const lastWithChip = (batches||[]).find(b=>(b as any).chip_number);
+      setLastChipInfo(lastWithChip?{batch:lastWithChip.batch_number,chip:(lastWithChip as any).chip_number}:null);
       const now=new Date();
       setBatchNumberPreview(`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-SEQ-???`);
       setModalOpen(true);
@@ -498,6 +501,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
           <Text strong>批次号：</Text><Text code style={{fontSize:16}}>{batchNumberPreview}</Text>
         </div>
         <div style={{marginBottom:8}}>
+          {lastChipInfo&&<div style={{fontSize:12,color:"#8c8c8c",marginBottom:2}}>上批 {lastChipInfo.batch} 使用：{lastChipInfo.chip}</div>}
           <Text>Chip号：</Text>
           <Input size="small" style={{width:150}} value={chipNumber} onChange={e=>{setChipNumber(e.target.value);const n=new Date();setBatchNumberPreview(`${n.getFullYear()}${String(n.getMonth()+1).padStart(2,"0")}${String(n.getDate()).padStart(2,"0")}-SEQ-${e.target.value||"???"}`)}} placeholder="输入chip号"/>
         </div>

@@ -1279,14 +1279,16 @@ class NipptHybSeqBatchListSerializer(serializers.ModelSerializer):
     female_count = serializers.SerializerMethodField()
     male_blood_count = serializers.SerializerMethodField()
     male_other_count = serializers.SerializerMethodField()
+    chip_number = serializers.SerializerMethodField()
     class Meta:
         model = NipptHybSeqBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","chip_number","created_by", "operator_name", "reviewer","created_at","updated_at"]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
     def get_male_blood_count(self,obj): return obj.samples.filter(category="MALE_BLOOD").count()
     def get_male_other_count(self,obj): return obj.samples.filter(category="MALE_OTHER").count()
+    def get_chip_number(self,obj): return (obj.hyb_seq_data or {}).get("chip_number") or ""
 
 class NipptHybSeqBatchDetailSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
