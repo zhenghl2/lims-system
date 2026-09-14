@@ -212,11 +212,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       setReviewers(prev => ({ ...prev, [id]: ld.reviewer_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.reviewer_male || "") : "") || d.reviewer || "" }));
       setOperatorsM(prev => ({ ...prev, [id]: ld.operator_male ?? "" }));
       setReviewersM(prev => ({ ...prev, [id]: ld.reviewer_male ?? "" }));
-      // 日期/时间（男女独立；旧值归女性；厦门合并记录：female 空时取 male）
-      setDateF(ld.lib_date_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.lib_date_male || "") : "") || ld.lib_date || "");
-      setTimeF(ld.lib_time_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.lib_time_male || "") : "") || ld.lib_time || "");
-      setDateM(ld.lib_date_male ?? "");
-      setTimeM(ld.lib_time_male ?? "");
+      // 日期/时间（男女独立；旧值归女性；厦门合并记录：female 空时取 male；未完成批次空值默认当前时间）
+      const _lbNotDone = d.status !== "COMPLETED";
+      const _lbD0 = dayjs().format("YYYY-MM-DD"), _lbT0 = dayjs().format("HH:mm");
+      setDateF(ld.lib_date_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.lib_date_male || "") : "") || ld.lib_date || (_lbNotDone ? _lbD0 : ""));
+      setTimeF(ld.lib_time_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.lib_time_male || "") : "") || ld.lib_time || (_lbNotDone ? _lbT0 : ""));
+      setDateM(ld.lib_date_male || (_lbNotDone && !isXmLoad ? _lbD0 : ""));
+      setTimeM(ld.lib_time_male || (_lbNotDone && !isXmLoad ? _lbT0 : ""));
       setSampleResults(ld.sample_results||{});
       // Restore plate data
       const fp = ld.female_plate; const mp = ld.male_plate; const xp = ld.xiamen_plate;

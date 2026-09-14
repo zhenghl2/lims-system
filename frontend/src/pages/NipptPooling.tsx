@@ -153,6 +153,10 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const pd=d.pooling_data||{};
       setPoolingBase(pd.poolingBase??DEFAULT_POOLING_AMOUNT);
       setGlobalElutionVol(pd.globalElutionVol??DEFAULT_ELUTION);
+      // 日期/时间（未完成批次空值默认当前时间）
+      const _plNotDone = d.status !== "COMPLETED";
+      setPoolDate(pd.pool_date || (_plNotDone ? dayjs().format("YYYY-MM-DD") : ""));
+      setPoolTime(pd.pool_time || (_plNotDone ? dayjs().format("HH:mm") : ""));
       setQuantKit(pd.quant_kit||"EQ121-02");
       setGroupBases(pd.groupBases||{});
       setGroupElutions(pd.groupElutions||{});
@@ -282,6 +286,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         quant_kit:quantKit,poolingBase,globalElutionVol,groupBases,groupElutions,manual_alloc:manualAlloc,customAmounts,hk_doubled:hkDoubled,
         rows:rows.map(r=>({concentration:r.concentration,elutionVolume:r.elutionVolume,yield:r.yield,poolingAmount:r.poolingAmount,poolingVolume:r.poolingVolume,eliminated:r.eliminated,qc:r.qc,mixOverride:r.mixOverride??null})),
         indexes:savedIndexes,
+        pool_date:poolDate,pool_time:poolTime,
       };
       await(casesApi as any).savePooling(selectedBatch.id,{pooling_data:pd,samples});
       baselineRef.current = snap();  // 保存成功即为新基线（不重拉，避免覆盖本地）

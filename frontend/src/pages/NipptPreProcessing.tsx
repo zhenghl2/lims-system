@@ -250,11 +250,13 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       setReviewers(prev => ({ ...prev, [id]: pd.reviewer_female ?? res.data?.reviewer ?? "" }));
       setOperatorsM(prev => ({ ...prev, [id]: pd.operator_male ?? "" }));
       setReviewersM(prev => ({ ...prev, [id]: pd.reviewer_male ?? "" }));
-      // 日期/时间（男女独立；旧值归女性）
-      setPpDate((pd.pp_date_female ?? pd.pp_date) || "");
-      setPpTime((pd.pp_time_female ?? pd.pp_time) || "");
-      setPpDateM(pd.pp_date_male || "");
-      setPpTimeM(pd.pp_time_male || "");
+      // 日期/时间（男女独立；旧值归女性；未完成批次空值默认当前时间）
+      const _ppNotDone = res.data?.status !== "COMPLETED";
+      const _ppD0 = dayjs().format("YYYY-MM-DD"), _ppT0 = dayjs().format("HH:mm");
+      setPpDate((pd.pp_date_female ?? pd.pp_date) || (_ppNotDone ? _ppD0 : ""));
+      setPpTime((pd.pp_time_female ?? pd.pp_time) || (_ppNotDone ? _ppT0 : ""));
+      setPpDateM(pd.pp_date_male || (_ppNotDone ? _ppD0 : ""));
+      setPpTimeM(pd.pp_time_male || (_ppNotDone ? _ppT0 : ""));
       // 草稿恢复：人员（sessionStorage）+ 照片（IndexedDB，异步）
       const draft = loadPpDraft()[id];
       if (draft) {

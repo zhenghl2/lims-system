@@ -174,11 +174,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       setReviewers(prev => ({ ...prev, [id]: ed.reviewer_female ?? d.reviewer ?? "" }));
       setOperatorsM(prev => ({ ...prev, [id]: ed.operator_male ?? "" }));
       setReviewersM(prev => ({ ...prev, [id]: ed.reviewer_male ?? "" }));
-      // 日期/时间（男女独立；旧值归女性）
-      setDateF(fed.extraction_date ?? ed.extraction_date ?? "");
-      setTimeF(fed.extraction_time ?? ed.extraction_time ?? "");
-      setDateM(med.extraction_date ?? "");
-      setTimeM(med.extraction_time ?? "");
+      // 日期/时间（男女独立；旧值归女性；未完成批次空值默认当前时间）
+      const _exNotDone = d.status !== "COMPLETED";
+      const _exD0 = dayjs().format("YYYY-MM-DD"), _exT0 = dayjs().format("HH:mm");
+      setDateF(fed.extraction_date ?? ed.extraction_date ?? (_exNotDone ? _exD0 : ""));
+      setTimeF(fed.extraction_time ?? ed.extraction_time ?? (_exNotDone ? _exT0 : ""));
+      setDateM(med.extraction_date ?? (_exNotDone ? _exD0 : ""));
+      setTimeM(med.extraction_time ?? (_exNotDone ? _exT0 : ""));
       extForm.setFieldsValue({
         equipment: ed.equipment || "", kit_type: ed.kit_type || undefined,
         reagent_lot: ed.reagent_lot || "",
