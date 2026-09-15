@@ -42,6 +42,7 @@ const Quality         = lazy(() => import("./Quality"));
 const AuditLog        = lazy(() => import("./AuditLog"));
 
 const Notifications   = lazy(() => import("./Notifications"));
+const NiptExtensions  = lazy(() => import("./NiptExtensions"));
 
 
 
@@ -137,6 +138,7 @@ export default function AppRouter() {
         <Route path="/workflow"   element={<Protected><NiptWorkflow /></Protected>} />
         <Route path="/dashboard-nipt" element={<Protected><DashboardLayout><NiptDashboard /></DashboardLayout></Protected>} />
         <Route path="/reports-nipt"   element={<Protected><DashboardLayout><NiptReports /></DashboardLayout></Protected>} />
+        <Route path="/extensions"     element={<Protected><DashboardLayout><NiptExtensions /></DashboardLayout></Protected>} />
 
 
         <Route path="*" element={<Navigate to="/" replace />} />

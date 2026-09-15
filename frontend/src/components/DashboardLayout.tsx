@@ -28,7 +28,7 @@ import {
 
 
 
-  DashboardOutlined, BarcodeOutlined,
+  DashboardOutlined, BarcodeOutlined, AppstoreOutlined,
 
 
 
@@ -218,6 +218,7 @@ export default function DashboardLayout({ children, header }: Props) {
     { key: "/audit",          icon: <AuditOutlined />,           label: t("nav.auditLog") },
 
     { key: "/notifications",  icon: <BellOutlined />,            label: t("nav.notifications") },
+    { key: "/extensions",     icon: <AppstoreOutlined />,        label: t("nav.extensions") },
 
   ], [t]);
 
