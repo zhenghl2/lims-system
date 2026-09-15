@@ -299,6 +299,10 @@ export const extensionsApi = {
       api.get(`/extensions/thai-report/batches/${id}/items/${itemId}/report/`, {
         responseType: "blob", timeout: 120000,
       }),
+    sourceFile: (id: string, which: "patient" | "result") =>
+      api.get(`/extensions/thai-report/batches/${id}/source/${which}/`, {
+        responseType: "blob", timeout: 120000,
+      }),
   },
 };
 

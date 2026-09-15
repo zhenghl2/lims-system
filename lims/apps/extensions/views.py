@@ -1,5 +1,6 @@
 """Extensions views — 泰国数据生成报告."""
 import io
+import re
 import shutil
 import zipfile
 
@@ -71,6 +72,20 @@ class ThaiReportBatchViewSet(viewsets.ModelViewSet):
             except Exception:  # noqa: BLE001
                 pass
         instance.delete()
+
+    @action(detail=True, methods=["get"], url_path="source/(?P<which>patient|result)")
+    def source(self, request, pk=None, which=None):
+        # 下载批次上传的原始文件（patient=样本信息表 result=结果表），供后续复核
+        import os as _os
+        batch = self.get_object()
+        f = batch.patient_file if which == "patient" else batch.result_file
+        if not f or not f.name:
+            return Response({"detail": "文件不存在"}, status=status.HTTP_404_NOT_FOUND)
+        filename = _os.path.basename(f.name)
+        filename = re.sub(r"_[A-Za-z0-9]{7}(\.[A-Za-z0-9]+)$", r"\1", filename)
+        resp = FileResponse(f.open("rb"), as_attachment=True, filename=filename)
+        resp["Content-Type"] = "application/octet-stream"
+        return resp
 
     @action(detail=True, methods=["get"], url_path="items/(?P<item_id>[^/.]+)/report")
     def report(self, request, pk=None, item_id=None):

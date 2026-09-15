@@ -118,9 +118,37 @@ export default function NiptThaiReport() {
   const [detailBatch, setDetailBatch] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // 服务器源文件预览（详情内复核）
+  const [sourcePreview, setSourcePreview] = useState<{ title: string; table: ParsedTable; side: "patient" | "result" } | null>(null);
+
   // 报告预览（docx 渲染）
   const [reportPreview, setReportPreview] = useState<{ title: string; loading: boolean } | null>(null);
   const reportRef = useRef<HTMLDivElement | null>(null);
+
+  const previewSourceFile = async (batchId: number, which: "patient" | "result", filename: string) => {
+    try {
+      const resp: any = await extensionsApi.thaiReport.sourceFile(String(batchId), which);
+      const text = await (resp.data as Blob).text();
+      const parsed = parseTextTable(text);
+      setSourcePreview({ title: filename, table: parsed, side: which });
+    } catch (e: any) {
+      message.error("预览失败: " + (e.message || e));
+    }
+  };
+
+  const downloadSourceFile = async (batchId: number, which: "patient" | "result", filename: string) => {
+    try {
+      const resp: any = await extensionsApi.thaiReport.sourceFile(String(batchId), which);
+      const url = URL.createObjectURL(new Blob([resp.data]));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      message.error("下载失败: " + (e.message || e));
+    }
+  };
 
   const openReportPreview = async (batchId: number, item: any) => {
     setReportPreview({ title: item.report_file || "报告预览", loading: true });
@@ -317,7 +345,8 @@ export default function NiptThaiReport() {
     return {};
   };
 
-  const previewData = previewSide === "result" ? resultTable : patientTable;
+  const effectiveSide = sourcePreview ? sourcePreview.side : previewSide;
+  const previewData = sourcePreview ? sourcePreview.table : (previewSide === "result" ? resultTable : patientTable);
 
   const hoverStyle = (
     <style>{`.thai-row-hover > td { background: #e6f4ff !important; }`}</style>
@@ -410,13 +439,13 @@ export default function NiptThaiReport() {
 
       {/* 预览 Modal（含标色） */}
       <Modal
-        open={previewOpen}
-        onCancel={() => setPreviewOpen(false)}
+        open={previewOpen || !!sourcePreview}
+        onCancel={() => { setPreviewOpen(false); setSourcePreview(null); }}
         footer={null}
         width="92%"
         title={
           <Space>
-            <FileTextOutlined /> {previewSide === "result" ? "结果表预览" : "样本信息表预览"}
+            <FileTextOutlined /> {sourcePreview ? sourcePreview.title : (previewSide === "result" ? "结果表预览" : "样本信息表预览")}
             <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
               黄底=不可出报告(ResultFilter)；红字=Z值超±3；红底=两表SampleID不匹配
             </Text>
@@ -431,10 +460,10 @@ export default function NiptThaiReport() {
             size="small"
             pagination={{ pageSize: 100, showSizeChanger: false }}
             scroll={{ x: "max-content", y: 480 }}
-            columns={previewColumns(previewData, previewSide)}
+            columns={previewColumns(previewData, effectiveSide)}
             rowClassName={(row) => hoverKey === String((row as any).__k) ? "thai-row-hover" : ""}
             onRow={(row) => ({
-              style: previewRowClass(previewSide, row as Record<string, string>),
+              style: previewRowClass(effectiveSide, row as Record<string, string>),
               onMouseEnter: () => setHoverKey(String((row as any).__k)),
               onMouseLeave: () => setHoverKey(""),
             })}
@@ -476,6 +505,27 @@ export default function NiptThaiReport() {
                 disabled={detailBatch.status !== "DONE" || !detailBatch.success}
                 onClick={() => handleDownload(detailBatch)}>下载报告包（zip）</Button>
             </Space>
+            <div style={{ marginBottom: 12, padding: "6px 10px", background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
+              <Space wrap size={16}>
+                <Text type="secondary">上传文件（存档）：</Text>
+                {detailBatch.patient_filename ? (
+                  <Space size={6}>
+                    <FileTextOutlined />
+                    <Text>{detailBatch.patient_filename}</Text>
+                    <a onClick={() => previewSourceFile(detailBatch.id, "patient", detailBatch.patient_filename)}>预览</a>
+                    <a onClick={() => downloadSourceFile(detailBatch.id, "patient", detailBatch.patient_filename)}>下载</a>
+                  </Space>
+                ) : <Text type="secondary">样本信息表缺失</Text>}
+                {detailBatch.result_filename ? (
+                  <Space size={6}>
+                    <FileTextOutlined />
+                    <Text>{detailBatch.result_filename}</Text>
+                    <a onClick={() => previewSourceFile(detailBatch.id, "result", detailBatch.result_filename)}>预览</a>
+                    <a onClick={() => downloadSourceFile(detailBatch.id, "result", detailBatch.result_filename)}>下载</a>
+                  </Space>
+                ) : <Text type="secondary">结果表缺失</Text>}
+              </Space>
+            </div>
             <Table
               dataSource={detailBatch.items || []}
               rowKey="id"
