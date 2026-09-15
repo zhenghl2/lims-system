@@ -1,6 +1,6 @@
 // NiptThaiReport.tsx — 泰国数据生成报告（NIPT 拓展功能）
 // 上传结果表 + 样本信息表 → 服务器生成 docx 报告 → 批次历史/预览/批量下载
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Card, Typography, Input, Button, Table, Tag, Space, message, Modal,
@@ -11,6 +11,7 @@ import {
   EyeOutlined, ArrowLeftOutlined, PlusOutlined, FileDoneOutlined,
 } from "@ant-design/icons";
 import { extensionsApi } from "../api";
+import { renderAsync } from "docx-preview";
 
 const { Title, Text } = Typography;
 
@@ -68,6 +69,15 @@ const parseTextTable = (text: string): ParsedTable => {
   return { cols, rows, sep };
 };
 
+// 草稿缓存：SPA 内切换页面后返回时保留已填内容（刷新丢失）
+let draftCache: {
+  name: string;
+  patientFile: File | null;
+  resultFile: File | null;
+  patientTable: ParsedTable | null;
+  resultTable: ParsedTable | null;
+} | null = null;
+
 const readFileText = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -90,11 +100,12 @@ export default function NiptThaiReport() {
   const navigate = useNavigate();
 
   // ── 新建区 ──
-  const [name, setName] = useState("");
-  const [patientFile, setPatientFile] = useState<File | null>(null);
-  const [resultFile, setResultFile] = useState<File | null>(null);
-  const [patientTable, setPatientTable] = useState<ParsedTable | null>(null);
-  const [resultTable, setResultTable] = useState<ParsedTable | null>(null);
+  const [name, setName] = useState<string>(() => draftCache?.name || "");
+  const [patientFile, setPatientFile] = useState<File | null>(() => draftCache?.patientFile || null);
+  const [resultFile, setResultFile] = useState<File | null>(() => draftCache?.resultFile || null);
+  const [patientTable, setPatientTable] = useState<ParsedTable | null>(() => draftCache?.patientTable || null);
+  const [resultTable, setResultTable] = useState<ParsedTable | null>(() => draftCache?.resultTable || null);
+  const [hoverKey, setHoverKey] = useState<string>("");
   const [generating, setGenerating] = useState(false);
 
   // ── 预览 ──
@@ -106,6 +117,28 @@ export default function NiptThaiReport() {
   const [listLoading, setListLoading] = useState(false);
   const [detailBatch, setDetailBatch] = useState<any | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+
+  // 报告预览（docx 渲染）
+  const [reportPreview, setReportPreview] = useState<{ title: string; loading: boolean } | null>(null);
+  const reportRef = useRef<HTMLDivElement | null>(null);
+
+  const openReportPreview = async (batchId: number, item: any) => {
+    setReportPreview({ title: item.report_file || "报告预览", loading: true });
+    try {
+      const resp: any = await extensionsApi.thaiReport.reportFile(String(batchId), item.id);
+      const blob = new Blob([resp.data]);
+      setReportPreview({ title: item.report_file || "报告预览", loading: false });
+      setTimeout(async () => {
+        if (reportRef.current) {
+          reportRef.current.innerHTML = "";
+          await renderAsync(blob, reportRef.current, undefined, { inWrapper: true, ignoreWidth: false });
+        }
+      }, 50);
+    } catch (e: any) {
+      setReportPreview(null);
+      message.error("预览失败: " + (e.message || e));
+    }
+  };
 
   const sampleIdOf = (t: ParsedTable) => {
     const col = t.cols.find(c => ["sampleid", "sample"].includes(c.toLowerCase().replace(/[ _]/g, "")));
@@ -126,6 +159,11 @@ export default function NiptThaiReport() {
 
   useEffect(() => { fetchBatches(); }, []);
 
+  // 变更即写草稿缓存（切页保留）
+  useEffect(() => {
+    draftCache = { name, patientFile, resultFile, patientTable, resultTable };
+  }, [name, patientFile, resultFile, patientTable, resultTable]);
+
   // ── 上传处理（前端解析预览，不自动上传）──
   const handlePick = async (side: "patient" | "result", file: File) => {
     const isTxt = /\.(txt|csv|tsv)$/i.test(file.name);
@@ -139,6 +177,23 @@ export default function NiptThaiReport() {
       if (!parsed.cols.length) {
         message.error("文件为空或无法解析: " + file.name);
         return false;
+      }
+      // 格式校验（防传混）
+      const colSet = new Set(parsed.cols.map(c => c.toLowerCase().replace(/[ _]/g, "")));
+      if (side === "result") {
+        const looksResult = colSet.has("resultfilter") || colSet.has("zscore21") || colSet.has("t21");
+        const looksPatient = colSet.has("patientname") || colSet.has("accessionid");
+        if (!looksResult || looksPatient) {
+          message.error(`「${file.name}」看起来不是结果表${looksPatient ? "（它更像样本信息表，是不是传混了？）" : "（缺少 ResultFilter 列）"}`);
+          return false;
+        }
+      } else {
+        const looksPatient = colSet.has("patientname") || colSet.has("accessionid") || colSet.has("twin type") || colSet.has("twintype");
+        const looksResult = colSet.has("resultfilter") || colSet.has("zscore21");
+        if (!looksPatient || looksResult) {
+          message.error(`「${file.name}」看起来不是样本信息表${looksResult ? "（它更像结果表，是不是传混了？）" : "（缺少 PatientName/AccessionID 列）"}`);
+          return false;
+        }
       }
       if (side === "patient") { setPatientFile(file); setPatientTable(parsed); }
       else { setResultFile(file); setResultTable(parsed); }
@@ -242,14 +297,14 @@ export default function NiptThaiReport() {
       ellipsis: true,
       render: (v: string) => {
         const val = v ?? "";
+        if (side !== "result") return val; // 显著标记仅针对结果表
         // 标红：Z 值超 ±3
-        if (side === "result" && ["Zscore21", "Zscore18", "Zscore13"].includes(c) && zAbnormal(val)) {
+        if (["Zscore21", "Zscore18", "Zscore13"].includes(c) && zAbnormal(val)) {
           return <span style={{ color: "#cf1322", fontWeight: 700 }}>{val}</span>;
         }
         // 标红：SampleID 两表对不上
         if (["sampleid", "sample"].includes(c.toLowerCase().replace(/[ _]/g, ""))) {
-          const other = side === "result" ? sampleIds.patient : sampleIds.result;
-          if (val && other.size > 0 && !other.has(val.trim())) {
+          if (val && sampleIds.patient.size > 0 && !sampleIds.patient.has(val.trim())) {
             return <span style={{ background: "#ffccc7", padding: "0 2px" }}>{val}</span>;
           }
         }
@@ -257,12 +312,16 @@ export default function NiptThaiReport() {
       },
     }));
 
-  const previewRowClass = (side: "result", row: Record<string, string>) => {
+  const previewRowClass = (side: "result" | "patient", row: Record<string, string>) => {
     if (side === "result" && isNotProcessable(row["ResultFilter"] || "")) return { background: "#fffbe6" };
     return {};
   };
 
   const previewData = previewSide === "result" ? resultTable : patientTable;
+
+  const hoverStyle = (
+    <style>{`.thai-row-hover > td { background: #e6f4ff !important; }`}</style>
+  );
 
   return (
     <>
@@ -364,6 +423,7 @@ export default function NiptThaiReport() {
           </Space>
         }
       >
+        {hoverStyle}
         {previewData ? (
           <Table
             dataSource={previewData.rows.map((r, i) => ({ ...r, __k: String(i) }))}
@@ -372,9 +432,30 @@ export default function NiptThaiReport() {
             pagination={{ pageSize: 100, showSizeChanger: false }}
             scroll={{ x: "max-content", y: 480 }}
             columns={previewColumns(previewData, previewSide)}
-            onRow={(row) => ({ style: previewRowClass("result", row) })}
+            rowClassName={(row) => hoverKey === String((row as any).__k) ? "thai-row-hover" : ""}
+            onRow={(row) => ({
+              style: previewRowClass(previewSide, row as Record<string, string>),
+              onMouseEnter: () => setHoverKey(String((row as any).__k)),
+              onMouseLeave: () => setHoverKey(""),
+            })}
           />
         ) : <Empty />}
+      </Modal>
+
+      {/* 报告预览 Modal */}
+      <Modal
+        open={!!reportPreview}
+        onCancel={() => setReportPreview(null)}
+        footer={null}
+        width="90%"
+        title={<Space><FileTextOutlined />{reportPreview?.title}</Space>}
+        styles={{ body: { maxHeight: "75vh", overflow: "auto", background: "#f0f2f5", padding: 12 } }}
+      >
+        {reportPreview?.loading ? (
+          <div style={{ textAlign: "center", padding: 60 }}><Spin tip="加载报告…" /></div>
+        ) : (
+          <div ref={reportRef} style={{ background: "#fff", padding: "12px 8px" }} />
+        )}
       </Modal>
 
       {/* 批次详情 Modal */}
@@ -407,7 +488,16 @@ export default function NiptThaiReport() {
                 { title: "Option", dataIndex: "option", width: 90 },
                 { title: "ResultFilter", dataIndex: "result_filter", width: 110 },
                 { title: "模板", dataIndex: "template", width: 100 },
-                { title: "报告文件", dataIndex: "report_file", width: 220, ellipsis: true },
+                {
+                  title: "报告文件", dataIndex: "report_file", width: 260, ellipsis: true,
+                  render: (v: string, it: any) => v ? (
+                    <Space size={4}>
+                      <a onClick={() => detailBatch && openReportPreview(detailBatch.id, it)}>
+                        <EyeOutlined style={{ marginRight: 2 }} />{v}
+                      </a>
+                    </Space>
+                  ) : "-",
+                },
                 {
                   title: "状态", dataIndex: "status", width: 90,
                   render: (v: string) => v === "OK" ? <Tag color="green">OK</Tag>

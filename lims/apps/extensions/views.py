@@ -72,6 +72,24 @@ class ThaiReportBatchViewSet(viewsets.ModelViewSet):
                 pass
         instance.delete()
 
+    @action(detail=True, methods=["get"], url_path="items/(?P<item_id>[^/.]+)/report")
+    def report(self, request, pk=None, item_id=None):
+        # 单个样本报告下载（用于详情内预览）
+        from .models import ThaiReportItem
+        batch = self.get_object()
+        try:
+            item = ThaiReportItem.objects.get(id=item_id, batch=batch)
+        except ThaiReportItem.DoesNotExist:
+            return Response({"detail": "报告不存在"}, status=status.HTTP_404_NOT_FOUND)
+        if item.status != "OK" or not item.report_file:
+            return Response({"detail": "该样本没有报告文件"}, status=status.HTTP_404_NOT_FOUND)
+        f = get_report_dir(batch.id) / item.report_file
+        if not f.exists():
+            return Response({"detail": "文件缺失"}, status=status.HTTP_404_NOT_FOUND)
+        resp = FileResponse(open(str(f), "rb"), as_attachment=False, filename=item.report_file)
+        resp["Content-Type"] = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        return resp
+
     @action(detail=True, methods=["get"])
     def download(self, request, pk=None):
         """打包下载该批次的全部报告（zip：docx + summary.csv）。"""
