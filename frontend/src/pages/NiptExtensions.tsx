@@ -1,5 +1,6 @@
 // NiptExtensions.tsx — NIPT 拓展功能模块（独立工具集，与主流程无关联）
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, Typography, Tag, Modal, Space, Empty } from "antd";
 import {
   FileTextOutlined, PlusOutlined, AppstoreOutlined,
@@ -13,6 +14,7 @@ interface ExtFeature {
   desc: string;
   icon: React.ReactNode;
   status: "ready" | "dev";
+  path?: string;
 }
 
 // 已规划/已上线的功能列表（后续功能在此追加）
@@ -20,17 +22,20 @@ const FEATURES: ExtFeature[] = [
   {
     key: "thai_report",
     name: "泰国数据生成报告",
-    desc: "生成泰国数据报告（具体实现待配置）",
+    desc: "上传结果表与样本信息表，批量生成泰国 NIPT 报告",
     icon: <FileTextOutlined />,
-    status: "dev",
+    status: "ready",
+    path: "/extensions/thai-report",
   },
 ];
 
 export default function NiptExtensions() {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState<ExtFeature | null>(null);
 
   const openFeature = (f: ExtFeature) => {
+    if (f.path) { navigate(f.path); return; }
     setActive(f);
     setOpen(true);
   };

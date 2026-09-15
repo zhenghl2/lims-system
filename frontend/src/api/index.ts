@@ -283,6 +283,21 @@ export const casesApi = {
 };
 
 // ── Public Registration (NIPPT) ───────────────────────────────
+// ── Extensions (NIPT 拓展功能) ────────────────────────────────
+export const extensionsApi = {
+  thaiReport: {
+    list: () => api.get("/extensions/thai-report/batches/"),
+    get: (id: string) => api.get(`/extensions/thai-report/batches/${id}/`),
+    create: (fd: FormData) =>
+      api.post("/extensions/thai-report/batches/", fd, { timeout: 600000 }),
+    remove: (id: string) => api.delete(`/extensions/thai-report/batches/${id}/`),
+    download: (id: string) =>
+      api.get(`/extensions/thai-report/batches/${id}/download/`, {
+        responseType: "blob", timeout: 300000,
+      }),
+  },
+};
+
 export const publicRegisterApi = {
   info: (token: string) =>
     api.get<{ case_number: string; panel: string; panel_name: string; expires: string }>(`/cases/public/info/${token}/`),

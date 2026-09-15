@@ -43,6 +43,7 @@ const AuditLog        = lazy(() => import("./AuditLog"));
 
 const Notifications   = lazy(() => import("./Notifications"));
 const NiptExtensions  = lazy(() => import("./NiptExtensions"));
+const NiptThaiReport  = lazy(() => import("./NiptThaiReport"));
 
 
 
@@ -139,6 +140,7 @@ export default function AppRouter() {
         <Route path="/dashboard-nipt" element={<Protected><DashboardLayout><NiptDashboard /></DashboardLayout></Protected>} />
         <Route path="/reports-nipt"   element={<Protected><DashboardLayout><NiptReports /></DashboardLayout></Protected>} />
         <Route path="/extensions"     element={<Protected><DashboardLayout><NiptExtensions /></DashboardLayout></Protected>} />
+        <Route path="/extensions/thai-report" element={<Protected><DashboardLayout><NiptThaiReport /></DashboardLayout></Protected>} />
 
 
         <Route path="*" element={<Navigate to="/" replace />} />
