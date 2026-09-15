@@ -7,6 +7,7 @@ import {
   InboxOutlined, FileTextOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, ContainerOutlined,
   ExperimentOutlined, BuildOutlined, MergeCellsOutlined, CloudUploadOutlined, BarChartOutlined,
+  AppstoreOutlined,
   UserOutlined, LogoutOutlined, SettingOutlined,
 } from "@ant-design/icons";
 import { useAuthStore } from "../store/auth";
@@ -25,6 +26,7 @@ const MENU_ITEMS = [
   { key: "/nippt/hyb-seq",        icon: <CloudUploadOutlined />,  label: "Hyb & Sequencing" },
   { key: "/nippt/bioinformatics", icon: <BarChartOutlined />,     label: "Bioinformatics" },
   { key: "/nippt/reports",      icon: <FileTextOutlined />,    label: "Reports" },
+  { key: "/nippt/extensions",   icon: <AppstoreOutlined />,    label: "Extensions" },
 ];
 
 interface Props {

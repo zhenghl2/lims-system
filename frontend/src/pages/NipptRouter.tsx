@@ -18,6 +18,7 @@ const NipptLibrary       = lazy(() => import("./NipptLibrary"));
 const NipptPooling       = lazy(() => import("./NipptPooling"));
 const NipptHybSeq        = lazy(() => import("./NipptHybSeq"));
 const NipptBioinformatics = lazy(() => import("./NipptBioinformatics"));
+const NipptExtensions     = lazy(() => import("./NipptExtensions"));
 
 const PageLoading = () => (
   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", minHeight: 200 }}>
@@ -54,6 +55,7 @@ export default function NipptRouter() {
         <Route path="/nippt/bioinformatics" element={<Protected><NipptLayout header="Bioinformatics"><NipptBioinformatics /></NipptLayout></Protected>} />
         <Route path="/nippt/workflow"      element={<Protected><NipptLayout><LabWorkflow /></NipptLayout></Protected>} />
         <Route path="/nippt/reports"       element={<Protected><NipptLayout><NipptReports /></NipptLayout></Protected>} />
+        <Route path="/nippt/extensions"    element={<Protected><NipptLayout header="Extensions"><NipptExtensions /></NipptLayout></Protected>} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/nippt/dashboard" replace />} />
