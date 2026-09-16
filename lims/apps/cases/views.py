@@ -2,6 +2,7 @@
 from django.db import transaction
 from django.http import HttpResponse
 from django.db.models import Q, F
+from django.db.models.functions import Length
 from django.utils import timezone
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action, api_view, permission_classes
@@ -1995,7 +1996,7 @@ class NipptLibraryViewSet(viewsets.ModelViewSet):
         valid_ids = passed_ids - excluded_ids
         if not valid_ids:
             return Response({"female_count":0,"male_blood_count":0,"male_other_count":0,"total_pending":0,"entries":[]})
-        qs = CaseSample.objects.filter(id__in=valid_ids).select_related("case","sample").order_by("case__case_number","sample__patient_name")
+        qs = CaseSample.objects.filter(id__in=valid_ids).select_related("case","sample").order_by(Length("case__pt_number"), "case__pt_number", "sample__patient_name")
         groups = {}
         for cs in qs:
             es = id2es.get(str(cs.id))

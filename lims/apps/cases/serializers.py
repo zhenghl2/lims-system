@@ -1,6 +1,7 @@
 """Case serializers — NIPPT."""
 from django.db import transaction
 from django.db.models import F
+from django.db.models.functions import Length
 from rest_framework import serializers
 from django.utils import timezone
 import datetime
@@ -1058,9 +1059,9 @@ class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
     def get_male_blood_count(self,obj): return obj.samples.filter(category="MALE_BLOOD").count()
     def get_male_other_count(self,obj): return obj.samples.filter(category="MALE_OTHER").count()
-    def get_female_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="FEMALE_BLOOD"), many=True).data
-    def get_male_blood_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="MALE_BLOOD"), many=True).data
-    def get_male_other_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="MALE_OTHER"), many=True).data
+    def get_female_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="FEMALE_BLOOD").order_by(Length("case__pt_number"), "case__pt_number", "patient_name"), many=True).data
+    def get_male_blood_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="MALE_BLOOD").order_by(Length("case__pt_number"), "case__pt_number", "patient_name"), many=True).data
+    def get_male_other_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="MALE_OTHER").order_by(Length("case__pt_number"), "case__pt_number", "patient_name"), many=True).data
 
 class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
     case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
@@ -1074,7 +1075,7 @@ class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
         with transaction.atomic():
             batch_number = NipptLibraryBatch.generate_batch_number()
             batch = NipptLibraryBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
-            css = CaseSample.objects.filter(id__in=case_sample_ids).select_related("case","sample")
+            css = CaseSample.objects.filter(id__in=case_sample_ids).select_related("case","sample").order_by(Length("case__pt_number"), "case__pt_number", "sample__patient_name")
             es_map = {}
             for es in NipptExtractionSample.objects.filter(batch__status="COMPLETED", qc_status="PASS"):
                 if es.case_sample_ids:
