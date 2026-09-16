@@ -368,6 +368,8 @@ class SampleViewSet(viewsets.ModelViewSet):
                     panel_code = "NIPT_FULL"
                 elif test_opt == "Plus":
                     panel_code = "NIPT_PLUS"
+                elif test_opt == "Twin":
+                    panel_code = "twin_basic"
 
                 # Skip duplicates by external_id
                 external_id = data.get("external_id")
