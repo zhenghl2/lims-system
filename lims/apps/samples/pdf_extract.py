@@ -180,14 +180,16 @@ def extract_thai_pdf(file_path, source="BCC"):
         if match:
             info['gestational_weeks'] = int(match.group(1))
 
-    # Test option: Check Box11=Basic, Check Box12=Plus, Check Box13=Basic All
+    # Test option（新表单 260916）: Box14=Basic, Box15=Basic All, Box16=Plus, Box17=Twin
     test_option = None
-    if (fields.get('Check Box13', {}).get('/V') or '') == '/Yes':
-        test_option = 'Basic All'
-    elif (fields.get('Check Box11', {}).get('/V') or '') == '/Yes':
+    if (fields.get('Check Box14', {}).get('/V') or '') == '/Yes':
         test_option = 'Basic'
-    elif (fields.get('Check Box12', {}).get('/V') or '') == '/Yes':
+    elif (fields.get('Check Box15', {}).get('/V') or '') == '/Yes':
+        test_option = 'Basic All'
+    elif (fields.get('Check Box16', {}).get('/V') or '') == '/Yes':
         test_option = 'Plus'
+    elif (fields.get('Check Box17', {}).get('/V') or '') == '/Yes':
+        test_option = 'Twin'
 
     if test_option:
         info['test_option'] = test_option
@@ -220,28 +222,41 @@ def extract_thai_pdf(file_path, source="BCC"):
             except ValueError:
                 pass
 
-    # Single/Twin: Check Box2 checked = Single (单胎), unchecked = 双胎twins
-    check2_val = (fields.get('Check Box2', {}).get('/V') or '')
-    info['multiple_gestation'] = not (check2_val == '/Yes')  # Checked = Single
+    # 单双胎（新表单 260916）: Box2=单胎Single, Box3=双胎Monochorionic, Box4=双胎Dichorionic
+    if (fields.get('Check Box2', {}).get('/V') or '') == '/Yes':
+        single_status = "单胎Single"
+    elif (fields.get('Check Box3', {}).get('/V') or '') == '/Yes':
+        single_status = "双胎Monochorionic"
+    elif (fields.get('Check Box4', {}).get('/V') or '') == '/Yes':
+        single_status = "双胎Dichorionic"
+    else:
+        single_status = ""
+    info['gestation_type'] = single_status  # 明细保留（供临床诊断/Excel 使用）
+    info['multiple_gestation'] = single_status.startswith("双胎")
 
     # IVF: Check Box0 checked = 否NO (natural, NOT IVF)
     check0_val = (fields.get('Check Box0', {}).get('/V') or '')
     info['ivf_status'] = not (check0_val == '/Yes')  # Checked = NOT IVF
 
-    # Medical history: Check Box7/8/9/10
+    # Medical history（新表单 260916）: Box10=肿瘤, Box11=染色体异常, Box12=孕期用药, Box13=其他
     history_parts = []
-    if (fields.get('Check Box7', {}).get('/V') or '') == '/Yes':
-        history_parts.append("Tumor patient")
-    if (fields.get('Check Box8', {}).get('/V') or '') == '/Yes':
-        history_parts.append("Chromosomal abnormalities")
-    if (fields.get('Check Box9', {}).get('/V') or '') == '/Yes':
-        history_parts.append("Medicine use during pregnancy")
     if (fields.get('Check Box10', {}).get('/V') or '') == '/Yes':
+        history_parts.append("Tumor patient")
+    if (fields.get('Check Box11', {}).get('/V') or '') == '/Yes':
+        history_parts.append("Chromosomal abnormalities")
+    if (fields.get('Check Box12', {}).get('/V') or '') == '/Yes':
+        history_parts.append("Medicine use during pregnancy")
+    if (fields.get('Check Box13', {}).get('/V') or '') == '/Yes':
         history_parts.append("Other")
-    if history_parts:
-        info['clinical_diagnosis'] = ", ".join(history_parts)
-    else:
-        info['clinical_diagnosis'] = "否"
+    history = ", ".join(history_parts) if history_parts else ""
+
+    # 双胎细分（单/双绒毛膜）记入临床诊断字段
+    diagnosis_parts = []
+    if single_status.startswith("双胎"):
+        diagnosis_parts.append(single_status)
+    if history:
+        diagnosis_parts.append(history)
+    info['clinical_diagnosis'] = "，".join(diagnosis_parts) if diagnosis_parts else "否"
 
     return info
 
