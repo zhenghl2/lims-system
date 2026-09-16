@@ -771,19 +771,43 @@ class CaseViewSet(viewsets.ModelViewSet):
     def redo(self, request, pk=None):
         """重做：创建新 CaseSample (T后缀) + 管道记录，进入目标模块 pending 列表."""
         from django.db.models import Max, F
+        from django.db import transaction
         from lims.apps.samples.models import Sample
         
         case = self.get_object()
         original_cs_id = request.data.get("original_case_sample_id")
-        target_stage = request.data.get("target_stage")
+        target_stage = request.data.get("target_stage") or "PRE_PROCESSING"
         sample_source = request.data.get("sample_source", "BLOOD")
+        use_cs_id = request.data.get("use_case_sample_id")
         
-        if not original_cs_id or not target_stage:
-            raise ValidationError("original_case_sample_id and target_stage required")
+        if not original_cs_id:
+            raise ValidationError("original_case_sample_id required")
         
         original_cs = case.case_samples.filter(id=original_cs_id).first()
         if not original_cs:
             raise NotFound("CaseSample not found")
+
+        # ── 方式二：用该男性的其他样本做 —— 激活目标样本进入前处理待做，原失败样本保持显示并失活 ──
+        if use_cs_id:
+            target_cs = case.case_samples.filter(id=use_cs_id).exclude(id=original_cs.id).first()
+            if not target_cs:
+                raise ValidationError("use_case_sample_id not found in this case")
+            with transaction.atomic():
+                target_cs.reactivated = True
+                target_cs.workflow_stage = "PRE_PROCESSING"
+                target_cs.save(update_fields=["reactivated", "workflow_stage", "updated_at"])
+                if target_cs.sample and target_cs.sample.status == "PRE_PROCESSED":
+                    target_cs.sample.status = "RECEIVED"
+                    target_cs.sample.save(update_fields=["status", "updated_at"])
+                original_cs.is_active = False
+                original_cs.save(update_fields=["is_active"])
+                WorkflowLog.objects.create(
+                    case_sample=target_cs, stage="PRE_PROCESSING", action="REACTIVATE",
+                    operator=request.user,
+                    note=f"重做：由 {original_cs.test_sample_id or original_cs.sample_id} 激活进入前处理"
+                )
+                case.update_status()
+            return Response(CaseSampleSerializer(target_cs).data, status=201)
         
         # 检查血液管数
         if sample_source in ("BLOOD", "DBS"):
@@ -792,8 +816,16 @@ class CaseViewSet(viewsets.ModelViewSet):
             ).order_by("-created_at").first()
             if not pp_sample or pp_sample.aliquot_tubes <= 0:
                 raise ValidationError("No remaining blood tubes available")
+            before_tubes = pp_sample.aliquot_tubes
             pp_sample.aliquot_tubes = F("aliquot_tubes") - 1
             pp_sample.save(update_fields=["aliquot_tubes"])
+            if pp_sample.role == "MOTHER":
+                from .models import NipptPlasmaTubeLog
+                NipptPlasmaTubeLog.objects.create(
+                    case=case, case_sample=original_cs,
+                    before_count=before_tubes, after_count=max(0, before_tubes - 1),
+                    reason="重做使用", operator=request.user,
+                )
         
         max_n = CaseSample.objects.filter(redo_of=original_cs).aggregate(m=Max("redo_count"))["m"]
         next_n = (max_n or 0) + 1
@@ -804,7 +836,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                 sample_type=original_cs.sample.sample_type,
                 panel=case.panel, patient_name=original_cs.sample.patient_name,
                 patient_sex=original_cs.sample.patient_sex,
-                status="REGISTERED", site=case.site,
+                status="RECEIVED", site=case.site,
                 collection_date=timezone.now().date(),
                 receipt_date=timezone.now().date(),
                 receipt_time=timezone.now().time(),
@@ -1268,7 +1300,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         STATUS_MAP = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
             "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
             "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
-            "COMPLETED":"已完成","HAS_FAILURE":"有失败","REJECTED":"已拒收","CANCELLED":"已取消"}
+            "COMPLETED":"已完成","HAS_FAILURE":"有失败","HAS_RESAMPLE":"有重采","REJECTED":"已拒收","CANCELLED":"已取消"}
 
         if dim == "sales_person":
             rows = qs.values("sales_person").annotate(n=Count("id")).order_by("-n")
@@ -1534,7 +1566,12 @@ def register_redo_samples(case_sample, target_stage, new_cs, operator, sample_so
     )
     logs = []
 
-    if target_stage == "EXTRACTION":
+    if target_stage == "PRE_PROCESSING":
+        # 重做回前处理：不预建记录（样本经 sample.status=RECEIVED 出现在前处理待做列表），
+        # 由实验人员实际建批次时录入；主流程已写 REDO 日志。reactivated 标志在入批次时清除。
+        pass
+
+    elif target_stage == "EXTRACTION":
         pp = NipptPreProcessingSample.objects.create(
             batch=_find_batch(NipptPreProcessingSample, NipptPreProcessingBatch),
             experiment_sample_type=sample_source, aliquot_tubes=1, **base)
@@ -1667,16 +1704,21 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
         # - DRAFT/IN_PROGRESS: exclude ALL (being actively processed)
         # - COMPLETED+PASS: exclude (successfully processed)
         # - COMPLETED+FAIL: NOT excluded (allow re-processing)
+        # 被重做激活的样本（reactivated）即使进过批次，也要重新出现在前处理待处理列表
+        reactivated_ids = set(
+            str(x) for x in CaseSample.objects.filter(reactivated=True).values_list("id", flat=True)
+        )
         excluded_ids = set()
         all_batches = NipptPreProcessingBatch.objects.all().prefetch_related("samples")
         for b in all_batches:
             for sp in b.samples.all():
                 if not sp.case_sample_ids:
                     continue
+                ids = [i for i in sp.case_sample_ids if i not in reactivated_ids]
                 if b.status in ("DRAFT", "IN_PROGRESS"):
-                    excluded_ids.update(sp.case_sample_ids)
+                    excluded_ids.update(ids)
                 elif b.status == "COMPLETED" and sp.qc_status == "PASS":
-                    excluded_ids.update(sp.case_sample_ids)
+                    excluded_ids.update(ids)
 
         qs = CaseSample.objects.filter(
             sample__status="RECEIVED"

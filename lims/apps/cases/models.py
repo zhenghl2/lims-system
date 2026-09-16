@@ -27,6 +27,7 @@ class Case(models.Model):
         REPORT_DRAFT = "REPORT_DRAFT", "报告草稿"
         COMPLETED = "COMPLETED", "已完成"
         HAS_FAILURE = "HAS_FAILURE", "有失败"
+        HAS_RESAMPLE = "HAS_RESAMPLE", "有重采"
         CANCELLED = "CANCELLED", "已取消"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -135,9 +136,20 @@ class Case(models.Model):
         if not active.exists():
             return "REGISTERED"
 
-        if active.filter(workflow_stage__endswith="_FAILED").exists():
+        # 有待签收的重采样本 → 有重采（重采样本被签收后自动转具体进度）
+        if self.case_samples.filter(resample_of__isnull=False, sample__status="REGISTERED").exists():
+            return "HAS_RESAMPLE"
+
+        # 已被有效重采处理的原失败样本不再压状态（重采样本本身被拒收的不算已处理）
+        resampled_origin_ids = set(
+            self.case_samples.filter(resample_of__isnull=False)
+            .exclude(sample__status="REJECTED")
+            .values_list("resample_of_id", flat=True)
+        )
+        unhandled_failed = active.filter(workflow_stage__endswith="_FAILED").exclude(id__in=resampled_origin_ids)
+        if unhandled_failed.exists():
             return "HAS_FAILURE"
-        stages = [cs.workflow_stage for cs in active if cs.workflow_stage]
+        stages = [cs.workflow_stage for cs in active if cs.id not in resampled_origin_ids and cs.workflow_stage]
         if stages and all(s == "COMPLETED" for s in stages):
             return "COMPLETED"
         for stage in WORKFLOW_ORDER[:-1]:
@@ -293,6 +305,10 @@ class CaseSample(models.Model):
     )
     workflow_stage = models.CharField(max_length=30, default="REGISTERED", db_index=True)
     is_active = models.BooleanField(default=True)
+    reactivated = models.BooleanField(
+        default=False,
+        help_text="重做激活标志：用其他样本重做时置True，出现在前处理待做列表，进入前处理批次后自动清除"
+    )
     priority = models.IntegerField(default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -989,3 +1005,25 @@ class WorkflowLog(models.Model):
     class Meta:
         db_table = "nippt_workflow_logs"
         ordering = ["-created_at"]
+
+
+class NipptPlasmaTubeLog(models.Model):
+    """孕妇血浆管数变动台账（前处理建档/提取使用/质控使用/重做使用 自动记录）"""
+    case = models.ForeignKey(Case, on_delete=models.CASCADE, related_name="plasma_tube_logs")
+    case_sample = models.ForeignKey(
+        CaseSample, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="plasma_tube_logs"
+    )
+    before_count = models.PositiveSmallIntegerField(default=0)
+    after_count = models.PositiveSmallIntegerField(default=0)
+    reason = models.CharField(max_length=50)
+    batch_number = models.CharField(max_length=30, blank=True, default="")
+    operator = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        db_table = "nippt_plasma_tube_logs"
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{self.case.case_number} {self.before_count}->{self.after_count} ({self.reason})"

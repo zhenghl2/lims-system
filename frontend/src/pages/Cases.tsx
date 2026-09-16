@@ -22,14 +22,14 @@ const STATUS_COLORS: Record<string, string> = {
   PRE_PROCESSING: "orange", EXTRACTION: "gold", LIBRARY_PREP: "purple",
   POOLING: "magenta", HYB_SEQ: "cyan", BIOINFO: "geekblue",
   REPORT_DRAFT: "lime", IN_PROCESS: "orange", COMPLETED: "green",
-  REPORTED: "cyan", REJECTED: "red", HAS_FAILURE: "red",
+  REPORTED: "cyan", REJECTED: "red", HAS_FAILURE: "red", HAS_RESAMPLE: "orange",
 };
 const STATUS_DISPLAY: Record<string, string> = {
   REGISTERED: "已登记", RECEIVING: "接收中", RECEIVED: "已签收",
   PRE_PROCESSING: "前处理", EXTRACTION: "提取中", LIBRARY_PREP: "建库中",
   POOLING: "Pooling", HYB_SEQ: "测序中", BIOINFO: "生信中",
   REPORT_DRAFT: "报告草稿", IN_PROCESS: "处理中", COMPLETED: "已完成",
-  REPORTED: "已报告", HAS_FAILURE: "有失败", REJECTED: "已拒收",
+  REPORTED: "已报告", HAS_FAILURE: "有失败", HAS_RESAMPLE: "有重采", REJECTED: "已拒收",
 };
 
 const fmtDate = (v: string | null | undefined) => {
@@ -97,13 +97,27 @@ export default function Cases() {
     try {
       await (casesApi as any).redo(redoTarget.caseId, {
         original_case_sample_id: redoTarget.csId,
-        target_stage: redoTarget.targetStage,
+        target_stage: "PRE_PROCESSING",
         sample_source: redoTarget.sampleSource,
       });
-      message.success("重做已创建");
+      message.success("重做已创建，请到前处理待处理列表查看");
       setRedoOpen(false);
       if (selectedCase) { const r = await casesApi.get(selectedCase.id); setSelectedCase(r.data); }
     } catch (e: any) { message.error(e?.response?.data?.detail || "重做失败"); }
+  };
+
+  // 方式二：用其他样本做 —— 激活目标样本进入前处理待做
+  const doRedoUse = async (useCsId: string) => {
+    if (!redoTarget) return;
+    try {
+      await (casesApi as any).redo(redoTarget.caseId, {
+        original_case_sample_id: redoTarget.csId,
+        use_case_sample_id: useCsId,
+      });
+      message.success("已激活该样本，进入前处理待处理列表");
+      setRedoOpen(false);
+      if (selectedCase) { const r = await casesApi.get(selectedCase.id); setSelectedCase(r.data); }
+    } catch (e: any) { message.error(e?.response?.data?.detail || "激活失败"); }
   };
 
   const toggleHistory = async (csId: string) => {
@@ -470,12 +484,28 @@ export default function Cases() {
                     ["报告截止", selectedCase.expected_completion || "-"],
                   ];
                   return (
+                    <>
                     <Descriptions bordered size="small" column={2}>
                       {items.map(([k, v]) => (
                         <Descriptions.Item key={k} label={k} span={1}>{show(v)}</Descriptions.Item>
                       ))}
                       <Descriptions.Item label="备注" span={2}>{show((selectedCase as any).notes)}</Descriptions.Item>
                     </Descriptions>
+                    {((selectedCase as any).plasma_tube_logs || []).length > 0 && (
+                      <div style={{ marginTop: 8, padding: 8, background: "#fff7e6", border: "1px solid #ffd591", borderRadius: 4, fontSize: 12 }}>
+                        <Text strong>🩸 孕妇血浆管数：{(selectedCase as any).plasma_tube_logs.slice(-1)[0]?.after ?? "-"} 管</Text>
+                        <div style={{ marginTop: 4, color: "#888", fontSize: 11, lineHeight: "18px" }}>
+                          {(selectedCase as any).plasma_tube_logs.map((l: any, i: number) => (
+                            <div key={i}>
+                              {l.time} {l.reason}：{l.before} → {l.after} 管
+                              {l.batch_number ? `（${l.batch_number}）` : ""}
+                              {l.operator ? ` · ${l.operator}` : ""}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    </>
                   );
                 })()}
               </Collapse.Panel>
@@ -520,16 +550,24 @@ export default function Cases() {
                     {cs.resample_of && <Badge count={`R${cs.resample_number}`} color="orange" />}
                     {cs.redo_count && <Badge count={`T${cs.redo_count}`} color="cyan" />}
                     {(cs.workflow_stage || "").endsWith("_FAILED") && (
-                      <Button size="small" danger onClick={() => {
-                        setRedoTarget({
-                          caseId: selectedCase!.id, csId: cs.id,
-                          testSampleId: cs.test_sample_id || cs.sample_id,
-                          patientName: cs.patient_name,
-                          failedStage: cs.workflow_stage,
-                          targetStage: "", sampleSource: "BLOOD"
-                        });
-                        setRedoOpen(true);
-                      }}>重做</Button>
+                      <Space size={4}>
+                        <Button size="small" danger onClick={() => {
+                          setRedoTarget({
+                            caseId: selectedCase!.id, csId: cs.id,
+                            testSampleId: cs.test_sample_id || cs.sample_id,
+                            patientName: cs.patient_name,
+                            role: cs.role,
+                            failedStage: cs.workflow_stage,
+                            targetStage: "PRE_PROCESSING",
+                            sampleSource: cs.sample_source === "DBS" ? "DBS" : (cs.sample_source || "BLOOD")
+                          });
+                          setRedoOpen(true);
+                        }}>重做</Button>
+                        <Button size="small" danger onClick={() => doResample(selectedCase!.id, cs.id)}>重采</Button>
+                      </Space>
+                    )}
+                    {cs.plasma_tubes != null && (
+                      <Tag color="red" style={{fontSize:11}}>🩸 血浆 {cs.plasma_tubes} 管</Tag>
                     )}
                   </Space>
                   <Tag color={STATUS_COLORS[cs.sample_status]}>
@@ -660,41 +698,70 @@ export default function Cases() {
       </Drawer>
 
       {/* Redo Modal */}
-      <Modal title="重做样本" open={redoOpen} onCancel={() => setRedoOpen(false)} onOk={doRedo} okText="确认重做">
-        {redoTarget && (
-          <>
-            <p>原样本: {redoTarget.testSampleId} ({redoTarget.patientName})</p>
-            <p>失败环节: {redoTarget.failedStage}</p>
-            <p>目标环节:{" "}
-              <Select value={redoTarget.targetStage || undefined} style={{width:200}}
-                onChange={(v) => setRedoTarget({...redoTarget, targetStage: v})}
-                options={[
-                  {label:"EXTRACTION 核酸提取",value:"EXTRACTION"},
-                  {label:"LIBRARY_PREP 文库构建",value:"LIBRARY_PREP"},
-                  {label:"POOLING 定量Pooling",value:"POOLING"},
-                  {label:"HYB_SEQ 杂交测序",value:"HYB_SEQ"},
-                  {label:"BIOINFO 生物信息",value:"BIOINFO"},
-                ]} />
-            </p>
-            <p>样本类型:{" "}
-              <Select value={redoTarget.sampleSource} style={{width:200}}
-                onChange={(v) => setRedoTarget({...redoTarget, sampleSource: v})}
-                options={[
-                  {label:"血液 BLOOD",value:"BLOOD"},
-                  {label:"毛发 HAIR",value:"HAIR"},
-                  {label:"口拭子 SWAB",value:"SWAB"},
-                  {label:"血痕 DBS",value:"DBS"},
-                  {label:"指甲 NAIL",value:"NAIL"},
-                  {label:"精液 SEMEN",value:"SEMEN"},
-                  {label:"胡须 BEARD",value:"BEARD"},
-                  {label:"牙线 FLOSS",value:"FLOSS"},
-                  {label:"精斑 SEMSTAIN",value:"SEMSTAIN"},
-                  {label:"口香糖 GUM",value:"GUM"},
-                ]} />
-            </p>
-            <p>新PT编号预览: <Text code>{redoTarget.testSampleId?.replace(/_?R\d+/, "")}_T{Math.max(1, ((selectedCase?.case_samples || []).filter((c:any) => c.redo_of === redoTarget.csId).length) + 1)}</Text></p>
-          </>
-        )}
+      <Modal title="重做样本" open={redoOpen} onCancel={() => setRedoOpen(false)} onOk={doRedo} okText="确认重做" width={560}>
+        {redoTarget && (() => {
+          const siblings = (selectedCase?.case_samples || []).filter((c: any) =>
+            c.id !== redoTarget.csId &&
+            c.role === redoTarget.role &&
+            c.patient_name === redoTarget.patientName &&
+            c.sample_status !== "REJECTED" &&
+            c.workflow_stage !== "COMPLETED"
+          );
+          const typeLabels: Record<string, string> = {
+            BLOOD: "血液", DBS: "血痕", HAIR: "毛发", NAIL: "指甲", SWAB: "口拭子",
+            SEMEN: "精液", TOOTHBRUSH: "牙刷", CIGARETTE: "烟头", BOTTLE: "水瓶",
+            BEARD: "胡须", FLOSS: "牙线", SEMSTAIN: "精斑", GUM: "口香糖",
+          };
+          const stageLabels: Record<string, string> = {
+            REGISTERED: "已登记", RECEIVED: "已签收", PRE_PROCESSING: "前处理",
+            EXTRACTION: "提取", LIBRARY_PREP: "建库", POOLING: "Pooling",
+            HYB_SEQ: "测序", BIOINFO: "生信", PRE_PROCESSED: "已前处理",
+          };
+          return (
+            <>
+              <p>原样本: <Text code>{redoTarget.testSampleId}</Text> ({redoTarget.patientName})</p>
+              <p>失败环节: <Tag color="red">{redoTarget.failedStage}</Tag></p>
+              <p>重做目标: <Tag color="blue">前处理</Tag> <Text type="secondary">（重新进入前处理待处理列表）</Text></p>
+              <p>样本类型:{" "}
+                <Select value={redoTarget.sampleSource} style={{width:200}}
+                  onChange={(v) => setRedoTarget({...redoTarget, sampleSource: v})}
+                  options={[
+                    {label:"血液 BLOOD",value:"BLOOD"},
+                    {label:"毛发 HAIR",value:"HAIR"},
+                    {label:"口拭子 SWAB",value:"SWAB"},
+                    {label:"血痕 DBS",value:"DBS"},
+                    {label:"指甲 NAIL",value:"NAIL"},
+                    {label:"精液 SEMEN",value:"SEMEN"},
+                    {label:"胡须 BEARD",value:"BEARD"},
+                    {label:"牙线 FLOSS",value:"FLOSS"},
+                    {label:"精斑 SEMSTAIN",value:"SEMSTAIN"},
+                    {label:"口香糖 GUM",value:"GUM"},
+                    {label:"牙刷 TOOTHBRUSH",value:"TOOTHBRUSH"},
+                    {label:"烟头 CIGARETTE",value:"CIGARETTE"},
+                    {label:"水瓶 BOTTLE",value:"BOTTLE"},
+                  ]} />
+              </p>
+              <p>新PT编号预览: <Text code>{redoTarget.testSampleId?.replace(/(_R\d+|_T\d+)$/, "")}_T{Math.max(1, ((selectedCase?.case_samples || []).filter((c:any) => c.redo_of === redoTarget.csId).length) + 1)}</Text></p>
+              {siblings.length > 0 && (
+                <div style={{ marginTop: 8, padding: 8, background: "#f6ffed", border: "1px solid #b7eb8f", borderRadius: 4 }}>
+                  <Text strong style={{ fontSize: 12 }}>或用该男性的其他样本做（点击"激活"进入前处理待做）：</Text>
+                  <div style={{ marginTop: 6 }}>
+                    {siblings.map((c: any) => (
+                      <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px dashed #eee" }}>
+                        <Space size={6}>
+                          <Tag color="blue" style={{ fontSize: 11 }}>{typeLabels[c.sample_source] || c.sample_source || "?"}</Tag>
+                          <Text code style={{ fontSize: 11 }}>{c.test_sample_id || c.sample_id}</Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>{stageLabels[c.workflow_stage] || c.workflow_stage}</Text>
+                        </Space>
+                        <Button size="small" type="primary" ghost onClick={() => doRedoUse(c.id)}>激活</Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          );
+        })()}
       </Modal>
     </div>
   );

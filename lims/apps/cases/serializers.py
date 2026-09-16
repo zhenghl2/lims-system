@@ -6,7 +6,7 @@ from rest_framework import serializers
 from django.utils import timezone
 import datetime
 import re
-from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample
+from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample, NipptPlasmaTubeLog
 
 
 class CaseSampleSerializer(serializers.ModelSerializer):
@@ -23,6 +23,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
     gender_info = serializers.CharField(source="sample.gender_info", read_only=True, allow_null=True, allow_blank=True)
     patient_dob = serializers.CharField(source="sample.patient_dob", read_only=True, allow_null=True, allow_blank=True)
     last_menstrual_period = serializers.CharField(source="sample.last_menstrual_period", read_only=True, allow_null=True, allow_blank=True)
+    plasma_tubes = serializers.SerializerMethodField()
 
     class Meta:
         model = CaseSample
@@ -41,6 +42,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
             "case_source",
             "collection_date", "fedex_no", "gender_info",
             "patient_dob", "last_menstrual_period",
+            "plasma_tubes",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at", "received_at"]
@@ -52,6 +54,15 @@ class CaseSampleSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.receipt_photo.url)
             return obj.receipt_photo.url
         return None
+
+    def get_plasma_tubes(self, obj):
+        """孕妇样本剩余血浆管数（取最新前处理记录）"""
+        if obj.role != "MOTHER":
+            return None
+        rec = NipptPreProcessingSample.objects.filter(
+            case_sample_ids__contains=[str(obj.id)]
+        ).order_by("-created_at").first()
+        return rec.aliquot_tubes if rec else None
 
 
 class CaseListSerializer(serializers.ModelSerializer):
@@ -91,7 +102,7 @@ class CaseListSerializer(serializers.ModelSerializer):
         M = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
              "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
              "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
-             "COMPLETED":"已完成","HAS_FAILURE":"有失败","REJECTED":"已拒收","CANCELLED":"已取消"}
+             "COMPLETED":"已完成","HAS_FAILURE":"有失败","HAS_RESAMPLE":"有重采","REJECTED":"已拒收","CANCELLED":"已取消"}
         return M.get(st, st)
 
     def get_mother_name(self, obj):
@@ -114,7 +125,7 @@ class CaseListSerializer(serializers.ModelSerializer):
         M = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
              "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
              "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
-             "COMPLETED":"已完成","HAS_FAILURE":"有失败","REJECTED":"已拒收","CANCELLED":"已取消"}
+             "COMPLETED":"已完成","HAS_FAILURE":"有失败","HAS_RESAMPLE":"有重采","REJECTED":"已拒收","CANCELLED":"已取消"}
         return M.get(st, st)
 
     def get_can_redo(self, obj):
@@ -187,6 +198,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
     all_samples_received = serializers.BooleanField(read_only=True)
     registration_url = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
+    plasma_tube_logs = serializers.SerializerMethodField()
 
     class Meta:
         model = Case
@@ -202,6 +214,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
             "registration_token", "registration_url",
             "case_samples", "site", "created_by",
             "created_at", "updated_at", "mother_name", "can_redo", "case_source",
+            "plasma_tube_logs",
         ]
         read_only_fields = [
             "id", "case_number", "pt_number", "registration_token", "created_at", "updated_at",
@@ -214,6 +227,22 @@ class CaseDetailSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(f"/register/{obj.registration_token}/")
         return None
 
+    def get_plasma_tube_logs(self, obj):
+        """孕妇血浆管数变动台账（时间/原因/前后值）"""
+        def fmt(dt):
+            if not dt:
+                return ""
+            return timezone.localtime(dt).strftime("%m-%d %H:%M")
+        logs = obj.plasma_tube_logs.select_related("operator").order_by("created_at")[:200]
+        return [{
+            "time": fmt(l.created_at),
+            "reason": l.reason,
+            "before": l.before_count,
+            "after": l.after_count,
+            "batch_number": l.batch_number or "",
+            "operator": (l.operator.username if l.operator else ""),
+        } for l in logs]
+
     def get_status(self, obj):
         return obj.computed_status
 
@@ -222,7 +251,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
         M = {"REGISTERED":"已登记","RECEIVED":"已签收","PRE_PROCESSING":"前处理",
              "EXTRACTION":"提取中","LIBRARY_PREP":"建库中","POOLING":"Pooling",
              "HYB_SEQ":"测序中","BIOINFO":"生信中","REPORT_DRAFT":"报告草稿",
-             "COMPLETED":"已完成","HAS_FAILURE":"有失败","REJECTED":"已拒收","CANCELLED":"已取消"}
+             "COMPLETED":"已完成","HAS_FAILURE":"有失败","HAS_RESAMPLE":"有重采","REJECTED":"已拒收","CANCELLED":"已取消"}
         return M.get(st, st)
 
     def get_mother_name(self, obj):
@@ -812,8 +841,16 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                             matching.append(cid)
                     kwargs["case_sample_ids"] = matching
                 NipptPreProcessingSample.objects.create(**kwargs)
+                # 孕妇建档台账（初始管数入账）
+                if gdata["category"] == "FEMALE_BLOOD":
+                    NipptPlasmaTubeLog.objects.create(
+                        case=gdata["case"],
+                        case_sample_id=gdata["ids"][0] if gdata["ids"] else None,
+                        before_count=0, after_count=kwargs.get("aliquot_tubes", 0),
+                        reason="前处理建档", batch_number=batch_number, operator=request.user,
+                    )
 
-            CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="PRE_PROCESSING")
+            CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="PRE_PROCESSING", reactivated=False)
             from .models import WorkflowLog, sync_case_status_for_samples
             WorkflowLog.objects.bulk_create([
                 WorkflowLog(case_sample_id=cid, stage="PRE_PROCESSING", action="ENTER", batch_number=batch_number)
@@ -962,7 +999,9 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                 groups[key]["ids"].append(str(cs.id))
             for (_, name, cat), gdata in groups.items():
                 pp_sample = None
-                for pp in NipptPreProcessingSample.objects.filter(batch__status="COMPLETED", qc_status="PASS"):
+                for pp in NipptPreProcessingSample.objects.filter(
+                    batch__status="COMPLETED", qc_status="PASS"
+                ).order_by("-created_at"):
                     if pp.case_sample_ids and any(cid in pp.case_sample_ids for cid in gdata["ids"]):
                         pp_sample = pp; break
                 kwargs = {"batch": batch, "case": gdata["case"], "patient_name": name,
@@ -980,6 +1019,13 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                         operator=request.user)
                 if pp_sample:
                     NipptPreProcessingSample.objects.filter(id=pp_sample.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
+                    if pp_sample.role == "MOTHER":
+                        NipptPlasmaTubeLog.objects.create(
+                            case=pp_sample.case,
+                            case_sample_id=(pp_sample.case_sample_ids or [None])[0],
+                            before_count=pp_sample.aliquot_tubes, after_count=max(0, pp_sample.aliquot_tubes - 1),
+                            reason="提取使用", batch_number=batch.batch_number, operator=request.user,
+                        )
             if qc_sample_id:
                 qc = NipptPreProcessingSample.objects.filter(id=qc_sample_id).first()
                 if qc:
@@ -987,6 +1033,12 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                         role="MOTHER", category="FEMALE_BLOOD", case_sample_ids=qc.case_sample_ids,
                         source_preprocessing_sample_id=qc.id, aliquot_tubes=qc.aliquot_tubes, is_qc=True)
                     NipptPreProcessingSample.objects.filter(id=qc.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
+                    NipptPlasmaTubeLog.objects.create(
+                        case=qc.case,
+                        case_sample_id=(qc.case_sample_ids or [None])[0],
+                        before_count=qc.aliquot_tubes, after_count=max(0, qc.aliquot_tubes - 1),
+                        reason="质控使用", batch_number=batch.batch_number, operator=request.user,
+                    )
             # 进入提取批次：更新工作流阶段（失败重处理样本恢复"提取中"显示）
             if case_sample_ids:
                 CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="EXTRACTION")
