@@ -209,18 +209,16 @@ export default function NiptThaiReport() {
       }
       // 格式校验（防传混）
       const colSet = new Set(parsed.cols.map(c => c.toLowerCase().replace(/[ _]/g, "")));
+      const hasResultCols = colSet.has("resultfilter") || colSet.has("zscore21") || colSet.has("t21");
+      const hasPatientCols = colSet.has("patientname") || colSet.has("twintype");
       if (side === "result") {
-        const looksResult = colSet.has("resultfilter") || colSet.has("zscore21") || colSet.has("t21");
-        const looksPatient = colSet.has("patientname") || colSet.has("accessionid");
-        if (!looksResult || looksPatient) {
-          message.error(`「${file.name}」看起来不是结果表${looksPatient ? "（它更像样本信息表，是不是传混了？）" : "（缺少 ResultFilter 列）"}`);
+        if (!hasResultCols || hasPatientCols) {
+          message.error(`「${file.name}」看起来不是结果表${hasPatientCols ? "（它更像样本信息表，是不是传混了？）" : "（缺少 ResultFilter 列）"}`);
           return false;
         }
       } else {
-        const looksPatient = colSet.has("patientname") || colSet.has("accessionid") || colSet.has("twin type") || colSet.has("twintype");
-        const looksResult = colSet.has("resultfilter") || colSet.has("zscore21");
-        if (!looksPatient || looksResult) {
-          message.error(`「${file.name}」看起来不是样本信息表${looksResult ? "（它更像结果表，是不是传混了？）" : "（缺少 PatientName/AccessionID 列）"}`);
+        if (!hasPatientCols || hasResultCols) {
+          message.error(`「${file.name}」看起来不是样本信息表${hasResultCols ? "（它更像结果表，是不是传混了？）" : "（缺少 PatientName 列）"}`);
           return false;
         }
       }
