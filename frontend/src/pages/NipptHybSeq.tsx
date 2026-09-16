@@ -61,7 +61,7 @@ const CHIP_OPTIONS:Record<string,{value:string;label:string}[]> = {
   SIKUN_2000:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}],
   MGI_G99:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}],
 };
-const READ_TYPE_OPTIONS = [{value:"SE75",label:"SE75"},{value:"SE100",label:"SE100"},{value:"PE150",label:"PE150"}];
+const READ_TYPE_OPTIONS = [{value:"PE75",label:"PE75"},{value:"PE100",label:"PE100"},{value:"PE150",label:"PE150"}];
 const STEPS = [
   {key:"clean_equip",label:"设备准备"},{key:"reagent_prep",label:"试剂准备"},
   {key:"sample_prep",label:"样本准备"},{key:"on_machine",label:"上机测序"},{key:"cleanup",label:"清洁台面"},
