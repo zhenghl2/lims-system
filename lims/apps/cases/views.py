@@ -1200,7 +1200,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         stage_detail = {}
         for stage in ["REGISTERED","RECEIVED","PRE_PROCESSING","EXTRACTION",
                        "LIBRARY_PREP","POOLING","HYB_SEQ","BIOINFO","REPORT_DRAFT","COMPLETED"]:
-            css = all_css.filter(workflow_stage=stage, is_active=True).select_related("case","sample")[:20]
+            css = all_css.filter(workflow_stage=stage, is_active=True).select_related("case","sample")[:100]
             stage_detail[stage] = [{
                 "case_id": str(cs.case_id), "case_number": cs.case.case_number,
                 "pt_number": cs.case.pt_number or "", "patient_name": cs.sample.patient_name or "",
@@ -1208,7 +1208,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                 "updated_at": str(cs.updated_at),
             } for cs in css]
         # Rejected
-        rj = all_css.filter(sample__status="REJECTED").select_related("case","sample")[:20]
+        rj = all_css.filter(sample__status="REJECTED").select_related("case","sample")[:100]
         stage_detail["REJECTED"] = [{
             "case_id": str(cs.case_id), "case_number": cs.case.case_number,
             "patient_name": cs.sample.patient_name or "", "sample_source": cs.sample_source,
