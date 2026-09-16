@@ -319,12 +319,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     srcSamples.map(s => {
       const isF = (selectedBatch?.female_samples || []).some((f: any) => f.id === s.id);
       const res = (isF ? femaleResults : maleResults)[s.id] || {};
+      const qcFromRes = res.status === "fail" ? "FAIL" : res.status === "pass" ? "PASS" : s.qc_status;
       return { id: s.id, extraction_method: s.extraction_method, well_position: s.well_position,
         plasma_volume: s.plasma_volume,
         elution_volume: res.elution ?? s.elution_volume,
         dna_concentration: res.concentration ?? s.dna_concentration,
         aliquot_tubes: s.aliquot_tubes,
-        qc_status: s.qc_status, qc_note: s.qc_note };
+        qc_status: qcFromRes, qc_note: res.note ?? s.qc_note };
     });
 
   // 对比用直读版（服务器样本字段原值）
