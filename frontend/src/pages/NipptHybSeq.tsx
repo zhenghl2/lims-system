@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
   Space, Popconfirm, Select, Checkbox, Form, DatePicker, TimePicker, Radio, Tooltip } from "antd";
-import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import api from "../api/client";
 import dayjs from "dayjs";
@@ -214,6 +214,30 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       return Object.keys(acc).length === 0 ? undefined : acc;
     }
     return o === "" ? undefined : o;
+  };
+
+  // ── Index 列表 CSV 下载（SampleSheet 格式，参考 NIPT 上机测序）──
+  const handleDownloadCsv = () => {
+    if (!selectedBatch) return;
+    const all = [...(selectedBatch.female_samples||[]),...(selectedBatch.male_blood_samples||[]),...(selectedBatch.male_other_samples||[])];
+    const chip = selectedBatch.hyb_seq_data?.chip_number || selectedBatch.batch_number;
+    const header = "Sample_ID,Index1_i7,Index2_i5,Mismatch";
+    const rows = all.map((s:any, i:number) => {
+      const idxVal = s.index||String(i+1);
+      const idxNum = parseInt(idxVal)||0;
+      const padded = String(idxNum||"").padStart(3,"0");
+      const seq = INDEX_LOOKUP[padded] || {i7:"",i5:""};
+      const uploadId = chip+"_"+padded+"_"+(s.test_sample_id||"-");
+      return uploadId+","+seq.i7+","+seq.i5+",";
+    });
+    const csv = "\uFEFF" + header + "\n" + rows.join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "SampleSheet_" + selectedBatch.batch_number + ".csv";
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // 构建与保存一致的 hyb_seq_data（保存 / 完成前未保存检测共用）
@@ -435,7 +459,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
             {/* Index table — NIPT-style */}
             {selectedBatch.female_samples&&selectedBatch.female_samples.length>0&&(
-              <Card size="small" title={`📊 Index列表 — ${selectedBatch.sample_count} 样本`} style={{marginBottom:12}}>
+              <Card size="small" title={`📊 Index列表 — ${selectedBatch.sample_count} 样本`} style={{marginBottom:12}} extra={<Button size="small" icon={<DownloadOutlined/>} disabled={false} onClick={handleDownloadCsv}>下载CSV</Button>}>
                 <div style={{overflowX:"auto"}}>
                   <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,tableLayout:"fixed"}}>
                     <thead><tr>
