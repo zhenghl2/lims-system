@@ -1016,13 +1016,14 @@ class CaseViewSet(viewsets.ModelViewSet):
                 arrival_date=arrival_date,
                 collection_notes=final_notes,
             )
-            new_cs.test_sample_id = case.generate_test_sample_id(new_cs)
+            new_cs.test_sample_id = case.generate_test_sample_id(new_cs, resample_num=next_num)
             new_cs.save(update_fields=["test_sample_id"])
             # 备注同步案例级 Case.notes（签收页"登记备注"列与案例管理共用）
             if final_notes:
                 case.notes = (case.notes + "\n" if case.notes else "") + f"[重采] {final_notes}"
                 case.save(update_fields=["notes", "updated_at"])
 
+        case.update_status()
         return Response(CaseSampleSerializer(new_cs).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="upload-receipt-photo")
@@ -1624,7 +1625,7 @@ def register_redo_samples(case_sample, target_stage, new_cs, operator, sample_so
         WorkflowLog.objects.bulk_create(logs)
 
 
-def advance_batch(batch, next_stage, operator=None):
+def advance_batch(batch, next_stage, operator=None, failed_stage=None):
     passed, failed = [], []
     for s in batch.samples.all():
         if not s.case_sample_ids: continue
@@ -1632,7 +1633,7 @@ def advance_batch(batch, next_stage, operator=None):
         if s.qc_status == "PASS": passed.extend(ids)
         else: failed.extend(ids)
     if passed: update_wf(passed, next_stage, "COMPLETE", batch.batch_number, operator)
-    if failed: update_wf(failed, f"{next_stage}_FAILED", "FAIL", batch.batch_number, operator)
+    if failed: update_wf(failed, f"{failed_stage or next_stage}_FAILED", "FAIL", batch.batch_number, operator)
     # Sync Case status
     all_ids = set(passed + failed)
     if all_ids:
@@ -1801,6 +1802,7 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
                         case_sample__id__in=sp.case_sample_ids
                     ).update(status="PRE_PROCESSED", updated_at=timezone.now())
 
+        advance_batch(batch, "EXTRACTION", request.user, failed_stage="PRE_PROCESSING")
         return Response({"message": f"Batch {batch.batch_number} completed"})
 
     def destroy(self, request, *args, **kwargs):
@@ -1932,7 +1934,7 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
         if missing:
             raise ValidationError(f"请先保存{'、'.join(missing)}实验数据（实验照片+操作人+审核人）后再完成批次")
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        advance_batch(batch, "EXTRACTION", request.user)
+        advance_batch(batch, "LIBRARY_PREP", request.user, failed_stage="EXTRACTION")
         return Response({"message": f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
@@ -2034,7 +2036,7 @@ class NipptLibraryViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        advance_batch(batch, "LIBRARY_PREP", request.user)
+        advance_batch(batch, "POOLING", request.user, failed_stage="LIBRARY_PREP")
         return Response({"message": f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
@@ -2112,7 +2114,7 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        advance_batch(batch, "LIBRARY_PREP", request.user)
+        advance_batch(batch, "HYB_SEQ", request.user, failed_stage="POOLING")
         return Response({"message": f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
@@ -2195,7 +2197,7 @@ class NipptHybSeqViewSet(viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"message":"Already"}, status=400)
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
-        advance_batch(batch, "HYB_SEQ", request.user)
+        advance_batch(batch, "BIOINFO", request.user, failed_stage="HYB_SEQ")
         return Response({"message": f"Completed {batch.samples.count()} samples"})
 
     def destroy(self, request, *args, **kwargs):
@@ -2301,7 +2303,7 @@ class NipptBioinfoViewSet(viewsets.ModelViewSet):
 
         batch.status = "COMPLETED"
         batch.save(update_fields=["status", "updated_at"])
-        advance_batch(batch, "BIOINFO", request.user)
+        advance_batch(batch, "REPORT_DRAFT", request.user, failed_stage="BIOINFO")
         return Response({"message": f"Completed {batch.pairs.count()} pairs"})
 
     @action(detail=True, methods=["post"])
