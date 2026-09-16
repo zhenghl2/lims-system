@@ -986,6 +986,11 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                         role="MOTHER", category="FEMALE_BLOOD", case_sample_ids=qc.case_sample_ids,
                         source_preprocessing_sample_id=qc.id, aliquot_tubes=qc.aliquot_tubes, is_qc=True)
                     NipptPreProcessingSample.objects.filter(id=qc.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
+            # 进入提取批次：更新工作流阶段（失败重处理样本恢复"提取中"显示）
+            if case_sample_ids:
+                CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="EXTRACTION")
+                from .models import sync_case_status_for_samples
+                sync_case_status_for_samples(case_sample_ids)
         return batch
 
 
@@ -1094,6 +1099,11 @@ class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
                         case_sample_id=cid, stage="LIBRARY_PREP", action="ENTER",
                         batch_number=batch.batch_number, batch_sample_id=str(ls.id),
                         operator=request.user)
+            # 进入建库批次：更新工作流阶段（失败重处理样本恢复"建库中"显示）
+            if case_sample_ids:
+                CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="LIBRARY_PREP")
+                from .models import sync_case_status_for_samples
+                sync_case_status_for_samples(case_sample_ids)
         return batch
 
 
@@ -1242,6 +1252,11 @@ class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
                         case_sample_id=cid, stage="POOLING", action="ENTER",
                         batch_number=batch.batch_number, batch_sample_id=str(ps.id),
                         operator=request.user)
+            # 进入 Pooling 批次：更新工作流阶段（失败重处理样本恢复"Pooling"显示）
+            if case_sample_ids:
+                CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="POOLING")
+                from .models import sync_case_status_for_samples
+                sync_case_status_for_samples(case_sample_ids)
         return batch
 
 from .models import NipptHybSeqBatch, NipptHybSeqSample, WorkflowLog
@@ -1440,6 +1455,14 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
                             )
                 except (ValueError, NipptPoolingBatch.DoesNotExist):
                     continue
+            # 进入测序批次：更新工作流阶段（失败重处理样本恢复"测序中"显示）
+            _hs_ids = []
+            for _hs in batch.samples.all():
+                _hs_ids.extend(_hs.case_sample_ids or [])
+            if _hs_ids:
+                CaseSample.objects.filter(id__in=_hs_ids).update(workflow_stage="HYB_SEQ")
+                from .models import sync_case_status_for_samples as _sync_hs
+                _sync_hs(_hs_ids)
         return batch
 
 
@@ -1791,6 +1814,14 @@ class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
                 "cross_batch_count": cross_batch_count,
             }
             batch.save(update_fields=["bioinfo_data"])
+            # 进入生信批次：更新工作流阶段
+            _bi_ids = []
+            for _bs in NipptBioinfoSample.objects.filter(batch=batch):
+                _bi_ids.extend(_bs.case_sample_ids or [])
+            if _bi_ids:
+                CaseSample.objects.filter(id__in=_bi_ids).update(workflow_stage="BIOINFO")
+                from .models import sync_case_status_for_samples as _sync_bi
+                _sync_bi(_bi_ids)
 
         return batch
 
