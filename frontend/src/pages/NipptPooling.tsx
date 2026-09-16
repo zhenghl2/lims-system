@@ -9,7 +9,7 @@ import api from "../api/client";
 import dayjs from "dayjs";
 const { Text, Title } = Typography;
 
-const SAMPLE_TYPE_LABELS:Record<string,string>={BLOOD:"血液",DBS:"血痕",HAIR:"毛发",NAIL:"指甲",SWAB:"口拭子",SEMEN:"精液",TOOTHBRUSH:"牙刷",CIGARETTE:"烟头",BOTTLE:"水瓶"};
+const SAMPLE_TYPE_LABELS:Record<string,string>={BLOOD:"血液",DBS:"血痕",HAIR:"毛发",NAIL:"指甲",SWAB:"口拭子",SEMEN:"精液",TOOTHBRUSH:"牙刷",CIGARETTE:"烟头",BOTTLE:"水瓶",BEARD:"胡须",FLOSS:"牙线",SEMSTAIN:"精斑",GUM:"口香糖"};
 const DEFAULT_POOLING_AMOUNT=0;
 const YIELD_THRESHOLD=60;
 const DEFAULT_ELUTION=30;
