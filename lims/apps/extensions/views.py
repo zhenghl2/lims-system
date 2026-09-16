@@ -116,7 +116,9 @@ class ThaiReportBatchViewSet(viewsets.ModelViewSet):
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
             for f in sorted(report_dir.glob("*.docx")):
-                zf.write(str(f), f.name)
+                zf.write(str(f), "docx/" + f.name)
+            for f in sorted(report_dir.glob("*.pdf")):
+                zf.write(str(f), "pdf/" + f.name)
             summary = get_batch_dir(batch.id) / "{}-report_summary.csv".format(batch.name)
             if summary.exists():
                 zf.write(str(summary), summary.name)

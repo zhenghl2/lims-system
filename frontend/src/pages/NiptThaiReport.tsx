@@ -106,6 +106,7 @@ export default function NiptThaiReport() {
   const [patientTable, setPatientTable] = useState<ParsedTable | null>(() => draftCache?.patientTable || null);
   const [resultTable, setResultTable] = useState<ParsedTable | null>(() => draftCache?.resultTable || null);
   const [hoverKey, setHoverKey] = useState<string>("");
+  const lastAutoName = useRef<string>("");
   const [generating, setGenerating] = useState(false);
 
   // ── 预览 ──
@@ -222,6 +223,13 @@ export default function NiptThaiReport() {
           message.error(`「${file.name}」看起来不是样本信息表${looksResult ? "（它更像结果表，是不是传混了？）" : "（缺少 PatientName/AccessionID 列）"}`);
           return false;
         }
+      }
+      // 从文件名自动提取批次名（如 260904 / 20260904）；未手动改过时自动填
+      const m = file.name.match(/(20\d{6}|\d{6})/);
+      if (m) {
+        const extracted = m[1];
+        setName(prev => (!prev.trim() || prev === lastAutoName.current) ? extracted : prev);
+        lastAutoName.current = extracted;
       }
       if (side === "patient") { setPatientFile(file); setPatientTable(parsed); }
       else { setResultFile(file); setResultTable(parsed); }
@@ -341,7 +349,13 @@ export default function NiptThaiReport() {
     }));
 
   const previewRowClass = (side: "result" | "patient", row: Record<string, string>) => {
-    if (side === "result" && isNotProcessable(row["ResultFilter"] || "")) return { background: "#fffbe6" };
+    if (side !== "result") return {};
+    const rf = (row["ResultFilter"] || "").toUpperCase();
+    // 优先级：绿(FF<4%) > 黄(非PASS/NOCALL) > 灰(NOCALL)
+    const ff = parseFloat(String(row["FetalFraction"] || "").replace("%", ""));
+    if (!isNaN(ff) && ff < 4) return { background: "#f6ffed" };
+    if (isNotProcessable(rf)) return { background: "#fffbe6" };
+    if (rf.includes("NOCALL")) return { background: "#f5f5f5" };
     return {};
   };
 
@@ -447,7 +461,7 @@ export default function NiptThaiReport() {
           <Space>
             <FileTextOutlined /> {sourcePreview ? sourcePreview.title : (previewSide === "result" ? "结果表预览" : "样本信息表预览")}
             <Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>
-              黄底=不可出报告(ResultFilter)；红字=Z值超±3；红底=两表SampleID不匹配
+              绿底=FetalFraction&lt;4%；黄底=不可出报告；灰底=NOCALL；红字=Z值超±3；红底=SampleID不匹配
             </Text>
           </Space>
         }
