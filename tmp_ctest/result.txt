@@ -1,3 +1,0 @@
-SampleID	Option	ReportDate	ResultFilter	Zscore21	Zscore18	Zscore13	T21	T18	T13	FetalFraction	AccessionID
-AA_001	Basic	05 Sep 2026	PASS	1.2	-0.5	0.3	Low Risk	Low Risk	Low Risk	8.5%	ACC-PDF-001
-AA_002	Basic	05 Sep 2026	NOCALL	0.1	0.2	0.3	No Result	Low Risk	Low Risk	3.2%	ACC-PDF-002
