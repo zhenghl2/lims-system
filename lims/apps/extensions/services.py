@@ -293,26 +293,6 @@ def pick_template_key(context, option, national):
     return "basic"
 
 
-# ── PDF 转换 ──────────────────────────────────────────
-def convert_reports_to_pdf(report_dir):
-    """将目录内全部 docx 批量转 PDF（运行期依赖服务器 libreeoffice-writer-nogui）。"""
-    import subprocess
-    docx_files = sorted(Path(report_dir).glob("*.docx"))
-    if not docx_files:
-        return 0
-    try:
-        cmd = ["soffice", "--headless", "--norestore",
-               "-env:UserInstallation=file:///tmp/lo_profile",
-               "--convert-to", "pdf", "--outdir", str(report_dir)]
-        cmd += [str(f) for f in docx_files]
-        res = subprocess.run(cmd, timeout=900, capture_output=True)
-        if res.returncode != 0:
-            return -1
-        return len(list(Path(report_dir).glob("*.pdf")))
-    except Exception:  # noqa: BLE001
-        return -1
-
-
 # ── 主流程 ────────────────────────────────────────────
 def run_generation(batch: ThaiReportBatch):
     """执行生成：读两表 → 逐样本渲染 docx → 写明细与统计。"""
@@ -414,9 +394,6 @@ def run_generation(batch: ThaiReportBatch):
         items.append(item)
 
     ThaiReportItem.objects.bulk_create(items)
-
-    # 批量转 PDF（LibreOffice headless；失败不影响 docx）
-    convert_reports_to_pdf(report_dir)
 
     # 批次汇总 CSV（与脚本一致的列）
     summary_path = get_batch_dir(batch.id) / "{}-report_summary.csv".format(batch.name)
