@@ -80,7 +80,7 @@ class UserListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ["id", "employee_id", "username", "first_name", "last_name", "full_name"]
+        fields = ["id", "employee_id", "username", "first_name", "last_name", "full_name", "allowed_panels"]
         read_only_fields = fields
 
     allowed_panels = serializers.SerializerMethodField()

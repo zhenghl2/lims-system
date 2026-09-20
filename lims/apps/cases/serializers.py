@@ -1535,6 +1535,9 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     case_source = serializers.SerializerMethodField()
     result_display = serializers.CharField(source="get_result_display", read_only=True)
     qc_flag_display = serializers.CharField(source="get_qc_flag_display", read_only=True)
+    report_file_url = serializers.SerializerMethodField()
+    report_reviewer_name = serializers.CharField(source="report_reviewer.username", read_only=True, default=None)
+    report_auditor_name = serializers.CharField(source="report_auditor.username", read_only=True, default=None)
 
     class Meta:
         model = NipptBioinfoPair
@@ -1546,12 +1549,23 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             "mother_source_batch", "father_source_batch",
             "cpi", "cpi_combined", "result", "result_display",
             "note", "report_data",
+            "report_file", "report_file_url", "report_reviewer", "report_reviewer_name",
+            "report_auditor", "report_auditor_name", "report_note",
+            "report_reviewed_at", "report_audited_at",
             "qc_flag", "qc_flag_display",
             "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
             "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_report_file_url(self, obj):
+        if obj.report_file:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.report_file.url)
+            return obj.report_file.url
+        return None
 
     def get_mother_index(self, obj):
         return self._get_index(obj.mother_sample)
@@ -1646,13 +1660,14 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     pair_count = serializers.SerializerMethodField()
     completed_pair_count = serializers.SerializerMethodField()
+    reported_pair_count = serializers.SerializerMethodField()
     sample_count = serializers.SerializerMethodField()
 
     class Meta:
         model = NipptBioinfoBatch
         fields = [
             "id", "batch_number", "status", "status_display",
-            "pair_count", "completed_pair_count", "sample_count",
+            "pair_count", "completed_pair_count", "reported_pair_count", "sample_count",
             "created_by", "operator_name", "reviewer", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
@@ -1662,6 +1677,11 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
 
     def get_completed_pair_count(self, obj):
         return obj.pairs.exclude(result="").count() if hasattr(obj, 'pairs') else 0
+
+    def get_reported_pair_count(self, obj):
+        if not hasattr(obj, 'pairs'):
+            return 0
+        return obj.pairs.filter(report_file__isnull=False).exclude(report_file="").count()
 
     def get_sample_count(self, obj):
         return obj.samples.count() if hasattr(obj, 'samples') else 0

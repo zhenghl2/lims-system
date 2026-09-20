@@ -966,6 +966,14 @@ class NipptBioinfoPair(models.Model):
     note = models.TextField(blank=True, default="")
     report_data = models.JSONField(default=dict, blank=True)
 
+    # ── Reports 模块：报告文件 + 复核/审核（每配对一份报告）──
+    report_file = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True)
+    report_reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    report_auditor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    report_note = models.TextField(blank=True, default="")
+    report_reviewed_at = models.DateTimeField(null=True, blank=True)
+    report_audited_at = models.DateTimeField(null=True, blank=True)
+
     # QC Flag (optional)
     qc_flag = models.CharField(max_length=20, blank=True, default="", choices=QCFlag.choices, db_index=True)
 

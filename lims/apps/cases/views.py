@@ -2349,6 +2349,31 @@ class NipptBioinfoViewSet(viewsets.ModelViewSet):
         advance_batch(batch, "REPORT_DRAFT", request.user, failed_stage="BIOINFO")
         return Response({"message": f"Completed {batch.pairs.count()} pairs"})
 
+    @action(detail=True, methods=["post"], url_path="set-review")
+    def set_review(self, request, pk=None):
+        """Reports：复核/审核/报告备注（下拉选人 + 自动记录日期）"""
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        batch = self.get_object()
+        pair = batch.pairs.filter(id=request.data.get("pair_id")).first()
+        if not pair:
+            return Response({"error": "Pair not found"}, status=404)
+        act = request.data.get("action_type")
+        if act == "review":
+            rid = request.data.get("reviewer_id")
+            pair.report_reviewer = User.objects.filter(id=rid).first() if rid else None
+            pair.report_reviewed_at = timezone.now() if pair.report_reviewer else None
+            pair.save(update_fields=["report_reviewer", "report_reviewed_at", "updated_at"])
+        elif act == "audit":
+            aid = request.data.get("auditor_id")
+            pair.report_auditor = User.objects.filter(id=aid).first() if aid else None
+            pair.report_audited_at = timezone.now() if pair.report_auditor else None
+            pair.save(update_fields=["report_auditor", "report_audited_at", "updated_at"])
+        elif act == "note":
+            pair.report_note = (request.data.get("report_note") or "").strip()
+            pair.save(update_fields=["report_note", "updated_at"])
+        return Response(NipptBioinfoPairSerializer(pair, context={"request": request}).data)
+
     @action(detail=True, methods=["post"])
     def add_manual_pair(self, request, pk=None):
         batch = self.get_object()
