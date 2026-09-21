@@ -40,6 +40,7 @@ const SOURCE_OPTIONS = [
   { value: "泰国", label: "泰国" },
   { value: "巴西", label: "巴西" },
   { value: "巴西万基", label: "巴西万基" },
+  { value: "越南", label: "越南" },
   { value: "韩国", label: "韩国" },
   { value: "澳洲", label: "澳洲" },
   { value: "CYJ印度", label: "CYJ印度" },

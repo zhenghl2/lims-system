@@ -345,6 +345,7 @@ export default function Cases() {
           <Select.Option value="泰国">泰国</Select.Option>
           <Select.Option value="巴西">巴西</Select.Option>
           <Select.Option value="巴西万基">巴西万基</Select.Option>
+          <Select.Option value="越南">越南</Select.Option>
           <Select.Option value="韩国">韩国</Select.Option>
           <Select.Option value="澳洲">澳洲</Select.Option>
           <Select.Option value="CYJ印度">CYJ印度</Select.Option>
