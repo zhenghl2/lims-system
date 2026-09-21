@@ -889,7 +889,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                     "timestamp": str(cs.received_at), "batch_number": "",
                     "pt_number": cs.test_sample_id or cs.case.pt_number or "",
                     "receipt_photo_url": cs.receipt_photo.url if cs.receipt_photo else "",
-                    "received_by": cs.received_by.username if cs.received_by else "",
+                    "received_by": cs.received_by_name or (cs.received_by.username if cs.received_by else ""),
                     "condition": cs.receipt_condition or "OK",
                     "receipt_note": cs.receipt_note or "",
                 }]
