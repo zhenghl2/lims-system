@@ -340,6 +340,9 @@ export default function NiptSamples() {
       setFedexNo("");
       setFileMsg("");
       message.success(`Imported ${result.data.created_count} samples`);
+      if (result.data.skipped_rows?.length > 0) {
+        message.info(`已跳过 ${result.data.skipped_rows.length} 行 NIPPT（亲子样本，请在 NIPPT 登记页导入）`);
+      }
       // Trigger Excel download if provided
       if (result.data.excel_b64) {
         try {
@@ -368,7 +371,13 @@ export default function NiptSamples() {
           message.warning(`${detail.skipped_duplicates} duplicates skipped`);
         }
       } else if (detail.skipped_duplicates > 0) {
-        message.warning(`No new samples: ${detail.skipped_duplicates} duplicates skipped, ${detail.error_count || 0} errors`);
+        message.warning(
+          `无新样本：${detail.skipped_duplicates} 条已存在（重复跳过）`
+          + (detail.skipped_rows?.length ? `，另跳过 ${detail.skipped_rows.length} 行 NIPPT` : "")
+          + (detail.error_count ? `，${detail.error_count} 条失败` : "")
+        );
+      } else if (detail.skipped_rows?.length > 0) {
+        message.warning(`无可登记的无创样本：该文件 ${detail.skipped_rows.length} 行均为 NIPPT（亲子样本），请在 NIPPT 登记页导入`);
       } else {
         const errMsg = typeof detail?.error === 'object' ? JSON.stringify(detail.error) : (String(detail?.error || detail?.detail || "Import failed"));
         message.error(errMsg);
@@ -717,15 +726,18 @@ export default function NiptSamples() {
                   ref={fileInputRef}
                   style={{ display: "none" }}
                   multiple
-                  accept=".docx"
+                  accept=".docx,.xlsx"
                   onChange={(e) => {
                     const files = Array.from(e.target.files || []);
-                    const docxs = files.filter(f => f.name.toLowerCase().endsWith(".docx"));
-                    if (docxs.length === 0) {
-                      message.warning("No .docx files selected");
+                    const picked = files.filter(f => {
+                      const n = f.name.toLowerCase();
+                      return n.endsWith(".docx") || n.endsWith(".xlsx");
+                    });
+                    if (picked.length === 0) {
+                      message.warning("No .docx / .xlsx files selected");
                     } else {
-                      setFileList(docxs);
-                      setFileMsg("Selected " + docxs.length + " docx file(s)");
+                      setFileList(picked);
+                      setFileMsg("Selected " + picked.length + " file(s)");
                     }
                   }}
                 />
@@ -735,15 +747,18 @@ export default function NiptSamples() {
                   style={{ display: "none" }}
                   {...{ webkitdirectory: "", directory: "" } as any}
                   multiple
-                  accept=".docx"
+                  accept=".docx,.xlsx"
                   onChange={(e) => {
                     const files = Array.from(e.target.files || []);
-                    const docxs = files.filter(f => f.name.toLowerCase().endsWith(".docx") && !f.name.startsWith("~$"));
-                    if (docxs.length === 0) {
-                      message.warning("No .docx files found in folder");
+                    const picked = files.filter(f => {
+                      const n = f.name.toLowerCase();
+                      return (n.endsWith(".docx") || n.endsWith(".xlsx")) && !n.startsWith("~$");
+                    });
+                    if (picked.length === 0) {
+                      message.warning("No .docx / .xlsx files found in folder");
                     } else {
-                      setFileList(docxs);
-                      setFileMsg("Selected " + docxs.length + " docx file(s) from folder");
+                      setFileList(picked);
+                      setFileMsg("Selected " + picked.length + " file(s) from folder");
                     }
                   }}
                 />
@@ -760,7 +775,7 @@ export default function NiptSamples() {
           <Text type="secondary">
             {fileSource === "泰国"
               ? "Select a folder containing Thai NIPT registration PDF forms."
-              : "Select a folder or individual .docx files from Brazil NIPPT registrations."}
+              : "Brazil: select .docx registration forms, or a PLANILHA DE ENVIO .xlsx sheet (NIPPT rows inside are skipped automatically)."}
           </Text>
         </Form>
       </Modal>
@@ -783,8 +798,23 @@ export default function NiptSamples() {
             {importResult.skipped_duplicates > 0 && (
               <p><Text strong>Skipped (duplicates):</Text> <Tag color="orange">{importResult.skipped_duplicates}</Tag></p>
             )}
+            {importResult.skipped_rows?.length > 0 && (
+              <p><Text strong>Skipped (NIPPT 亲子行):</Text> <Tag color="blue">{importResult.skipped_rows.length}</Tag></p>
+            )}
             {importResult.error_count > 0 && (
               <p><Text strong>Errors:</Text> <Tag color="red">{importResult.error_count}</Tag></p>
+            )}
+            {importResult.row_errors?.length > 0 && (
+              <div style={{ marginTop: 6 }}>
+                <Text strong type="warning">未识别行（未登记）:</Text>
+                <div style={{ maxHeight: 120, overflow: "auto", marginTop: 4 }}>
+                  {importResult.row_errors.map((e: any, i: number) => (
+                    <div key={i} style={{ fontSize: 12, color: "#d46b08" }}>
+                      第 {e.row} 行：{e.test_item || "(empty)"} — {e.reason}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
             {importResult.excel_path && (
               <p><Text strong>Excel export:</Text> <Text code>{importResult.excel_path.split("/").pop()}</Text></p>

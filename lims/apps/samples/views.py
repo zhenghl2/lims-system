@@ -331,12 +331,24 @@ class SampleViewSet(viewsets.ModelViewSet):
                         dest.write(chunk)
                 pdf_paths.append(fpath)
 
-            # Extract data from each PDF (or DOCX for Brazil)
+            # Extract data from each uploaded file:
+            #   泰国            → NIPT 送检单 PDF（一人一文件）
+            #   巴西 .docx      → FICHA CLIENTE 送检单（一人一文件）
+            #   巴西 .xlsx      → PLANILHA DE ENVIO 汇总表（一文件多样本，仅取无创 NIPT 行）
             from .pdf_extract import extract_thai_pdf, generate_excel
             from .docx_extract import extract_brazil_docx, generate_excel_brazil
+            from .xlsx_extract import extract_brazil_planilha
             is_brazil = source in ("巴西", "巴西万基")
             extracted = []
+            skipped_rows = []
+            row_errors = []
             for fpath in pdf_paths:
+                if is_brazil and fpath.lower().endswith((".xlsx", ".xlsm")):
+                    infos, sk_rows, err_rows = extract_brazil_planilha(fpath, source=source)
+                    extracted.extend(infos)
+                    skipped_rows.extend(sk_rows)
+                    row_errors.extend(err_rows)
+                    continue
                 if is_brazil:
                     info = extract_brazil_docx(fpath, source=source)
                 else:
@@ -347,7 +359,11 @@ class SampleViewSet(viewsets.ModelViewSet):
 
             if not extracted:
                 return Response(
-                    {"error": "No valid data extracted from any PDF file"},
+                    {
+                        "error": "No valid data extracted from any file",
+                        "skipped_rows": skipped_rows,
+                        "row_errors": row_errors,
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
@@ -361,7 +377,10 @@ class SampleViewSet(viewsets.ModelViewSet):
                 test_opt = data.get("test_option", "")
                 panel_code = None
                 if is_brazil:
-                    panel_code = "NIPT"  # Brazil uses NIPT panel (Basic/Plus), not NIPPT subsystem
+                    # 巴西使用 NIPT 无创 panel（非 NIPPT 亲子子系统）。
+                    # PLANILHA 汇总表通道由解析器逐行给出档位（NIPT / NIPT_PLUS）；
+                    # FICHA CLIENTE docx 通道无 panel_code → 回落 NIPT（保持原行为）。
+                    panel_code = data.get("panel_code") or "NIPT"
                 elif test_opt == "Basic":
                     panel_code = "NIPT"
                 elif test_opt == "Basic All":
@@ -398,7 +417,7 @@ class SampleViewSet(viewsets.ModelViewSet):
                     "multiple_gestation": data.get("multiple_gestation", False),
                     "ivf_status": data.get("ivf_status", False),
                     "clinical_diagnosis": data.get("clinical_diagnosis", ""),
-                    "fedex_no": fedex_no,
+                    "fedex_no": fedex_no or data.get("fedex_no", ""),
                     "price": data.get("price", ""),
                     "sinal": data.get("sinal", ""),
                     "balance": data.get("balance", ""),
@@ -471,6 +490,8 @@ class SampleViewSet(viewsets.ModelViewSet):
                     "total_extracted": len(extracted),
                     "created": created,
                     "errors": errors,
+                    "skipped_rows": skipped_rows,
+                    "row_errors": row_errors,
                     "excel_path": excel_path,
                     "excel_b64": excel_b64,
                 },
