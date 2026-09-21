@@ -57,6 +57,7 @@ interface BatchItem {
   status_display: string; sample_count: number;
   female_count: number; male_blood_count: number; male_other_count: number;
   created_at: string;
+  receipt_location?: string;
 }
 interface BatchDetail extends BatchItem {
   female_samples: ExtractionSample[];
@@ -84,6 +85,7 @@ export default function NipptExtraction() {
   const [pendingData, setPendingData] = useState<any>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [pendingSearch, setPendingSearch] = useState("");
+  const [pendingLoc, setPendingLoc] = useState<string | undefined>(undefined);
   const [batchNumberPreview, setBatchNumberPreview] = useState("");
   const [qcSearch, setQcSearch] = useState("");
   const [qcCandidates, setQcCandidates] = useState<QCandidate[]>([]);
@@ -110,6 +112,14 @@ export default function NipptExtraction() {
   const [dateM, setDateM] = useState<string>("");
   const [timeM, setTimeM] = useState<string>("");
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
+
+// 签收地（receipt_location）：厦门 / 香港
+const LOC_OPTIONS = [
+  { label: "厦门", value: "XIAMEN" },
+  { label: "香港", value: "HONGKONG" },
+];
+const LOC_LABEL: Record<string, string> = { XIAMEN: "厦门", HONGKONG: "香港" };
+
 // 女性操作人/审核人
 const [operators, setOperators] = useState<Record<string,string>>({});
 const [reviewers, setReviewers] = useState<Record<string,string>>({});
@@ -234,9 +244,19 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     } catch (e: any) { message.error(e?.response?.data?.detail || "创建失败"); }
   };
 
+  /** 当前筛选（搜索 + 签收地）后可见的条目 */
+  const visibleEntries = () => {
+    if (!pendingData) return [] as any[];
+    return pendingData.entries.filter((e: any) =>
+      (!pendingSearch || e.patient_name.includes(pendingSearch) ||
+        e.case_number.includes(pendingSearch) || (e.test_sample_id || "").includes(pendingSearch)) &&
+      (!pendingLoc || e.receipt_location === pendingLoc)
+    );
+  };
+
   const toggleAll = (checked: boolean) => {
     if (!pendingData) return;
-    if (checked) { const all = new Set<string>(); for (const e of pendingData.entries) for (const id of e.case_sample_ids) all.add(id); setSelectedKeys(all); }
+    if (checked) { const all = new Set<string>(); for (const e of visibleEntries()) for (const id of e.case_sample_ids) all.add(id); setSelectedKeys(all); }
     else { setSelectedKeys(new Set()); }
   };
 
@@ -244,7 +264,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   const selectByGender = (g: "f" | "m") => {
     if (!pendingData) return;
     const next = new Set<string>();
-    for (const e of pendingData.entries) {
+    for (const e of visibleEntries()) {
       const isF = e.category === "FEMALE_BLOOD";
       if ((g === "f" && isF) || (g === "m" && !isF)) {
         for (const id of e.case_sample_ids) next.add(id);
@@ -968,7 +988,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     { title: "批次号", dataIndex: "batch_number", key: "bn", width: 140, render: (v: string) => <Text code style={{ fontSize: 12 }}>{v}</Text> },
     { title: "状态", dataIndex: "status", key: "st", width: 60,
       render: (v: string) => { const c: Record<string,string>={DRAFT:"default",IN_PROGRESS:"blue",COMPLETED:"green"}; const l: Record<string,string>={DRAFT:"待处理",IN_PROGRESS:"处理中",COMPLETED:"已完成"}; return <Tag color={c[v]||"default"}>{l[v]||v}</Tag>; }},
-    { title: "样本", key: "cnt", width: 100, render: (_: any, r: BatchItem) => <Text style={{ fontSize: 11 }}>👩{r.female_count} 👨{r.male_blood_count + r.male_other_count}</Text> },
+    { title: "样本", key: "cnt", width: 90, render: (_: any, r: BatchItem) => <Text style={{ fontSize: 11 }}>👩{r.female_count} 👨{r.male_blood_count + r.male_other_count}</Text> },
+    { title: "签收地", key: "loc", width: 88, render: (_: any, r: BatchItem) => r.receipt_location
+        ? <Tag color={r.receipt_location.includes("/") ? "red" : "geekblue"} style={{ fontSize: 11 }}>📍{r.receipt_location}</Tag>
+        : <Text type="secondary" style={{ fontSize: 11 }}>—</Text> },
   ];
 
   // ── Main Render ──
@@ -991,7 +1014,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
         {selectedBatch ? (
           <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
           <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text>
-            <Tag color={selectedBatch.status === "COMPLETED" ? "green" : selectedBatch.status === "IN_PROGRESS" ? "blue" : "default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}</Space>}
+            <Tag color={selectedBatch.status === "COMPLETED" ? "green" : selectedBatch.status === "IN_PROGRESS" ? "blue" : "default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}{selectedBatch.receipt_location&&<Tag color={selectedBatch.receipt_location.includes("/")?"red":"geekblue"} style={{fontSize:12}}>📍{selectedBatch.receipt_location}{selectedBatch.receipt_location.includes("/")?" ⚠️混地区":""}</Tag>}</Space>}
             extra={<Space>
               {selectedBatch.status !== "COMPLETED" && (
                 <Popconfirm title="确定删除该批次？管数将恢复" onConfirm={() => deleteBatch(selectedBatch.id)}>
@@ -1040,14 +1063,14 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
         {pendingData && (<div>
           <div style={{ marginBottom: 12, padding: "8px 12px", background: "#f6ffed", borderRadius: 6 }}>
             <Text strong>批次号：</Text><Text code style={{ fontSize: 16 }}>{batchNumberPreview}</Text><Text type="secondary" style={{ marginLeft: 8 }}>（自动生成）</Text></div>
-          <Input.Search placeholder="搜索姓名/PT号/Case号..." allowClear value={pendingSearch} onChange={(e: any) => setPendingSearch(e.target.value)} style={{ marginBottom: 8 }} />
+          <Space style={{ marginBottom: 8 }} wrap><Input.Search placeholder="搜索姓名/PT号/Case号..." allowClear value={pendingSearch} onChange={(e: any) => setPendingSearch(e.target.value)} style={{ width: 300 }} /><Select placeholder="全部签收地" style={{ width: 140 }} value={pendingLoc} allowClear onChange={(v: string | undefined) => { setPendingLoc(v); setSelectedKeys(new Set()); }} options={LOC_OPTIONS} /></Space>
           <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <Space><Tag color="magenta">👩 女性: {pendingData.female_count}</Tag><Tag color="blue">👨 男性: {pendingData.male_blood_count + pendingData.male_other_count}</Tag></Space>
             <Space><Button size="small" onClick={() => selectByGender("f")}>👩 全选女性</Button><Button size="small" onClick={() => selectByGender("m")}>👨 全选男性</Button><Button size="small" onClick={() => toggleAll(true)}>全选</Button><Button size="small" onClick={() => toggleAll(false)}>取消全选</Button></Space></div>
           <Divider style={{ margin: "8px 0" }} />
           <div style={{ maxHeight: 300, overflow: "auto", marginBottom: 16 }}>
             {(["FEMALE_BLOOD","MALE_BLOOD","MALE_OTHER"] as const).map(cat => {
-              const entries = pendingData.entries.filter((e: any) => e.category === cat && (!pendingSearch || e.patient_name.includes(pendingSearch) || e.case_number.includes(pendingSearch) || (e.test_sample_id||"").includes(pendingSearch)));
+              const entries = pendingData.entries.filter((e: any) => e.category === cat && (!pendingSearch || e.patient_name.includes(pendingSearch) || e.case_number.includes(pendingSearch) || (e.test_sample_id||"").includes(pendingSearch)) && (!pendingLoc || e.receipt_location === pendingLoc));
               if (!entries.length) return null;
               const labels: Record<string,string> = {FEMALE_BLOOD:"👩 女性",MALE_BLOOD:"🩸 男性血液",MALE_OTHER:"🧬 男性其他"};
 
@@ -1059,7 +1082,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   return (<div key={e.case_sample_ids.join(",")} style={{ padding: "4px 8px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8 }}>
                     <Checkbox checked={allIn} indeterminate={!allIn && someIn} onChange={() => { setSelectedKeys(prev => { const next = new Set(prev); if (allIn) e.case_sample_ids.forEach((id: string) => next.delete(id)); else e.case_sample_ids.forEach((id: string) => next.add(id)); return next; }); }} />
                     <Text code style={{ fontSize: 11, width: 150 }}>{e.case_number}</Text>{e.test_sample_id && <Tag color="blue" style={{ fontSize: 11 }}>{e.test_sample_id}</Tag>}
-                    <Text strong>{e.patient_name}</Text><Space size={2} wrap>{e.sample_types.map((t: string) => <Tag key={t} color="green" style={{ fontSize: 10 }}>{SAMPLE_TYPE_LABELS[t]||t}</Tag>)}</Space></div>);})}</div>);})}
+                    <Text strong>{e.patient_name}</Text>{e.receipt_location && <Tag color={e.receipt_location === "HONGKONG" ? "geekblue" : "volcano"} style={{ fontSize: 10, marginRight: 0 }}>📍{LOC_LABEL[e.receipt_location] || e.receipt_location}</Tag>}<Space size={2} wrap>{e.sample_types.map((t: string) => <Tag key={t} color="green" style={{ fontSize: 10 }}>{SAMPLE_TYPE_LABELS[t]||t}</Tag>)}</Space></div>);})}</div>);})}
           </div>
           <Divider style={{ margin: "8px 0" }} />
           <div style={{ padding: "8px 12px", background: "#fffbe6", borderRadius: 6 }}>

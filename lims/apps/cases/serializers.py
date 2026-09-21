@@ -657,11 +657,50 @@ class PublicRegistrationSerializer(serializers.Serializer):
 # NIPPT Pre-Processing Serializers
 # ============================================================
 
+# ── 签收地（receipt_location）辅助 ──────────────────────────────
+RECEIPT_LOCATION_LABELS = {"XIAMEN": "厦门", "HONGKONG": "香港"}
+
+
+def batch_receipt_location(batch):
+    """批次级签收地：'香港' / '厦门' / '香港/厦门'(混合) / ''（无数据）
+    混合时用 '/' 连接，前端据此标红警示。"""
+    from .models import CaseSample
+    ids = []
+    for sp in batch.samples.all():
+        for i in (sp.case_sample_ids or []):
+            ids.append(i)
+    if not ids:
+        return ""
+    try:
+        locs = set(
+            CaseSample.objects.filter(id__in=ids)
+            .exclude(receipt_location="")
+            .values_list("receipt_location", flat=True)
+        )
+    except Exception:
+        return ""
+    if not locs:
+        return ""
+    return "/".join(sorted(RECEIPT_LOCATION_LABELS.get(x, x) for x in locs))
+
+
+def sample_receipt_location(obj):
+    """样本级签收地（中文显示名），取其关联 CaseSample 的值。"""
+    from .models import CaseSample
+    for csid in (obj.case_sample_ids or []):
+        cs = CaseSample.objects.filter(id=csid).first()
+        if cs and cs.receipt_location:
+            return cs.get_receipt_location_display()
+    return ""
+
+
 class NipptPreProcessingSampleSerializer(serializers.ModelSerializer):
     """单个前处理样本条目"""
     received_sample_types = serializers.ListField(read_only=True)
     remaining_sample_types = serializers.ListField(read_only=True)
     test_sample_id = serializers.SerializerMethodField()
+
+    receipt_location = serializers.SerializerMethodField()
 
     class Meta:
         model = NipptPreProcessingSample
@@ -674,6 +713,7 @@ class NipptPreProcessingSampleSerializer(serializers.ModelSerializer):
             "qc_status", "qc_note", "operator", "processed_at",
             "received_sample_types", "remaining_sample_types",
             "test_sample_id", "created_at",
+                    "receipt_location",
         ]
         read_only_fields = ["id", "created_at", "received_sample_types", "remaining_sample_types"]
 
@@ -692,6 +732,9 @@ class NipptPreProcessingSampleSerializer(serializers.ModelSerializer):
                 return cs.test_sample_id
         return None
 
+    def get_receipt_location(self, obj):
+        return sample_receipt_location(obj)
+
 
 class NipptPreProcessingBatchListSerializer(serializers.ModelSerializer):
     """批次列表"""
@@ -701,12 +744,15 @@ class NipptPreProcessingBatchListSerializer(serializers.ModelSerializer):
     male_blood_count = serializers.SerializerMethodField()
     male_other_count = serializers.SerializerMethodField()
 
+    receipt_location = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptPreProcessingBatch
         fields = [
             "id", "batch_number", "status", "status_display",
             "sample_count", "female_count", "male_blood_count", "male_other_count",
             "created_by", "operator_name", "reviewer", "experiment_time", "created_at", "updated_at",
+                    "receipt_location",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
@@ -722,6 +768,9 @@ class NipptPreProcessingBatchListSerializer(serializers.ModelSerializer):
     def get_male_other_count(self, obj):
         return obj.samples.filter(category="MALE_OTHER").count()
 
+    def get_receipt_location(self, obj):
+        return batch_receipt_location(obj)
+
 
 class NipptPreProcessingBatchDetailSerializer(serializers.ModelSerializer):
     """批次详情（含样本分组）"""
@@ -734,6 +783,8 @@ class NipptPreProcessingBatchDetailSerializer(serializers.ModelSerializer):
     male_blood_samples = serializers.SerializerMethodField()
     male_other_samples = serializers.SerializerMethodField()
 
+    receipt_location = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptPreProcessingBatch
         fields = [
@@ -741,6 +792,7 @@ class NipptPreProcessingBatchDetailSerializer(serializers.ModelSerializer):
             "sample_count", "female_count", "male_blood_count", "male_other_count",
             "female_samples", "male_blood_samples", "male_other_samples",
             "processing_data", "pp_date", "pp_time", "created_by", "operator_name", "reviewer", "experiment_time", "created_at", "updated_at",
+                    "receipt_location",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
@@ -767,6 +819,9 @@ class NipptPreProcessingBatchDetailSerializer(serializers.ModelSerializer):
     def get_male_other_samples(self, obj):
         qs = obj.samples.filter(category="MALE_OTHER")
         return NipptPreProcessingSampleSerializer(qs, many=True).data
+
+    def get_receipt_location(self, obj):
+        return batch_receipt_location(obj)
 
 
 class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
@@ -873,6 +928,7 @@ class PendingEntrySerializer(serializers.Serializer):
     sample_types = serializers.ListField(child=serializers.CharField())
     case_sample_ids = serializers.ListField(child=serializers.CharField())
     test_sample_id = serializers.CharField(allow_null=True)
+    receipt_location = serializers.CharField(allow_blank=True, required=False)
 
 
 # ══════════════════════════════════════════
@@ -884,6 +940,8 @@ from .models import NipptExtractionBatch, NipptExtractionSample
 class NipptExtractionSampleSerializer(serializers.ModelSerializer):
     test_sample_id = serializers.SerializerMethodField()
     experiment_sample_type = serializers.SerializerMethodField()
+
+    receipt_location = serializers.SerializerMethodField()
 
     class Meta:
         model = NipptExtractionSample
@@ -925,6 +983,9 @@ class NipptExtractionSampleSerializer(serializers.ModelSerializer):
                 return cs0.sample_source or ""
         return ""
 
+    def get_receipt_location(self, obj):
+        return sample_receipt_location(obj)
+
 
 class NipptExtractionBatchListSerializer(serializers.ModelSerializer):
     sample_count = serializers.SerializerMethodField()
@@ -933,17 +994,23 @@ class NipptExtractionBatchListSerializer(serializers.ModelSerializer):
     male_blood_count = serializers.SerializerMethodField()
     male_other_count = serializers.SerializerMethodField()
 
+    receipt_location = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptExtractionBatch
         fields = ["id", "batch_number", "status", "status_display", "sample_count",
                   "female_count", "male_blood_count", "male_other_count",
-                  "created_by", "operator_name", "reviewer", "created_at", "updated_at"]
+                  "created_by", "operator_name", "reviewer", "created_at", "updated_at", "receipt_location",
+        ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
     def get_sample_count(self, obj): return obj.samples.count()
     def get_female_count(self, obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
     def get_male_blood_count(self, obj): return obj.samples.filter(category="MALE_BLOOD").count()
     def get_male_other_count(self, obj): return obj.samples.filter(category="MALE_OTHER").count()
+
+    def get_receipt_location(self, obj):
+        return batch_receipt_location(obj)
 
 
 class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
@@ -956,12 +1023,15 @@ class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
     male_blood_samples = serializers.SerializerMethodField()
     male_other_samples = serializers.SerializerMethodField()
 
+    receipt_location = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptExtractionBatch
         fields = ["id", "batch_number", "status", "status_display",
                   "sample_count", "female_count", "male_blood_count", "male_other_count",
                   "female_samples", "male_blood_samples", "male_other_samples",
-                  "extraction_data", "created_by", "operator_name", "reviewer", "created_at", "updated_at"]
+                  "extraction_data", "created_by", "operator_name", "reviewer", "created_at", "updated_at", "receipt_location",
+        ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
     def get_sample_count(self, obj): return obj.samples.count()
@@ -971,6 +1041,9 @@ class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
     def get_female_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="FEMALE_BLOOD"), many=True).data
     def get_male_blood_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="MALE_BLOOD"), many=True).data
     def get_male_other_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="MALE_OTHER"), many=True).data
+
+    def get_receipt_location(self, obj):
+        return batch_receipt_location(obj)
 
 
 class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
@@ -1057,6 +1130,8 @@ from .models import NipptLibraryBatch, NipptLibrarySample
 class NipptLibrarySampleSerializer(serializers.ModelSerializer):
     test_sample_id = serializers.SerializerMethodField()
     experiment_sample_type = serializers.SerializerMethodField()
+    receipt_location = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptLibrarySample
         fields = "__all__"
@@ -1080,20 +1155,31 @@ class NipptLibrarySampleSerializer(serializers.ModelSerializer):
                 return getattr(es, 'experiment_sample_type', '') or ''
         return ''
 
+    def get_receipt_location(self, obj):
+        return sample_receipt_location(obj)
+
+
 class NipptLibraryBatchListSerializer(serializers.ModelSerializer):
     sample_count = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     female_count = serializers.SerializerMethodField()
     male_blood_count = serializers.SerializerMethodField()
     male_other_count = serializers.SerializerMethodField()
+    receipt_location = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptLibraryBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at", "receipt_location",
+        ]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
     def get_male_blood_count(self,obj): return obj.samples.filter(category="MALE_BLOOD").count()
     def get_male_other_count(self,obj): return obj.samples.filter(category="MALE_OTHER").count()
+
+    def get_receipt_location(self, obj):
+        return batch_receipt_location(obj)
+
 
 class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
@@ -1104,9 +1190,12 @@ class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
     female_samples = serializers.SerializerMethodField()
     male_blood_samples = serializers.SerializerMethodField()
     male_other_samples = serializers.SerializerMethodField()
+    receipt_location = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptLibraryBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","library_data","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","library_data","created_by", "operator_name", "reviewer","created_at","updated_at", "receipt_location",
+        ]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1115,6 +1204,10 @@ class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
     def get_female_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="FEMALE_BLOOD").order_by(Length("case__pt_number"), "case__pt_number", "patient_name"), many=True).data
     def get_male_blood_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="MALE_BLOOD").order_by(Length("case__pt_number"), "case__pt_number", "patient_name"), many=True).data
     def get_male_other_samples(self,obj): return NipptLibrarySampleSerializer(obj.samples.filter(category="MALE_OTHER").order_by(Length("case__pt_number"), "case__pt_number", "patient_name"), many=True).data
+
+    def get_receipt_location(self, obj):
+        return batch_receipt_location(obj)
+
 
 class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
     case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
@@ -1166,6 +1259,8 @@ from .models import NipptPoolingBatch, NipptPoolingSample
 class NipptPoolingSampleSerializer(serializers.ModelSerializer):
     test_sample_id = serializers.SerializerMethodField()
     experiment_sample_type = serializers.SerializerMethodField()
+    receipt_location = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptPoolingSample
         fields = "__all__"
@@ -1194,20 +1289,31 @@ class NipptPoolingSampleSerializer(serializers.ModelSerializer):
                     if es.experiment_sample_type: return es.experiment_sample_type
         return ''
 
+    def get_receipt_location(self, obj):
+        return sample_receipt_location(obj)
+
+
 class NipptPoolingBatchListSerializer(serializers.ModelSerializer):
     sample_count = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     female_count = serializers.SerializerMethodField()
     male_blood_count = serializers.SerializerMethodField()
     male_other_count = serializers.SerializerMethodField()
+    receipt_location = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptPoolingBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at", "receipt_location",
+        ]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
     def get_male_blood_count(self,obj): return obj.samples.filter(category="MALE_BLOOD").count()
     def get_male_other_count(self,obj): return obj.samples.filter(category="MALE_OTHER").count()
+
+    def get_receipt_location(self, obj):
+        return batch_receipt_location(obj)
+
 
 class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
     library_plate = serializers.SerializerMethodField()
@@ -1220,9 +1326,12 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
     male_blood_samples = serializers.SerializerMethodField()
     male_other_samples = serializers.SerializerMethodField()
     library_index_map = serializers.SerializerMethodField()
+    receipt_location = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptPoolingBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","library_index_map","created_by", "operator_name", "reviewer","created_at","updated_at"]
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","library_index_map","created_by", "operator_name", "reviewer","created_at","updated_at", "receipt_location",
+        ]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
     def get_female_count(self,obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
@@ -1268,6 +1377,10 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
                 if ld.get("female_plate"): return ld["female_plate"]
                 if ld.get("male_plate"): return ld["male_plate"]
         return []
+
+    def get_receipt_location(self, obj):
+        return batch_receipt_location(obj)
+
 
 class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
     case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True)

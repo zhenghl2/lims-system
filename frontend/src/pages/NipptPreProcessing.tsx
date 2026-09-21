@@ -47,6 +47,7 @@ interface PendingEntry {
   sample_types: string[];
   case_sample_ids: string[];
   test_sample_id: string | null;
+  receipt_location?: string;
 }
 
 interface PreSample {
@@ -78,6 +79,7 @@ interface BatchItem {
   male_blood_count: number;
   male_other_count: number;
   created_at: string;
+  receipt_location?: string;
 }
 
 interface BatchDetail extends BatchItem {
@@ -107,6 +109,7 @@ export default function NipptPreProcessing() {
   } | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [pendingSearch, setPendingSearch] = useState("");
+  const [pendingLoc, setPendingLoc] = useState<string | undefined>(undefined);
   const [batchNumberPreview, setBatchNumberPreview] = useState("");
 
   // Active tab
@@ -119,6 +122,14 @@ export default function NipptPreProcessing() {
   const pendingUploads = useRef<Promise<void>[]>([]);
   const draftSkipRef = useRef(false);
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
+
+// 签收地（receipt_location）：厦门 / 香港
+const LOC_OPTIONS = [
+  { label: "厦门", value: "XIAMEN" },
+  { label: "香港", value: "HONGKONG" },
+];
+const LOC_LABEL: Record<string, string> = { XIAMEN: "厦门", HONGKONG: "香港" };
+
 // 女性操作人/审核人
 const [operators, setOperators] = useState<Record<string,string>>({});
 const [reviewers, setReviewers] = useState<Record<string,string>>({});
@@ -349,11 +360,21 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     }
   };
 
+  /** 当前筛选（搜索 + 签收地）后可见的条目 */
+  const visibleEntries = () => {
+    if (!pendingData) return [] as PendingEntry[];
+    return pendingData.entries.filter((e: PendingEntry) =>
+      (!pendingSearch || e.patient_name.includes(pendingSearch) ||
+        e.case_number.includes(pendingSearch) || (e.test_sample_id || "").includes(pendingSearch)) &&
+      (!pendingLoc || e.receipt_location === pendingLoc)
+    );
+  };
+
   const toggleAll = (checked: boolean) => {
     if (!pendingData) return;
     if (checked) {
       const all = new Set<string>();
-      for (const e of pendingData.entries) {
+      for (const e of visibleEntries()) {
         for (const id of e.case_sample_ids) all.add(id);
       }
       setSelectedKeys(all);
@@ -366,7 +387,7 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
   const selectByGender = (g: "f" | "m") => {
     if (!pendingData) return;
     const next = new Set<string>();
-    for (const e of pendingData.entries) {
+    for (const e of visibleEntries()) {
       const isF = e.category === "FEMALE_BLOOD";
       if ((g === "f" && isF) || (g === "m" && !isF)) {
         for (const id of e.case_sample_ids) next.add(id);
@@ -770,9 +791,17 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                     const l: Record<string, string> = { DRAFT: "待处理", IN_PROGRESS: "处理中", COMPLETED: "已完成" };
                     return <Tag color={c[v] || "default"}>{l[v] || v}</Tag>;
                   } },
-                { title: "样本", key: "cnt", width: 100,
+                { title: "样本", key: "cnt", width: 90,
                   render: (_: any, r: BatchItem) => (
                     <Text style={{ fontSize: 11 }}>👩{r.female_count} 👨{r.male_blood_count + r.male_other_count}</Text>
+                  ) },
+                { title: "签收地", key: "loc", width: 88,
+                  render: (_: any, r: BatchItem) => (
+                    r.receipt_location
+                      ? <Tag color={r.receipt_location.includes("/") ? "red" : "geekblue"} style={{ fontSize: 11 }}>
+                          📍{r.receipt_location}
+                        </Tag>
+                      : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>
                   ) },
               ]}
             />
@@ -791,6 +820,11 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                 {selectedBatch.status_display}
               </Tag>
               {selectedBatch.status === "COMPLETED" && <Tag color="default">🔒 只读</Tag>}
+              {selectedBatch.receipt_location && (
+                <Tag color={selectedBatch.receipt_location.includes("/") ? "red" : "geekblue"} style={{ fontSize: 12 }}>
+                  📍{selectedBatch.receipt_location}{selectedBatch.receipt_location.includes("/") ? " ⚠️混地区" : ""}
+                </Tag>
+              )}
             </Space>
           } extra={
             <Space>
@@ -864,9 +898,14 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
               <Text code style={{ fontSize: 16 }}>{batchNumberPreview}</Text>
               <Text type="secondary" style={{ marginLeft: 8 }}>（自动生成）</Text>
             </div>
-            <Input.Search placeholder="搜索姓名/PT号/Case号..." allowClear
-              value={pendingSearch} onChange={(e: any) => setPendingSearch(e.target.value)}
-              style={{ marginBottom: 8 }} />
+            <Space style={{ marginBottom: 8 }} wrap>
+              <Input.Search placeholder="搜索姓名/PT号/Case号..." allowClear
+                value={pendingSearch} onChange={(e: any) => setPendingSearch(e.target.value)}
+                style={{ width: 300 }} />
+              <Select placeholder="全部签收地" style={{ width: 140 }} value={pendingLoc} allowClear
+                onChange={(v: string | undefined) => { setPendingLoc(v); setSelectedKeys(new Set()); }}
+                options={LOC_OPTIONS} />
+            </Space>
             <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <Space>
                 <Tag color="magenta">👩 女性: {pendingData.female_count}</Tag>
@@ -886,7 +925,8 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                   (cat === "FEMALE_BLOOD" ? e.category === "FEMALE_BLOOD" : e.category !== "FEMALE_BLOOD") &&
                   (!pendingSearch || e.patient_name.includes(pendingSearch) ||
                    e.case_number.includes(pendingSearch) ||
-                   (e.test_sample_id || "").includes(pendingSearch))
+                   (e.test_sample_id || "").includes(pendingSearch)) &&
+                  (!pendingLoc || e.receipt_location === pendingLoc)
                 );
                 if (entries.length === 0) return null;
                 const isMale = cat !== "FEMALE_BLOOD";
@@ -923,6 +963,11 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                             <Text type="secondary" style={{ fontSize: 11, minWidth: 90, textAlign: "center" }}>-</Text>
                           )}
                           <Text strong>{e.patient_name}</Text>
+                          {e.receipt_location && (
+                            <Tag color={e.receipt_location === "HONGKONG" ? "geekblue" : "volcano"} style={{ fontSize: 10, marginRight: 0 }}>
+                              📍{LOC_LABEL[e.receipt_location] || e.receipt_location}
+                            </Tag>
+                          )}
                           <Space size={2} wrap>
                             {e.sample_types.map((t: string) => {
                               const opt = SAMPLE_TYPE_OPTIONS.find(o => o.value === t);

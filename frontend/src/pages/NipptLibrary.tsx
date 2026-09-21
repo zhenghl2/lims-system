@@ -30,7 +30,7 @@ const INDEX_KITS = [{value:"N34201",label:"VAHTS Maxi Unique Dual Index DNA Adap
 type PlateCell = { vgId: string; index: string; sampleIdx?: number; isQC?: boolean };
 type PlateGrid = PlateCell[][];
 interface SampleItem { id:string; patient_name:string; role:string; category:string; case_sample_ids:string[]; test_sample_id:string|null; is_qc?:boolean; qc_status:string; qc_note:string; }
-interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; created_at:string; }
+interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; created_at:string; receipt_location?:string; }
 interface BatchDetail extends BatchItem { female_samples:SampleItem[]; male_blood_samples:SampleItem[]; male_other_samples:SampleItem[]; library_data:any; }
 
 export default function NipptLibrary() {
@@ -44,6 +44,7 @@ export default function NipptLibrary() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [batchNumberPreview, setBatchNumberPreview] = useState("");
   const [saving, setSaving] = useState(false);
+  const [pendingLoc, setPendingLoc] = useState<string | undefined>(undefined);
 
   // ── Region & coords ──
   const [region, setRegion] = useState("XIAMEN");
@@ -80,6 +81,14 @@ export default function NipptLibrary() {
   const [dateM, setDateM] = useState<string>("");
   const [timeM, setTimeM] = useState<string>("");
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
+
+// 签收地（receipt_location）：厦门 / 香港
+const LOC_OPTIONS = [
+  { label: "厦门", value: "XIAMEN" },
+  { label: "香港", value: "HONGKONG" },
+];
+const LOC_LABEL: Record<string, string> = { XIAMEN: "厦门", HONGKONG: "香港" };
+
 // 女性操作人/审核人
 const [operators, setOperators] = useState<Record<string,string>>({});
 const [reviewers, setReviewers] = useState<Record<string,string>>({});
@@ -550,7 +559,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   const batchColumns = [
     {title:"批次号",dataIndex:"batch_number",width:140,render:(v:string)=><Text code style={{fontSize:12}}>{v}</Text>},
     {title:"状态",dataIndex:"status",width:60,render:(v:string)=>{const c:Record<string,string>={DRAFT:"default",IN_PROGRESS:"blue",COMPLETED:"green"},l:Record<string,string>={DRAFT:"待处理",IN_PROGRESS:"处理中",COMPLETED:"已完成"};return<Tag color={c[v]||"default"}>{l[v]||v}</Tag>}},
-    {title:"样本",width:100,render:(_:any,r:BatchItem)=><Text style={{fontSize:11}}>👩{r.female_count} 👨{r.male_blood_count+r.male_other_count}</Text>},
+    {title:"样本",width:90,render:(_:any,r:BatchItem)=><Text style={{fontSize:11}}>👩{r.female_count} 👨{r.male_blood_count+r.male_other_count}</Text>},
+    {title:"签收地",width:88,render:(_:any,r:BatchItem)=>r.receipt_location?<Tag color={r.receipt_location.includes("/")?"red":"geekblue"} style={{fontSize:11}}>📍{r.receipt_location}</Tag>:<Text type="secondary" style={{fontSize:11}}>—</Text>},
   ];
 
 
@@ -568,7 +578,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       <div style={{flex:1,overflow:"auto"}}>
         {selectedBatch?(
           <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
-          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}</Space>}
+          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}{selectedBatch.receipt_location&&<Tag color={selectedBatch.receipt_location.includes("/")?"red":"geekblue"} style={{fontSize:12}}>📍{selectedBatch.receipt_location}{selectedBatch.receipt_location.includes("/")?" ⚠️混地区":""}</Tag>}</Space>}
             extra={<Space>
               {selectedBatch.status!=="COMPLETED"&&<Popconfirm title="删除？" onConfirm={()=>deleteBatch(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
@@ -652,10 +662,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       <Modal title="新建文库构建批次" open={modalOpen} onOk={createBatch} onCancel={()=>setModalOpen(false)} width={700} okText={`创建批次 (${selectedKeys.size}个样本)`}>
         {pendingData&&(<div>
           <div style={{marginBottom:12,padding:"8px 12px",background:"#f6ffed",borderRadius:6}}><Text strong>批次号：</Text><Text code style={{fontSize:16}}>{batchNumberPreview}</Text></div>
-          <Space style={{marginBottom:8}}><Tag color="magenta">👩 {pendingData.female_count}</Tag><Tag color="blue">👨 {pendingData.male_blood_count+pendingData.male_other_count}</Tag></Space>
+          <Space style={{marginBottom:8}} wrap><Tag color="magenta">👩 {pendingData.female_count}</Tag><Tag color="blue">👨 {pendingData.male_blood_count+pendingData.male_other_count}</Tag>
+            <Select placeholder="全部签收地" style={{ width: 140 }} value={pendingLoc} allowClear
+              onChange={(v: string | undefined) => { setPendingLoc(v); setSelectedKeys(new Set()); }} options={LOC_OPTIONS} /></Space>
           <div style={{maxHeight:350,overflow:"auto"}}>
             {(["FEMALE_BLOOD","MALE_BLOOD","MALE_OTHER"] as const).map(cat=>{
-              const entries = pendingData.entries.filter((e:any)=>e.category===cat);
+              const entries = pendingData.entries.filter((e:any)=>e.category===cat && (!pendingLoc || e.receipt_location === pendingLoc));
               if(!entries.length)return null;
               const labels:Record<string,string>={FEMALE_BLOOD:"👩 女性",MALE_BLOOD:"🩸 男性血液",MALE_OTHER:"🧬 男性其他"};
 
@@ -664,7 +676,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
 
   return (<div key={e.case_sample_ids.join(",")} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
                     <Checkbox checked={allIn} indeterminate={!allIn&&someIn} onChange={()=>{setSelectedKeys(prev=>{const n=new Set(prev);if(allIn)e.case_sample_ids.forEach((id:string)=>n.delete(id));else e.case_sample_ids.forEach((id:string)=>n.add(id));return n})}}/>
-                    <Text code style={{fontSize:11,width:150}}>{e.case_number}</Text>{e.test_sample_id&&<Tag color="blue" style={{fontSize:11}}>{e.test_sample_id}</Tag>}<Text strong>{e.patient_name}</Text></div>)})}</div>)
+                    <Text code style={{fontSize:11,width:150}}>{e.case_number}</Text>{e.test_sample_id&&<Tag color="blue" style={{fontSize:11}}>{e.test_sample_id}</Tag>}<Text strong>{e.patient_name}</Text>{e.receipt_location&&<Tag color={e.receipt_location==="HONGKONG"?"geekblue":"volcano"} style={{fontSize:10,marginRight:0}}>📍{LOC_LABEL[e.receipt_location]||e.receipt_location}</Tag>}</div>)})}</div>)
             })}
           </div>
         </div>)}

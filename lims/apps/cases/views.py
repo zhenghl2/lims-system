@@ -1756,6 +1756,7 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
                     "sample_types": [],
                     "case_sample_ids": [],
                     "test_sample_id": cs.test_sample_id,
+                    "receipt_location": cs.receipt_location or "",
                 }
             g = groups[key]
             if cs.sample_source not in g["sample_types"]:
@@ -1933,7 +1934,7 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
             if key not in groups:
                 groups[key] = {"case_id":str(cs.case_id),"case_number":cs.case.case_number,
                     "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,
-                    "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id}
+                    "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id,"receipt_location":cs.receipt_location or ""}
             g = groups[key]
             if cs.sample_source not in g["sample_types"]: g["sample_types"].append(cs.sample_source)
             g["case_sample_ids"].append(str(cs.id))
@@ -2059,6 +2060,7 @@ class NipptLibraryViewSet(viewsets.ModelViewSet):
                 groups[key] = {"case_id":str(cs.case_id),"case_number":cs.case.case_number,
                     "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,
                     "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id,
+                    "receipt_location":cs.receipt_location or "",
                     "dna_concentration":es.dna_concentration if es else None,
                     "extraction_sample_id":str(es.id) if es else None}
             g = groups[key]
@@ -2139,7 +2141,7 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
                 groups[key] = {"case_id":str(cs.case_id),"case_number":cs.case.case_number,
                     "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,
                     "expected_completion": cs.case.expected_completion.isoformat() if cs.case.expected_completion else "",
-                    "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id}
+                    "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id,"receipt_location":cs.receipt_location or ""}
             g = groups[key]
             if cs.sample_source not in g["sample_types"]: g["sample_types"].append(cs.sample_source)
             g["case_sample_ids"].append(str(cs.id))
