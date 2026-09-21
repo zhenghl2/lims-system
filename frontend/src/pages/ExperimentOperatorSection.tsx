@@ -6,6 +6,7 @@ const { Text } = Typography;
 export const RECEIPT_PERSONS = [
   "吴书凌", "叶丽婷", "何家宇", "胡煜敏", "付慧珠", "杜兴琼",
   "龙雨青", "张斯栋", "郭爽洁", "林琦",
+  "林洋鸿", "杨思婷", "李彩娟",
 ];
 
 interface Props {

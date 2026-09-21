@@ -54,7 +54,7 @@ export default function NipptPooling() {
   const [groupBases, setGroupBases] = useState<Record<number,number>>({});
   const [groupElutions, setGroupElutions] = useState<Record<number,number>>({});
   const [rows, setRows] = useState<PoolRow[]>([]);
-const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦"];
+const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 const [operators, setOperators] = useState<Record<string,string>>({});
 const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const [manualAlloc, setManualAlloc] = useState<{female:number;male:number}[]>([]);

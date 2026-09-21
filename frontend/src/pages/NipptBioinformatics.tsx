@@ -58,7 +58,7 @@ export default function NipptBioinformatics() {
   const [manualPairFather, setManualPairFather] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<any>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦"];
+const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 const [operators, setOperators] = useState<Record<string,string>>({});
 const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
