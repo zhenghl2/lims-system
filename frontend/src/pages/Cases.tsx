@@ -629,6 +629,7 @@ export default function Cases() {
                             <br />
                             <Text type="secondary">时间: {s.timestamp?.slice(0, 19)}</Text>
                             {s.received_by && <Text type="secondary"> | 签收人: {s.received_by}</Text>}
+                            {s.receipt_location && <Text type="secondary"> | 签收地: {s.receipt_location}</Text>}
                             {s.receipt_note && <><br /><Text type="secondary">签收备注: {s.receipt_note}</Text></>}
                             {s.receipt_photo_url && (
                               <div style={{ marginTop: 4 }}>

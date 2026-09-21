@@ -56,6 +56,13 @@ const RECEIPT_PERSONS = [
   "林洋鸿", "杨思婷", "李彩娟",
 ];
 
+// 签收地（必填）：厦门 / 香港 —— code 与 workflows 既有枚举一致
+const RECEIPT_LOCATIONS = [
+  { label: "厦门", value: "XIAMEN" },
+  { label: "香港", value: "HONGKONG" },
+];
+const LOCATION_LABEL: Record<string, string> = { XIAMEN: "厦门", HONGKONG: "香港" };
+
 const REJECT_REASONS = ["采血管破裂", "女性采血管不对", "其他"];
 
 interface CaseSampleRow {
@@ -86,6 +93,7 @@ interface CaseSampleRow {
   received: boolean;
   receivedAt: string;
   receivedByName: string;
+  receiptLocation: string;
   workflowStage: string;
   caseHasPhoto?: boolean;
 }
@@ -96,6 +104,7 @@ const RECEIVING_DRAFT_KEY = "nippt_receiving_draft_v1";
 interface ReceivingDraft {
   ptByCase: Record<string, string>;   // caseId -> PT 数字部分
   persons: Record<string, string>;    // rowKey -> 签收人
+  locations: Record<string, string>;  // rowKey -> 签收地 code
 }
 
 function loadReceivingDraft(): ReceivingDraft | null {
@@ -103,7 +112,7 @@ function loadReceivingDraft(): ReceivingDraft | null {
     const raw = sessionStorage.getItem(RECEIVING_DRAFT_KEY);
     if (!raw) return null;
     const d = JSON.parse(raw);
-    return { ptByCase: d?.ptByCase || {}, persons: d?.persons || {} };
+    return { ptByCase: d?.ptByCase || {}, persons: d?.persons || {}, locations: d?.locations || {} };
   } catch {
     return null;
   }
@@ -145,6 +154,7 @@ export default function SampleReceiving() {
   const [batchPtOpen, setBatchPtOpen] = useState(false);
   const [batchPtStart, setBatchPtStart] = useState("");
   const [batchPerson, setBatchPerson] = useState<string | undefined>(undefined);
+  const [batchLocation, setBatchLocation] = useState<string | undefined>(undefined);
 
   // Photo upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +166,8 @@ export default function SampleReceiving() {
 
   // Receipt person per row: key = rowKey, value = person name
   const [receiptPersons, setReceiptPersons] = useState<Record<string, string>>({});
+  // Receipt location per row: key = rowKey, value = location code (XIAMEN/HONGKONG)
+  const [receiptLocations, setReceiptLocations] = useState<Record<string, string>>({});
 
   // Reject Modal
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
@@ -200,6 +212,7 @@ export default function SampleReceiving() {
           received: cs.received_at != null,
           receivedAt: cs.received_at || "",
           receivedByName: cs.received_by_name || "",
+          receiptLocation: cs.receipt_location || "",
         });
       }
     }
@@ -308,7 +321,7 @@ export default function SampleReceiving() {
       })
     );
     // 写入会话草稿（Case 级 PT）
-    const d = loadReceivingDraft() || { ptByCase: {}, persons: {} };
+    const d = loadReceivingDraft() || { ptByCase: {}, persons: {}, locations: {} };
     if (newPtBase) d.ptByCase[row.caseId] = newPtBase;
     else delete d.ptByCase[row.caseId];
     persistReceivingDraft(d);
@@ -317,9 +330,18 @@ export default function SampleReceiving() {
   /** 行级签收人变更 → 写入会话草稿 */
   const handlePersonChange = (row: CaseSampleRow, name?: string) => {
     setReceiptPersons((prev) => ({ ...prev, [row.key]: name || "" }));
-    const d = loadReceivingDraft() || { ptByCase: {}, persons: {} };
+    const d = loadReceivingDraft() || { ptByCase: {}, persons: {}, locations: {} };
     if (name) d.persons[row.key] = name;
     else delete d.persons[row.key];
+    persistReceivingDraft(d);
+  };
+
+  /** 行级签收地变更 → 写入会话草稿 */
+  const handleLocationChange = (row: CaseSampleRow, loc?: string) => {
+    setReceiptLocations((prev) => ({ ...prev, [row.key]: loc || "" }));
+    const d = loadReceivingDraft() || { ptByCase: {}, persons: {}, locations: {} };
+    if (loc) d.locations[row.key] = loc;
+    else delete d.locations[row.key];
     persistReceivingDraft(d);
   };
 
@@ -333,20 +355,37 @@ export default function SampleReceiving() {
       for (const row of selected) next[row.key] = name;
       return next;
     });
-    const d = loadReceivingDraft() || { ptByCase: {}, persons: {} };
+    const d = loadReceivingDraft() || { ptByCase: {}, persons: {}, locations: {} };
     for (const row of selected) d.persons[row.key] = name;
     persistReceivingDraft(d);
     message.success(`已应用签收人「${name}」到 ${selected.length} 个样本`);
   };
 
+  /** 批量签收地 → 立即应用到所有选中行 */
+  const handleBatchLocation = (loc?: string) => {
+    setBatchLocation(loc);
+    if (!loc) return;
+    const selected = data.filter((r) => selectedRowKeys.includes(r.key) && !r.received && r.status !== "REJECTED");
+    setReceiptLocations((prev) => {
+      const next = { ...prev };
+      for (const row of selected) next[row.key] = loc;
+      return next;
+    });
+    const d = loadReceivingDraft() || { ptByCase: {}, persons: {}, locations: {} };
+    for (const row of selected) d.locations[row.key] = loc;
+    persistReceivingDraft(d);
+    message.success(`已应用签收地「${LOCATION_LABEL[loc] || loc}」到 ${selected.length} 个样本`);
+  };
+
   // 选中清空时重置批量签收人控件（便于下一批重新选择）
   useEffect(() => {
-    if (selectedRowKeys.length === 0) setBatchPerson(undefined);
+    if (selectedRowKeys.length === 0) { setBatchPerson(undefined); setBatchLocation(undefined); }
   }, [selectedRowKeys]);
 
   // --- 签收前置校验：PT 编号 + 图片（Case 级） ---
   const validateBeforeReceipt = (row: CaseSampleRow): string | null => {
     if (!receiptPersons[row.key]) return "请先选择签收人";
+    if (!receiptLocations[row.key]) return "请先选择签收地";
     if (!row.ptBase) return "请先填写 PT 编号";
     const hasPhoto = row.caseHasPhoto || data.some((r) => r.caseId === row.caseId && r.image);
     if (!hasPhoto) return "请先上传样本图片";
@@ -368,6 +407,7 @@ export default function SampleReceiving() {
       if (condition !== "OK") payload.rejection_note = rejectionNote;
       const personName = receiptPersons[row.key];
       if (personName) payload.received_by_name = personName;
+      payload.receipt_location = receiptLocations[row.key] || "";
       const resp = await (casesApi as any).confirmReceipt(row.caseId, payload);
       message.success(condition === "OK" ? `已签收 ${row.testSampleId || row.patientName}` : "已拒收");
       // 清除该行草稿（已签收/拒收不再需要）
@@ -384,7 +424,7 @@ export default function SampleReceiving() {
         setData((prev) =>
           prev.map((r) =>
             r.key === row.key
-              ? { ...r, received: true, status: "RECEIVED", receivedAt: rt, receivedByName: receiptPersons[row.key] || r.receivedByName }
+              ? { ...r, received: true, status: "RECEIVED", receivedAt: rt, receivedByName: receiptPersons[row.key] || r.receivedByName, receiptLocation: receiptLocations[row.key] || r.receiptLocation }
               : r
           )
         );
@@ -419,6 +459,7 @@ export default function SampleReceiving() {
         if (row.preservationMethod) payload.preservation_method = row.preservationMethod;
         const personName = receiptPersons[row.key];
         if (personName) payload.received_by_name = personName;
+        payload.receipt_location = receiptLocations[row.key] || "";
         await (casesApi as any).confirmReceipt(row.caseId, payload);
         okCount++;
       } catch (e: any) {
@@ -492,7 +533,7 @@ export default function SampleReceiving() {
       return updated;
     });
     // 写入会话草稿（Case 级 PT，与单个填写一致）
-    const d = loadReceivingDraft() || { ptByCase: {}, persons: {} };
+    const d = loadReceivingDraft() || { ptByCase: {}, persons: {}, locations: {} };
     Object.assign(d.ptByCase, drafts);
     persistReceivingDraft(d);
     setBatchPtOpen(false);
@@ -672,6 +713,25 @@ export default function SampleReceiving() {
       ),
     },
     {
+      title: "签收地", key: "rl", width: 100,
+      render: (_: any, r: CaseSampleRow) => (
+        r.received ? (
+          <Text>{LOCATION_LABEL[r.receiptLocation] || "—"}</Text>
+        ) : (
+          <Select
+            placeholder="签收地"
+            size="small"
+            style={{ width: 88 }}
+            value={receiptLocations[r.key] || undefined}
+            onChange={(val) => handleLocationChange(r, val)}
+            options={RECEIPT_LOCATIONS}
+            allowClear
+            disabled={r.status === "REJECTED"}
+          />
+        )
+      ),
+    },
+    {
       title: "孕周", dataIndex: "gestationalWeeks", key: "gw", width: 60,
       render: (v: number | null) => v ? `${v}w` : <Text type="secondary">—</Text>,
     },
@@ -827,6 +887,15 @@ export default function SampleReceiving() {
             options={RECEIPT_PERSONS.map((name) => ({ label: name, value: name }))}
             allowClear
           />
+          <Select
+            placeholder="批量签收地（应用到所选）"
+            size="small"
+            style={{ width: 200 }}
+            value={batchLocation}
+            onChange={handleBatchLocation}
+            options={RECEIPT_LOCATIONS}
+            allowClear
+          />
           <Button size="small" icon={<NumberOutlined />} onClick={() => setBatchPtOpen(true)}>批量填写PT</Button>
           <Button size="small" type="primary" icon={<CheckOutlined />} onClick={batchReceive}>批量签收</Button>
         </div>
@@ -960,6 +1029,17 @@ export default function SampleReceiving() {
               value={rejectTarget ? receiptPersons[rejectTarget.key] || undefined : undefined}
               onChange={(v) => rejectTarget && handlePersonChange(rejectTarget, v)}
               options={RECEIPT_PERSONS.map(name => ({ label: name, value: name }))}
+            />
+          </div>
+          <div>
+            <Text strong style={{ display: "block", marginBottom: 6 }}>签收地</Text>
+            <Select
+              placeholder="请选择签收地"
+              style={{ width: "100%" }}
+              size="middle"
+              value={rejectTarget ? receiptLocations[rejectTarget.key] || undefined : undefined}
+              onChange={(v) => rejectTarget && handleLocationChange(rejectTarget, v)}
+              options={RECEIPT_LOCATIONS}
             />
           </div>
           <div>

@@ -575,6 +575,11 @@ class CaseViewSet(viewsets.ModelViewSet):
         received_by_name = (request.data.get("received_by_name") or "").strip()
         if not received_by_name:
             raise ValidationError("请先选择签收人")
+        receipt_location = (request.data.get("receipt_location") or "").strip()
+        if not receipt_location:
+            raise ValidationError("请先选择签收地")
+        if receipt_location not in ("XIAMEN", "HONGKONG"):
+            raise ValidationError("签收地无效（仅支持 厦门/香港）")
         pt_number = (request.data.get("pt_number") or "").strip()
         if not pt_number and not case.pt_number:
             raise ValidationError("请先填写 PT 编号")
@@ -602,6 +607,9 @@ class CaseViewSet(viewsets.ModelViewSet):
         if received_by_name:
             cs.received_by_name = received_by_name
             cs.save(update_fields=["received_by_name"])
+        if receipt_location:
+            cs.receipt_location = receipt_location
+            cs.save(update_fields=["receipt_location"])
         if actual_sample_type:
             cs.actual_sample_type = actual_sample_type
             cs.save(update_fields=["actual_sample_type"])
@@ -892,6 +900,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                     "received_by": cs.received_by_name or (cs.received_by.username if cs.received_by else ""),
                     "condition": cs.receipt_condition or "OK",
                     "receipt_note": cs.receipt_note or "",
+                    "receipt_location": cs.get_receipt_location_display() if cs.receipt_location else "",
                 }]
             }
 

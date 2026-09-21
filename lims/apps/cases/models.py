@@ -258,6 +258,11 @@ class CaseSample(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+"
     )
     received_by_name = models.CharField(max_length=50, blank=True, default="")
+    receipt_location = models.CharField(
+        max_length=20, blank=True, default="",
+        choices=[("XIAMEN", "厦门"), ("HONGKONG", "香港")],
+        help_text="签收地: XIAMEN=厦门 / HONGKONG=香港",
+    )
 
     # Collection info (may differ per sample in a case)
     collection_site = models.CharField(max_length=100, blank=True)
