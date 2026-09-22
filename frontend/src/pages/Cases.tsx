@@ -54,6 +54,7 @@ const rejectionLabel = (reason: string) =>
 (casesApi as any).auditLogs = (caseId: string) => api.get(`/cases/${caseId}/audit_logs/`);
 (casesApi as any).editableState = (caseId: string) => api.get(`/cases/${caseId}/editable_state/`);
 (casesApi as any).editCase = (caseId: string, data: any) => api.patch(`/cases/${caseId}/`, data);
+(casesApi as any).notesSummary = (caseId: string) => api.get(`/cases/${caseId}/notes_summary/`);
 
 export default function Cases() {
     const [search, setSearch] = useState("");
@@ -83,6 +84,7 @@ export default function Cases() {
   const [editorModal, setEditorModal] = useState(false);
   const [editedBy, setEditedBy] = useState("");
   const [saving, setSaving] = useState(false);
+  const [stageNotes, setStageNotes] = useState<any[]>([]);      // 工序备注聚合（只读）
 
   const loadData = async (p: number = page) => {
     setLoading(true);
@@ -232,6 +234,11 @@ export default function Cases() {
     setDrawerLoading(true);
     setCaseAudit(null);   // 切换案例 → 清空审计缓存（展开时再拉）
     setEditMode(false); setEditForm({}); setEditSamples({}); setEditState(null);   // 退出编辑态
+    setStageNotes([]);
+    try {
+      const nr = await (casesApi as any).notesSummary(id);
+      setStageNotes(nr.data?.results || []);
+    } catch { setStageNotes([]); }
     try {
       const r = await casesApi.get(id);
       setSelectedCase(r.data);
@@ -716,6 +723,27 @@ export default function Cases() {
                           message="改名提示：案例编号 / PT编号 / 检测编号不会变化；但国内导入的查重按「孕妇名+疑父名」，改名后再次导入可能无法识别为重复。" />
                       </div>
                     )}
+                    <div style={{ marginTop: 8, padding: 8, background: "#f0f5ff", border: "1px solid #adc6ff", borderRadius: 4 }}>
+                      <Text strong style={{ fontSize: 12 }}>📝 工序备注（自动汇总，共 {stageNotes.length} 条）</Text>
+                      {stageNotes.length === 0 ? (
+                        <div style={{ color: "#888", fontSize: 11, marginTop: 4 }}>
+                          各工序填写的备注会自动汇总到这里（实时读取，无需回填）
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 4 }}>
+                          {stageNotes.map((n: any, i: number) => (
+                            <div key={i} style={{ fontSize: 11, lineHeight: "19px" }}>
+                              <Tag color="blue" style={{ fontSize: 10, marginRight: 4 }}>{n.stage}</Tag>
+                              <Text type="secondary" style={{ fontSize: 11 }}>{n.time}</Text>
+                              {n.operator ? <Text style={{ fontSize: 11 }}> · {n.operator}</Text> : null}
+                              <Text style={{ fontSize: 11, marginLeft: 6 }}>{n.note}</Text>
+                              <Text type="secondary" style={{ fontSize: 10, marginLeft: 6 }}>({n.sample_ids})</Text>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
                     {((selectedCase as any).plasma_tube_logs || []).length > 0 && (
                       <div style={{ marginTop: 8, padding: 8, background: "#fff7e6", border: "1px solid #ffd591", borderRadius: 4, fontSize: 12 }}>
                         <Text strong>🩸 孕妇血浆管数：{(selectedCase as any).plasma_tube_logs.slice(-1)[0]?.after ?? "-"} 管</Text>

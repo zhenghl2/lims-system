@@ -11,7 +11,7 @@ from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework.exceptions import ValidationError, NotFound
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
-from .models import Case, CaseSample, WorkflowLog, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample, NipptLibraryBatch, NipptLibrarySample, NipptPoolingBatch, NipptPoolingSample, NipptHybSeqBatch, NipptHybSeqSample
+from .models import Case, CaseSample, WorkflowLog, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample, NipptLibraryBatch, NipptLibrarySample, NipptPoolingBatch, NipptPoolingSample, NipptHybSeqBatch, NipptHybSeqSample, NipptBioinfoBatch, NipptBioinfoSample
 from lims.apps.audit.utils import log_audit
 from .nippt_photos import NipptPhotosMixin, purge_nippt_photos
 from .serializers import (
@@ -155,6 +155,64 @@ class CaseViewSet(viewsets.ModelViewSet):
         if stage != "REGISTERED":
             return "已进实验（%s）" % self.STAGE_DISPLAY.get(stage, stage)
         return None
+
+    @action(detail=True, methods=["get"])
+    def notes_summary(self, request, pk=None):
+        """实时汇总各工序的样本级备注（qc_note / note），只读。
+
+        设计：不改工序模块、不冗余写库 —— 读取时从各工序样本表实时聚合，
+        天然带「工序名 + 时间 + 操作人」，工序备注改了自动同步。
+        """
+        case = self.get_object()
+        cs_list = list(case.case_samples.select_related("sample").all())
+        id2label = {}
+        for cs in cs_list:
+            id2label[str(cs.id)] = "%s (%s)" % (cs.sample.sample_id, cs.sample.patient_name or "")
+
+        MODELS = [
+            ("前处理", NipptPreProcessingSample),
+            ("提取", NipptExtractionSample),
+            ("文库构建", NipptLibrarySample),
+            ("定量Pooling", NipptPoolingSample),
+            ("杂交测序", NipptHybSeqSample),
+            ("生信分析", NipptBioinfoSample),
+        ]
+        out = []
+        for label, M in MODELS:
+            if M is None:
+                continue
+            try:
+                recs = M.objects.exclude(case_sample_ids=[]).order_by("-processed_at", "-id")
+            except Exception:
+                try:
+                    recs = M.objects.all().order_by("-processed_at", "-id")
+                except Exception:
+                    continue
+            for rec in recs:
+                ids = rec.case_sample_ids or []
+                if not isinstance(ids, list):
+                    continue
+                hits = [str(i) for i in ids if str(i) in id2label]
+                if not hits:
+                    continue
+                note = (getattr(rec, "qc_note", "") or "").strip()
+                if not note:
+                    continue
+                op = getattr(rec, "operator", None)
+                out.append({
+                    "stage": label,
+                    "sample_ids": id2label[hits[0]] if len(hits) == 1 else "%d 个样本" % len(hits),
+                    "note": note,
+                    "time": rec.processed_at.strftime("%Y-%m-%d %H:%M") if getattr(rec, "processed_at", None) else "",
+                    "operator": (
+                        getattr(op, "real_name", None)
+                        or (op.get_full_name() if hasattr(op, "get_full_name") else None)
+                        or getattr(op, "username", None)
+                        or ""
+                    ) if op else "",
+                })
+        out.sort(key=lambda x: x["time"] or "", reverse=True)
+        return Response({"count": len(out), "results": out})
 
     @action(detail=True, methods=["get"])
     def editable_state(self, request, pk=None):
