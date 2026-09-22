@@ -2084,7 +2084,182 @@ def advance_batch(batch, next_stage, operator=None, failed_stage=None):
             try: Case.objects.get(id=cid).update_status()
             except Case.DoesNotExist: pass
 
-class NipptPreProcessingViewSet(NipptPhotosMixin, viewsets.ModelViewSet):
+# ══════════════════════════════════════════
+# NIPPT 批次删除：阶段回退 + 下游引用保护 + 审计
+# ══════════════════════════════════════════
+
+NIPPT_STAGE_BEFORE = {
+    "EXTRACTION": "PRE_PROCESSING",
+    "LIBRARY_PREP": "EXTRACTION",
+    "POOLING": "LIBRARY_PREP",
+    "HYB_SEQ": "POOLING",
+    "BIOINFO": "HYB_SEQ",
+}
+NIPPT_STAGE_LABEL = {
+    "REGISTERED": "已登记", "RECEIVED": "已签收",
+    "PRE_PROCESSING": "前处理", "EXTRACTION": "核酸提取",
+    "LIBRARY_PREP": "文库构建", "POOLING": "文库定量及 Pooling",
+    "HYB_SEQ": "杂交测序", "BIOINFO": "生物信息",
+}
+# 各阶段样本被下游表用哪个字段引用（删之前必须检查，避免悬空引用）
+NIPPT_DOWNSTREAM_REF = {
+    "EXTRACTION": ("NipptLibrarySample", "source_extraction_sample_id"),
+    "LIBRARY_PREP": ("NipptPoolingSample", "source_library_sample_id"),
+    "POOLING": ("NipptHybSeqSample", "source_pooling_sample_id"),
+    "HYB_SEQ": ("NipptBioinfoSample", "source_hybseq_sample_id"),
+    "BIOINFO": None,
+}
+
+
+class NipptBatchDeleteMixin:
+    """批次删除统一行为：先查下游引用，再回退阶段，最后删。
+
+    子类需设置：
+        nippt_stage      : 本批次所属阶段（EXTRACTION / LIBRARY_PREP / ...）
+        nippt_revert_to  : 回退目标阶段（默认取 NIPPT_STAGE_BEFORE[nippt_stage]）
+        nippt_photos_ns  : 照片命名空间（有则清理）
+    可选覆盖 nippt_before_delete() 做额外处理（如回退血浆管数）。
+    """
+
+    nippt_stage = None
+    nippt_revert_to = None
+
+    # ── 工具 ──
+    def _nippt_photos_ns(self):
+        return getattr(self, "photos_namespace", None)
+    def _nippt_case_sample_ids(self, batch):
+        ids = []
+        for sp in batch.samples.all():
+            ids.extend(sp.case_sample_ids or [])
+        return list(dict.fromkeys(ids))
+
+    def _nippt_missing(self, batch, stage):
+        """引用了未知阶段的子类 → 返回 None 表示不处理。"""
+        if stage is None or stage not in NIPPT_STAGE_BEFORE:
+            return None
+        return True
+
+    def nippt_blocked_by_downstream(self, batch, stage):
+        """返回被下游引用的 [(下游批次号, 样本数)]；空表示可以删。"""
+        ref = NIPPT_DOWNSTREAM_REF.get(stage)
+        if not ref:
+            return []
+        model_name, field = ref
+        Model = globals().get(model_name)
+        if Model is None:
+            return []
+        sample_ids = [sp.id for sp in batch.samples.all()]
+        if not sample_ids:
+            return []
+        qs = Model.objects.filter(**{field + "__in": sample_ids})
+        out = {}
+        for obj in qs.select_related("batch"):
+            bn = getattr(getattr(obj, "batch", None), "batch_number", "") or "(未知批次)"
+            out[bn] = out.get(bn, 0) + 1
+        return sorted(out.items())
+
+    def nippt_revert_stage(self, batch, stage, to_stage, request):
+        """回退批次内样本的 workflow_stage，返回回退的 CaseSample id 列表。"""
+        csids = self._nippt_case_sample_ids(batch)
+        if not csids:
+            return []
+        # 只回退"当前正处于本阶段或更靠后"的样本，避免把已失败的样本拉回正常流程
+        qs = CaseSample.objects.filter(id__in=csids)
+        if to_stage == "RECEIVED":
+            qs = qs.exclude(workflow_stage="REGISTERED")
+        else:
+            qs = qs.exclude(workflow_stage__in=["REGISTERED", "RECEIVED", "POOLING_FAILED"])
+        touched = list(qs.values_list("id", flat=True))
+        if touched:
+            CaseSample.objects.filter(id__in=touched).update(workflow_stage=to_stage)
+            from .models import sync_case_status_for_samples
+            sync_case_status_for_samples(touched)
+        return touched
+
+    def nippt_before_delete(self, request, batch):
+        """钩子：子类可覆盖做额外清理（返回 Response 表示中断删除）。"""
+        return None
+
+    # ── 共用 destroy ──
+    def destroy(self, request, *args, **kwargs):
+        batch = self.get_object()
+        if batch.status == "COMPLETED":
+            return Response({"detail": "Cannot delete completed batch"}, status=400)
+        stage = self.nippt_stage
+        to_stage = self.nippt_revert_to or NIPPT_STAGE_BEFORE.get(stage)
+
+        # ① 下游引用保护：已被下游批次使用 → 拒绝
+        blocked = self.nippt_blocked_by_downstream(batch, stage)
+        if blocked:
+            detail = "该批次已被下游批次使用，请先删除下游批次：%s" % "、".join(
+                "%s（%d 个样本）" % (bn, n) for bn, n in blocked)
+            return Response({"detail": detail, "blocked": [{"batch_number": b, "count": n} for b, n in blocked]},
+                            status=400)
+
+        # ② 子类额外处理
+        err = self.nippt_before_delete(request, batch)
+        if err is not None:
+            return err
+
+        # ③ 回退阶段
+        reverted = self.nippt_revert_stage(batch, stage, to_stage, request) if to_stage else []
+
+        # ④ 审计留痕
+        try:
+            from ..audit.utils import log_audit
+            log_audit(request, "DELETE", batch,
+                      changes={
+                          "batch_number": {"old": batch.batch_number, "new": None},
+                          "stage": {"old": stage, "new": None},
+                          "reverted_samples": {"old": None, "new": len(reverted)},
+                          "revert_to": {"old": None, "new": to_stage},
+                      },
+                      entity_type="batch", entity_repr=batch.batch_number)
+        except Exception as _ex:
+            print("[audit] batch delete log failed:", _ex)
+
+        # ⑤ 清理照片 + 删除
+        bn = batch.batch_number
+        ns = self._nippt_photos_ns()
+        if ns:
+            try:
+                purge_nippt_photos(ns, batch.id)
+            except Exception as _ex:
+                print("[photos] purge failed:", _ex)
+        batch.delete()
+        return Response({
+            "message": "已删除批次 %s" % bn,
+            "reverted": len(reverted),
+            "to_stage": to_stage or "",
+            "to_stage_label": NIPPT_STAGE_LABEL.get(to_stage or "", to_stage or ""),
+            "blocked": [],
+        })
+
+    # ── 删除预览（前端确认框用）──
+    @action(detail=True, methods=["get"], url_path="delete_preview")
+    def delete_preview(self, request, pk=None):
+        batch = self.get_object()
+        stage = self.nippt_stage
+        to_stage = self.nippt_revert_to or NIPPT_STAGE_BEFORE.get(stage)
+        blocked = self.nippt_blocked_by_downstream(batch, stage)
+        csids = self._nippt_case_sample_ids(batch)
+        return Response({
+            "batch_number": batch.batch_number,
+            "status": batch.status,
+            "can_delete": batch.status != "COMPLETED" and not blocked,
+            "completed": batch.status == "COMPLETED",
+            "stage": stage or "",
+            "stage_label": NIPPT_STAGE_LABEL.get(stage or "", stage or ""),
+            "to_stage": to_stage or "",
+            "to_stage_label": NIPPT_STAGE_LABEL.get(to_stage or "", to_stage or ""),
+            "revert_count": len(csids),
+            "blocked": [{"batch_number": b, "count": n} for b, n in blocked],
+        })
+
+
+class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.ModelViewSet):
+    nippt_stage = None
+    nippt_revert_to = "RECEIVED"
     """NIPPT 前处理批次管理"""
     photos_namespace = "nippt_preprocessing"
     permission_classes = [permissions.IsAuthenticated]
@@ -2254,22 +2429,13 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, viewsets.ModelViewSet):
         advance_batch(batch, "EXTRACTION", request.user, failed_stage="PRE_PROCESSING")
         return Response({"message": f"Batch {batch.batch_number} completed"})
 
-    def destroy(self, request, *args, **kwargs):
-        batch = self.get_object()
-        if batch.status == "COMPLETED":
-            return Response({"detail": "Cannot delete completed batch"}, status=400)
-        # Revert workflow_stage for all samples back to RECEIVED
-        reverted_ids = []
-        for sp in batch.samples.all():
-            if sp.case_sample_ids:
-                CaseSample.objects.filter(id__in=sp.case_sample_ids).update(workflow_stage="RECEIVED")
-                reverted_ids.extend(sp.case_sample_ids)
-        # Sync Case status（回退后同步案例级状态）
-        from .models import sync_case_status_for_samples
-        sync_case_status_for_samples(reverted_ids)
-        purge_nippt_photos(self.photos_namespace, batch.id)
-        batch.delete()
-        return Response({"message": "Batch deleted, samples returned to pending"})
+
+
+    def nippt_before_delete(self, request, batch):
+        # 前处理批次删除：血浆管数无需回退（前处理本身就是管数产生点）
+        return None
+
+    # destroy 由 NipptBatchDeleteMixin 提供（回退到 RECEIVED）
 
 
 # ══════════════════════════════════════════
@@ -2281,7 +2447,8 @@ from .serializers import (
     NipptExtractionBatchCreateSerializer, NipptExtractionSampleSerializer,
 )
 
-class NipptExtractionViewSet(NipptPhotosMixin, viewsets.ModelViewSet):
+class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.ModelViewSet):
+    nippt_stage = "EXTRACTION"
     photos_namespace = "nippt_extraction"
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
@@ -2388,15 +2555,18 @@ class NipptExtractionViewSet(NipptPhotosMixin, viewsets.ModelViewSet):
         advance_batch(batch, "LIBRARY_PREP", request.user, failed_stage="EXTRACTION")
         return Response({"message": f"Completed {batch.samples.count()} samples"})
 
-    def destroy(self, request, *args, **kwargs):
-        batch = self.get_object()
-        if batch.status == "COMPLETED": return Response({"detail":"Cannot delete completed batch"}, status=400)
+
+
+    def nippt_before_delete(self, request, batch):
+        # 提取批次删除：退回被消耗的血浆管数
         for sp in batch.samples.all():
             if sp.source_preprocessing_sample_id:
-                NipptPreProcessingSample.objects.filter(id=sp.source_preprocessing_sample_id).update(aliquot_tubes=F('aliquot_tubes')+1)
-        purge_nippt_photos(self.photos_namespace, batch.id)
-        batch.delete()
-        return Response({"message":"Deleted"})
+                NipptPreProcessingSample.objects.filter(
+                    id=sp.source_preprocessing_sample_id
+                ).update(aliquot_tubes=F("aliquot_tubes") + 1)
+        return None
+
+    # destroy 由 NipptBatchDeleteMixin 提供（回退到 PRE_PROCESSING）
 
 
 # ══════════════════════════════════════════
@@ -2412,7 +2582,9 @@ from .serializers import (
     NipptHybSeqBatchCreateSerializer, NipptHybSeqSampleSerializer,
 )
 
-class NipptLibraryViewSet(NipptPhotosMixin, viewsets.ModelViewSet):
+class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.ModelViewSet):
+    nippt_stage = "LIBRARY_PREP"
+
     photos_namespace = "nippt_library"
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
@@ -2493,14 +2665,12 @@ class NipptLibraryViewSet(NipptPhotosMixin, viewsets.ModelViewSet):
         advance_batch(batch, "POOLING", request.user, failed_stage="LIBRARY_PREP")
         return Response({"message": f"Completed {batch.samples.count()} samples"})
 
-    def destroy(self, request, *args, **kwargs):
-        batch = self.get_object()
-        if batch.status == "COMPLETED": return Response({"detail":"Cannot delete"}, status=400)
-        purge_nippt_photos(self.photos_namespace, batch.id)
-        batch.delete(); return Response({"message":"Deleted"})
+    # destroy 由 NipptBatchDeleteMixin 提供
 
 
-class NipptPoolingViewSet(viewsets.ModelViewSet):
+
+class NipptPoolingViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
+    nippt_stage = "POOLING"
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
     search_fields = ["batch_number"]
@@ -2572,13 +2742,11 @@ class NipptPoolingViewSet(viewsets.ModelViewSet):
         advance_batch(batch, "HYB_SEQ", request.user, failed_stage="POOLING")
         return Response({"message": f"Completed {batch.samples.count()} samples"})
 
-    def destroy(self, request, *args, **kwargs):
-        batch = self.get_object()
-        if batch.status == "COMPLETED": return Response({"detail":"Cannot delete"}, status=400)
-        batch.delete(); return Response({"message":"Deleted"})
+    # destroy 由 NipptBatchDeleteMixin 提供（回退阶段）
 
 
-class NipptHybSeqViewSet(viewsets.ModelViewSet):
+class NipptHybSeqViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
+    nippt_stage = "HYB_SEQ"
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
     search_fields = ["batch_number"]
@@ -2655,10 +2823,7 @@ class NipptHybSeqViewSet(viewsets.ModelViewSet):
         advance_batch(batch, "BIOINFO", request.user, failed_stage="HYB_SEQ")
         return Response({"message": f"Completed {batch.samples.count()} samples"})
 
-    def destroy(self, request, *args, **kwargs):
-        batch = self.get_object()
-        if batch.status == "COMPLETED": return Response({"detail":"Cannot delete"}, status=400)
-        batch.delete(); return Response({"message":"Deleted"})
+    # destroy 由 NipptBatchDeleteMixin 提供（回退阶段）
 
 
 from .models import NipptBioinfoBatch, NipptBioinfoSample, NipptBioinfoPair
@@ -2669,7 +2834,8 @@ from .serializers import (
 )
 
 
-class NipptBioinfoViewSet(viewsets.ModelViewSet):
+class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
+    nippt_stage = "BIOINFO"
     """NIPPT Bioinformatics — pair-based CPI analysis"""
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
@@ -2910,9 +3076,5 @@ class NipptBioinfoViewSet(viewsets.ModelViewSet):
             "errors": errors[:20], "total_rows": len(rows),
         })
 
-    def destroy(self, request, *args, **kwargs):
-        batch = self.get_object()
-        if batch.status == "COMPLETED":
-            return Response({"detail": "Cannot delete completed batch"}, status=400)
-        batch.delete()
-        return Response({"message": "Deleted"})
+    # destroy 由 NipptBatchDeleteMixin 提供
+
