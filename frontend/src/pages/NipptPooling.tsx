@@ -217,10 +217,26 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     }catch{message.error("加载失败")}finally{setBatchLoading(false)}
   };
 
+  /** 当前筛选（签收地）后可见的条目 —— 渲染与全选共用同一出口，避免逻辑漂移 */
+  const visibleEntries = () => {
+    if (!pendingData) return [] as any[];
+    return pendingData.entries.filter((e: any) => !pendingLoc || e.receipt_location === pendingLoc);
+  };
+
+  /** 全选 / 取消全选：只作用于当前筛选可见样本（切到香港后全选 = 只选香港那批） */
+  const toggleAll = (checked: boolean) => {
+    if (!pendingData) return;
+    if (checked) {
+      const all = new Set<string>();
+      for (const e of visibleEntries()) for (const id of e.case_sample_ids) all.add(id);
+      setSelectedKeys(all);
+    } else setSelectedKeys(new Set());
+  };
+
   const openNewBatch = async()=>{
     try{
       const r=await(casesApi as any).pendingPooling();const d=r.data;setPendingData(d);
-      const all=new Set<string>();d.entries.forEach((e:any)=>e.case_sample_ids.forEach((id:string)=>all.add(id)));setSelectedKeys(all);
+      const all=new Set<string>();d.entries.filter((e:any)=>!pendingLoc||e.receipt_location===pendingLoc).forEach((e:any)=>e.case_sample_ids.forEach((id:string)=>all.add(id)));setSelectedKeys(all);
       const now=new Date();const pfx=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(now.getHours()).padStart(2,"0")}`;
       try{const br=await(casesApi as any).listPoolingBatches({search:pfx});const c=(br.data?.results||[]).filter((b:any)=>b.batch_number.startsWith(pfx)).length;setBatchNumberPreview(`${pfx}-${String(c+1).padStart(3,"0")}`)}
       catch{setBatchNumberPreview(`${pfx}-001`)}
@@ -555,9 +571,11 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       <Modal title="新建文库定量及Pooling批次" open={modalOpen} onOk={createBatch} onCancel={()=>setModalOpen(false)} width={700} okText={`创建批次 (${selectedKeys.size}个样本)`}>
         {pendingData&&(<div>
           <div style={{marginBottom:12,padding:"8px 12px",background:"#f6ffed",borderRadius:6}}><Text strong>批次号：</Text><Text code style={{fontSize:16}}>{batchNumberPreview}</Text></div>
-          <Space style={{marginBottom:8}}><Tag color="magenta">👩 {pendingData.female_count}</Tag><Tag color="blue">👨 {pendingData.male_blood_count+pendingData.male_other_count}</Tag><Button size="small" onClick={()=>setDueSort(v=>!v)}>{dueSort?"恢复原排序":"按到期时间排序"}</Button>
+          <Space style={{marginBottom:8}} wrap><Tag color="magenta">👩 {pendingData.female_count}</Tag><Tag color="blue">👨 {pendingData.male_blood_count+pendingData.male_other_count}</Tag><Button size="small" onClick={()=>setDueSort(v=>!v)}>{dueSort?"恢复原排序":"按到期时间排序"}</Button>
             <Select placeholder="全部签收地" style={{ width: 140 }} value={pendingLoc} allowClear
-              onChange={(v: string | undefined) => { setPendingLoc(v); setSelectedKeys(new Set()); }} options={LOC_OPTIONS} /></Space>
+              onChange={(v: string | undefined) => { setPendingLoc(v); setSelectedKeys(new Set()); }} options={LOC_OPTIONS} />
+            <Button size="small" onClick={() => toggleAll(true)}>全选</Button>
+            <Button size="small" onClick={() => toggleAll(false)}>取消全选</Button></Space>
           <div style={{maxHeight:350,overflow:"auto"}}>
             {(["FEMALE_BLOOD","MALE_BLOOD","MALE_OTHER"] as const).map(cat=>{
               const rawEntries = pendingData.entries.filter((e:any)=>e.category===cat && (!pendingLoc || e.receipt_location === pendingLoc));
