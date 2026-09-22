@@ -3,7 +3,8 @@ import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import React from "react";
 import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
   Space, Popconfirm, Select, Checkbox, DatePicker, TimePicker, Tooltip } from "antd";
-import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined } from "@ant-design/icons";
+import * as XLSX from "xlsx";
+import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import api from "../api/client";
 import dayjs from "dayjs";
@@ -75,6 +76,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const [savedIndexes, setSavedIndexes] = useState<Record<string,string>>({});
   // ── 未保存改动检测（完成批次守卫用）
   const baselineRef = useRef<string>("");
+  // 是否已保存过（导出按钮据此启用）：fetch 时按后端已存数据判定，保存成功后置 true
+  const [hasSaved, setHasSaved] = useState(false);
   const [loadStamp, setLoadStamp] = useState(0);
 
   // ── Computed females/males for allocation UI
@@ -164,6 +167,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const r=await(casesApi as any).getPoolingBatch(id);
       const d=r.data;setSelectedBatch(d);
       const pd=d.pooling_data||{};
+      setHasSaved(Array.isArray(pd.rows) && pd.rows.length > 0);
       setPoolingBase(pd.poolingBase??DEFAULT_POOLING_AMOUNT);
       setGlobalElutionVol(pd.globalElutionVol??DEFAULT_ELUTION);
       // 日期/时间（未完成批次空值默认当前时间）
@@ -281,6 +285,63 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     });
   };
 
+  /** 导出 Excel：日期/时间/操作人/审核人 + Mix 整个表（保持网页版式，按 mix 分组 + 每组汇总） */
+  const exportExcel = () => {
+    if (!selectedBatch) return;
+    if (!hasSaved) { message.warning("请先保存后再导出"); return; }
+    const sid = selectedBatch.id;
+    const opName = operators[sid] || (selectedBatch as any).operator_name || "";
+    const rvName = reviewers[sid] || (selectedBatch as any).reviewer || "";
+
+    const aoa: any[][] = [];
+    aoa.push([`${selectedBatch.batch_number} — 文库定量及 Pooling 记录`]);
+    aoa.push([]);
+    aoa.push(["日期", poolDate || "", "时间", poolTime || ""]);
+    aoa.push(["操作人", opName, "审核人", rvName]);
+    aoa.push([]);
+
+    // 与网页表头一致（11 列）
+    const HEAD = ["#", "PT编号", "Index", "类型", "浓度", "洗脱 μL", "产量 ng", "投入 ng", "体积 μL", "QC", "mix"];
+
+    groups.forEach((g: any, gi: number) => {
+      const elu = groupElutions[gi] ?? globalElutionVol;
+      aoa.push([`${g.name}（洗脱 ${elu} μL）`]);
+      aoa.push(HEAD);
+      g.rows.forEach((r: any) => {
+        aoa.push([
+          visualOrder.indexOf(r.id) + 1,
+          r.ptId,
+          savedIndexes[r.id] || "",
+          SAMPLE_TYPE_LABELS[r.sampleType] || r.sampleType || (r.category.includes("BLOOD") ? "血液" : "—"),
+          r.concentration ?? "",
+          r.elutionVolume ?? "",
+          r.yield > 0 ? r.yield.toFixed(1) : "-",
+          r.poolingAmount ?? "",
+          r.poolingVolume > 0 ? r.poolingVolume.toFixed(2) : "-",
+          r.qc || "",
+          g.name,
+        ]);
+      });
+      // 汇总行（对齐 11 列：6 格 colSpan + 4 项 + 1 空）
+      const nf = g.rows.filter((r: any) => r.category === "FEMALE_BLOOD").length;
+      const nm = g.rows.length - nf;
+      aoa.push([
+        `📊 ${g.name} 汇总`, "", "", "", "", "",
+        `投入: ${g.totalMass} ng`,
+        `总体积: ${g.totalVol.toFixed(2)} μL`,
+        `理论浓度: ${g.theoryConc.toFixed(2)} ng/μL`,
+        `总数据量: ${g.dataAmount}M (${nf}女/${nm}男)`,
+        "",
+      ]);
+      aoa.push([]);
+    });
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "文库定量及Pooling");
+    XLSX.writeFile(wb, `${selectedBatch.batch_number}_文库定量及Pooling.xlsx`);
+    message.success("已导出Excel");
+  };
+
   /** 当前数据快照（用于检测未保存的改动） */
   const snap = () => JSON.stringify({
     quantKit, poolingBase, globalElutionVol, groupBases, groupElutions, manualAlloc,
@@ -331,6 +392,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       };
       await(casesApi as any).savePooling(selectedBatch.id,{pooling_data:pd,samples});
       baselineRef.current = snap();  // 保存成功即为新基线（不重拉，避免覆盖本地）
+      setHasSaved(true);             // 保存过即可导出
       message.success("保存成功");
     }catch{message.error("保存失败")}finally{setSaving(false)}
   };
@@ -390,6 +452,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             extra={<Space>
               {selectedBatch.status!=="COMPLETED"&&<Popconfirm title="删除？" onConfirm={()=>deleteBatch(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
+              <Button disabled={false} icon={<DownloadOutlined/>} size="small" onClick={exportExcel}
+                title={hasSaved ? "" : "请先保存后再导出"}>导出Excel</Button>
               {selectedBatch.status!=="COMPLETED"&&<>
                 <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={save}>保存</Button>
                 <Button type="primary" size="small" danger onClick={onCompleteClick}>完成</Button>
