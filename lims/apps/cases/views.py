@@ -119,16 +119,192 @@ class CaseViewSet(viewsets.ModelViewSet):
             "pt_number": {"old": "", "new": case.pt_number or ""},
         }, entity_type="case", entity_repr=str(case))
 
+    # ── 案例管理编辑：可编辑白名单与锁定判定 ──────────────────────────
+    # Case 级可编辑字段（编号/状态/流程/site/created_by/时间戳 绝不放开）
+    CASE_EDITABLE_FIELDS = [
+        "gestational_age_weeks", "gestational_age_days", "multiple_gestation",
+        "clinic_name", "clinic_contact", "sales_person",
+        "applicant", "phone", "email",
+        "collection_method", "application_signed", "expected_completion",
+        "risk_warnings", "registration_type", "notes", "is_urgent",
+    ]
+    # 样本级可编辑字段（实际写入 cs.sample）
+    SAMPLE_EDITABLE_FIELDS = ["patient_name", "collection_date"]
+    # 备注：任何状态都可改
+    NOTE_FIELDS = ["collection_notes", "receipt_note"]
+    STAGE_DISPLAY = {
+        "REGISTERED": "已登记", "PRE_PROCESSING": "前处理", "EXTRACTION": "提取",
+        "LIBRARY": "文库构建", "POOLING": "定量Pooling", "HYB_SEQ": "杂交测序",
+        "BIOINFO": "生信分析", "REPORT_DRAFT": "报告草稿", "COMPLETED": "已完成",
+    }
+
+    def _sample_lock_reason(self, case, cs):
+        """样本锁定原因：None=可编辑；否则返回中文原因。
+
+        ① 已匹配：同 case 内存在共享同一 external_id 的另一 CaseSample（导入补样合并过）
+        ② 已进实验：workflow_stage != REGISTERED
+        """
+        ext = (getattr(cs.sample, "external_id", "") or "").strip()
+        if ext:
+            dup = CaseSample.objects.filter(
+                case=case, sample__external_id=ext
+            ).exclude(id=cs.id).exists()
+            if dup:
+                return "已与导入样本匹配"
+        stage = cs.workflow_stage or "REGISTERED"
+        if stage != "REGISTERED":
+            return "已进实验（%s）" % self.STAGE_DISPLAY.get(stage, stage)
+        return None
+
+    @action(detail=True, methods=["get"])
+    def editable_state(self, request, pk=None):
+        """返回该案例的可编辑状态：案例级是否可编辑 + 每个样本的锁定原因。"""
+        case = self.get_object()
+        samples = []
+        for cs in case.case_samples.select_related("sample").order_by("role", "created_at"):
+            samples.append({
+                "id": str(cs.id),
+                "sample_id": cs.sample.sample_id,
+                "patient_name": cs.sample.patient_name or "",
+                "collection_date": str(cs.sample.collection_date) if cs.sample.collection_date else "",
+                "collection_notes": cs.collection_notes or "",
+                "role": cs.role,
+                "workflow_stage": cs.workflow_stage,
+                "locked": bool(self._sample_lock_reason(case, cs)),
+                "lock_reason": self._sample_lock_reason(case, cs) or "",
+            })
+        case_locked = all(s["locked"] for s in samples) if samples else False
+        return Response({
+            "case_editable": not case_locked,
+            "case_locked_reason": "全部样本均已锁定" if case_locked else "",
+            "samples": samples,
+        })
+
+    def _apply_case_edit(self, request, case):
+        """案例管理编辑：edited_by 必填；G1 案例级 + G2/G3 样本级 + 备注。"""
+        from lims.apps.audit.utils import log_audit
+
+        edited_by = (request.data.get("edited_by") or "").strip()
+        if not edited_by:
+            raise ValidationError({"edited_by": "请填写编辑人"})
+
+        changes = {}
+        # ── 阶段一：全量校验（先不写，避免部分成功）──
+        sample_plan = []          # [(cs, {field: (old, new)})]
+        for item in (request.data.get("case_samples") or []):
+            cs_id = item.get("id")
+            if not cs_id:
+                raise ValidationError({"case_samples": "缺少样本 id"})
+            cs = case.case_samples.filter(id=cs_id).select_related("sample").first()
+            if not cs:
+                raise ValidationError({"case_samples": "样本不属于该案例: %s" % cs_id})
+
+            reason = self._sample_lock_reason(case, cs)
+            plan = {}
+            # 受锁字段（姓名/采集日期）
+            for f in self.SAMPLE_EDITABLE_FIELDS:
+                if f not in item:
+                    continue
+                if reason:
+                    raise ValidationError({
+                        "case_samples": "%s 已锁定（%s），不可修改 %s" % (cs.sample.sample_id, reason, f)
+                    })
+                new = item.get(f)
+                if f == "patient_name":
+                    new = (new or "").strip()
+                    if not new:
+                        raise ValidationError({"case_samples": "姓名不能为空"})
+                    old = cs.sample.patient_name or ""
+                else:  # collection_date（必填，不允许清空）
+                    if not new:
+                        raise ValidationError({"case_samples": "采集日期不能为空（必填字段）"})
+                    old = str(cs.sample.collection_date) if cs.sample.collection_date else ""
+                if str(old) != str(new):
+                    plan[f] = (old, new)
+            # 备注：任何状态都可改
+            for f in self.NOTE_FIELDS:
+                if f not in item:
+                    continue
+                new = item.get(f)
+                if new is None:
+                    continue
+                old = getattr(cs, f, "") or ""
+                if str(old) != str(new):
+                    plan[f] = (old, new)
+            if plan:
+                sample_plan.append((cs, plan))
+
+        case_plan = {}
+        for f in self.CASE_EDITABLE_FIELDS:
+            if f not in request.data:
+                continue
+            new = request.data.get(f)
+            old = getattr(case, f)
+            # 空字符串归一（数值/布尔字段除外）
+            if isinstance(new, str):
+                new = new.strip()
+                if f in ("gestational_age_weeks", "gestational_age_days", "expected_completion") and new == "":
+                    new = None
+            if str(old) != str(new):
+                case_plan[f] = (old, new)
+
+        if not case_plan and not sample_plan:
+            return Response({"updated": 0, "changes": {}, "message": "没有变更"})
+
+        # ── 阶段二：写入 ──
+        with transaction.atomic():
+            if case_plan:
+                for f, (old, new) in case_plan.items():
+                    setattr(case, f, new)
+                case.save(update_fields=list(case_plan.keys()) + ["updated_at"])
+                for f, (old, new) in case_plan.items():
+                    changes[f] = {"old": "" if old is None else str(old),
+                                  "new": "" if new is None else str(new)}
+            for cs, plan in sample_plan:
+                sample_updates = {}
+                cs_updates = {}
+                # 审计键加样本标识前缀，避免同案例多样本互相覆盖
+                prefix = cs.sample.sample_id or str(cs.id)
+                for f, (old, new) in plan.items():
+                    if f in self.SAMPLE_EDITABLE_FIELDS:
+                        setattr(cs.sample, f, new)
+                        sample_updates[f] = True
+                    else:
+                        setattr(cs, f, new)
+                        cs_updates[f] = True
+                    changes["%s.%s" % (prefix, f)] = {
+                        "old": "" if old is None else str(old),
+                        "new": "" if new is None else str(new),
+                    }
+                if sample_updates:
+                    cs.sample.save(update_fields=list(sample_updates.keys()) + ["updated_at"])
+                if cs_updates:
+                    cs.save(update_fields=list(cs_updates.keys()) + ["updated_at"])
+
+            changes["edited_by"] = {"old": "", "new": edited_by}
+            changes["source"] = {"old": "", "new": "case_manage_edit"}
+            log_audit(
+                request, "UPDATE", case, changes=changes,
+                entity_type="case", entity_repr=case.case_number,
+            )
+
+        return Response({"updated": len(case_plan) + sum(len(p) for _, p in sample_plan),
+                         "changes": changes})
+
     def partial_update(self, request, *args, **kwargs):
         """行内编辑保存：请求带 case_sample_id 时，更新指定样本的可编辑字段。
-        （原实现被 DRF 默认逻辑忽略，导致签收页行内编辑静默不保存）"""
+        （原实现被 DRF 默认逻辑忽略，导致签收页行内编辑静默不保存）
+
+        案例管理编辑：带 edited_by / case_samples 时走 _apply_case_edit。
+        """
         cs_id = request.data.get("case_sample_id")
         if cs_id:
             case = self.get_object()
             cs = case.case_samples.filter(id=cs_id).first()
             if not cs:
                 raise NotFound("Sample not found in this case")
-            EDITABLE = ["receipt_note", "actual_sample_type", "preservation_method"]
+            EDITABLE = ["receipt_note", "actual_sample_type", "preservation_method",
+                        "collection_notes"]
             updated = []
             for field in EDITABLE:
                 if field in request.data:
@@ -137,6 +313,21 @@ class CaseViewSet(viewsets.ModelViewSet):
             if updated:
                 cs.save(update_fields=updated + ["updated_at"])
             return self.retrieve(request, *args, **kwargs)
+
+        # 案例管理编辑（带编辑人）
+        if "edited_by" in request.data or "case_samples" in request.data:
+            case = self.get_object()
+            return self._apply_case_edit(request, case)
+
+        # 堵漏：请求若含可编辑字段却没带 edited_by，说明绕过了编辑流程 → 拒绝
+        # （is_urgent 是「加急」按钮独立调用，不在此列）
+        guarded = set(self.CASE_EDITABLE_FIELDS) - {"is_urgent"}
+        touched = [f for f in guarded if f in request.data]
+        if touched:
+            raise ValidationError({
+                "edited_by": "请填写编辑人后再保存（涉及字段: %s）" % ", ".join(sorted(touched))
+            })
+
         return super().partial_update(request, *args, **kwargs)
 
     @action(detail=False, methods=["post"], parser_classes=[MultiPartParser, FormParser, JSONParser])
