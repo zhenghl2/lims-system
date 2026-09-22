@@ -446,15 +446,31 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
 
     // 96 孔板 → 行。姓名用 vgId(=test_sample_id) 匹配，最可靠：
     // 厦门合并板里男性 cell 的 sampleIdx 指向男性数组而非合并数组，按 sampleIdx 取会串人。
-    const plateRows = (plate: PlateGrid, title: string): any[][] => {
+    // 板 → 网格（与网页一致：A-H × 1-12，格内「Index + VG ID」）+ 明细表
+    const plateRows = (plate: PlateGrid, title: string, startLabel: string, startCoord: string): any[][] => {
       const pool = [...femSamples, ...maleSamples];
-      const rows: any[][] = [[title], ["孔位", "VG ID", "姓名", "Index"]];
+      const rows: any[][] = [[startCoord ? `${title}   ${startLabel}：${startCoord}` : `${title}   ${startLabel}：居中编号`]];
+      rows.push(["", ...COLS.map(String)]);
+      for (const r of ROWS) {
+        const line: any[] = [r];
+        for (const c of COLS) {
+          const cell = plate[ROWS.indexOf(r)]?.[c - 1];
+          if (!cell?.vgId) { line.push(""); continue; }
+          const parts = [cell.index || "", cell.vgId].filter(Boolean);
+          line.push(parts.join("  ") + (cell.isQC ? " QC" : ""));
+        }
+        rows.push(line);
+      }
+      // 明细表（姓名只在这里有位置放）
+      rows.push([]);
+      rows.push(["样本明细"]);
+      rows.push(["孔位", "VG ID", "姓名", "Index"]);
       for (const r of ROWS) {
         for (const c of COLS) {
           const cell = plate[ROWS.indexOf(r)]?.[c - 1];
-          if (!cell?.vgId && !cell?.index) continue;
-          const smp = pool.find(x => x.test_sample_id === cell?.vgId);
-          rows.push([`${r}${c}`, cell?.vgId || "", smp?.patient_name || "", cell?.index || ""]);
+          if (!cell?.vgId) continue;
+          const smp = pool.find(x => x.test_sample_id === cell.vgId);
+          rows.push([`${r}${c}`, cell.vgId, smp?.patient_name || "", cell.index || ""]);
         }
       }
       return rows;
@@ -477,7 +493,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       const aoa: any[][] = [[`${selectedBatch.batch_number} — 文库构建记录（厦门）`], []];
       aoa.push(...commonReagents());
       aoa.push(...records("", dateF, timeF, femaleLibKit, operators[sid] || "", reviewers[sid] || ""));
-      aoa.push(...plateRows(xiamenPlate, `三、96孔板（👩${femSamples.length}+👨${maleSamples.length} 合并板）`));
+      const xmStart = [femaleStartCoord && `女起 ${femaleStartCoord}`, maleStartCoord && `男起 ${maleStartCoord}`].filter(Boolean).join("  ");
+      aoa.push(...plateRows(xiamenPlate, `三、96孔板（👩${femSamples.length}+👨${maleSamples.length} 合并板）`, "起始", xmStart));
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "文库构建");
     } else {
       // 香港：女性/男性两个 sheet；共用试剂只在「女性」sheet 出现一次
@@ -492,7 +509,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
           (isF ? operators : operatorsM)[sid] || "",
           (isF ? reviewers : reviewersM)[sid] || "",
         ));
-        aoa.push(...plateRows(isF ? femalePlate : malePlate, `三、96孔板（${isF ? "👩 女性板" : "👨 男性板"}）`));
+        aoa.push(...plateRows(
+          isF ? femalePlate : malePlate,
+          `三、96孔板（${isF ? "👩 女性板" : "👨 男性板"}）`,
+          isF ? "女起" : "男起",
+          isF ? hkFemaleStart : hkMaleStart,
+        ));
         return XLSX.utils.aoa_to_sheet(aoa);
       };
       XLSX.utils.book_append_sheet(wb, build(true), "女性");
