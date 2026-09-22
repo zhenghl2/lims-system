@@ -244,7 +244,9 @@ export const casesApi = {
   getLibraryBatch: (id: string) => api.get(`/cases/library/${id}/`),
   createLibraryBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/library/", data),
   pendingLibrary: () => api.get("/cases/library/pending/"),
-  saveLibrary: (id: string, data: any) => api.post(`/cases/library/${id}/save_processing/`, data),
+  // ⚠️ 文库保存的请求体内联了 base64 照片（可达数 MB），跨境/慢网上传常超过默认 30s
+  // 超时会导致请求体截断（nginx 400）→ 前端误报"保存失败"。故单独放宽到 180s。
+  saveLibrary: (id: string, data: any) => api.post(`/cases/library/${id}/save_processing/`, data, { timeout: 180000 }),
   completeLibrary: (id: string) => api.post(`/cases/library/${id}/complete/`),
   deleteLibraryBatch: (id: string) => api.delete(`/cases/library/${id}/`),
 
