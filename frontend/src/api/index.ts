@@ -248,11 +248,12 @@ export const casesApi = {
   // 超时会导致请求体截断（nginx 400）→ 前端误报"保存失败"。故单独放宽到 180s。
   saveLibrary: (id: string, data: any) => api.post(`/cases/library/${id}/save_processing/`, data, { timeout: 180000 }),
   // NIPPT 实验照片独立上传 / 删除（避免 base64 内联导致保存请求体过大）
+  // 单张照片压缩后约 300KB，跨境弱网下仍可能超过默认 30s，故单独放宽到 120s
   uploadNipptPhoto: (module: string, batchId: string, side: string, file: File) => {
     const fd = new FormData();
     fd.append("side", side);
     fd.append("file", file);
-    return api.post<{ url: string; side: string }>(`/cases/${module}/${batchId}/photos/`, fd);
+    return api.post<{ url: string; side: string }>(`/cases/${module}/${batchId}/photos/`, fd, { timeout: 120000 });
   },
   deleteNipptPhoto: (module: string, batchId: string, side: string, name: string) =>
     api.delete(`/cases/${module}/${batchId}/photos/?side=${side}&name=${encodeURIComponent(name)}`),
