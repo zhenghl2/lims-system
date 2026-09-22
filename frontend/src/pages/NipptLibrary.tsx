@@ -3,10 +3,11 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, Select, InputNumber,
   Space, Popconfirm, Radio, Checkbox, Upload, Image, DatePicker, TimePicker, Form,
   Popover, Row, Col } from "antd";
-import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, CameraOutlined, LoadingOutlined } from "@ant-design/icons";
+import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, CameraOutlined, LoadingOutlined, DownloadOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import { uploadNipptPhoto, deleteNipptPhoto, migrateLegacyNipptPhotos, isRemotePhoto } from "../utils/nipptPhoto";
 import dayjs from "dayjs";
+import * as XLSX from "xlsx";
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -418,6 +419,89 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     if (!(serverLd.operator_female || serverLd.operator_male)) { message.warning("完成前请先点击保存"); return; }
     if (JSON.stringify(canon(buildLibraryData())) !== JSON.stringify(canon(serverLd))) { message.warning("有未保存的修改，请先点击保存再完成"); return; }
     try{await(casesApi as any).completeLibrary(selectedBatch.id);message.success("已完成");setSelectedBatch(null);fetchBatches()}catch{message.error("失败")}};
+  // ── 导出 Excel（照 DNA 提取模块的模板；厦门 1 sheet / 香港 女性+男性 2 sheet）──
+  const exportExcel = () => {
+    if (!selectedBatch) return;
+    const sid = selectedBatch.id;
+    const femSamples: SampleItem[] = selectedBatch.female_samples || [];
+    const maleSamples: SampleItem[] = [...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])];
+    const kitLabel = (list: { value: string; label: string }[], v: string) => list.find(x => x.value === v)?.label || v || "—";
+
+    // 共用试剂（只在第一个 sheet 输出一次）
+    const commonReagents = (): any[][] => {
+      const rows: any[][] = [["一、建库试剂盒及配套试剂"]];
+      libKits.forEach(kv => {
+        const k = LIB_KITS.find(x => x.value === kv);
+        rows.push(["文库构建Kit", k?.label || kv, "批号", libKitDetails[kv]?.lot || "", "有效期", libKitDetails[kv]?.expiry || ""]);
+      });
+      selectedIndexKits.forEach(kv => {
+        const k = INDEX_KITS.find(x => x.value === kv);
+        rows.push(["Index接头", k?.label || kv, "批号", indexKitDetails[kv]?.lot || "", "有效期", indexKitDetails[kv]?.expiry || ""]);
+      });
+      rows.push(["阳性质控品", positiveControl || ""]);
+      rows.push(["阴性质控品", negativeControl || ""]);
+      rows.push([]);
+      return rows;
+    };
+
+    // 96 孔板 → 行。姓名用 vgId(=test_sample_id) 匹配，最可靠：
+    // 厦门合并板里男性 cell 的 sampleIdx 指向男性数组而非合并数组，按 sampleIdx 取会串人。
+    const plateRows = (plate: PlateGrid, title: string): any[][] => {
+      const pool = [...femSamples, ...maleSamples];
+      const rows: any[][] = [[title], ["孔位", "VG ID", "姓名", "Index"]];
+      for (const r of ROWS) {
+        for (const c of COLS) {
+          const cell = plate[ROWS.indexOf(r)]?.[c - 1];
+          if (!cell?.vgId && !cell?.index) continue;
+          const smp = pool.find(x => x.test_sample_id === cell?.vgId);
+          rows.push([`${r}${c}`, cell?.vgId || "", smp?.patient_name || "", cell?.index || ""]);
+        }
+      }
+      return rows;
+    };
+
+    // 实验记录（只含用户点名的：日期/时间/男女试剂盒/操作人/审核人）
+    const records = (who: string, date: string, time: string, kit: string, op: string, rev: string): any[][] => {
+      const rows: any[][] = [["二、实验记录"]];
+      rows.push(["日期", date || "", "时间", time || ""]);
+      rows.push([who ? `试剂盒(${who})` : "试剂盒", kitLabel(who === "男性" ? MALE_KITS : FEMALE_KITS, kit)]);
+      rows.push(["操作人", op || ""]);
+      rows.push(["审核人", rev || ""]);
+      rows.push([]);
+      return rows;
+    };
+
+    const wb = XLSX.utils.book_new();
+    if (region === "XIAMEN") {
+      // 厦门：单 sheet（合并板，人员/日期走女性那套，与网页一致）
+      const aoa: any[][] = [[`${selectedBatch.batch_number} — 文库构建记录（厦门）`], []];
+      aoa.push(...commonReagents());
+      aoa.push(...records("", dateF, timeF, femaleLibKit, operators[sid] || "", reviewers[sid] || ""));
+      aoa.push(...plateRows(xiamenPlate, `三、96孔板（👩${femSamples.length}+👨${maleSamples.length} 合并板）`));
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "文库构建");
+    } else {
+      // 香港：女性/男性两个 sheet；共用试剂只在「女性」sheet 出现一次
+      const build = (isF: boolean) => {
+        const aoa: any[][] = [[`${selectedBatch.batch_number} — ${isF ? "女性" : "男性"}文库构建记录`], []];
+        if (isF) aoa.push(...commonReagents());
+        aoa.push(...records(
+          isF ? "女性" : "男性",
+          isF ? dateF : dateM,
+          isF ? timeF : timeM,
+          isF ? femaleLibKit : maleLibKit,
+          (isF ? operators : operatorsM)[sid] || "",
+          (isF ? reviewers : reviewersM)[sid] || "",
+        ));
+        aoa.push(...plateRows(isF ? femalePlate : malePlate, `三、96孔板（${isF ? "👩 女性板" : "👨 男性板"}）`));
+        return XLSX.utils.aoa_to_sheet(aoa);
+      };
+      XLSX.utils.book_append_sheet(wb, build(true), "女性");
+      XLSX.utils.book_append_sheet(wb, build(false), "男性");
+    }
+    XLSX.writeFile(wb, `${selectedBatch.batch_number}_文库构建.xlsx`);
+    message.success("已导出Excel");
+  };
+
   const deleteBatch = async(id:string)=>{try{await(casesApi as any).deleteLibraryBatch(id);message.success("已删除");setSelectedBatch(null);fetchBatches()}catch(e:any){message.error(e?.response?.data?.detail||"删除失败")}};
   // ===== Photo upload（压缩 + 男女分开）=====
   /** 压缩图片：超过 1600px 或 800KB 转 JPEG 0.85 */
@@ -651,6 +735,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
             extra={<Space>
               {selectedBatch.status!=="COMPLETED"&&<Popconfirm title="删除？" onConfirm={()=>deleteBatch(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
+              <Button disabled={false} icon={<DownloadOutlined/>} size="small" onClick={exportExcel}>导出Excel</Button>
               {selectedBatch.status!=="COMPLETED"&&<>
                 <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={() => saveProcessing("all")}>保存全部</Button>
                 <Popconfirm title="完成批次？" onConfirm={completeBatch}><Button type="primary" size="small" danger>完成</Button></Popconfirm>
