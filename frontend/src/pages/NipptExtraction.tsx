@@ -244,6 +244,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     } catch (e: any) { message.error(e?.response?.data?.detail || "创建失败"); }
   };
 
+  /** 顶部计数：当前筛选可见的条目数（与分组标题同口径，条目数而非样本数） */
+  const visCount = (female: boolean) =>
+    visibleEntries().filter((e: any) => (e.category === "FEMALE_BLOOD") === female).length;
+
   /** 当前筛选（搜索 + 签收地）后可见的条目 */
   const visibleEntries = () => {
     if (!pendingData) return [] as any[];
@@ -1065,7 +1069,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
             <Text strong>批次号：</Text><Text code style={{ fontSize: 16 }}>{batchNumberPreview}</Text><Text type="secondary" style={{ marginLeft: 8 }}>（自动生成）</Text></div>
           <Space style={{ marginBottom: 8 }} wrap><Input.Search placeholder="搜索姓名/PT号/Case号..." allowClear value={pendingSearch} onChange={(e: any) => setPendingSearch(e.target.value)} style={{ width: 300 }} /><Select placeholder="全部签收地" style={{ width: 140 }} value={pendingLoc} allowClear onChange={(v: string | undefined) => { setPendingLoc(v); setSelectedKeys(new Set()); }} options={LOC_OPTIONS} /></Space>
           <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <Space><Tag color="magenta">👩 女性: {pendingData.female_count}</Tag><Tag color="blue">👨 男性: {pendingData.male_blood_count + pendingData.male_other_count}</Tag></Space>
+            <Space><Tag color="magenta">👩 女性: {visCount(true)}</Tag><Tag color="blue">👨 男性: {visCount(false)}</Tag></Space>
             <Space><Button size="small" onClick={() => selectByGender("f")}>👩 全选女性</Button><Button size="small" onClick={() => selectByGender("m")}>👨 全选男性</Button><Button size="small" onClick={() => toggleAll(true)}>全选</Button><Button size="small" onClick={() => toggleAll(false)}>取消全选</Button></Space></div>
           <Divider style={{ margin: "8px 0" }} />
           <div style={{ maxHeight: 300, overflow: "auto", marginBottom: 16 }}>

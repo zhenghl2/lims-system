@@ -223,6 +223,10 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     return pendingData.entries.filter((e: any) => !pendingLoc || e.receipt_location === pendingLoc);
   };
 
+  /** 顶部计数：当前筛选可见的条目数（与分组标题同口径，条目数而非样本数） */
+  const visCount = (female: boolean) =>
+    visibleEntries().filter((e: any) => (e.category === "FEMALE_BLOOD") === female).length;
+
   /** 全选 / 取消全选：只作用于当前筛选可见样本（切到香港后全选 = 只选香港那批） */
   const toggleAll = (checked: boolean) => {
     if (!pendingData) return;
@@ -571,7 +575,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       <Modal title="新建文库定量及Pooling批次" open={modalOpen} onOk={createBatch} onCancel={()=>setModalOpen(false)} width={700} okText={`创建批次 (${selectedKeys.size}个样本)`}>
         {pendingData&&(<div>
           <div style={{marginBottom:12,padding:"8px 12px",background:"#f6ffed",borderRadius:6}}><Text strong>批次号：</Text><Text code style={{fontSize:16}}>{batchNumberPreview}</Text></div>
-          <Space style={{marginBottom:8}} wrap><Tag color="magenta">👩 {pendingData.female_count}</Tag><Tag color="blue">👨 {pendingData.male_blood_count+pendingData.male_other_count}</Tag><Button size="small" onClick={()=>setDueSort(v=>!v)}>{dueSort?"恢复原排序":"按到期时间排序"}</Button>
+          <Space style={{marginBottom:8}} wrap><Tag color="magenta">👩 {visCount(true)}</Tag><Tag color="blue">👨 {visCount(false)}</Tag><Button size="small" onClick={()=>setDueSort(v=>!v)}>{dueSort?"恢复原排序":"按到期时间排序"}</Button>
             <Select placeholder="全部签收地" style={{ width: 140 }} value={pendingLoc} allowClear
               onChange={(v: string | undefined) => { setPendingLoc(v); setSelectedKeys(new Set()); }} options={LOC_OPTIONS} />
             <Button size="small" onClick={() => toggleAll(true)}>全选</Button>

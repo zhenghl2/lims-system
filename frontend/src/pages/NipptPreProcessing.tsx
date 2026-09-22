@@ -370,6 +370,10 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     );
   };
 
+  /** 顶部计数：当前筛选可见的条目数（与分组标题同口径，条目数而非样本数） */
+  const visCount = (female: boolean) =>
+    visibleEntries().filter((e: any) => (e.category === "FEMALE_BLOOD") === female).length;
+
   const toggleAll = (checked: boolean) => {
     if (!pendingData) return;
     if (checked) {
@@ -908,8 +912,8 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
             </Space>
             <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <Space>
-                <Tag color="magenta">👩 女性: {pendingData.female_count}</Tag>
-                <Tag color="blue">👨 男性: {pendingData.male_blood_count + pendingData.male_other_count}</Tag>
+                <Tag color="magenta">👩 女性: {visCount(true)}</Tag>
+                <Tag color="blue">👨 男性: {visCount(false)}</Tag>
               </Space>
               <Space>
                 <Button size="small" onClick={() => selectByGender("f")}>👩 全选女性</Button>
