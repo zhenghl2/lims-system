@@ -779,6 +779,65 @@ class SampleRunViewSet(viewsets.ModelViewSet):
         stats["total"] = qs.count()
         return Response(stats)
 
+    def destroy(self, request, *args, **kwargs):
+        """删除批次，并把批次内样本回退到「血浆分离完成」。
+
+        背景：create() 会把样本 status 推到 EXTRACTION 并扣减 1 份血浆。
+        原先走 DRF 默认 destroy，只删批次记录，样本状态停在 EXTRACTION
+        → 前端候选池（只查 IN_PROCESS / PLASMA_SEPARATED）再也看不到这些样本，
+        用户表现为「删除批次后重新创建时样本没有了」。
+
+        规则（已与用户确认）：
+          · 回退目标 = PLASMA_SEPARATED（可重新选入新批次）
+          · 血浆份数退回（未真正做实验不应消耗），但不超过 plasma_count
+          · 已完成 / 已有样本出报告的批次禁止删除
+          · 样本若仍在其他批次中，则不回退（避免误伤）
+        """
+        from django.utils import timezone
+
+        run = self.get_object()
+
+        # ① 已完成 / 已出报告的批次禁止删除
+        if run.status == "COMPLETED":
+            return Response({"detail": "该批次已完成，不能删除"}, status=400)
+        sample_ids = list(run.run_samples.values_list("sample_id", flat=True))
+        if sample_ids and Sample.objects.filter(
+            id__in=sample_ids, status__in=["REPORTED", "ARCHIVED"]
+        ).exists():
+            return Response({"detail": "该批次已有样本出报告，不能删除"}, status=400)
+
+        # ② 回退样本 + 删除批次（同一事务）
+        with transaction.atomic():
+            run_number = run.run_number
+            for rs in run.run_samples.select_related("sample").all():
+                sample = rs.sample
+                if not sample:
+                    continue
+                # 仍在其他批次中的样本，不动（避免误伤别的批次的进度）
+                if RunSample.objects.filter(sample=sample).exclude(run=run).exists():
+                    continue
+
+                upd = {}
+                # 退回血浆份数：QC 样本创建时同样扣了 1 份，一并退回
+                if sample.plasma_remaining < sample.plasma_count:
+                    upd["plasma_remaining"] = models.F("plasma_remaining") + 1
+                # 仅普通样本回退状态；QC 样本的状态本来就不由本批次推进
+                if not rs.is_qc:
+                    upd["status"] = "PLASMA_SEPARATED"
+                # 实验历史留痕
+                history = list(sample.experiment_history or [])
+                history.append({
+                    "action": "RUN_DELETED",
+                    "run_number": run_number,
+                    "timestamp": timezone.now().isoformat(),
+                })
+                upd["experiment_history"] = history
+                Sample.objects.filter(id=sample.id).update(**upd)
+
+            run.delete()  # 级联删除 RunSample / WorkflowStep
+
+        return Response(status=204)
+
 
 class WorkflowStepViewSet(viewsets.ModelViewSet):
     """Individual workflow steps within a run."""

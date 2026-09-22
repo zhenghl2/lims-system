@@ -1055,7 +1055,15 @@
       "statusAnalyzing": "Bioinformática",
       "statusQcReview": "Revisão CQ",
       "statusCompleted": "Concluído",
-      "statusFailed": "Falhou"
+      "statusFailed": "Falhou",
+      "batchCreated": "Lote criado",
+      "batchDeleted": "Lote excluído. Amostras retornadas para Plasma Separado",
+      "createOk": "Criar ({n} amostras)",
+      "qcMode": "CQ",
+      "normalMode": "Normal",
+      "pendingCount": "{n} pendentes",
+      "selectedCount": "{n} selecionadas",
+      "sampleUnit": "{n} amostras"
     },
     "extraction": {
       "method": "Método de Extração",

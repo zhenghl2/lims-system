@@ -1057,7 +1057,15 @@
       "statusCompleted": "已完成",
       "statusFailed": "失败",
       "loading": "加载中...",
-      "selectSamples": "选择样本"
+      "selectSamples": "选择样本",
+      "batchCreated": "批次创建成功",
+      "batchDeleted": "批次已删除，样本已回到「血浆分离完成」",
+      "createOk": "创建（{n} 个样本）",
+      "qcMode": "QC样本",
+      "normalMode": "普通样本",
+      "pendingCount": "{n} 待处理",
+      "selectedCount": "已选 {n} 个",
+      "sampleUnit": "{n} 个样本"
     },
     "extraction": {
       "method": "提取方法",

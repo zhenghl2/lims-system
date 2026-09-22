@@ -1055,7 +1055,15 @@
       "statusAnalyzing": "Bioinformatics",
       "statusQcReview": "QC Review",
       "statusCompleted": "Completed",
-      "statusFailed": "Failed"
+      "statusFailed": "Failed",
+      "batchCreated": "Batch created",
+      "batchDeleted": "Batch deleted. Samples returned to Plasma Separated",
+      "createOk": "Create ({n} samples)",
+      "qcMode": "QC",
+      "normalMode": "Regular",
+      "pendingCount": "{n} pending",
+      "selectedCount": "{n} selected",
+      "sampleUnit": "{n} samples"
     },
     "extraction": {
       "method": "Extraction Method",

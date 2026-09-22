@@ -21,7 +21,17 @@ export function useTranslation() {
   const locale = useAuthStore((s) => s.user?.locale || "en");
   const messages = useMemo(() => LOCALE_MAP[locale] || en, [locale]);
 
-  const t = (key: string): string => getNested(messages, key);
+  // 支持可选的插值参数：t("a.b", { n: 3 }) 会把文案里的 {n} 替换为 3。
+  // 不传 vars 时行为与以前完全一致（向后兼容）。
+  const t = (key: string, vars?: Record<string, string | number>): string => {
+    const raw = getNested(messages, key);
+    if (!vars || typeof raw !== "string") return raw;
+    let out = raw;
+    for (const [k, v] of Object.entries(vars)) {
+      out = out.split(`{${k}}`).join(String(v));
+    }
+    return out;
+  };
 
   return { t, locale };
 }

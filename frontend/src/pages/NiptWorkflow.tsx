@@ -122,7 +122,7 @@ export default function NiptWorkflow() {
       if (qcSelectedIds.length > 0) payload.qc_sample_ids = qcSelectedIds;
       if (values.batch_number) payload.notes = "Batch: " + values.batch_number;
       await runsApi.create(payload);
-      message.success(t("workflow.batchCreated"));
+      message.success(t("nipt.workflow.batchCreated"));
       setCreateOpen(false); form.resetFields(); fetchBatches();
     } catch (err: any) {
       if (err?.errorFields) return;
@@ -131,8 +131,15 @@ export default function NiptWorkflow() {
   };
 
   const handleDelete = async (id: string) => {
-    try { await runsApi.delete(id); message.success("Deleted"); if (selectedBatch?.id === id) { setSelectedBatch(null); setBatchDetail(null); } fetchBatches(); }
-    catch { message.error("Delete failed"); }
+    try {
+      await runsApi.delete(id);
+      message.success(t("nipt.workflow.batchDeleted"));
+      if (selectedBatch?.id === id) { setSelectedBatch(null); setBatchDetail(null); }
+      fetchBatches();
+    } catch (err: any) {
+      // 后端会说明不能删的原因（如「该批次已完成，不能删除」），必须透传给用户
+      message.error(err?.response?.data?.detail || t("common.failed"));
+    }
   };
 
   const handleAdvance = async (status: string) => {
@@ -190,7 +197,7 @@ export default function NiptWorkflow() {
     { title: t("nipt.workflow.status"), dataIndex: "status", key: "status", width: 110, render: (v: string) => <Tag color={STATUS_COLOR[v]}>{STATUS_MAP_TL[v] || v}</Tag> },
     { title: t("nipt.workflow.created"), dataIndex: "created_at", key: "created_at", width: 100, render: (v: string) => dayjs(v).format("YYYY-MM-DD") },
     { title: "", key: "action", width: 50, render: (_: any, r: any) => (
-      <Popconfirm title="Delete?" onConfirm={() => handleDelete(r.id)}><Button type="link" danger size="small" icon={<DeleteOutlined />} /></Popconfirm>
+      <Popconfirm title={t("nipt.workflow.delete")} onConfirm={() => handleDelete(r.id)}><Button type="link" danger size="small" icon={<DeleteOutlined />} /></Popconfirm>
     )},
   ];
 
@@ -241,7 +248,7 @@ export default function NiptWorkflow() {
 
         <Card style={{ flex: 1, overflow: "auto" }} bodyStyle={{ padding: 24 }}>
           {!selectedBatch ? (
-            <Empty description={t("workflow.selectBatch")} style={{ marginTop: 80 }} />
+            <Empty description={t("nipt.workflow.selectBatch")} style={{ marginTop: 80 }} />
           ) : detailLoading ? (
             <div style={{ textAlign: "center", padding: 80 }}>{t("nipt.common.loading")}</div>
           ) : (
@@ -251,7 +258,7 @@ export default function NiptWorkflow() {
                   <Title level={4} style={{ margin: 0 }}>{selectedBatch.run_number}</Title>
                   <Space style={{ marginTop: 4 }}>
                     <Tag color={STATUS_COLOR[selectedBatch.status]}>{STATUS_MAP_TL[selectedBatch.status] || selectedBatch.status}</Tag>
-                    <Text type="secondary">{selectedBatch.panel_name} | {selectedBatch.sample_count} samples</Text>
+                    <Text type="secondary">{selectedBatch.panel_name} | {t("nipt.workflow.sampleUnit", { n: selectedBatch.sample_count })}</Text>
                   </Space>
                 </div>
                 <Space>
@@ -310,7 +317,7 @@ export default function NiptWorkflow() {
       </div>
 
       <Modal title={t("nipt.workflow.createTitle")} open={createOpen} onOk={handleCreate} onCancel={() => { setCreateOpen(false); setSelectedIds([]); setQcSelectedIds([]); setQcMode(false); }} confirmLoading={createLoading} width={650} destroyOnClose
-        okText={`Create (${selectedIds.length + qcSelectedIds.length} samples)`}
+        okText={t("nipt.workflow.createOk", { n: selectedIds.length + qcSelectedIds.length })}
         okButtonProps={{ disabled: selectedIds.length === 0 && qcSelectedIds.length === 0 }}
       >
         <Form form={form} layout="vertical">
@@ -320,12 +327,12 @@ export default function NiptWorkflow() {
           <div style={{ marginBottom: 12, display: "flex", alignItems: "center", gap: 12 }}>
             <Text strong>{t("nipt.workflow.selectSamples")}</Text>
             <Switch
-              checkedChildren="QC样本" unCheckedChildren="普通样本"
+              checkedChildren={t("nipt.workflow.qcMode")} unCheckedChildren={t("nipt.workflow.normalMode")}
               checked={qcMode} onChange={setQcMode}
               style={{ marginLeft: 8 }}
             />
-            <Tag color="blue" style={{ fontSize: 13, padding: "2px 10px" }}>{samples.length} 待处理</Tag>
-            <Tag color="green" style={{ fontSize: 13, padding: "2px 10px" }}>{selectedIds.length + qcSelectedIds.length} selected</Tag>
+            <Tag color="blue" style={{ fontSize: 13, padding: "2px 10px" }}>{t("nipt.workflow.pendingCount", { n: samples.length })}</Tag>
+            <Tag color="green" style={{ fontSize: 13, padding: "2px 10px" }}>{t("nipt.workflow.selectedCount", { n: selectedIds.length + qcSelectedIds.length })}</Tag>
             {selectedIds.length !== samples.length && (
               <Button type="link" size="small" onClick={() => { if (qcMode) setQcSelectedIds(samples.map((s: any) => s.id)); else setSelectedIds(samples.map((s: any) => s.id)); }}>{t("nipt.workflow.selectAll")}</Button>
             )}
