@@ -1,19 +1,27 @@
 import { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import {
-  Card, Table, Tag, Typography, Button, Input, Select, Space, Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse, Descriptions, Modal, Timeline, Tooltip, Image, Spin, Empty,
-} from "antd";
+  Card, Table, Tag, Typography, Button, Input, Select, Space, Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse, Descriptions, Modal, Timeline, Tooltip, Image, Spin, Empty, InputNumber, Switch, Alert } from "antd";
 import {
   EyeOutlined, LinkOutlined, RedoOutlined,
   CloseCircleOutlined, DeleteOutlined,
-  CopyOutlined,
-} from "@ant-design/icons";
+  CopyOutlined, EditOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import api from "../api/client";
 import type { CaseDetail } from "../api/types";
 import { REJECTION_REASONS, SAMPLE_STATUS_DISPLAY } from "../api/types";
 
 const { Text, Title } = Typography;
+const { TextArea } = Input;
+
+// 案例管理可编辑的 Case 级字段（与后端 CASE_EDITABLE_FIELDS 保持一致）
+const CASE_EDIT_FIELDS = [
+  "gestational_age_weeks", "gestational_age_days", "multiple_gestation",
+  "clinic_name", "clinic_contact", "sales_person",
+  "applicant", "phone", "email",
+  "collection_method", "application_signed", "expected_completion",
+  "registration_type", "is_urgent",
+] as const;
 
 const STATUS_COLORS: Record<string, string> = {
   REGISTERED: "default", RECEIVING: "blue", RECEIVED: "blue",
@@ -44,6 +52,8 @@ const rejectionLabel = (reason: string) =>
 (casesApi as any).redo = (caseId: string, data: any) => api.post(`/cases/${caseId}/redo/`, data);
 (casesApi as any).sampleHistory = (caseId: string) => api.get(`/cases/${caseId}/sample_history/`);
 (casesApi as any).auditLogs = (caseId: string) => api.get(`/cases/${caseId}/audit_logs/`);
+(casesApi as any).editableState = (caseId: string) => api.get(`/cases/${caseId}/editable_state/`);
+(casesApi as any).editCase = (caseId: string, data: any) => api.patch(`/cases/${caseId}/`, data);
 
 export default function Cases() {
     const [search, setSearch] = useState("");
@@ -65,6 +75,14 @@ export default function Cases() {
   const [historyOpen, setHistoryOpen] = useState<Set<string>>(new Set());
   const [caseAudit, setCaseAudit] = useState<any[] | null>(null);   // null=未加载
   const [auditLoading, setAuditLoading] = useState(false);
+  // ── 案例编辑 ──
+  const [editMode, setEditMode] = useState(false);
+  const [editForm, setEditForm] = useState<any>({});
+  const [editSamples, setEditSamples] = useState<any>({});     // { [csId]: {patient_name, collection_date, collection_notes, locked, lock_reason} }
+  const [editState, setEditState] = useState<any>(null);
+  const [editorModal, setEditorModal] = useState(false);
+  const [editedBy, setEditedBy] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const loadData = async (p: number = page) => {
     setLoading(true);
@@ -121,6 +139,68 @@ export default function Cases() {
     } catch (e: any) { message.error(e?.response?.data?.detail || "激活失败"); }
   };
 
+  /** 进入编辑态：拉取可编辑状态，初始化表单 */
+  const startEdit = async () => {
+    if (!selectedCase) return;
+    try {
+      const r = await (casesApi as any).editableState(selectedCase.id);
+      const st = r.data || {};
+      setEditState(st);
+      const fm: any = {};
+      CASE_EDIT_FIELDS.forEach((f) => { fm[f] = (selectedCase as any)[f] ?? null; });
+      fm.notes = (selectedCase as any).notes ?? "";
+      setEditForm(fm);
+      const sm: any = {};
+      (st.samples || []).forEach((s: any) => {
+        sm[s.id] = {
+          patient_name: s.patient_name, collection_date: s.collection_date,
+          collection_notes: s.collection_notes || "",
+          locked: s.locked, lock_reason: s.lock_reason || "",
+        };
+      });
+      setEditSamples(sm);
+      setEditMode(true);
+    } catch (e: any) {
+      message.error("获取编辑状态失败：" + String(e?.response?.data?.detail || e));
+    }
+  };
+
+  const cancelEdit = () => {
+    setEditMode(false); setEditForm({}); setEditSamples({}); setEditState(null);
+  };
+
+  /** 点保存 → 弹编辑人 */
+  const requestSave = () => { setEditedBy(""); setEditorModal(true); };
+
+  const doSave = async () => {
+    if (!selectedCase) return;
+    if (!editedBy.trim()) { message.warning("请填写编辑人"); return; }
+    setSaving(true);
+    try {
+      const payload: any = { edited_by: editedBy.trim() };
+      CASE_EDIT_FIELDS.forEach((f) => { payload[f] = editForm[f]; });
+      payload.notes = editForm.notes ?? "";
+      payload.case_samples = Object.keys(editSamples).map((csId) => {
+        const s = editSamples[csId];
+        const out: any = { id: csId, collection_notes: s.collection_notes ?? "" };
+        if (!s.locked) {
+          out.patient_name = s.patient_name;
+          out.collection_date = s.collection_date || null;
+        }
+        return out;
+      });
+      const r = await (casesApi as any).editCase(selectedCase.id, payload);
+      message.success(`已保存（${r.data?.updated ?? 0} 项变更）`);
+      setEditorModal(false); setEditMode(false);
+      const fresh = await casesApi.get(selectedCase.id);
+      setSelectedCase(fresh.data);
+      loadData();
+    } catch (e: any) {
+      const d = e?.response?.data;
+      message.error("保存失败：" + String(d?.case_samples || d?.edited_by || d?.detail || e));
+    } finally { setSaving(false); }
+  };
+
   /** 加载当前案例的审计日志（点展开面板时调用一次；切换案例后重置） */
   const loadCaseAudit = async (caseId: string) => {
     setAuditLoading(true);
@@ -151,6 +231,7 @@ export default function Cases() {
     setDrawerOpen(true);
     setDrawerLoading(true);
     setCaseAudit(null);   // 切换案例 → 清空审计缓存（展开时再拉）
+    setEditMode(false); setEditForm({}); setEditSamples({}); setEditState(null);   // 退出编辑态
     try {
       const r = await casesApi.get(id);
       setSelectedCase(r.data);
@@ -467,7 +548,16 @@ export default function Cases() {
                 const open = Array.isArray(keys) ? keys : [keys];
                 if (open.includes("audit") && caseAudit === null && selectedCase) loadCaseAudit(selectedCase.id);
               }}>
-              <Collapse.Panel key="basic" header="基本信息">
+              <Collapse.Panel key="basic" header="基本信息"
+                extra={!editMode ? (
+                  <Button size="small" type="primary" ghost icon={<EditOutlined />}
+                    onClick={(e) => { e.stopPropagation(); startEdit(); }}>编辑</Button>
+                ) : (
+                  <Space size={6}>
+                    <Button size="small" onClick={(e) => { e.stopPropagation(); cancelEdit(); }}>取消</Button>
+                    <Button size="small" type="primary" onClick={(e) => { e.stopPropagation(); requestSave(); }}>保存</Button>
+                  </Space>
+                )}>
                 {(() => {
                   const mother = selectedCase.case_samples?.find((s: any) => s.role === "MOTHER");
                   const g = mother?.gender_info;
@@ -509,6 +599,123 @@ export default function Cases() {
                       ))}
                       <Descriptions.Item label="备注" span={2}>{show((selectedCase as any).notes)}</Descriptions.Item>
                     </Descriptions>
+
+                    {editMode && (
+                      <div style={{ marginTop: 12, padding: 10, background: "#f6ffed", border: "1px solid #b7eb8f", borderRadius: 4 }}>
+                        <Text strong style={{ fontSize: 13 }}>✏️ 可编辑字段</Text>
+                        <div style={{ marginTop: 8 }}>
+                          <Descriptions bordered size="small" column={2}>
+                            <Descriptions.Item label="孕周(周)">
+                              <InputNumber size="small" min={0} max={45} style={{ width: "100%" }}
+                                value={editForm.gestational_age_weeks}
+                                onChange={(v) => setEditForm({ ...editForm, gestational_age_weeks: v })} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="孕周(天)">
+                              <InputNumber size="small" min={0} max={6} style={{ width: "100%" }}
+                                value={editForm.gestational_age_days}
+                                onChange={(v) => setEditForm({ ...editForm, gestational_age_days: v })} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="单双胎">
+                              <Select size="small" allowClear style={{ width: "100%" }} placeholder="未填"
+                                value={editForm.multiple_gestation === null || editForm.multiple_gestation === undefined ? undefined : (editForm.multiple_gestation ? "true" : "false")}
+                                onChange={(v) => setEditForm({ ...editForm, multiple_gestation: v === undefined ? null : v === "true" })}
+                                options={[{ value: "false", label: "单胎" }, { value: "true", label: "双胎" }]} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="采集方式">
+                              <Select size="small" allowClear style={{ width: "100%" }}
+                                value={editForm.collection_method || undefined}
+                                onChange={(v) => setEditForm({ ...editForm, collection_method: v || "" })}
+                                options={[{ value: "1", label: "1. 本室采集" }, { value: "2", label: "2. 申请人送来" }, { value: "3", label: "3. 邮寄样本" }]} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="申请单签字">
+                              <Select size="small" allowClear style={{ width: "100%" }}
+                                value={editForm.application_signed || undefined}
+                                onChange={(v) => setEditForm({ ...editForm, application_signed: v || "" })}
+                                options={[{ value: "YES", label: "是" }, { value: "NO", label: "否" }, { value: "WECHAT", label: "微信授权" }]} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="登记类型">
+                              <Select size="small" style={{ width: "100%" }}
+                                value={editForm.registration_type || "FIRST"}
+                                onChange={(v) => setEditForm({ ...editForm, registration_type: v })}
+                                options={[{ value: "FIRST", label: "首次检测" }, { value: "SUPPLEMENT", label: "补充样本" }, { value: "RESAMPLE", label: "重采样本" }]} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="诊所">
+                              <Input size="small" value={editForm.clinic_name ?? ""}
+                                onChange={(e) => setEditForm({ ...editForm, clinic_name: e.target.value })} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="联系方式">
+                              <Input size="small" value={editForm.clinic_contact ?? ""}
+                                onChange={(e) => setEditForm({ ...editForm, clinic_contact: e.target.value })} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="销售">
+                              <Input size="small" value={editForm.sales_person ?? ""}
+                                onChange={(e) => setEditForm({ ...editForm, sales_person: e.target.value })} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="申请方">
+                              <Input size="small" value={editForm.applicant ?? ""}
+                                onChange={(e) => setEditForm({ ...editForm, applicant: e.target.value })} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="电话">
+                              <Input size="small" value={editForm.phone ?? ""}
+                                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="邮箱">
+                              <Input size="small" value={editForm.email ?? ""}
+                                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="报告截止">
+                              <DatePicker size="small" style={{ width: "100%" }}
+                                value={editForm.expected_completion ? dayjs(editForm.expected_completion) : null}
+                                onChange={(d) => setEditForm({ ...editForm, expected_completion: d ? d.format("YYYY-MM-DD") : null })} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="加急">
+                              <Switch size="small" checked={!!editForm.is_urgent}
+                                onChange={(v) => setEditForm({ ...editForm, is_urgent: v })} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="案例备注" span={2}>
+                              <TextArea rows={2} value={editForm.notes ?? ""}
+                                onChange={(e: any) => setEditForm({ ...editForm, notes: e.target.value })}
+                                placeholder="案例级备注（任何状态都可修改）" />
+                            </Descriptions.Item>
+                          </Descriptions>
+                        </div>
+
+                        <div style={{ marginTop: 10 }}>
+                          <Text strong style={{ fontSize: 13 }}>👥 样本姓名 / 采集日期 / 备注</Text>
+                          <div style={{ marginTop: 6 }}>
+                            {(editState?.samples || []).map((s: any) => {
+                              const cur = editSamples[s.id] || {};
+                              const lockTxt = s.locked ? `已锁定：${s.lock_reason}` : "";
+                              return (
+                                <div key={s.id} style={{ marginBottom: 6, padding: 6, background: s.locked ? "#fff1f0" : "#fff", border: "1px solid " + (s.locked ? "#ffa39e" : "#d9d9d9"), borderRadius: 4 }}>
+                                  <Space size={6} wrap style={{ fontSize: 12 }}>
+                                    <Text strong style={{ fontSize: 12 }}>{s.role === "MOTHER" ? "👩" : "👨"} {s.sample_id}</Text>
+                                    <Tooltip title={lockTxt}>
+                                      <Input size="small" style={{ width: 190 }} placeholder="姓名"
+                                        disabled={s.locked}
+                                        value={cur.patient_name ?? ""}
+                                        onChange={(e) => setEditSamples({ ...editSamples, [s.id]: { ...cur, patient_name: e.target.value } })} />
+                                    </Tooltip>
+                                    <Tooltip title={lockTxt}>
+                                      <DatePicker size="small" placeholder="采集日期" disabled={s.locked}
+                                        value={cur.collection_date ? dayjs(cur.collection_date) : null}
+                                        onChange={(d) => setEditSamples({ ...editSamples, [s.id]: { ...cur, collection_date: d ? d.format("YYYY-MM-DD") : null } })} />
+                                    </Tooltip>
+                                    <Input size="small" style={{ width: 200 }} placeholder="备注（始终可改）"
+                                      value={cur.collection_notes ?? ""}
+                                      onChange={(e) => setEditSamples({ ...editSamples, [s.id]: { ...cur, collection_notes: e.target.value } })} />
+                                    {s.locked && <Tag color="red" style={{ fontSize: 11 }}>🔒 {s.lock_reason}</Tag>}
+                                  </Space>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+
+                        <Alert type="warning" showIcon style={{ marginTop: 10, fontSize: 12 }}
+                          message="改名提示：案例编号 / PT编号 / 检测编号不会变化；但国内导入的查重按「孕妇名+疑父名」，改名后再次导入可能无法识别为重复。" />
+                      </div>
+                    )}
                     {((selectedCase as any).plasma_tube_logs || []).length > 0 && (
                       <div style={{ marginTop: 8, padding: 8, background: "#fff7e6", border: "1px solid #ffd591", borderRadius: 4, fontSize: 12 }}>
                         <Text strong>🩸 孕妇血浆管数：{(selectedCase as any).plasma_tube_logs.slice(-1)[0]?.after ?? "-"} 管</Text>
@@ -760,6 +967,23 @@ export default function Cases() {
             </Collapse>
           </>
         )}
+        <Modal
+          title="请输入编辑人"
+          open={editorModal}
+          onCancel={() => setEditorModal(false)}
+          onOk={doSave}
+          confirmLoading={saving}
+          okText="确定"
+          cancelText="取消"
+          destroyOnClose
+        >
+          <div style={{ marginBottom: 8, color: "#888", fontSize: 12 }}>
+            审核留痕用：本次修改将记录「编辑人 + 登录账号 + 时间 + 逐字段新旧值」
+          </div>
+          <Input placeholder="编辑人姓名（必填）" value={editedBy}
+            onChange={(e) => setEditedBy(e.target.value)}
+            onPressEnter={doSave} autoFocus />
+        </Modal>
       </Drawer>
 
       {/* Redo Modal */}
