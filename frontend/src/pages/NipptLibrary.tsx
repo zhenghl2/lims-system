@@ -8,6 +8,7 @@ import { casesApi } from "../api";
 import { uploadNipptPhoto, deleteNipptPhoto, migrateLegacyNipptPhotos, isRemotePhoto } from "../utils/nipptPhoto";
 import dayjs from "dayjs";
 import * as XLSX from "xlsx";
+import { confirmBatchDelete } from "../utils/batchDelete";
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -755,7 +756,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
           <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
           <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}{selectedBatch.receipt_location&&<Tag color={selectedBatch.receipt_location.includes("/")?"red":"geekblue"} style={{fontSize:12}}>📍{selectedBatch.receipt_location}{selectedBatch.receipt_location.includes("/")?" ⚠️混地区":""}</Tag>}</Space>}
             extra={<Space>
-              {selectedBatch.status!=="COMPLETED"&&<Popconfirm title="删除？" onConfirm={()=>deleteBatch(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm>}
+              {selectedBatch.status!=="COMPLETED"&&<Button size="small" danger icon={<DeleteOutlined/>} onClick={async()=>{ if(await confirmBatchDelete("library", selectedBatch.id)) await deleteBatch(selectedBatch.id); }}>删除</Button>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               <Button disabled={false} icon={<DownloadOutlined/>} size="small" onClick={exportExcel}>导出Excel</Button>
               {selectedBatch.status!=="COMPLETED"&&<>

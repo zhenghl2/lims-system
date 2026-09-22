@@ -6,6 +6,7 @@ import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfo
 import { casesApi } from "../api";
 import api from "../api/client";
 import dayjs from "dayjs";
+import { confirmBatchDelete } from "../utils/batchDelete";
 const { Text, Title } = Typography;
 
 const INDEX_LOOKUP: Record<string,{i7:string,i5:string}> = {
@@ -343,7 +344,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
           <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
           <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}</Space>}
             extra={<Space>
-              {selectedBatch.status!=="COMPLETED"&&<Popconfirm title="删除？" onConfirm={()=>deleteBatch(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm>}
+              {selectedBatch.status!=="COMPLETED"&&<Button size="small" danger icon={<DeleteOutlined/>} onClick={async()=>{ if(await confirmBatchDelete("hybseq", selectedBatch.id)) await deleteBatch(selectedBatch.id); }}>删除</Button>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               {selectedBatch.status!=="COMPLETED"&&<>
                 <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={save}>保存</Button>

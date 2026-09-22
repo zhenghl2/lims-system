@@ -13,6 +13,7 @@ import {
 import { casesApi } from "../api";
 import { uploadNipptPhoto, deleteNipptPhoto, migrateLegacyNipptPhotos, isRemotePhoto } from "../utils/nipptPhoto";
 import dayjs from "dayjs";
+import { confirmBatchDelete } from "../utils/batchDelete";
 
 const { Text, Title } = Typography;
 
@@ -869,9 +870,7 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                   onClick={saveMaleSamples} loading={batchLoading}>💾 保存男性</Button>
               </>)}
               {selectedBatch.status !== "COMPLETED" && (<>
-                <Popconfirm title="确定删除该批次？样本将回到待处理" onConfirm={() => deleteBatch(selectedBatch.id, selectedBatch.batch_number)}>
-                  <Button type="primary" size="small" danger>删除批次</Button>
-                </Popconfirm>
+                <Button type="primary" size="small" danger onClick={async () => { if (await confirmBatchDelete("preprocessing", selectedBatch.id)) await deleteBatch(selectedBatch.id, selectedBatch.batch_number); }}>删除批次</Button>
                 <Popconfirm title="确定完成该批次？合格样本将进入后续实验" onConfirm={completeBatch}>
                   <Button type="primary" size="small">完成批次</Button>
                 </Popconfirm>

@@ -1,13 +1,14 @@
 // NipptPooling.tsx — Library QC & Pooling (NIPT-style + grouping)
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import React from "react";
-import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
-  Space, Popconfirm, Select, Checkbox, DatePicker, TimePicker, Tooltip } from "antd";
+import {ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
+  Space, Select, Checkbox, DatePicker, TimePicker, Tooltip} from "antd";
 import * as XLSX from "xlsx";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import api from "../api/client";
 import dayjs from "dayjs";
+import { confirmBatchDelete } from "../utils/batchDelete";
 const { Text, Title } = Typography;
 
 const SAMPLE_TYPE_LABELS:Record<string,string>={BLOOD:"血液",DBS:"血痕",HAIR:"毛发",NAIL:"指甲",SWAB:"口拭子",SEMEN:"精液",TOOTHBRUSH:"牙刷",CIGARETTE:"烟头",BOTTLE:"水瓶",BEARD:"胡须",FLOSS:"牙线",SEMSTAIN:"精斑",GUM:"口香糖"};
@@ -450,7 +451,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
           <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
           <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}{selectedBatch.receipt_location&&<Tag color={selectedBatch.receipt_location.includes("/")?"red":"geekblue"} style={{fontSize:12}}>📍{selectedBatch.receipt_location}{selectedBatch.receipt_location.includes("/")?" ⚠️混地区":""}</Tag>}</Space>}
             extra={<Space>
-              {selectedBatch.status!=="COMPLETED"&&<Popconfirm title="删除？" onConfirm={()=>deleteBatch(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined/>}>删除</Button></Popconfirm>}
+              {selectedBatch.status!=="COMPLETED"&&<Button size="small" danger icon={<DeleteOutlined/>} onClick={async()=>{ if(await confirmBatchDelete("pooling", selectedBatch.id)) await deleteBatch(selectedBatch.id); }}>删除</Button>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               <Button disabled={false} icon={<DownloadOutlined/>} size="small" onClick={exportExcel}
                 title={hasSaved ? "" : "请先保存后再导出"}>导出Excel</Button>
