@@ -1241,19 +1241,77 @@ class CaseViewSet(viewsets.ModelViewSet):
                 }]
             }
 
-        # 2. 追加 WorkflowLog 条目
+        # 2. 追加 WorkflowLog 条目（同 阶段+动作+批次 合并，保留最后一次）
+        merged = {}          # (cs_id, stage, action, batch_number) -> [第一/最后时间戳, 次数]
         for log in logs:
             cs_id = str(log.case_sample_id)
             if cs_id not in history:
                 history[cs_id] = {"test_sample_id": log.case_sample.test_sample_id or "", "stages": []}
-            extra = self._stage_extras(log)
-            history[cs_id]["stages"].append({
-                "stage": log.stage, "action": log.action,
-                "batch_number": log.batch_number or "",
-                "timestamp": str(log.created_at),
-                **extra,
-            })
+            bn = (log.batch_number or "").strip()
+            key = (cs_id, log.stage, log.action, bn)
+            if key in merged:
+                rec = merged[key]
+                rec["count"] += 1
+                rec["last_ts"] = str(log.created_at)
+            else:
+                extra = self._stage_extras(log)
+                rec = {
+                    "count": 1,
+                    "first_ts": str(log.created_at),
+                    "last_ts": str(log.created_at),
+                    "entry": {
+                        "stage": log.stage, "action": log.action,
+                        "batch_number": bn,
+                        "timestamp": str(log.created_at),
+                        **extra,
+                    },
+                }
+                merged[key] = rec
+                history[cs_id]["stages"].append(rec)
+
+        # 3. 收尾：把内部记录展开成响应结构（含重复次数、首次时间、孤儿批次标注）
+        for cs_id, h in history.items():
+            stages = []
+            for rec in h["stages"]:
+                if "entry" not in rec:
+                    # 签收记录等直接构造的条目：补默认字段后原样保留
+                    rec.setdefault("repeat_count", 1)
+                    rec.setdefault("first_timestamp", rec.get("timestamp", ""))
+                    rec.setdefault("batch_deleted", False)
+                    stages.append(rec)
+                    continue
+                e = rec["entry"]
+                e["repeat_count"] = rec["count"]
+                e["first_timestamp"] = rec["first_ts"]
+                # 孤儿批次：日志引用的批次已不存在（批次被删除，未清理日志）
+                if e.get("batch_number"):
+                    e["batch_deleted"] = self._batch_missing(e["stage"], e["batch_number"])
+                else:
+                    e["batch_deleted"] = False
+                stages.append(e)
+            h["stages"] = stages
         return Response(history)
+
+    def _batch_missing(self, stage, batch_number):
+        """该 stage 下的 batch_number 是否已不存在（批次被删除）。"""
+        from .models import (NipptPreProcessingBatch, NipptExtractionBatch,
+                             NipptLibraryBatch, NipptPoolingBatch,
+                             NipptHybSeqBatch, NipptBioinfoBatch)
+        MAP = {
+            "PRE_PROCESSING": NipptPreProcessingBatch,
+            "EXTRACTION": NipptExtractionBatch,
+            "LIBRARY_PREP": NipptLibraryBatch,
+            "POOLING": NipptPoolingBatch,
+            "HYB_SEQ": NipptHybSeqBatch,
+            "BIOINFO": NipptBioinfoBatch,
+        }
+        M = MAP.get(stage)
+        if M is None:
+            return False
+        try:
+            return not M.objects.filter(batch_number=batch_number).exists()
+        except Exception:
+            return False
 
     def _stage_extras(self, log):
         """各步骤的质控结果/备注/实验人/审核人/照片（前处理/提取/文库按样本取，混样步骤批次级）"""

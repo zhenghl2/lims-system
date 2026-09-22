@@ -1087,10 +1087,10 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                     kwargs["experiment_sample_type"] = pp_sample.experiment_sample_type or ""
                 es = NipptExtractionSample.objects.create(**kwargs)
                 for cid in kwargs.get("case_sample_ids", []):
-                    WorkflowLog.objects.create(
+                    WorkflowLog.objects.update_or_create(
                         case_sample_id=cid, stage="EXTRACTION", action="ENTER",
-                        batch_number=batch.batch_number, batch_sample_id=str(es.id),
-                        operator=request.user)
+                        batch_number=batch.batch_number,
+                        defaults={"batch_sample_id": str(es.id), "operator": request.user})
                 if pp_sample:
                     NipptPreProcessingSample.objects.filter(id=pp_sample.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
                     if pp_sample.role == "MOTHER":
@@ -1242,10 +1242,10 @@ class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
                 if es: kwargs["source_extraction_sample_id"] = es.id
                 ls = NipptLibrarySample.objects.create(**kwargs)
                 for cid in kwargs.get("case_sample_ids", []):
-                    WorkflowLog.objects.create(
+                    WorkflowLog.objects.update_or_create(
                         case_sample_id=cid, stage="LIBRARY_PREP", action="ENTER",
-                        batch_number=batch.batch_number, batch_sample_id=str(ls.id),
-                        operator=request.user)
+                        batch_number=batch.batch_number,
+                        defaults={"batch_sample_id": str(ls.id), "operator": request.user})
             # 进入建库批次：更新工作流阶段（失败重处理样本恢复"建库中"显示）
             if case_sample_ids:
                 CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="LIBRARY_PREP")
@@ -1415,10 +1415,10 @@ class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
                 if ls: kwargs["source_library_sample_id"] = ls.id
                 ps = NipptPoolingSample.objects.create(**kwargs)
                 for cid in kwargs.get("case_sample_ids", []):
-                    WorkflowLog.objects.create(
+                    WorkflowLog.objects.update_or_create(
                         case_sample_id=cid, stage="POOLING", action="ENTER",
-                        batch_number=batch.batch_number, batch_sample_id=str(ps.id),
-                        operator=request.user)
+                        batch_number=batch.batch_number,
+                        defaults={"batch_sample_id": str(ps.id), "operator": request.user})
             # 进入 Pooling 批次：更新工作流阶段（失败重处理样本恢复"Pooling"显示）
             if case_sample_ids:
                 CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="POOLING")

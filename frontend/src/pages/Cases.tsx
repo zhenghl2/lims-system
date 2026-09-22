@@ -905,6 +905,16 @@ export default function Cases() {
                             <Text strong>{s.stage}</Text>
                             <Text>— {s.action}</Text>
                             {s.batch_number && <Text type="secondary"> ({s.batch_number})</Text>}
+                            {s.repeat_count > 1 && (
+                              <Tooltip title={`同一批次重复进入 ${s.repeat_count} 次，首次 ${(s.first_timestamp || "").slice(0, 19)}，末次 ${(s.timestamp || "").slice(0, 19)}`}>
+                                <Tag color="purple" style={{ fontSize: 11, margin: 0 }}>×{s.repeat_count}</Tag>
+                              </Tooltip>
+                            )}
+                            {s.batch_deleted && (
+                              <Tooltip title="该批次已被删除，因此无法取到实验人/审核人等批次信息（操作历史仍保留）">
+                                <Tag color="orange" style={{ fontSize: 11, margin: 0 }}>批次已删除</Tag>
+                              </Tooltip>
+                            )}
                             {s.qc_status ? (
                               <Tag color={s.qc_status === "PASS" ? "green" : s.qc_status === "FAIL" ? "red" : "default"} style={{ fontSize: 11, margin: 0 }}>
                                 质控:{s.qc_status === "PASS" ? "通过" : s.qc_status === "FAIL" ? "失败" : s.qc_status}
@@ -913,8 +923,15 @@ export default function Cases() {
                               <Text type="secondary" style={{ fontSize: 11 }}>质控: -</Text>
                             )}
                           </Space>
-                          <br /><Text type="secondary" style={{ fontSize: 11 }}>{s.timestamp?.slice(0, 19)}</Text>
-                          <br /><Text type="secondary" style={{ fontSize: 11 }}>实验人: {s.operator || "-"} | 审核人: {s.reviewer || "-"}</Text>
+                          <br /><Text type="secondary" style={{ fontSize: 11 }}>
+                            {s.timestamp?.slice(0, 19)}
+                            {s.repeat_count > 1 && s.first_timestamp && ` （首次 ${s.first_timestamp.slice(0, 19)}）`}
+                          </Text>
+                          <br />{s.batch_deleted && !s.operator && !s.reviewer ? (
+                            <Text type="secondary" style={{ fontSize: 11 }}>实验人/审核人: 批次已删除，无记录</Text>
+                          ) : (
+                            <Text type="secondary" style={{ fontSize: 11 }}>实验人: {s.operator || "-"} | 审核人: {s.reviewer || "-"}</Text>
+                          )}
                           <br /><Text type="secondary" style={{ fontSize: 11 }}>备注: {s.qc_note || "-"}</Text>
                           {Array.isArray(s.photos) && s.photos.length > 0 && (
                             <div style={{ marginTop: 4, display: "flex", gap: 4, flexWrap: "wrap" }}>
