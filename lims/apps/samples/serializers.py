@@ -22,7 +22,8 @@ class SampleSerializer(serializers.ModelSerializer):
     sample_type_id = serializers.UUIDField(write_only=True)
     site_id = serializers.SerializerMethodField()
     movements_count = serializers.SerializerMethodField()
-    received_by_name = serializers.SerializerMethodField()
+    # 可读可写：接受手选姓名（前端 13 人名单），FK 有值时由 accept 接口同步为 receiver.name
+    received_by_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = Sample
@@ -54,11 +55,6 @@ class SampleSerializer(serializers.ModelSerializer):
     def get_movements_count(self, obj):
         return obj.movements.count()
 
-    def get_received_by_name(self, obj):
-        if obj.received_by:
-            return obj.received_by.name
-        return None
-
     def create(self, validated_data):
         user = self.context["request"].user
         validated_data["created_by"] = user
@@ -83,15 +79,10 @@ class SampleListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for list views."""
     sample_type_code = serializers.CharField(source="sample_type.code", read_only=True)
     panel_info = serializers.SerializerMethodField()
-    received_by_name = serializers.SerializerMethodField()
+    received_by_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     patient_name = serializers.CharField(read_only=True)
     ordering_physician = serializers.CharField(read_only=True)
     ordering_facility = serializers.CharField(read_only=True)
-
-    def get_received_by_name(self, obj):
-        if obj.received_by:
-            return obj.received_by.name
-        return None
 
     class Meta:
         model = Sample

@@ -28,6 +28,9 @@ const REJECTION_REASONS = [
   { label: "Other", value: "OTHER" },
 ];
 
+/** 签收人名单（与 NIPPT 收样页保持一致，免密码，仅记录姓名） */
+const RECEIPT_PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
+
 export default function NiptReceiving() {
   const { t } = useTranslation();
   const TEST_OPTION_MAP_TL: Record<string, string> = {
@@ -64,7 +67,7 @@ export default function NiptReceiving() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchVgModal, setBatchVgModal] = useState(false);
-  const [batchVgList, setBatchVgList] = useState<{id:string; sample_id:string; vg_id:string}[]>([]);
+  const [batchVgList, setBatchVgList] = useState<{id:string; sample_id:string; vg_id:string; receiver_name:string}[]>([]);
   const [receiveModalOpen, setReceiveModalOpen] = useState(false);
   const [receiveTarget, setReceiveTarget] = useState<any>(null);
   const [receiveLoading, setReceiveLoading] = useState(false);
@@ -102,20 +105,20 @@ export default function NiptReceiving() {
   const handleReceive = (sample: any) => {
     setReceiveTarget(sample);
     setVgIdInput(sample.vg_id || "");
+    setReceiverName(sample.received_by_name || undefined);
     setReceiveModalOpen(true);
   };
 
   const [vgIdInput, setVgIdInput] = useState("");
+  const [receiverName, setReceiverName] = useState<string | undefined>(undefined);
 
   const confirmReceive = async () => {
     if (!receiveTarget) return;
     setReceiveLoading(true);
     try {
       if (!vgIdInput.trim()) { message.warning("Please enter VG ID"); setReceiveLoading(false); return; }
-      await samplesApi.accept(receiveTarget.id);
-      try {
-        await api.patch(`/samples/${receiveTarget.id}/`, { vg_id: vgIdInput.trim() });
-      } catch {}
+      if (!receiverName) { message.warning(t("nipt.receiving.receiverRequired")); setReceiveLoading(false); return; }
+      await samplesApi.accept(receiveTarget.id, { receiver_name: receiverName, vg_id: vgIdInput.trim() });
       message.success(`Sample ${receiveTarget.sample_id} received`);
       setReceiveModalOpen(false);
       fetchData();
@@ -133,6 +136,7 @@ export default function NiptReceiving() {
     const list = selected.map((s: any, i: number) => ({
       id: s.id, sample_id: s.sample_id,
       vg_id: s.vg_id || (i === 0 ? "HN" : ""),
+      receiver_name: s.received_by_name || "",
     }));
     setBatchVgList(list);
     setBatchVgModal(true);
@@ -164,7 +168,9 @@ export default function NiptReceiving() {
     let success = 0;
     for (const item of filled) {
       try {
-        await api.patch(`/samples/${item.id}/`, { vg_id: item.vg_id.trim() });
+        const payload: Record<string, unknown> = { vg_id: item.vg_id.trim() };
+        if (item.receiver_name.trim()) payload.received_by_name = item.receiver_name.trim();
+        await api.patch(`/samples/${item.id}/`, payload);
         success++;
       } catch { /* skip */ }
     }
@@ -213,6 +219,10 @@ export default function NiptReceiving() {
 
   const pendingColumns = [
     { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", key: "sample_id", width: 180 },
+    { title: t("nipt.samples.accessioningId"), dataIndex: "external_id", key: "external_id", width: 150,
+      render: (v: string) => v ? <Text code style={{ fontSize: 11 }}>{v}</Text> : <Text type="secondary">-</Text> },
+    { title: t("nipt.samples.fedexNo"), dataIndex: "fedex_no", key: "fedex_no", width: 150,
+      render: (v: string) => v ? <Text style={{ fontSize: 11 }}>{v}</Text> : <Text type="secondary">-</Text> },
     { title: t("nipt.samples.name"), dataIndex: "patient_name", key: "patient_name", width: 120 },
     { title: t("nipt.samples.vgId"), dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
     { title: t("nipt.samples.age"), dataIndex: "age", key: "age", width: 60 },
@@ -240,6 +250,10 @@ export default function NiptReceiving() {
 
   const receivedColumns = [
     { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", key: "sample_id", width: 180 },
+    { title: t("nipt.samples.accessioningId"), dataIndex: "external_id", key: "external_id", width: 150,
+      render: (v: string) => v ? <Text code style={{ fontSize: 11 }}>{v}</Text> : <Text type="secondary">-</Text> },
+    { title: t("nipt.samples.fedexNo"), dataIndex: "fedex_no", key: "fedex_no", width: 150,
+      render: (v: string) => v ? <Text style={{ fontSize: 11 }}>{v}</Text> : <Text type="secondary">-</Text> },
     { title: t("nipt.samples.name"), dataIndex: "patient_name", key: "patient_name", width: 120 },
     { title: t("nipt.samples.vgId"), dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
     { title: t("nipt.samples.age"), dataIndex: "age", key: "age", width: 60 },
@@ -247,6 +261,8 @@ export default function NiptReceiving() {
     { title: t("nipt.samples.sampleType"), dataIndex: "sample_type_code", key: "sample_type_code", width: 100, render: (v: string) => SAMPLE_TYPE_MAP_TL[v] || v || "-" },
     { title: t("nipt.samples.testOption"), dataIndex: "test_option", key: "test_option", width: 80, render: (v: string) => TEST_OPTION_MAP_TL[v] || v || "-" },
     { title: t("nipt.receiving.receiptDate"), dataIndex: "receipt_date", key: "receipt_date", width: 120, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD") : "-" },
+    { title: t("nipt.receiving.receiver"), dataIndex: "received_by_name", key: "received_by_name", width: 110,
+      render: (v: string) => v ? <Tag color="green">{v}</Tag> : <Text type="secondary">-</Text> },
     { title: t("nipt.samples.status"), dataIndex: "status", key: "status", width: 100,
       render: (v: string) => <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABELS_TL[v] || v}</Tag> },
     { title: t("nipt.receiving.photo"), key: "photo", width: 80,
@@ -307,6 +323,12 @@ export default function NiptReceiving() {
               <Input placeholder={t("nipt.receiving.enterVgId")} autoFocus value={vgIdInput}
                 onChange={e => setVgIdInput(e.target.value)} style={{ marginTop: 4 }} />
             </div>
+            <div style={{ marginTop: 16 }}>
+              <Text strong style={{ color: "#ff4d4f" }}>{t("nipt.receiving.receiverRequired")}</Text>
+              <Select showSearch style={{ width: "100%", marginTop: 4 }} placeholder={t("nipt.receiving.receiver")}
+                value={receiverName} onChange={(v: string) => setReceiverName(v)}
+                options={RECEIPT_PERSONS.map(n => ({ label: n, value: n }))} />
+            </div>
           </div>
         )}
       </Modal>
@@ -339,10 +361,24 @@ export default function NiptReceiving() {
                     setBatchVgList(next);
                   }} />
               )},
+            { title: t("nipt.receiving.receiver"), dataIndex: "receiver_name", width: 200,
+              render: (v: string, _r: any, i: number) => (
+                <Select showSearch style={{ width: "100%" }} placeholder={t("nipt.receiving.receiver")}
+                  value={v || undefined}
+                  onChange={(val: string) => {
+                    // 第一行选定 → 其余行同一人；其他行单独改只影响自己
+                    setBatchVgList(prev => prev.map((it, idx) =>
+                      (i === 0 || idx === i) ? { ...it, receiver_name: val } : it));
+                  }}
+                  options={RECEIPT_PERSONS.map(n => ({ label: n, value: n }))} />
+              )},
           ]}
         />
         <Text type="secondary" style={{ display: "block", marginTop: 8 }}>
           {t("nipt.receiving.autoIncrementHint")}
+        </Text>
+        <Text type="secondary" style={{ display: "block", marginTop: 4 }}>
+          {t("nipt.receiving.batchReceiverHint")}
         </Text>
       </Modal>
 

@@ -51,6 +51,22 @@ class Receiver(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def set_password(self, raw_password):
+        """Hash and store the password (mirrors Django's SetPasswordMixin)."""
+        from django.contrib.auth.hashers import make_password
+        self.password = make_password(raw_password)
+
+    def check_password(self, raw_password):
+        """Verify a raw password against the stored hash.
+
+        NOTE: samples/accept 与 reports 的签名接口都调用本方法；缺失时抛
+        AttributeError 导致 500（曾长期存在）。
+        """
+        from django.contrib.auth.hashers import check_password
+        if not self.password or not raw_password:
+            return False
+        return check_password(raw_password, self.password)
+
     def __str__(self):
         return self.name
 

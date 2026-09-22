@@ -125,6 +125,7 @@ class SampleViewSet(viewsets.ModelViewSet):
         """Accept a sample with receiver verification."""
         sample = self.get_object()
         receiver_id = request.data.get("receiver_id")
+        receiver_name = (request.data.get("receiver_name") or "").strip()
         receipt_date = request.data.get("receipt_date")
         password = request.data.get("password", "")
         vg_id = request.data.get("vg_id", "").strip()
@@ -136,13 +137,18 @@ class SampleViewSet(viewsets.ModelViewSet):
             if not receiver.check_password(password):
                 return Response({"error": "签收人密码错误"}, status=status.HTTP_400_BAD_REQUEST)
             sample.received_by = receiver
+            sample.received_by_name = receiver.name
+        elif receiver_name:
+            # 手选姓名（免密码）：只记录姓名，不绑定 Receiver 账号
+            sample.received_by = None
+            sample.received_by_name = receiver_name
         sample.status = "RECEIVED"
         if receipt_date:
             from datetime import datetime
             sample.receipt_date = datetime.strptime(receipt_date, "%Y-%m-%d").date()
         else:
             sample.receipt_date = timezone.now().date()
-        update_fields = ["status", "received_by", "receipt_date", "updated_at"]
+        update_fields = ["status", "received_by", "received_by_name", "receipt_date", "updated_at"]
         if vg_id:
             sample.vg_id = vg_id
             update_fields.append("vg_id")
@@ -154,7 +160,7 @@ class SampleViewSet(viewsets.ModelViewSet):
         return Response({
             "status": "RECEIVED",
             "sample_id": sample.sample_id,
-            "received_by": receiver.name if receiver_id and sample.received_by else None,
+            "received_by": sample.received_by_name or None,
         })
     @action(detail=True, methods=["post"], url_path="upload-image", parser_classes=[MultiPartParser, FormParser])
     def upload_image(self, request, pk=None):

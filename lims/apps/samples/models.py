@@ -132,6 +132,8 @@ class Sample(models.Model):
     receipt_time = models.TimeField()
     receipt_temp = models.CharField(max_length=10, blank=True)
     received_by = models.ForeignKey(Receiver, on_delete=models.SET_NULL, null=True, blank=True, related_name="received_samples")
+    received_by_name = models.CharField(max_length=50, blank=True, default="",
+        help_text="Receiver name typed at acceptance (not bound to a Receiver account)")
     transport_time_days = models.DecimalField(max_digits=4, decimal_places=1, null=True, blank=True)
     status = models.CharField(
         max_length=20,
