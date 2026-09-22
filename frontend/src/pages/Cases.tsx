@@ -1,9 +1,7 @@
 import { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import {
-  Card, Table, Tag, Typography, Button, Input, Select, Space,
-  Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse, Descriptions,
-  Modal, Timeline, Tooltip, Image,
+  Card, Table, Tag, Typography, Button, Input, Select, Space, Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse, Descriptions, Modal, Timeline, Tooltip, Image, Spin, Empty,
 } from "antd";
 import {
   EyeOutlined, LinkOutlined, RedoOutlined,
@@ -45,6 +43,7 @@ const rejectionLabel = (reason: string) =>
 
 (casesApi as any).redo = (caseId: string, data: any) => api.post(`/cases/${caseId}/redo/`, data);
 (casesApi as any).sampleHistory = (caseId: string) => api.get(`/cases/${caseId}/sample_history/`);
+(casesApi as any).auditLogs = (caseId: string) => api.get(`/cases/${caseId}/audit_logs/`);
 
 export default function Cases() {
     const [search, setSearch] = useState("");
@@ -64,6 +63,8 @@ export default function Cases() {
   const [redoTarget, setRedoTarget] = useState<any>(null);
   const [sampleHistory, setSampleHistory] = useState<any>({});
   const [historyOpen, setHistoryOpen] = useState<Set<string>>(new Set());
+  const [caseAudit, setCaseAudit] = useState<any[] | null>(null);   // null=未加载
+  const [auditLoading, setAuditLoading] = useState(false);
 
   const loadData = async (p: number = page) => {
     setLoading(true);
@@ -120,6 +121,17 @@ export default function Cases() {
     } catch (e: any) { message.error(e?.response?.data?.detail || "激活失败"); }
   };
 
+  /** 加载当前案例的审计日志（点展开面板时调用一次；切换案例后重置） */
+  const loadCaseAudit = async (caseId: string) => {
+    setAuditLoading(true);
+    try {
+      const r = await (casesApi as any).auditLogs(caseId);
+      setCaseAudit(r.data?.results || []);
+    } catch {
+      setCaseAudit([]);
+    } finally { setAuditLoading(false); }
+  };
+
   const toggleHistory = async (csId: string) => {
     const next = new Set(historyOpen);
     if (next.has(csId)) { next.delete(csId); }
@@ -138,6 +150,7 @@ export default function Cases() {
   const openDetail = async (id: string) => {
     setDrawerOpen(true);
     setDrawerLoading(true);
+    setCaseAudit(null);   // 切换案例 → 清空审计缓存（展开时再拉）
     try {
       const r = await casesApi.get(id);
       setSelectedCase(r.data);
@@ -449,7 +462,11 @@ export default function Cases() {
           <>
             <Progress percent={selectedCase.progress || 0} style={{ marginBottom: 16 }} />
 
-            <Collapse defaultActiveKey={["basic", "samples"]} size="small" style={{ marginBottom: 12 }}>
+            <Collapse defaultActiveKey={["basic", "samples"]} size="small" style={{ marginBottom: 12 }}
+              onChange={(keys: any) => {
+                const open = Array.isArray(keys) ? keys : [keys];
+                if (open.includes("audit") && caseAudit === null && selectedCase) loadCaseAudit(selectedCase.id);
+              }}>
               <Collapse.Panel key="basic" header="基本信息">
                 {(() => {
                   const mother = selectedCase.case_samples?.find((s: any) => s.role === "MOTHER");
@@ -693,6 +710,52 @@ export default function Cases() {
                 )}
               </Card>
             ))}
+              </Collapse.Panel>
+
+              <Collapse.Panel key="audit" header={`修改/审计历史${caseAudit ? ` (${caseAudit.length})` : ""}`}>
+                {auditLoading ? (
+                  <div style={{ textAlign: "center", padding: 16 }}><Spin size="small" /></div>
+                ) : !caseAudit ? (
+                  <Text type="secondary" style={{ fontSize: 12 }}>展开后自动加载…</Text>
+                ) : caseAudit.length === 0 ? (
+                  <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无审计记录" />
+                ) : (
+                  <Timeline
+                    items={caseAudit.map((a: any) => ({
+                      color: a.action === "CREATE" ? "blue"
+                        : a.action === "RECEIVE" ? "green"
+                        : a.action === "REJECT" ? "red" : "gray",
+                      children: (
+                        <div style={{ fontSize: 12 }}>
+                          <Space size={6} wrap>
+                            <Tag color={a.action === "REJECT" ? "red" : a.action === "RECEIVE" ? "green" : "blue"}
+                              style={{ fontSize: 11, margin: 0 }}>{a.action_display}</Tag>
+                            <Text type="secondary">{dayjs(a.timestamp).format("MM-DD HH:mm:ss")}</Text>
+                            <Text>操作人: {a.user || "系统"}</Text>
+                          </Space>
+                          {a.entity_repr && (
+                            <div style={{ color: "#888", fontSize: 11, marginTop: 2 }}>对象: {a.entity_repr}</div>
+                          )}
+                          {(a.changes || []).length > 0 && (
+                            <div style={{ marginTop: 4 }}>
+                              {a.changes.map((ch: any, i: number) => (
+                                <div key={i} style={{ color: "#555", fontSize: 11, lineHeight: "18px" }}>
+                                  <Text code style={{ fontSize: 11 }}>{ch.field}</Text>
+                                  {" "}
+                                  <Text type="secondary" style={{ fontSize: 11 }}>
+                                    {ch.old === "" ? "(空)" : ch.old}
+                                  </Text>
+                                  {" → "}
+                                  <Text strong style={{ fontSize: 11 }}>{ch.new === "" ? "(空)" : ch.new}</Text>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ),
+                    }))}
+                  />
+                )}
               </Collapse.Panel>
             </Collapse>
           </>

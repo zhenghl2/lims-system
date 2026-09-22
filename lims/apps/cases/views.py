@@ -902,6 +902,67 @@ class CaseViewSet(viewsets.ModelViewSet):
         return Response(CaseSampleSerializer(new_cs).data, status=201)
 
     @action(detail=True, methods=["get"])
+    def audit_logs(self, request, pk=None):
+        """案例的审计日志：case 级 + 其所有样本(casesample)级合并，最新在上。"""
+        from django.db.models import Q
+        from lims.apps.audit.models import AuditLog
+
+        case = self.get_object()
+        cs_ids = [cs.id for cs in case.case_samples.all()]
+
+        ACTION_DISPLAY = {
+            "CREATE": "登记建档", "RECEIVE": "签收", "REJECT": "拒收",
+            "UPDATE": "修改", "DELETE": "删除", "IMPORT": "批量导入",
+        }
+
+        qs = AuditLog.objects.filter(
+            Q(entity_type="case", entity_id=case.id)
+            | Q(entity_type__in=["casesample", "case_sample"], entity_id__in=cs_ids)
+        )
+        # 站点隔离（与 AuditLogViewSet 一致）
+        if getattr(request.user, "site_id", None):
+            qs = qs.filter(Q(site_id=request.user.site_id) | Q(site_id__isnull=True))
+
+        out = []
+        for a in qs.order_by("-timestamp", "-id")[:500]:
+            label = ACTION_DISPLAY.get(a.action, a.action)
+            # 批量导入的 CREATE 更准确地标为「批量导入」
+            src = (a.changes or {}).get("source", {})
+            src_val = src.get("new") if isinstance(src, dict) else None
+            if a.action == "CREATE" and src_val in ("batch_import_nippt", "batch_import_cn"):
+                label = "批量导入"
+
+            changes = []
+            for field, delta in (a.changes or {}).items():
+                if field in ("source", "seq", "row_no"):
+                    continue
+                if isinstance(delta, dict):
+                    old, new = delta.get("old"), delta.get("new")
+                else:
+                    old, new = None, delta
+                changes.append({
+                    "field": field,
+                    "old": "" if old is None else str(old),
+                    "new": "" if new is None else str(new),
+                })
+
+            out.append({
+                "id": a.id,
+                "action": a.action,
+                "action_display": label,
+                "timestamp": a.timestamp,
+                "user": a.user_email or "",
+                "user_role": a.user_role or "",
+                "entity_type": a.entity_type,
+                "entity_repr": a.entity_repr or "",
+                "entity_id": str(a.entity_id),
+                "changes": changes,
+                "row_hash": a.row_hash,
+                "previous_hash": a.previous_hash,
+            })
+        return Response({"count": len(out), "results": out})
+
+    @action(detail=True, methods=["get"])
     def sample_history(self, request, pk=None):
         """返回 Case 下每个 CaseSample 的实验历史."""
         from collections import defaultdict
