@@ -12,6 +12,7 @@ import {
   CameraOutlined, LoadingOutlined, DownloadOutlined,
 } from "@ant-design/icons";
 import { casesApi } from "../api";
+import { uploadNipptPhoto, deleteNipptPhoto, migrateLegacyNipptPhotos, isRemotePhoto } from "../utils/nipptPhoto";
 import dayjs from "dayjs";
 import * as XLSX from "xlsx";
 
@@ -102,6 +103,8 @@ export default function NipptExtraction() {
   const [photosM, setPhotosM] = useState<string[]>([]);
   const [uploading, setUploading] = useState(0);
   const pendingUploads = useRef<Promise<void>[]>([]);
+  // 待删除的照片（保存成功后才真正删文件）
+  const pendingPhotoDeletes = useRef<{ side: "f" | "m"; url: string }[]>([]);
   const photosFRef = useRef<string[]>([]);
   const photosMRef = useRef<string[]>([]);
   const setPhotosFSync = (next: string[]) => { photosFRef.current = next; setPhotosF(next); };
@@ -179,8 +182,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       setStepConfirmations(ed.step_confirmations || {});
       // 照片（男女独立；旧 photos 归女性）
       const legacyPhotos = Array.isArray(ed.photos) ? ed.photos : [];
-      setPhotosFSync(Array.isArray(ed.photos_female) ? ed.photos_female : legacyPhotos);
-      setPhotosMSync(Array.isArray(ed.photos_male) ? ed.photos_male : []);
+      const _pf = Array.isArray(ed.photos_female) ? ed.photos_female : legacyPhotos;
+      const _pm = Array.isArray(ed.photos_male) ? ed.photos_male : [];
+      setPhotosFSync(_pf);
+      setPhotosMSync(_pm);
+      // 历史 base64 照片后台迁移为 URL（幂等：同内容复用同一文件；失败保持 base64）
+      migrateLegacyNipptPhotos("extraction", id, "f", _pf, setPhotosFSync);
+      migrateLegacyNipptPhotos("extraction", id, "m", _pm, setPhotosMSync);
       // 人员（男女独立；旧批次字段归女性）
       setOperators(prev => ({ ...prev, [id]: ed.operator_female ?? d.operator_name ?? "" }));
       setReviewers(prev => ({ ...prev, [id]: ed.reviewer_female ?? d.reviewer ?? "" }));
@@ -379,6 +387,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       const allSamples = buildExSamples(srcSamples);
       const ed = buildExData();
       await (casesApi as any).saveExtraction(selectedBatch.id, { samples: allSamples, extraction_data: ed });
+      flushPhotoDeletes(selectedBatch.id);
       message.success(who ? `${who}保存成功` : "保存成功"); fetchDetail(selectedBatch.id);
     } catch { message.error(who ? `${who}保存失败` : "保存失败"); }
   };
@@ -446,9 +455,15 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       const reader = new FileReader();
       reader.onload = (e) => {
         compressImage(e.target?.result as string)
-          .then((url) => {
-            if (side === "f") setPhotosFSync([...photosFRef.current, url]);
-            else setPhotosMSync([...photosMRef.current, url]);
+          .then(async (dataUrl) => {
+            try {
+              // 压缩后立即上传，列表里只存 URL —— 避免把 base64 塞进批次 JSON 使保存请求体过大
+              const url = await uploadNipptPhoto("extraction", selectedBatch?.id || "", side, dataUrl);
+              if (side === "f") setPhotosFSync([...photosFRef.current, url]);
+              else setPhotosMSync([...photosMRef.current, url]);
+            } catch {
+              message.error("照片上传失败，请重试");
+            }
             resolve();
           })
           .catch(() => resolve());
@@ -464,9 +479,22 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     return false;
   };
 
+  /** 真正删除被移除照片的服务端文件 —— 只在保存成功后调用。
+   *  若删除时立刻删文件，用户又不保存，库里的 URL 就会指向已删文件（裂图）。 */
+  const flushPhotoDeletes = (batchId?: string) => {
+    const jobs = pendingPhotoDeletes.current;
+    if (!jobs.length || !batchId) return;
+    pendingPhotoDeletes.current = [];
+    jobs.forEach(({ side, url }) => deleteNipptPhoto("extraction", batchId, side, url));
+  };
+
   const removePhoto = (side: "f" | "m", index: number) => {
-    if (side === "f") setPhotosFSync(photosFRef.current.filter((_, i) => i !== index));
-    else setPhotosMSync(photosMRef.current.filter((_, i) => i !== index));
+    const list = side === "f" ? photosFRef.current : photosMRef.current;
+    const target = list[index];
+    if (side === "f") setPhotosFSync(list.filter((_, i) => i !== index));
+    else setPhotosMSync(list.filter((_, i) => i !== index));
+    // 只登记，不立即删文件（见 flushPhotoDeletes 注释）
+    if (isRemotePhoto(target)) pendingPhotoDeletes.current.push({ side, url: target });
   };
 
   /** 日期/时间 + 照片 + 操作人/审核人（男女各自一套） */

@@ -12,6 +12,7 @@ from rest_framework.exceptions import ValidationError, NotFound
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
 from .models import Case, CaseSample, WorkflowLog, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample, NipptLibraryBatch, NipptLibrarySample, NipptPoolingBatch, NipptPoolingSample, NipptHybSeqBatch, NipptHybSeqSample
+from .nippt_photos import NipptPhotosMixin, purge_nippt_photos
 from .serializers import (
     CaseListSerializer, CaseDetailSerializer, CaseCreateSerializer,
     CaseSampleSerializer, PublicRegistrationSerializer,
@@ -1689,8 +1690,9 @@ def advance_batch(batch, next_stage, operator=None, failed_stage=None):
             try: Case.objects.get(id=cid).update_status()
             except Case.DoesNotExist: pass
 
-class NipptPreProcessingViewSet(viewsets.ModelViewSet):
+class NipptPreProcessingViewSet(NipptPhotosMixin, viewsets.ModelViewSet):
     """NIPPT 前处理批次管理"""
+    photos_namespace = "nippt_preprocessing"
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
     search_fields = ["batch_number"]
@@ -1871,6 +1873,7 @@ class NipptPreProcessingViewSet(viewsets.ModelViewSet):
         # Sync Case status（回退后同步案例级状态）
         from .models import sync_case_status_for_samples
         sync_case_status_for_samples(reverted_ids)
+        purge_nippt_photos(self.photos_namespace, batch.id)
         batch.delete()
         return Response({"message": "Batch deleted, samples returned to pending"})
 
@@ -1884,7 +1887,8 @@ from .serializers import (
     NipptExtractionBatchCreateSerializer, NipptExtractionSampleSerializer,
 )
 
-class NipptExtractionViewSet(viewsets.ModelViewSet):
+class NipptExtractionViewSet(NipptPhotosMixin, viewsets.ModelViewSet):
+    photos_namespace = "nippt_extraction"
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
     search_fields = ["batch_number"]
@@ -1996,6 +2000,7 @@ class NipptExtractionViewSet(viewsets.ModelViewSet):
         for sp in batch.samples.all():
             if sp.source_preprocessing_sample_id:
                 NipptPreProcessingSample.objects.filter(id=sp.source_preprocessing_sample_id).update(aliquot_tubes=F('aliquot_tubes')+1)
+        purge_nippt_photos(self.photos_namespace, batch.id)
         batch.delete()
         return Response({"message":"Deleted"})
 
@@ -2013,7 +2018,8 @@ from .serializers import (
     NipptHybSeqBatchCreateSerializer, NipptHybSeqSampleSerializer,
 )
 
-class NipptLibraryViewSet(viewsets.ModelViewSet):
+class NipptLibraryViewSet(NipptPhotosMixin, viewsets.ModelViewSet):
+    photos_namespace = "nippt_library"
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
     search_fields = ["batch_number"]
@@ -2096,6 +2102,7 @@ class NipptLibraryViewSet(viewsets.ModelViewSet):
     def destroy(self, request, *args, **kwargs):
         batch = self.get_object()
         if batch.status == "COMPLETED": return Response({"detail":"Cannot delete"}, status=400)
+        purge_nippt_photos(self.photos_namespace, batch.id)
         batch.delete(); return Response({"message":"Deleted"})
 
 

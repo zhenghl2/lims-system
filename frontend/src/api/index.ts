@@ -247,6 +247,15 @@ export const casesApi = {
   // ⚠️ 文库保存的请求体内联了 base64 照片（可达数 MB），跨境/慢网上传常超过默认 30s
   // 超时会导致请求体截断（nginx 400）→ 前端误报"保存失败"。故单独放宽到 180s。
   saveLibrary: (id: string, data: any) => api.post(`/cases/library/${id}/save_processing/`, data, { timeout: 180000 }),
+  // NIPPT 实验照片独立上传 / 删除（避免 base64 内联导致保存请求体过大）
+  uploadNipptPhoto: (module: string, batchId: string, side: string, file: File) => {
+    const fd = new FormData();
+    fd.append("side", side);
+    fd.append("file", file);
+    return api.post<{ url: string; side: string }>(`/cases/${module}/${batchId}/photos/`, fd);
+  },
+  deleteNipptPhoto: (module: string, batchId: string, side: string, name: string) =>
+    api.delete(`/cases/${module}/${batchId}/photos/?side=${side}&name=${encodeURIComponent(name)}`),
   completeLibrary: (id: string) => api.post(`/cases/library/${id}/complete/`),
   deleteLibraryBatch: (id: string) => api.delete(`/cases/library/${id}/`),
 
