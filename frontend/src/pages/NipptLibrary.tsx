@@ -154,21 +154,20 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   };
 
   // ── Auto-fill index ──
-  const updateIndex = (setter:any, row:number, col:number, value:string, plate:PlateGrid) => {
+  const updateIndex = (setter:any, row:number, col:number, value:string) => {
     setter((prev:PlateGrid)=>{
       const next = prev.map(r=>r.map(c=>({...c})));
       next[row][col].index = value;
-      if(/^\d+$/.test(value)){
-        const base = parseInt(value);
-        // Check if this column's first filled cell starts at this row
-        let isFirst = true;
-        for(let r2=0; r2<row; r2++){
-          if(plate[r2]?.[col]?.vgId){ isFirst = false; break; }
-        }
-        if(isFirst){
-          for(let r=0;r<8;r++){
-            if(plate[r]?.[col]?.vgId) next[r][col].index = String(base+r);
-          }
+      // 自动填充：仅当本孔是本列第一个有样本的孔时，从「下一行」起按顺序递增。
+      // ⚠️ 绝不回写当前孔、也不用绝对行号——列首不在 A 行（女起/男起非居中）时，
+      //    base+行号 会让用户输入的孔被加上自己的行号（输入 1 在 D3 显示 4）。
+      const isFirstInCol = prev.slice(0, row).every(r => !r[col]?.vgId);
+      if (isFirstInCol && /^\d+$/.test(value.trim())) {
+        const base = parseInt(value, 10);
+        let offset = 1;
+        for (let r = row + 1; r < 8; r++) {
+          if (!prev[r]?.[col]?.vgId) continue;
+          next[r][col].index = String(base + offset++);
         }
       }
       return next;
@@ -563,7 +562,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                     </div>
                   }>
                     <div style={{display:"flex",alignItems:"stretch",minHeight:30}}>
-                      <input type="text" data-ix-cell={row+"_"+col} disabled={selectedBatch?.status==="COMPLETED"} value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value,plate)} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); const ni=col*8+row+1; if(ni<96){ const nr=ni%8, nc=Math.floor(ni/8); const root=document.querySelector(`[data-plate-grid="${plateKey}"]`); const el=root?.querySelector(`[data-ix-cell="${nr}_${nc}"]`) as HTMLInputElement|null; if(el){ el.focus(); el.select(); } } } }} style={inputStyle} placeholder="ix"/>
+                      <input type="text" data-ix-cell={row+"_"+col} disabled={selectedBatch?.status==="COMPLETED"} value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value)} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); const ni=col*8+row+1; if(ni<96){ const nr=ni%8, nc=Math.floor(ni/8); const root=document.querySelector(`[data-plate-grid="${plateKey}"]`); const el=root?.querySelector(`[data-ix-cell="${nr}_${nc}"]`) as HTMLInputElement|null; if(el){ el.focus(); el.select(); } } } }} style={inputStyle} placeholder="ix"/>
                       <div style={{...vgIdStyle}}>{cell.vgId||""}{cell.isQC?<span style={{color:"#13c2c2",fontWeight:600,marginLeft:1}}>QC</span>:null}</div>
                     </div>
                   </Popover>
