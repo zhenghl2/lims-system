@@ -68,3 +68,6 @@ tmp_docs/
 lims/apps/settings_patch.py
 *.bak-*
 *.bak
+
+# 导出/备份产物（不入库）
+exports/
