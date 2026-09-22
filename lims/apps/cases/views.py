@@ -12,6 +12,7 @@ from rest_framework.exceptions import ValidationError, NotFound
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework.filters import OrderingFilter, SearchFilter
 from .models import Case, CaseSample, WorkflowLog, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample, NipptLibraryBatch, NipptLibrarySample, NipptPoolingBatch, NipptPoolingSample, NipptHybSeqBatch, NipptHybSeqSample
+from lims.apps.audit.utils import log_audit
 from .nippt_photos import NipptPhotosMixin, purge_nippt_photos
 from .serializers import (
     CaseListSerializer, CaseDetailSerializer, CaseCreateSerializer,
@@ -112,7 +113,11 @@ class CaseViewSet(viewsets.ModelViewSet):
         return CaseDetailSerializer
 
     def perform_create(self, serializer):
-        serializer.save()
+        case = serializer.save()
+        log_audit(self.request, "CREATE", case, changes={
+            "case_number": {"old": "", "new": case.case_number},
+            "pt_number": {"old": "", "new": case.pt_number or ""},
+        }, entity_type="case", entity_repr=str(case))
 
     def partial_update(self, request, *args, **kwargs):
         """行内编辑保存：请求带 case_sample_id 时，更新指定样本的可编辑字段。
@@ -379,6 +384,10 @@ class CaseViewSet(viewsets.ModelViewSet):
                         case.save(update_fields=["expected_completion", "updated_at"])
 
                     created.append({"seq": seq, "case_number": case.case_number})
+                    log_audit(request, "CREATE", case, changes={
+                        "source": {"old": "", "new": "batch_import_nippt"},
+                        "seq": {"old": "", "new": seq},
+                    }, entity_type="case", entity_repr=str(case))
             except Exception as e:
                 errors.append({"seq": seq, "error": str(e)[:300]})
 
@@ -521,6 +530,10 @@ class CaseViewSet(viewsets.ModelViewSet):
                             mother_cs.sample.collection_date = cd
                             mother_cs.sample.save(update_fields=["collection_date", "updated_at"])
                     created.append({"row_no": item.get("row_no"), "case_number": case.case_number})
+                    log_audit(request, "CREATE", case, changes={
+                        "source": {"old": "", "new": "batch_import_cn"},
+                        "row_no": {"old": "", "new": item.get("row_no")},
+                    }, entity_type="case", entity_repr=str(case))
             except Exception as e:
                 errors.append({"row_no": item.get("row_no"), "error": str(e)[:300]})
 
@@ -725,6 +738,13 @@ class CaseViewSet(viewsets.ModelViewSet):
                     first_step.started_at = timezone.now()
                     first_step.save(update_fields=["status", "started_at"])
 
+        log_audit(request, "RECEIVE", cs, changes={
+            "receipt_condition": {"old": "", "new": cs.receipt_condition or ""},
+            "received_by_name": {"old": "", "new": cs.received_by_name or ""},
+            "receipt_location": {"old": "", "new": cs.receipt_location or ""},
+            "test_sample_id": {"old": "", "new": cs.test_sample_id or ""},
+        }, entity_type="casesample", entity_repr="%s/%s" % (case.case_number, cs.sample_id))
+
         return Response(CaseSampleSerializer(cs).data)
 
     @action(detail=True, methods=["post"])
@@ -764,6 +784,12 @@ class CaseViewSet(viewsets.ModelViewSet):
 
         # Sync Case status from CaseSample states
         case.update_status()
+
+        log_audit(request, "REJECT", cs, changes={
+            "rejection_reason": {"old": "", "new": rejection_reason},
+            "rejection_note": {"old": "", "new": rejection_note},
+            "status": {"old": "", "new": "REJECTED"},
+        }, entity_type="casesample", entity_repr="%s/%s" % (case.case_number, cs.sample_id))
 
         return Response(CaseSampleSerializer(cs).data)
 
