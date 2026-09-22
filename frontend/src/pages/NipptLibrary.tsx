@@ -27,7 +27,7 @@ const MALE_KITS = [{value:"M-KIT-A",label:"NIPPT Male Library Kit A"},{value:"M-
 const LIB_KITS = [{value:"ND607-C2",label:"VAHTS Universal DNA Library Prep Kit for Illumina V5 (ND607-C2)"},{value:"ND801-02",label:"VAHTS Universal Plus DNA Library Prep Kit V4 (ND801-02)"}];
 const INDEX_KITS = [{value:"N34201",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 1 (N34201)"},{value:"N34202",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 2 (N34202)"},{value:"N34203",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 3 (N34203)"},{value:"N34204",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 4 (N34204)"}];
 
-type PlateCell = { vgId: string; index: string; sampleIdx?: number; isQC?: boolean };
+type PlateCell = { vgId: string; index: string; sampleIdx?: number; isQC?: boolean; kind?: string };
 type PlateGrid = PlateCell[][];
 interface SampleItem { id:string; patient_name:string; role:string; category:string; case_sample_ids:string[]; test_sample_id:string|null; is_qc?:boolean; qc_status:string; qc_note:string; }
 interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; created_at:string; receipt_location?:string; }
@@ -108,7 +108,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   const indexToCoordTB = (i:number)=>{const c=Math.floor(i/8),r=i%8;return`${ROWS[r]}${c+1}`;};
 
   // ── Build plates ──
-  const buildPlateFromStart = (samples:SampleItem[], startCoord:string):PlateGrid => {
+  const buildPlateFromStart = (samples:SampleItem[], startCoord:string, kind:string):PlateGrid => {
     const p = emptyPlate();
     const startIdx = startCoord ? coordToIndexTB(startCoord) : 0;
     let idx = 0;
@@ -116,13 +116,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       const coord = indexToCoordTB(i);
       const r = ROWS.indexOf(coord[0]);
       const c = parseInt(coord.slice(1)) - 1;
-      p[r][c] = { vgId: samples[idx].test_sample_id || "?", index: "", sampleIdx: idx, isQC: samples[idx].is_qc };
+      p[r][c] = { vgId: samples[idx].test_sample_id || "?", index: "", sampleIdx: idx, isQC: samples[idx].is_qc, kind };
       idx++;
     }
     return p;
   };
 
-  const buildCenteredPlate = (samples:SampleItem[]):PlateGrid => {
+  const buildCenteredPlate = (samples:SampleItem[], kind:string):PlateGrid => {
     const p = emptyPlate();
     const total = samples.length;
     const numCols = Math.min(Math.ceil(total/8),12);
@@ -131,7 +131,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     let idx=0;
     for(let c=startCol;c<startCol+numCols&&idx<total;c++)
       for(let r=0;r<8&&idx<total;r++) {
-        p[r][c] = {vgId:samples[idx].test_sample_id||"?",index:"",sampleIdx:idx,isQC:samples[idx].is_qc};
+        p[r][c] = {vgId:samples[idx].test_sample_id||"?",index:"",sampleIdx:idx,isQC:samples[idx].is_qc,kind};
         idx++;
       }
     return p;
@@ -139,16 +139,16 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
 
   const buildXiamenPlateGrid = (female:SampleItem[], male:SampleItem[]):PlateGrid => {
     const all = [...female, ...male];
-    if(!femaleStartCoord&&!maleStartCoord) return buildCenteredPlate(all);
+    if(!femaleStartCoord&&!maleStartCoord) return buildCenteredPlate(all, "X");
     const p = emptyPlate();
     const fStart = femaleStartCoord?coordToIndexTB(femaleStartCoord):0;
     const mStart = maleStartCoord?coordToIndexTB(maleStartCoord):0;
     let fi=0, mi=0;
     for(let i=0;i<96;i++){
       const coord = indexToCoordTB(i);
-      if(i>=fStart&&fi<female.length&&(i<mStart||mi>=male.length||!maleStartCoord)){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:female[fi].test_sample_id||"?",index:"",sampleIdx:fi,isQC:female[fi].is_qc};fi++;}
-      else if(maleStartCoord&&i>=mStart&&mi<male.length){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:male[mi].test_sample_id||"?",index:"",sampleIdx:mi,isQC:male[mi].is_qc};mi++;}
-      else if(!maleStartCoord&&fi>=female.length&&mi<male.length){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:male[mi].test_sample_id||"?",index:"",sampleIdx:mi,isQC:male[mi].is_qc};mi++;}
+      if(i>=fStart&&fi<female.length&&(i<mStart||mi>=male.length||!maleStartCoord)){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:female[fi].test_sample_id||"?",index:"",sampleIdx:fi,isQC:female[fi].is_qc,kind:"F"};fi++;}
+      else if(maleStartCoord&&i>=mStart&&mi<male.length){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:male[mi].test_sample_id||"?",index:"",sampleIdx:mi,isQC:male[mi].is_qc,kind:"M"};mi++;}
+      else if(!maleStartCoord&&fi>=female.length&&mi<male.length){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:male[mi].test_sample_id||"?",index:"",sampleIdx:mi,isQC:male[mi].is_qc,kind:"M"};mi++;}
     }
     return p;
   };
@@ -158,11 +158,18 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     setter((prev:PlateGrid)=>{
       const next = prev.map(r=>r.map(c=>({...c})));
       next[row][col].index = value;
-      // 自动填充：仅当本孔是本列第一个有样本的孔时，从「下一行」起按顺序递增。
+      // 自动填充：本孔若是本列中「同性别分组」的第一个有样本孔，就从「下一行」起递增。
       // ⚠️ 绝不回写当前孔、也不用绝对行号——列首不在 A 行（女起/男起非居中）时，
       //    base+行号 会让用户输入的孔被加上自己的行号（输入 1 在 D3 显示 4）。
-      const isFirstInCol = prev.slice(0, row).every(r => !r[col]?.vgId);
-      if (isFirstInCol && /^\d+$/.test(value.trim())) {
+      // ⚠️ 判定按性别分组：同列混排（女起 D3 + 男起 F3）时，男性区第一个孔上方是
+      //    女性样本，旧逻辑会误判为「非列首」而拒绝递增。异性孔不阻断。
+      const myKind = prev[row]?.[col]?.kind;
+      const isFirstOfGroup = prev.slice(0, row).every(r => {
+        const up = r?.[col];
+        if (!up?.vgId) return true;                       // 空孔不阻断
+        return !!myKind && up.kind !== myKind;            // 异性不阻断；同性别阻断
+      });
+      if (isFirstOfGroup && /^\d+$/.test(value.trim())) {
         const base = parseInt(value, 10);
         let offset = 1;
         for (let r = row + 1; r < 8; r++) {
@@ -172,6 +179,18 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       }
       return next;
     });
+  };
+
+  /** 重排板（改起始坐标）时保留已填 Index：优先按样本(vgId)带走，匹配不到再按孔位回落 */
+  const keepIndex = (newPlate:PlateGrid, oldPlate:PlateGrid):PlateGrid => {
+    const byVg:Record<string,string> = {};
+    oldPlate.forEach(row=>row.forEach(c=>{ if(c?.vgId && c.index) byVg[c.vgId]=c.index; }));
+    newPlate.forEach((row,r)=>row.forEach((c,ci)=>{
+      if(!c.vgId || c.index) return;
+      if(byVg[c.vgId]!==undefined) c.index = byVg[c.vgId];
+      else if(oldPlate[r]?.[ci]?.index) c.index = oldPlate[r][ci].index;
+    }));
+    return newPlate;
   };
 
   // ── Fetch ──
@@ -184,10 +203,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     const d = selectedBatch;
     const males = [...(d.male_blood_samples || []), ...(d.male_other_samples || [])];
     if (region === "XIAMEN") {
-      setXiamenPlate(buildXiamenPlateGrid(d.female_samples || [], males));
+      setXiamenPlate(prev => keepIndex(buildXiamenPlateGrid(d.female_samples || [], males), prev));
     } else {
-      setFemalePlate(hkFemaleStart ? buildPlateFromStart(d.female_samples || [], hkFemaleStart) : buildCenteredPlate(d.female_samples || []));
-      setMalePlate(hkMaleStart ? buildPlateFromStart(males, hkMaleStart) : buildCenteredPlate(males));
+      setFemalePlate(prev => keepIndex(hkFemaleStart ? buildPlateFromStart(d.female_samples || [], hkFemaleStart, "F") : buildCenteredPlate(d.female_samples || [], "F"), prev));
+      setMalePlate(prev => keepIndex(hkMaleStart ? buildPlateFromStart(males, hkMaleStart, "M") : buildCenteredPlate(males, "M"), prev));
     }
   }, [femaleStartCoord, maleStartCoord, hkFemaleStart, hkMaleStart, region]);
 
@@ -231,9 +250,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       // Restore plate data
       const fp = ld.female_plate; const mp = ld.male_plate; const xp = ld.xiamen_plate;
       if(fp&&Array.isArray(fp)) setFemalePlate(fp);
-      else setFemalePlate(hkFemaleStart?buildPlateFromStart(d.female_samples||[],hkFemaleStart):buildCenteredPlate(d.female_samples||[]));
+      else setFemalePlate(hkFemaleStart?buildPlateFromStart(d.female_samples||[],hkFemaleStart,"F"):buildCenteredPlate(d.female_samples||[],"F"));
       if(mp&&Array.isArray(mp)) setMalePlate(mp);
-      else setMalePlate(hkMaleStart?buildPlateFromStart([...(d.male_blood_samples||[]),...(d.male_other_samples||[])],hkMaleStart):buildCenteredPlate([...(d.male_blood_samples||[]),...(d.male_other_samples||[])]));
+      else setMalePlate(hkMaleStart?buildPlateFromStart([...(d.male_blood_samples||[]),...(d.male_other_samples||[])],hkMaleStart,"M"):buildCenteredPlate([...(d.male_blood_samples||[]),...(d.male_other_samples||[])],"M"));
       if(xp&&Array.isArray(xp)) setXiamenPlate(xp);
       else setXiamenPlate(buildXiamenPlateGrid(d.female_samples||[], [...(d.male_blood_samples||[]),...(d.male_other_samples||[])]));
       libForm.setFieldsValue({
@@ -533,7 +552,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
             {Array.from({length:12},(_,col)=>{
               const cell = plate[row]?.[col]||{vgId:"",index:""};
               const sIdx = cell.sampleIdx;
-              const sr = sIdx!==undefined?sampleResults[String(sIdx)]:undefined;
+              // Pass/Fail key 带性别前缀：厦门板女性 sampleIdx 与男性 sampleIdx 都从 0 起，
+              // 旧 key 会让女性样本 N 与男性样本 N 共用同一个状态（实测已确认）。
+              const sKey = sIdx!==undefined ? `${cell.kind||"X"}:${sIdx}` : undefined;
+              const sr = sKey ? (sampleResults[sKey] ?? sampleResults[String(sIdx)]) : undefined;
               const failBg = sr?.status==="fail"?"#fff1f0":undefined;
               const passBg = sr?.status==="pass"?"#f6ffed":undefined;
               const baseBg = cell.vgId?"#e8f5e9":"#fafafa";
@@ -554,11 +576,11 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                   style={{...cellStyle,background:bg,cursor:(cell.vgId&&selectedBatch?.status!=="COMPLETED")?"pointer":"default",outline:(dragOverCell&&dragOverCell.plate===plateKey&&dragOverCell.row===row&&dragOverCell.col===col)?"2px dashed #1677ff":undefined,outlineOffset:-2}}>
                   <Popover trigger={selectedBatch?.status==="COMPLETED"?[]:"click"} content={
                     <div style={{minWidth:180}}>
-                      <Radio.Group value={sr?.status||""} onChange={e=>{const v=e.target.value;setSampleResults((p:any)=>({...p,[String(sIdx)]:{status:v,note:v==="fail"?(p[String(sIdx)]?.note||""):""}}))}}>
+                      <Radio.Group value={sr?.status||""} onChange={e=>{const v=e.target.value;setSampleResults((p:any)=>({...p,[String(sKey)]:{status:v,note:v==="fail"?(p[String(sKey)]?.note||""):""}}))}}>
                         <Radio value="pass" style={{color:"#52c41a"}}>Pass</Radio>
                         <Radio value="fail" style={{color:"#ff4d4f"}}>Fail</Radio>
                       </Radio.Group>
-                      {sr?.status==="fail"&&<TextArea size="small" rows={2} placeholder="失败原因..." value={sr?.note||""} onChange={e=>setSampleResults((p:any)=>({...p,[String(sIdx)]:{status:"fail",note:e.target.value}}))} style={{marginTop:8}}/>}
+                      {sr?.status==="fail"&&<TextArea size="small" rows={2} placeholder="失败原因..." value={sr?.note||""} onChange={e=>setSampleResults((p:any)=>({...p,[String(sKey)]:{status:"fail",note:e.target.value}}))} style={{marginTop:8}}/>}
                     </div>
                   }>
                     <div style={{display:"flex",alignItems:"stretch",minHeight:30}}>
