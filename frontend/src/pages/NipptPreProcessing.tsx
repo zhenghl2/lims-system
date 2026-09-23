@@ -33,6 +33,17 @@ const SAMPLE_TYPE_OPTIONS = [
   { value: "GUM", label: "口香糖" },
 ];
 
+/** 实验/剩余样本类型的可选项：只能从该样本「收到样本类型」里选（母亲也是血液，同样受限）。
+ *  收到类型为空（旧数据）时回退全量，避免下拉为空无法操作。 */
+const typeOptionsFor = (r: { received_sample_types?: string[] }) => {
+  const received = (r.received_sample_types || []).filter(Boolean);
+  if (!received.length) return SAMPLE_TYPE_OPTIONS;
+  const opts = SAMPLE_TYPE_OPTIONS.filter(o => received.includes(o.value));
+  // 兼容：选项里没有的（历史/新类型）也列出，避免值无法显示
+  received.forEach(t => { if (!opts.find(o => o.value === t)) opts.push({ value: t, label: t }); });
+  return opts;
+};
+
 const CONDITION_OPTIONS = [
   { value: "OK", label: "合格" },
   { value: "HEMOLYZED", label: "融血" },
@@ -767,14 +778,14 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     { title: "实验样本类型", dataIndex: "experiment_sample_type", key: "est", width: 130,
       render: (v: string, r: PreSample) => (
         <Select size="small" value={v || undefined} style={{ width: 100 }}
-          placeholder="选择" options={SAMPLE_TYPE_OPTIONS}
+          placeholder="选择" options={typeOptionsFor(r)}
           onChange={(val: string) => updateSampleField(r.id, "experiment_sample_type", val)} allowClear />
       ) },
     { title: "剩余样本类型", dataIndex: "remaining_sample_types", key: "rest", width: 150,
       render: (v: string[], r: PreSample) => (
         <Select mode="multiple" size="small" value={v || []}
           style={{ width: 130 }} placeholder="默认"
-          options={SAMPLE_TYPE_OPTIONS}
+          options={typeOptionsFor(r)}
           onChange={(val: string[]) => updateSampleField(r.id, "remaining_sample_types", val)}
           allowClear maxTagCount={2} />
       ) },

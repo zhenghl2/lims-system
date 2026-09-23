@@ -477,9 +477,23 @@ class NipptPreProcessingSample(models.Model):
 
     @property
     def received_sample_types(self):
-        """Get all received sample types from included CaseSamples."""
+        """收到样本类型：优先签收时填写的「实际收到样本类型」(actual_sample_type)，
+        为空则回退登记时的 sample_source（历史数据 actual 多为空）。
+        保持 case_sample_ids 顺序，重复值保留（同一 CaseSample 只取一个值）。"""
         css = CaseSample.objects.filter(id__in=self.case_sample_ids)
-        return list(css.values_list("sample_source", flat=True))
+        by_id = {str(x.id): x for x in css}
+        out = []
+        for cid in (self.case_sample_ids or []):
+            cs = by_id.get(str(cid))
+            if not cs:
+                continue
+            t = (cs.actual_sample_type or "").strip() or (cs.sample_source or "").strip()
+            if t:
+                out.append(t)
+        # 兜底：case_sample_ids 为空/悬空时按 case 反查（保持旧行为不丢数据）
+        if not out:
+            out = [t for t in css.values_list("sample_source", flat=True) if t]
+        return out
 
     @property
     def remaining_sample_types(self):

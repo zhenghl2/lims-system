@@ -2330,8 +2330,9 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
                     "receipt_location": cs.receipt_location or "",
                 }
             g = groups[key]
-            if cs.sample_source not in g["sample_types"]:
-                g["sample_types"].append(cs.sample_source)
+            _rsp = (cs.actual_sample_type or "").strip() or (cs.sample_source or "").strip()
+            if _rsp and _rsp not in g["sample_types"]:
+                g["sample_types"].append(_rsp)
             g["case_sample_ids"].append(str(cs.id))
             if not g["test_sample_id"]:
                 g["test_sample_id"] = cs.test_sample_id
@@ -2360,6 +2361,28 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
         no_type = [sd for sd in samples_data if not (sd.get("experiment_sample_type") or "").strip()]
         if no_type:
             return Response({"detail": "存在未填写实验样本类型的样本，请填写后再保存"}, status=400)
+
+        # 校验：实验样本类型必须来自该样本「收到样本类型」（母亲不校验——女样本均为血液，类型不影响流转）
+        invalid = []
+        for sd in samples_data:
+            if not sd.get("id"):
+                continue
+            sp = batch.samples.filter(id=sd.get("id")).first()
+            if not sp or sp.category == "FEMALE_BLOOD":
+                continue
+            et = (sd.get("experiment_sample_type") or "").strip()
+            rec = [t for t in (sp.received_sample_types or []) if t]
+            if et and rec and et not in rec:
+                invalid.append((sp.patient_name or "", et, rec))
+        if invalid:
+            details = "；".join(
+                "%s 选了 %s，但收到的是 %s" % (nm or "样本", et, "/".join(rec))
+                for nm, et, rec in invalid[:5]
+            )
+            more = "等 %d 个" % len(invalid) if len(invalid) > 5 else ""
+            return Response({
+                "detail": "实验样本类型必须是该样本收到的样本类型之一：%s%s" % (details, more)
+            }, status=400)
 
         for sd in samples_data:
             sample_id = sd.get("id")
