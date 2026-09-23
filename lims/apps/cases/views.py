@@ -2772,23 +2772,11 @@ class NipptHybSeqViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             pd = pb.pooling_data
             rows = pd.get("rows",[])
             groups = pd.get("manual_alloc") or []
-            f_samples = pb.samples.filter(category="FEMALE_BLOOD").count()
-            m_samples = pb.samples.count() - f_samples
-            if not groups:
-                # 与 Pooling 页分组逻辑保持一致：≤34 样本默认 1 组（全部同 mix）；超出才按 34/组均分
-                total = f_samples + m_samples
-                num = 1 if total <= 34 else (total + 33) // 34
-                if num == 1:
-                    groups = [{"female": f_samples, "male": m_samples}]
-                else:
-                    groups = []
-                    _fr, _mr = f_samples, m_samples
-                    for g in range(num):
-                        _rg = num - g
-                        _tf = -(-_fr // _rg) if _rg > 0 else _fr
-                        _tm = -(-_mr // _rg) if _rg > 0 else _mr
-                        groups.append({"female": _tf, "male": _tm})
-                        _fr -= _tf; _mr -= _tm
+            # 与「写杂交」共用同一分组逻辑：只统计 PASS 样本，FAIL 样本不进 mix
+            from .serializers import nippt_pool_mix_groups
+            groups = nippt_pool_mix_groups(pb, pd)
+            f_samples = sum(int(g.get("female", 0) or 0) for g in groups)
+            m_samples = sum(int(g.get("male", 0) or 0) for g in groups)
             for gi, grp in enumerate(groups):
                 mid = f"{pb.id}_{gi}"
                 if mid in used_mix_ids: continue

@@ -1293,6 +1293,49 @@ class NipptPoolingSampleSerializer(serializers.ModelSerializer):
         return sample_receipt_location(obj)
 
 
+# ── NIPPT Pooling：mix 分组计算（写杂交 与 展示待选 mix 共用同一逻辑）──
+NIPPT_POOL_MAX_PER_GROUP = 34
+
+
+def nippt_pool_mix_groups(pb, pd=None):
+    """返回 Pooling 批次的 mix 分组 [{"female": n, "male": n}, ...]。
+
+    关键：**只统计 qc_status="PASS" 的样本**（FAIL 样本不进杂交）。
+    manual_alloc 仅在「合计恰好等于 PASS 样本数」时采用；否则按 ≤34/组 均摊重算
+    —— 历史数据里 manual_alloc 可能是在 FAIL 判定之前保存的，含失败样本。
+    """
+    pd = pd if pd is not None else (pb.pooling_data or {})
+    pass_qs = pb.samples.filter(qc_status="PASS")
+    f_all = pass_qs.filter(category="FEMALE_BLOOD").count()
+    m_all = pass_qs.count() - f_all
+
+    raw = pd.get("manual_alloc") or []
+    if raw:
+        try:
+            gf = sum(int(g.get("female", 0) or 0) for g in raw)
+            gm = sum(int(g.get("male", 0) or 0) for g in raw)
+        except (TypeError, ValueError):
+            gf = gm = -1
+        if gf == f_all and gm == m_all and len(raw) > 0:
+            return [{"female": int(g.get("female", 0) or 0),
+                     "male": int(g.get("male", 0) or 0)} for g in raw]
+
+    total = f_all + m_all
+    if total <= 0:
+        return []
+    num = 1 if total <= NIPPT_POOL_MAX_PER_GROUP else (total + NIPPT_POOL_MAX_PER_GROUP - 1) // NIPPT_POOL_MAX_PER_GROUP
+    out = []
+    fr, mr = f_all, m_all
+    for g in range(num):
+        rg = num - g
+        tf = -(-fr // rg) if rg > 0 else fr
+        tm = -(-mr // rg) if rg > 0 else mr
+        out.append({"female": tf, "male": tm})
+        fr -= tf
+        mr -= tm
+    return out
+
+
 class NipptPoolingBatchListSerializer(serializers.ModelSerializer):
     sample_count = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
@@ -1551,21 +1594,8 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
             # Create samples only for selected mixes
             # Parse mix_ids: {pooling_batch_id}_{group_index}
             def _build_groups(pb, pd, f_all, m_all):
-                """组拆分：manual_alloc 优先；否则 ≤34=1组，超出按'剩余均摊'拆分（与前端一致）"""
-                _groups = pd.get("manual_alloc") or []
-                if _groups:
-                    return _groups
-                _total = f_all + m_all
-                _num = 1 if _total <= 34 else (_total + 33) // 34
-                _groups = []
-                _fr, _mr = f_all, m_all
-                for _g in range(_num):
-                    _rg = _num - _g
-                    _tf = -(-_fr // _rg) if _rg > 0 else _fr
-                    _tm = -(-_mr // _rg) if _rg > 0 else _mr
-                    _groups.append({"female": _tf, "male": _tm})
-                    _fr -= _tf; _mr -= _tm
-                return _groups
+                """组拆分：统一走 nippt_pool_mix_groups（按 PASS 样本；manual_alloc 合计不符则重算）"""
+                return nippt_pool_mix_groups(pb, pd)
 
             def _group_lane(lane, groups, gi, override, gender_key):
                 """确定性分组取样本：① mixOverride 指定到本组的优先 ② 其余按'未指定池'顺序依次填各组缺口。
