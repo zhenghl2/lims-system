@@ -2772,22 +2772,22 @@ class NipptHybSeqViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             pd = pb.pooling_data
             rows = pd.get("rows",[])
             groups = pd.get("manual_alloc") or []
-            # 与「写杂交」共用同一分组逻辑：只统计 PASS 样本，FAIL 样本不进 mix
-            from .serializers import nippt_pool_mix_groups
-            groups = nippt_pool_mix_groups(pb, pd)
-            f_samples = sum(int(g.get("female", 0) or 0) for g in groups)
-            m_samples = sum(int(g.get("male", 0) or 0) for g in groups)
-            for gi, grp in enumerate(groups):
+            # 与「写杂交」共用同一套分配：mix 个数/结构与 Pooling 页一致（manual_alloc），
+            # 但每组只统计实际会进杂交的 PASS 样本（FAIL 样本停在 Pooling 不进下一步）
+            from .serializers import nippt_pool_mix_lanes
+            lanes = nippt_pool_mix_lanes(pb, pd)
+            for gi, (f_list, m_list) in enumerate(lanes):
                 mid = f"{pb.id}_{gi}"
                 if mid in used_mix_ids: continue
+                nf, nm = len(f_list), len(m_list)
                 mixes.append({
                     "id": mid,
                     "pooling_batch_id": str(pb.id),
                     "pooling_batch_number": pb.batch_number,
                     "mix_name": f"{pb.batch_number}-mix{gi+1}",
-                    "female": grp.get("female",0),
-                    "male": grp.get("male",0),
-                    "data_amount": (grp.get("female",0)*2 + grp.get("male",0)*1),
+                    "female": nf,
+                    "male": nm,
+                    "data_amount": (nf*2 + nm*1),
                 })
         return Response({"mixes": mixes})
 

@@ -82,15 +82,12 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const [loadStamp, setLoadStamp] = useState(0);
 
   // ── Computed females/males for allocation UI
-  /** 参与分组/mix 的样本：排除质检失败(FAIL)的 —— FAIL 样本不进杂交测序。
-   *  表格仍渲染全部 rows（失败样本标记「淘汰」），只有分组计数用 activeRows。 */
-  const activeRows = useMemo(()=>rows.filter(r=>r.qc!=="FAIL"), [rows]);
-  const females = activeRows.filter(r=>r.category==="FEMALE_BLOOD");
-  const males = activeRows.filter(r=>r.category!=="FEMALE_BLOOD");
+  const females = rows.filter(r=>r.category==="FEMALE_BLOOD");
+  const males = rows.filter(r=>r.category!=="FEMALE_BLOOD");
 
   // ── Grouping ──
   const groups = useMemo(():PoolGroup[]=>{
-    const active = activeRows;
+    const active = rows;
     const result:PoolGroup[] = [];
     
     // Use manual allocation if enabled
@@ -413,7 +410,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       if (noIdx.length) parts.push(`${noIdx.length} 个样本未选 Index（${noIdx.slice(0,3).map(r=>r.ptId).join("、")}${noIdx.length>3?"…":""}）`);
       message.warning("完成前请先补全：" + parts.join("；")); return;
     }
-    const valid = rows.filter(r=>r.qc!=="FAIL" && !r.eliminated).length;
+    const valid = rows.filter(r=>!r.eliminated).length;
     Modal.confirm({
       title: "完成批次？",
       content: `共 ${valid} 个有效样本，完成后不可再修改。`,
@@ -476,7 +473,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
             {/* Global info */}
             <div style={{display:"flex",alignItems:"center",gap:16,marginBottom:10,fontSize:12,flexWrap:"wrap"}}>
-              <span style={{color:"#666"}}>样本数: {activeRows.length}{rows.length!==activeRows.length?` (排除失败 ${rows.length-activeRows.length})`:""} | 淘汰阈值: &lt;{YIELD_THRESHOLD} ng | 组数: {groups.length}</span>
+              <span style={{color:"#666"}}>样本数: {rows.length} | 淘汰阈值: &lt;{YIELD_THRESHOLD} ng | 组数: {groups.length}</span>
             </div>
 
             {/* Manual allocation table */}

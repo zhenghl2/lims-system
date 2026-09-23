@@ -1293,33 +1293,31 @@ class NipptPoolingSampleSerializer(serializers.ModelSerializer):
         return sample_receipt_location(obj)
 
 
-# ── NIPPT Pooling：mix 分组计算（写杂交 与 展示待选 mix 共用同一逻辑）──
+# ── NIPPT Pooling：mix 分组与样本分配（写杂交 与 展示待选 mix 共用同一逻辑）──
 NIPPT_POOL_MAX_PER_GROUP = 34
 
 
 def nippt_pool_mix_groups(pb, pd=None):
-    """返回 Pooling 批次的 mix 分组 [{"female": n, "male": n}, ...]。
+    """返回 Pooling 批次的 mix 分组 [{"female": n, "male": n}, ...]（目标数）。
 
-    关键：**只统计 qc_status="PASS" 的样本**（FAIL 样本不进杂交）。
-    manual_alloc 仅在「合计恰好等于 PASS 样本数」时采用；否则按 ≤34/组 均摊重算
-    —— 历史数据里 manual_alloc 可能是在 FAIL 判定之前保存的，含失败样本。
+    **manual_alloc 优先**（用户手动分组，决定 mix 个数与各组目标数）；
+    没有 manual_alloc 时，只对 qc_status="PASS" 的样本按 ≤34/组 均摊。
     """
     pd = pd if pd is not None else (pb.pooling_data or {})
+    raw = pd.get("manual_alloc") or []
+    if raw:
+        out = []
+        for g in raw:
+            try:
+                out.append({"female": int(g.get("female", 0) or 0),
+                            "male": int(g.get("male", 0) or 0)})
+            except (TypeError, ValueError):
+                out.append({"female": 0, "male": 0})
+        if out:
+            return out
     pass_qs = pb.samples.filter(qc_status="PASS")
     f_all = pass_qs.filter(category="FEMALE_BLOOD").count()
     m_all = pass_qs.count() - f_all
-
-    raw = pd.get("manual_alloc") or []
-    if raw:
-        try:
-            gf = sum(int(g.get("female", 0) or 0) for g in raw)
-            gm = sum(int(g.get("male", 0) or 0) for g in raw)
-        except (TypeError, ValueError):
-            gf = gm = -1
-        if gf == f_all and gm == m_all and len(raw) > 0:
-            return [{"female": int(g.get("female", 0) or 0),
-                     "male": int(g.get("male", 0) or 0)} for g in raw]
-
     total = f_all + m_all
     if total <= 0:
         return []
@@ -1334,6 +1332,54 @@ def nippt_pool_mix_groups(pb, pd=None):
         fr -= tf
         mr -= tm
     return out
+
+
+def _nippt_group_lane(lane, groups, gi, override, gender_key):
+    """确定性分组取样本：① mixOverride 指定到本组的优先 ② 其余按顺序填各组缺口。"""
+    n = len(groups)
+    if not (0 <= gi < n):
+        return []
+    buckets = [[] for _ in range(n)]
+    rest = []
+    for s in lane:
+        mo = override.get(str(s.id))
+        if mo and 1 <= mo <= n:
+            buckets[mo - 1].append(s)
+        else:
+            rest.append(s)
+    ri = 0
+    for g in range(n):
+        target = (groups[g].get(gender_key, 0) or 0)
+        need = max(0, target - len(buckets[g]))
+        take = rest[ri:ri + need]
+        buckets[g].extend(take)
+        ri += len(take)
+    return buckets[gi]
+
+
+def nippt_pool_mix_lanes(pb, pd=None):
+    """返回每个 mix 实际参与杂交的样本：[(female_list, male_list), ...]。
+
+    只取 qc_status="PASS" 的样本（FAIL 样本停在 Pooling，不进杂交）。
+    与 advance_batch 写入杂交用的是同一套分配，二者必然一致。
+    """
+    pd = pd if pd is not None else (pb.pooling_data or {})
+    groups = nippt_pool_mix_groups(pb, pd)
+    if not groups:
+        return []
+    override = {}
+    for _r in (pd.get("rows") or []):
+        if _r.get("id") and _r.get("mixOverride"):
+            try:
+                override[str(_r.get("id"))] = int(_r.get("mixOverride"))
+            except (TypeError, ValueError):
+                pass
+    f_lane = list(pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS").order_by("patient_name"))
+    m_lane = list(pb.samples.filter(category__in=["MALE_BLOOD", "MALE_OTHER"], qc_status="PASS").order_by("patient_name"))
+    return [(_nippt_group_lane(f_lane, groups, gi, override, "female"),
+             _nippt_group_lane(m_lane, groups, gi, override, "male"))
+            for gi in range(len(groups))]
+
 
 
 class NipptPoolingBatchListSerializer(serializers.ModelSerializer):
@@ -1594,31 +1640,10 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
             # Create samples only for selected mixes
             # Parse mix_ids: {pooling_batch_id}_{group_index}
             def _build_groups(pb, pd, f_all, m_all):
-                """组拆分：统一走 nippt_pool_mix_groups（按 PASS 样本；manual_alloc 合计不符则重算）"""
+                """组拆分：统一走 nippt_pool_mix_groups（manual_alloc 优先）"""
                 return nippt_pool_mix_groups(pb, pd)
 
-            def _group_lane(lane, groups, gi, override, gender_key):
-                """确定性分组取样本：① mixOverride 指定到本组的优先 ② 其余按'未指定池'顺序依次填各组缺口。
-                结果与请求次数无关——跨批次分批创建不会重复取样本。"""
-                n = len(groups)
-                if not (0 <= gi < n):
-                    return []
-                buckets = [[] for _ in range(n)]
-                rest = []
-                for _s in lane:
-                    _mo = override.get(str(_s.id))
-                    if _mo and 1 <= _mo <= n:
-                        buckets[_mo - 1].append(_s)
-                    else:
-                        rest.append(_s)
-                _ri = 0
-                for _g in range(n):
-                    _target = (groups[_g].get(gender_key, 0) or 0)
-                    _need = max(0, _target - len(buckets[_g]))
-                    _take = rest[_ri:_ri + _need]
-                    buckets[_g].extend(_take)
-                    _ri += len(_take)
-                return buckets[gi]
+            _group_lane = _nippt_group_lane
 
             for mix_id in mix_ids:
                 try:
