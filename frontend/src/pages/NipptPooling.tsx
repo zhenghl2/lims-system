@@ -13,7 +13,7 @@ const { Text, Title } = Typography;
 
 const SAMPLE_TYPE_LABELS:Record<string,string>={BLOOD:"血液",DBS:"血痕",HAIR:"毛发",NAIL:"指甲",SWAB:"口拭子",SEMEN:"精液",TOOTHBRUSH:"牙刷",CIGARETTE:"烟头",BOTTLE:"水瓶",BEARD:"胡须",FLOSS:"牙线",SEMSTAIN:"精斑",GUM:"口香糖"};
 const DEFAULT_POOLING_AMOUNT=0;
-const YIELD_THRESHOLD=60;
+const YIELD_THRESHOLD=300;   // 淘汰阈值(ng)：产量 = 浓度 × 洗脱体积，低于此值判为淘汰
 const DEFAULT_ELUTION=30;
 /** 淘汰判定：仅当浓度有值(>0)时按产量判定（浓度未填不淘汰）*/
 const computeEliminated = (conc: number | null, elution: number) =>
