@@ -7,6 +7,14 @@ import {
   CloseCircleOutlined, DeleteOutlined,
   CopyOutlined, EditOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
+
+/** 样本类型代码 → 中文标签（主列表「登记 → 实际收到」对比用）。
+ *  与重做弹框内的局部 typeLabels 等价，此处独立定义避免影响既有逻辑。 */
+const SAMPLE_TYPE_LABELS: Record<string, string> = {
+  BLOOD: "血液", DBS: "血痕", HAIR: "毛发", SWAB: "口拭子", NAIL: "指甲",
+  SEMEN: "精液", TOOTHBRUSH: "牙刷", CIGARETTE: "烟头", BOTTLE: "水瓶",
+  BEARD: "胡须", FLOSS: "牙线", SEMSTAIN: "精斑", GUM: "口香糖",
+};
 import api from "../api/client";
 import type { CaseDetail } from "../api/types";
 import { REJECTION_REASONS, SAMPLE_STATUS_DISPLAY } from "../api/types";
@@ -857,7 +865,23 @@ export default function Cases() {
                       verticalAlign: "bottom",
                     }}>{cs.patient_name || cs.sample_id}</Text>
                   </Tooltip>
-                  <Text type="secondary" style={{ fontSize: 11 }}>{cs.source_display || cs.sample_source}</Text>
+                  {(() => {
+                    // 登记样本类型 vs 签收「实际收到」：不一致时显示 "登记 → 实际"，hover 看完整
+                    const regLabel = cs.source_display || SAMPLE_TYPE_LABELS[cs.sample_source] || cs.sample_source || "";
+                    const actCode = cs.actual_sample_type || "";
+                    const actLabel = actCode ? (SAMPLE_TYPE_LABELS[actCode] || actCode) : "";
+                    const changed = !!actLabel && actCode !== cs.sample_source;
+                    if (!changed) {
+                      return <Text type="secondary" style={{ fontSize: 11 }}>{regLabel}</Text>;
+                    }
+                    return (
+                      <Tooltip title={`登记: ${regLabel} / 实际收到: ${actLabel}`}>
+                        <Text type="secondary" style={{ fontSize: 11, cursor: "help" }}>
+                          {regLabel} <span style={{ color: "#fa8c16", fontWeight: 600 }}>→</span> {actLabel}
+                        </Text>
+                      </Tooltip>
+                    );
+                  })()}
                   {cs.received_at && <Text type="secondary" style={{ fontSize: 11 }}>接收: {fmtDate(cs.received_at)}</Text>}
                   {cs.collection_notes && <Tag color="orange" style={{ fontSize: 11, margin: 0 }}>备注: {cs.collection_notes}</Tag>}
                   <Button size="small" type="link" onClick={() => toggleHistory(cs.id)}>
