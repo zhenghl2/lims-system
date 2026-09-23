@@ -68,7 +68,11 @@ const STEPS = [
   {key:"sample_prep",label:"样本准备"},{key:"on_machine",label:"上机测序"},{key:"cleanup",label:"清洁台面"},
 ];
 
-interface MixItem { id:string; pooling_batch_id:string; pooling_batch_number:string; mix_name:string; female:number; male:number; data_amount:number; }
+interface MixItem { id:string; pooling_batch_id:string; pooling_batch_number:string; mix_name:string; female:number; male:number; data_amount:number;
+  missing?: number;
+  target_total?: number;
+  pooling_failed_total?: number;
+}
 interface MixRow { mix_name:string; source:string; library_conc:number|null; input_amount:number; input_vol:number; expected_conc:number; water_added:number; }
 interface SampleItem { id:string; patient_name:string; category:string; test_sample_id:string|null; }
 interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; }
@@ -539,6 +543,11 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                 <Checkbox checked={checked} onChange={()=>{setSelectedMixIds(p=>{const n=new Set(p);checked?n.delete(m.id):n.add(m.id);return n})}}/>
                 <Tag color="blue">{m.mix_name}</Tag>
                 <Text type="secondary">女:{m.female} 男:{m.male} 数据量:{m.data_amount}</Text>
+                {!!m.missing && (
+                  <Tag color="orange" style={{fontSize:11,margin:0}}>
+                    {m.missing} 个失败样本未进入杂交测序
+                  </Tag>
+                )}
               </div>
             );
           })}

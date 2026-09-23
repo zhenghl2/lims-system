@@ -2774,12 +2774,17 @@ class NipptHybSeqViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             groups = pd.get("manual_alloc") or []
             # 与「写杂交」共用同一套分配：mix 个数/结构与 Pooling 页一致（manual_alloc），
             # 但每组只统计实际会进杂交的 PASS 样本（FAIL 样本停在 Pooling 不进下一步）
-            from .serializers import nippt_pool_mix_lanes
+            from .serializers import nippt_pool_mix_lanes, nippt_pool_mix_groups
             lanes = nippt_pool_mix_lanes(pb, pd)
+            _targets = nippt_pool_mix_groups(pb, pd)
+            _failed_total = pb.samples.filter(qc_status="FAIL").count()
             for gi, (f_list, m_list) in enumerate(lanes):
                 mid = f"{pb.id}_{gi}"
                 if mid in used_mix_ids: continue
                 nf, nm = len(f_list), len(m_list)
+                _tgt = _targets[gi] if gi < len(_targets) else {}
+                _target_total = int(_tgt.get("female", 0) or 0) + int(_tgt.get("male", 0) or 0)
+                _missing = max(0, _target_total - (nf + nm))
                 mixes.append({
                     "id": mid,
                     "pooling_batch_id": str(pb.id),
@@ -2788,6 +2793,10 @@ class NipptHybSeqViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                     "female": nf,
                     "male": nm,
                     "data_amount": (nf*2 + nm*1),
+                    # 该 mix 相对于 Pooling 分组目标少掉的样本数（因质检失败未进入杂交）
+                    "missing": _missing,
+                    "target_total": _target_total,
+                    "pooling_failed_total": _failed_total,
                 })
         return Response({"mixes": mixes})
 
