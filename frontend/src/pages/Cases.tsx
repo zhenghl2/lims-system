@@ -8,16 +8,17 @@ import {
   CopyOutlined, EditOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 
-/** 样本类型代码 → 中文标签（主列表「登记 → 实际收到」对比用）。
- *  与重做弹框内的局部 typeLabels 等价，此处独立定义避免影响既有逻辑。 */
+import api from "../api/client";
+import type { CaseDetail } from "../api/types";
+import { REJECTION_REASONS, SAMPLE_STATUS_DISPLAY } from "../api/types";
+
+/** 样本类型代码 → 中文标签（统一一份：主列表「登记 → 实际收到」对比、重做弹框共用）。
+ *  改类型时只改这里即可。 */
 const SAMPLE_TYPE_LABELS: Record<string, string> = {
   BLOOD: "血液", DBS: "血痕", HAIR: "毛发", SWAB: "口拭子", NAIL: "指甲",
   SEMEN: "精液", TOOTHBRUSH: "牙刷", CIGARETTE: "烟头", BOTTLE: "水瓶",
   BEARD: "胡须", FLOSS: "牙线", SEMSTAIN: "精斑", GUM: "口香糖",
 };
-import api from "../api/client";
-import type { CaseDetail } from "../api/types";
-import { REJECTION_REASONS, SAMPLE_STATUS_DISPLAY } from "../api/types";
 
 const { Text, Title } = Typography;
 const { TextArea } = Input;
@@ -1065,11 +1066,6 @@ export default function Cases() {
             c.sample_status !== "REJECTED" &&
             c.workflow_stage !== "COMPLETED"
           );
-          const typeLabels: Record<string, string> = {
-            BLOOD: "血液", DBS: "血痕", HAIR: "毛发", NAIL: "指甲", SWAB: "口拭子",
-            SEMEN: "精液", TOOTHBRUSH: "牙刷", CIGARETTE: "烟头", BOTTLE: "水瓶",
-            BEARD: "胡须", FLOSS: "牙线", SEMSTAIN: "精斑", GUM: "口香糖",
-          };
           const stageLabels: Record<string, string> = {
             REGISTERED: "已登记", RECEIVED: "已签收", PRE_PROCESSING: "前处理",
             EXTRACTION: "提取", LIBRARY_PREP: "建库", POOLING: "Pooling",
@@ -1107,7 +1103,7 @@ export default function Cases() {
                     {siblings.map((c: any) => (
                       <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px dashed #eee" }}>
                         <Space size={6}>
-                          <Tag color="blue" style={{ fontSize: 11 }}>{typeLabels[c.sample_source] || c.sample_source || "?"}</Tag>
+                          <Tag color="blue" style={{ fontSize: 11 }}>{SAMPLE_TYPE_LABELS[c.sample_source] || c.sample_source || "?"}</Tag>
                           <Text code style={{ fontSize: 11 }}>{c.test_sample_id || c.sample_id}</Text>
                           <Text type="secondary" style={{ fontSize: 11 }}>{stageLabels[c.workflow_stage] || c.workflow_stage}</Text>
                         </Space>
