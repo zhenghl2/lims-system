@@ -354,12 +354,13 @@ export default function NiptReceiving() {
       <Modal
         title={t("nipt.receiving.batchVgIdTitle").replace("{count}", String(batchVgList.length))}
         open={batchVgModal} onOk={confirmBatchFillVg} onCancel={() => setBatchVgModal(false)}
-        confirmLoading={batchLoading} width={760} destroyOnClose
+        confirmLoading={batchLoading} width={820} destroyOnClose
       >
         <Table rowKey="id" size="small" pagination={false} dataSource={batchVgList}
           columns={[
-            { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", width: 170, render: (v: string) => <Text code>{v}</Text> },
-            { title: t("nipt.samples.accessioningId"), dataIndex: "external_id", width: 150, ellipsis: true,
+            { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", width: 170, ellipsis: true,
+              render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : <Text type="secondary">-</Text> },
+            { title: t("nipt.samples.accessioningId"), dataIndex: "external_id", width: 180, ellipsis: true,
               render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : <Text type="secondary">-</Text> },
             { title: t("nipt.samples.vgId"), dataIndex: "vg_id", width: 200,
               render: (v: string, _r: any, i: number) => (
