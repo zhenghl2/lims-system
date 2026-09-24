@@ -1372,6 +1372,24 @@ def _nippt_group_lane(lane, groups, gi, override, gender_key):
     return buckets[gi]
 
 
+def _nippt_ordered_lane(qs, pd):
+    """按 pooling_data.rows[] 的顺序返回样本。
+
+    rows 的顺序就是操作者在 Pooling 页看到并操作的顺序（保存时写入），
+    用它统一前后端的「分配输入顺序」，避免后端按 patient_name 排序导致的 mix 分配漂移。
+    未出现在 rows 中的样本（如后补的）排在最后，保持稳定。
+    """
+    items = list(qs)
+    order = {}
+    for _i, _r in enumerate(pd.get("rows") or []):
+        if _r.get("id"):
+            order[str(_r["id"])] = _i
+    if not order:
+        return items
+    items.sort(key=lambda s: order.get(str(s.id), len(order)))
+    return items
+
+
 def nippt_pool_mix_lanes(pb, pd=None):
     """返回每个 mix 实际参与杂交的样本：[(female_list, male_list), ...]。
 
@@ -1389,8 +1407,8 @@ def nippt_pool_mix_lanes(pb, pd=None):
                 override[str(_r.get("id"))] = int(_r.get("mixOverride"))
             except (TypeError, ValueError):
                 pass
-    f_lane = list(pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS").order_by("patient_name"))
-    m_lane = list(pb.samples.filter(category__in=["MALE_BLOOD", "MALE_OTHER"], qc_status="PASS").order_by("patient_name"))
+    f_lane = _nippt_ordered_lane(pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS"), pd)
+    m_lane = _nippt_ordered_lane(pb.samples.filter(category__in=["MALE_BLOOD", "MALE_OTHER"], qc_status="PASS"), pd)
     return [(_nippt_group_lane(f_lane, groups, gi, override, "female"),
              _nippt_group_lane(m_lane, groups, gi, override, "male"))
             for gi in range(len(groups))]
@@ -1678,8 +1696,8 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
                                 _override[str(_r.get("id"))] = int(_r.get("mixOverride"))
                             except (TypeError, ValueError):
                                 pass
-                    f_lane = list(pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS").order_by("patient_name"))
-                    m_lane = list(pb.samples.filter(category__in=["MALE_BLOOD","MALE_OTHER"], qc_status="PASS").order_by("patient_name"))
+                    f_lane = _nippt_ordered_lane(pb.samples.filter(category="FEMALE_BLOOD", qc_status="PASS"), pd)
+                    m_lane = _nippt_ordered_lane(pb.samples.filter(category__in=["MALE_BLOOD","MALE_OTHER"], qc_status="PASS"), pd)
                     f_pool = _group_lane(f_lane, groups, gi, _override, "female")
                     m_pool = _group_lane(m_lane, groups, gi, _override, "male")
                     for ps in f_pool + m_pool:
