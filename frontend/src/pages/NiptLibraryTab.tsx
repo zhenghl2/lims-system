@@ -130,6 +130,12 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
 
   // ── Plate state: 8×12 cells, each with {vgId, index} ──
   const [plate, setPlate] = useState<PlateCell[][]>([]);
+  // ── 孔板拖动换位（仅未完成批次可用）──
+  const canDrag = batch.status !== "COMPLETED";
+  const dragSrcRef = useRef<{ row: number; col: number } | null>(null);
+  const [dragOverCell, setDragOverCell] = useState<{ row: number; col: number } | null>(null);
+  // 用户改动起点坐标后，下一次加载须忽略已保存的板面（强制按规则重排）
+  const forceRebuildRef = useRef(false);
 
   // ── Sample pass/fail results ──
   const [sampleResults, setSampleResults] = useState<Record<string, { status: string; note: string }>>(
@@ -223,21 +229,58 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     return p;
   }, [samples, batch.extraction_method, batch.extraction_data, startCoord]);
 
-  // ── Load saved plate indices ──
+  /** 板上显示的 vgId（与 buildPlate 保持同一口径：QC 样本带 QC 后缀） */
+  const dispVgId = (s: any) => getVgId(s) + (s.is_qc ? "QC" : "");
+
+  /** 交换两格样本：vgId/sampleIdx 跟着样本走，index 留在原格（孔位决定 Index 编号） */
+  const swapPlateCells = (fromR: number, fromC: number, toR: number, toC: number) => {
+    if (fromR === toR && fromC === toC) return;
+    setPlate(prev => {
+      const next = prev.map(r => r.map(c => ({ ...c })));
+      const a = next[fromR]?.[fromC], b = next[toR]?.[toC];
+      if (!a || !b) return prev;
+      next[fromR][fromC] = { vgId: b.vgId, index: a.index, sampleIdx: b.sampleIdx };
+      next[toR][toC] = { vgId: a.vgId, index: b.index, sampleIdx: a.sampleIdx };
+      return next;
+    });
+  };
+
+  /** 按当前样本列表重排孔板（清理陈旧板面用） */
+  const rebuildPlatesFromSamples = () => {
+    setPlate(buildPlate);
+    message.success("已按当前样本重排孔板（确认后点保存）");
+  };
+
+  // ── Load plate: 位置持久化（优先用保存的 vgId+index，仅在样本集合变化时退回自动排布）──
   useEffect(() => {
-    const saved = edata.library_plate;
+    const force = forceRebuildRef.current;
+    forceRebuildRef.current = false;
+    const saved = force ? null : edata.library_plate;
     if (saved && Array.isArray(saved) && saved.length === 8) {
-      // Restore indices from saved data, keep VG IDs from buildPlate
-      const restored = buildPlate.map((row, r) =>
-        row.map((cell, c) => ({
-          ...cell,
-          index: (saved[r]?.[c]?.index) || "",
-        }))
-      );
-      setPlate(restored);
-    } else {
-      setPlate(buildPlate);
+      // 建立「显示 vgId → samples 原下标」映射（sampleIdx 用于关联 Pass/Fail 状态）
+      const idxByDispId: Record<string, number> = {};
+      (samples || []).forEach((s: any, i: number) => { idxByDispId[dispVgId(s)] = i; });
+      // 一致性校验：保存板上的 vgId 集合必须与当前有效样本集合完全一致，
+      // 否则（样本被新增/剔除/重做）退回自动排布，避免出现陈旧板
+      const cur = new Set<string>();
+      buildPlate.forEach(row => row.forEach(cell => { if (cell.vgId) cur.add(cell.vgId); }));
+      const old = new Set<string>();
+      saved.forEach((row: any) => (row || []).forEach((cell: any) => { if (cell?.vgId) old.add(cell.vgId); }));
+      const same = cur.size === old.size && [...cur].every(v => old.has(v));
+      if (same) {
+        const restored: PlateCell[][] = Array.from({ length: 8 }, (_, r) =>
+          Array.from({ length: COL_COUNT }, (_, c) => {
+            const sv = saved[r]?.[c];
+            if (!sv?.vgId) return { vgId: "", index: "" };
+            const si = idxByDispId[sv.vgId];
+            return { vgId: sv.vgId, index: sv.index || "", ...(si !== undefined ? { sampleIdx: si } : {}) };
+          })
+        );
+        setPlate(restored);
+        return;
+      }
     }
+    setPlate(buildPlate);
   }, [buildPlate, edata.library_plate]);
 
   // Initialize index kit selections from saved data (supports both old string and new array format)
@@ -687,7 +730,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       <Card
         size="small"
         className="no-print-break"
-        title={<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}><span>{t("nipt.library.plateLayout")} — 96-{t("nipt.library.wellPlate")}（{samples.length} samples）<Input size="small" placeholder="起始坐标如 D2" value={startCoord} onChange={e => { const v = e.target.value.toUpperCase().replace(/[^A-H0-9]/g, ""); setStartCoord(v.length <= 3 ? v : v.slice(0,3)); }} style={{ width: 85, marginLeft: 10 }} maxLength={3} /></span><Space><Button size="small" onClick={handlePrintTable}>{t("nipt.library.printTable")}</Button><Button size="small" onClick={handlePrint}>{t("nipt.library.printFullPage")}</Button></Space></div>}
+        title={<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",width:"100%"}}><span>{t("nipt.library.plateLayout")} — 96-{t("nipt.library.wellPlate")}（{samples.length} samples）<Input size="small" placeholder="起始坐标如 D2" value={startCoord} onChange={e => { const v = e.target.value.toUpperCase().replace(/[^A-H0-9]/g, ""); forceRebuildRef.current = true; setStartCoord(v.length <= 3 ? v : v.slice(0,3)); }} style={{ width: 85, marginLeft: 10 }} maxLength={3} /></span><Space>{canDrag && <Button size="small" onClick={rebuildPlatesFromSamples}>按样本重排</Button>}<Button size="small" onClick={handlePrintTable}>{t("nipt.library.printTable")}</Button><Button size="small" onClick={handlePrint}>{t("nipt.library.printFullPage")}</Button></Space></div>}
         style={{ marginBottom: 16 }}
       >
         <div style={{ overflowX: "auto" }}>
@@ -713,7 +756,14 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
                     const baseBg = getCellBg(cell.vgId);
                     const bg = resultBg || baseBg;
                     return (
-                      <td key={col} style={{ ...cellStyle, background: bg, cursor: cell.vgId ? "pointer" : "default" }}>
+                      <td key={col}
+                        draggable={canDrag && !!cell.vgId}
+                        onDragStart={canDrag ? (e) => { if (!cell.vgId) return; dragSrcRef.current = { row, col }; try { e.dataTransfer.setData("text/plain", ""); } catch {} e.dataTransfer.effectAllowed = "move"; } : undefined}
+                        onDragEnd={canDrag ? () => { dragSrcRef.current = null; setDragOverCell(null); } : undefined}
+                        onDragOver={canDrag ? (e) => { const s0 = dragSrcRef.current; if (!s0) return; if (s0.row === row && s0.col === col) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (!dragOverCell || dragOverCell.row !== row || dragOverCell.col !== col) setDragOverCell({ row, col }); } : undefined}
+                        onDragLeave={canDrag ? () => { setDragOverCell(p => (p && p.row === row && p.col === col ? null : p)); } : undefined}
+                        onDrop={canDrag ? (e) => { e.preventDefault(); const s0 = dragSrcRef.current; if (s0) swapPlateCells(s0.row, s0.col, row, col); dragSrcRef.current = null; setDragOverCell(null); } : undefined}
+                        style={{ ...cellStyle, background: bg, cursor: (canDrag && cell.vgId) ? "grab" : (cell.vgId ? "pointer" : "default"), outline: (dragOverCell && dragOverCell.row === row && dragOverCell.col === col) ? "2px dashed #1677ff" : undefined, outlineOffset: -2 }}>
                         <Popover
                           trigger="click"
                           content={
