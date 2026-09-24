@@ -252,8 +252,17 @@ export default function NiptReceiving() {
       render: (v: string) => <Tag color={STATUS_MAP[v] || "default"}>{STATUS_LABELS_TL[v] || v}</Tag> },
     { title: t("nipt.receiving.photo"), key: "photo", width: 80,
       render: (_: any, r: any) => r.image
-        ? <div onClick={(e: any) => { e.stopPropagation(); handlePhotoUpload(r); }} style={{ cursor: "pointer" }}>
-            <Image src={r.image} width={50} height={50} style={{ objectFit: "cover", borderRadius: 4 }} preview={false} />
+        ? <div style={{ position: "relative", width: 50, height: 50 }}>
+            <Image src={r.image} width={50} height={50} style={{ objectFit: "cover", borderRadius: 4 }} preview />
+            <div
+              onClick={(e: any) => { e.stopPropagation(); handlePhotoUpload(r); }}
+              title={t("nipt.receiving.takePhoto")}
+              style={{
+                position: "absolute", right: 0, bottom: 0, width: 18, height: 18,
+                borderRadius: "50%", background: "rgba(0,0,0,0.6)", color: "#fff",
+                display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer",
+              }}
+            ><CameraOutlined style={{ fontSize: 10 }} /></div>
           </div>
         : <Button type="link" icon={<CameraOutlined />} size="small" onClick={(e: any) => { e.stopPropagation(); handlePhotoUpload(r); }} title={t("nipt.receiving.takePhoto")} /> },
     { title: t("nipt.receiving.action"), key: "action", width: 180,
