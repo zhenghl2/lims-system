@@ -1038,9 +1038,9 @@ class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
     def get_female_count(self, obj): return obj.samples.filter(category="FEMALE_BLOOD").count()
     def get_male_blood_count(self, obj): return obj.samples.filter(category="MALE_BLOOD").count()
     def get_male_other_count(self, obj): return obj.samples.filter(category="MALE_OTHER").count()
-    def get_female_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="FEMALE_BLOOD"), many=True).data
-    def get_male_blood_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="MALE_BLOOD"), many=True).data
-    def get_male_other_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="MALE_OTHER"), many=True).data
+    def get_female_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="FEMALE_BLOOD").order_by(Length("case__pt_number"), "case__pt_number", "patient_name"), many=True).data
+    def get_male_blood_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="MALE_BLOOD").order_by(Length("case__pt_number"), "case__pt_number", "patient_name"), many=True).data
+    def get_male_other_samples(self, obj): return NipptExtractionSampleSerializer(obj.samples.filter(category="MALE_OTHER").order_by(Length("case__pt_number"), "case__pt_number", "patient_name"), many=True).data
 
     def get_receipt_location(self, obj):
         return batch_receipt_location(obj)
