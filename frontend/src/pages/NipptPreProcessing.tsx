@@ -730,11 +730,14 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
   };
 
   // ===== Column builders =====
-  // 按 PT 编号（test_sample_id）排序：保留女性/男性分组，只在组内排
-  const byPtNo = (arr: PreSample[] | undefined) =>
-    [...(arr || [])].sort((a, b) =>
-      String(a.test_sample_id || "").localeCompare(String(b.test_sample_id || ""), "zh-CN", { numeric: true })
-    );
+  // 按 PT 编号（test_sample_id）排序：保留女性/男性分组，只在组内排。
+  // 仅未完成批次排序；已完成批次保持原顺序（历史视图/孔板不变）。
+  const byPtNo = (arr: PreSample[] | undefined, status?: string) =>
+    status === "COMPLETED"
+      ? [...(arr || [])]
+      : [...(arr || [])].sort((a, b) =>
+          String(a.test_sample_id || "").localeCompare(String(b.test_sample_id || ""), "zh-CN", { numeric: true })
+        );
 
   const femaleBloodColumns = () => [
     { title: "PT编号", dataIndex: "test_sample_id", key: "pt", width: 110,
@@ -900,7 +903,7 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                 label: `👩 女性 (${selectedBatch.female_count})`,
                 children: (
                   <>
-                    <Table dataSource={byPtNo(selectedBatch.female_samples)} rowKey="id"
+                    <Table dataSource={byPtNo(selectedBatch.female_samples, selectedBatch.status)} rowKey="id"
                       columns={femaleBloodColumns()} size="small" pagination={false} scroll={{ x: 600 }} />
                     {renderPhotosPersons("f")}
                   </>
@@ -912,7 +915,7 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                 children: (
                   <>
                   {selectedBatch.male_blood_count + selectedBatch.male_other_count > 0 ? (
-                    <Table dataSource={byPtNo([...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])])} rowKey="id"
+                    <Table dataSource={byPtNo([...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])], selectedBatch.status)} rowKey="id"
                       columns={maleColumns()} size="small" pagination={false} scroll={{ x: 900 }} />
                   ) : (
                     <Text type="secondary">无男性样本</Text>
