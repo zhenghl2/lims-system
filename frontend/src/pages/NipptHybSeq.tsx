@@ -101,6 +101,17 @@ export default function NipptHybSeq() {
   const [stepConfirmations, setStepConfirmations] = useState<Record<string,boolean>>({});
   const [mixRows, setMixRows] = useState<MixRow[]>([]);
   const [finalConc, setFinalConc] = useState(0.783);
+/** 按 PT 编号排序（仅显示层）：与后端 Length(pt_number) 规则一致 —— 先按编号长度，再按序号。
+ *  只复制数组、不动对象；用于 mix 表显示顺序，不参与 mix 分配。 */
+const sortByPt = <T extends { ptId?: string }>(arr: T[]): T[] => {
+  const k = (s?: string) => String(s || "").replace(/^PT/i, "");
+  return [...arr].sort((a, b) => {
+    const ka = k(a.ptId), kb = k(b.ptId);
+    if (ka.length !== kb.length) return ka.length - kb.length;
+    return ka.localeCompare(kb, "en", { numeric: true });
+  });
+};
+
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 const [operators, setOperators] = useState<Record<string,string>>({});
 const [reviewers, setReviewers] = useState<Record<string,string>>({});
@@ -477,7 +488,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                       <th style={{...th,width:140}}>上传ID</th>
                     </tr></thead>
                     <tbody>
-                      {[...(selectedBatch.female_samples||[]),...(selectedBatch.male_blood_samples||[]),...(selectedBatch.male_other_samples||[])].map((s:any,i:number)=>{
+                      {sortByPt([...(selectedBatch.female_samples||[]),...(selectedBatch.male_blood_samples||[]),...(selectedBatch.male_other_samples||[])] as any[]).map((s:any,i:number)=>{
                         const idxVal = s.index||String(i+1);
                         const idxNum = parseInt(idxVal)||0;
                         const padded = String(idxNum||"").padStart(3,"0");

@@ -57,6 +57,17 @@ export default function NipptPooling() {
   const [groupBases, setGroupBases] = useState<Record<number,number>>({});
   const [groupElutions, setGroupElutions] = useState<Record<number,number>>({});
   const [rows, setRows] = useState<PoolRow[]>([]);
+/** 按 PT 编号排序（仅显示层）：与后端 Length(pt_number) 规则一致 —— 先按编号长度，再按序号。
+ *  只复制数组、不动对象；用于 mix 表显示顺序，不参与 mix 分配。 */
+const sortByPt = <T extends { ptId?: string }>(arr: T[]): T[] => {
+  const k = (s?: string) => String(s || "").replace(/^PT/i, "");
+  return [...arr].sort((a, b) => {
+    const ka = k(a.ptId), kb = k(b.ptId);
+    if (ka.length !== kb.length) return ka.length - kb.length;
+    return ka.localeCompare(kb, "en", { numeric: true });
+  });
+};
+
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 
 // 签收地（receipt_location）：厦门 / 香港
@@ -138,6 +149,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
     for (let g = 0; g < numGroups; g++) {
       const groupRows = mixArrays[g];
+      // 显示顺序：未完成批次按 PT 编号排（已完成保持原样）；分配顺序 groupRows 不变
+      const dispRows = selectedBatch?.status === "COMPLETED" ? groupRows : sortByPt(groupRows);
       const fCount = groupRows.filter(r => r.category === "FEMALE_BLOOD").length;
       const mCount = groupRows.filter(r => r.category !== "FEMALE_BLOOD").length;
       const dataAmt = fCount * 2 + mCount * 1;
@@ -145,7 +158,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const totalVol = groupRows.reduce((s, r) => s + r.poolingVolume, 0);
       result.push({
         name: `mix${g + 1}`,
-        rows: groupRows,
+        rows: dispRows,
         totalMass: Math.round(totalMass * 100) / 100,
         totalVol: Math.round(totalVol * 100) / 100,
         theoryConc: totalVol > 0 ? Math.round(totalMass / totalVol * 100) / 100 : 0,
@@ -153,7 +166,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       });
     }
     return result;
-  }, [rows, useManualAlloc, manualAlloc]);
+  }, [rows, useManualAlloc, manualAlloc, selectedBatch?.status]);
 
   // 视觉顺序（按 mix 分组渲染后的行序）：用于行号显示与回车跳格
   const visualOrder = useMemo(() => groups.flatMap(g => g.rows.map(r => r.id)), [groups]);
