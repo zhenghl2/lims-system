@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Switch, Popover, Checkbox, Image } from "antd";
+import { Table, Button, Tag, Modal, Form, Input, DatePicker, Select, InputNumber, Space, Typography, message, Popconfirm, Switch, Popover, Checkbox, Image, Tooltip } from "antd";
 import { PlusOutlined, DeleteOutlined, ReloadOutlined, UploadOutlined, SettingOutlined, DownloadOutlined } from "@ant-design/icons";
 import { Upload } from "antd";
 import * as XLSX from "xlsx";
@@ -50,12 +50,12 @@ const SOURCE_OPTIONS = [
 const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;visible:boolean;ellipsis?:boolean;render?:(v:any, r?:any)=>React.ReactNode}> = [
   { key: "source", title: "Sample Source",dataIndex: "sample_source", visible: true, width: 100, render: (v: string) => v === "巴西" ? "巴西万基" : (v || "-") },
   { key: "test_option", title: "Test Option", dataIndex: "test_option", visible: true, width: 100, render: (v: string) => v || "-" },
-  { key: "external_id", title: "Accessioning ID", dataIndex: "external_id", visible: true, width: 140, ellipsis: true, render: (v: string) => v || "-" },
+  { key: "external_id", title: "Accessioning ID", dataIndex: "external_id", visible: true, width: 140, ellipsis: true, render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : "-" },
   { key: "collection_date", title: "Collection Date", dataIndex: "collection_date", visible: true, width: 110, render: (v: string) => v || "-" },
   { key: "acceptance_date", title: "Acceptance Date", dataIndex: "acceptance_date", visible: true, width: 110, render: (v: string) => v || "-" },
   { key: "physician", title: "Physician", dataIndex: "physician", visible: true, width: 100, render: (v: string, r: any) => r?.ordering_physician || v || "-" },
   { key: "patient_id", title: "Patient ID", dataIndex: "id_card", visible: true, width: 160, render: (v: string) => v || "-" },
-  { key: "patient_name", title: "Name", dataIndex: "patient_name", visible: true, width: 100, ellipsis: true },
+  { key: "patient_name", title: "Name", dataIndex: "patient_name", visible: true, width: 100, ellipsis: true, render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : "-" },
   { key: "patient_dob", title: "DOB", dataIndex: "patient_dob", visible: true, width: 100, render: (v: string) => v || "-" },
   { key: "age", title: "Age", dataIndex: "age", visible: true, width: 60 },
   { key: "gestational_weeks", title: "Gest. Weeks", dataIndex: "gestational_weeks", visible: true, width: 80, render: (v: number) => v || "-" },
@@ -185,7 +185,7 @@ export default function NiptSamples() {
     ...(c.key === "preg_history" ? { render: (_v: string, r: any) => r.pregnancy_history || t("nipt.samples.none") } : {}),
   }));
   const columns = [
-    { key: "sample_id", title: t("nipt.samples.sampleId"), dataIndex: "sample_id", visible: true, width: 170, ellipsis: true, render: (v: string) => v || "-" },
+    { key: "sample_id", title: t("nipt.samples.sampleId"), dataIndex: "sample_id", visible: true, width: 170, ellipsis: true, render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : "-" },
     { key: "vg_id", title: t("nipt.samples.vgId"), dataIndex: "vg_id", visible: true, width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
     ...visibleCols,
     { key: "status", title: t("nipt.samples.status"), dataIndex: "status", visible: true, width: 150, fixed: "right" as const, render: (v: string, r: any) => {
