@@ -28,7 +28,7 @@ const EQUIPMENT_OPTIONS = [
 const FEMALE_KITS = [{value:"F-KIT-A",label:"NIPPT Female Library Kit A"},{value:"F-KIT-B",label:"NIPPT Female Library Kit B"}];
 const MALE_KITS = [{value:"M-KIT-A",label:"NIPPT Male Library Kit A"},{value:"M-KIT-B",label:"NIPPT Male Library Kit B"}];
 const LIB_KITS = [{value:"ND607-C2",label:"VAHTS Universal DNA Library Prep Kit for Illumina V5 (ND607-C2)"},{value:"ND801-02",label:"VAHTS Universal Plus DNA Library Prep Kit V4 (ND801-02)"}];
-const INDEX_KITS = [{value:"N34201",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 1 (N34201)"},{value:"N34202",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 2 (N34202)"},{value:"N34203",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 3 (N34203)"},{value:"N34204",label:"VAHTS Maxi Unique Dual Index DNA Adapters Set 4 (N34204)"}];
+const INDEX_KITS = [{value:"N34201",label:"VAHTS Maxi UDI Adapters Set1 (1-96) - Cat#N34201-01"},{value:"N34202",label:"VAHTS Maxi UDI Adapters Set2 (97-192) - Cat#N34202-01"},{value:"N34203",label:"VAHTS Maxi UDI Adapters Set3 (193-288) - Cat#N34203-01"},{value:"N34204",label:"VAHTS Maxi UDI Adapters Set4 (289-384) - Cat#N34204-01"}];
 
 type PlateCell = { vgId: string; index: string; sampleIdx?: number; isQC?: boolean; kind?: string };
 type PlateGrid = PlateCell[][];
