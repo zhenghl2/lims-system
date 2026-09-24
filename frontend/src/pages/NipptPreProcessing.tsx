@@ -730,6 +730,12 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
   };
 
   // ===== Column builders =====
+  // 按 PT 编号（test_sample_id）排序：保留女性/男性分组，只在组内排
+  const byPtNo = (arr: PreSample[] | undefined) =>
+    [...(arr || [])].sort((a, b) =>
+      String(a.test_sample_id || "").localeCompare(String(b.test_sample_id || ""), "zh-CN", { numeric: true })
+    );
+
   const femaleBloodColumns = () => [
     { title: "PT编号", dataIndex: "test_sample_id", key: "pt", width: 110,
       render: (v: string | null) => v ? <Text code>{v}</Text> : <Text type="secondary">—</Text> },
@@ -894,7 +900,7 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                 label: `👩 女性 (${selectedBatch.female_count})`,
                 children: (
                   <>
-                    <Table dataSource={selectedBatch.female_samples} rowKey="id"
+                    <Table dataSource={byPtNo(selectedBatch.female_samples)} rowKey="id"
                       columns={femaleBloodColumns()} size="small" pagination={false} scroll={{ x: 600 }} />
                     {renderPhotosPersons("f")}
                   </>
@@ -906,7 +912,7 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                 children: (
                   <>
                   {selectedBatch.male_blood_count + selectedBatch.male_other_count > 0 ? (
-                    <Table dataSource={[...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])]} rowKey="id"
+                    <Table dataSource={byPtNo([...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])])} rowKey="id"
                       columns={maleColumns()} size="small" pagination={false} scroll={{ x: 900 }} />
                   ) : (
                     <Text type="secondary">无男性样本</Text>
