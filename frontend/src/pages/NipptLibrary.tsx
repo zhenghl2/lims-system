@@ -55,6 +55,8 @@ export default function NipptLibrary() {
   const [maleStartCoord, setMaleStartCoord] = useState("");
   const [hkFemaleStart, setHkFemaleStart] = useState("");
   const [hkMaleStart, setHkMaleStart] = useState("");
+  // 孔板重排基准：记录"进入批次时"的起点/地区值，只有用户真的改了才重排（否则会覆盖拖动的板面）
+  const plateBaseRef = useRef<string>("");
 
   // ── Reagents (NIPT-style) ──
   const [femaleLibKit, setFemaleLibKit] = useState("");
@@ -202,9 +204,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   const fetchBatches = useCallback(async()=>{setLoading(true);try{const r=await(casesApi as any).listLibraryBatches();setBatches(r.data?.results||[])}catch{}finally{setLoading(false)}},[]);
   useEffect(()=>{fetchBatches()},[fetchBatches]);
 
-  // Rebuild plates when start coords change
+  // Rebuild plates when start coords change（仅当用户真的改了起点/地区；否则会覆盖拖动后的板面）
   useEffect(() => {
     if (!selectedBatch) return;
+    const _key = `${region}|${femaleStartCoord}|${maleStartCoord}|${hkFemaleStart}|${hkMaleStart}`;
+    if (plateBaseRef.current === "") { plateBaseRef.current = _key; return; }   // 刚进入批次：只记基准，不重排
+    if (plateBaseRef.current === _key) return;                                  // 与基准一致：保持已保存的板面
+    plateBaseRef.current = _key;                                                // 用户改了起点/地区：重排
     const d = selectedBatch;
     const males = [...(d.male_blood_samples || []), ...(d.male_other_samples || [])];
     if (region === "XIAMEN") {
@@ -219,7 +225,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     setBatchLoading(true);
     try{
       const r = await(casesApi as any).getLibraryBatch(id);
-      const d=r.data;setSelectedBatch(d);
+      const d=r.data;setSelectedBatch(d);plateBaseRef.current="";
       const ld=d.library_data||{};
       setRegion(ld.region||"XIAMEN");setFemaleStartCoord(ld.female_start_coord||"");setMaleStartCoord(ld.male_start_coord||"");
       setHkFemaleStart(ld.hk_female_start||"");setHkMaleStart(ld.hk_male_start||"");
@@ -678,6 +684,20 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     });
   };
 
+  /** 按当前样本列表重建孔板（用于清理含旧样本的陈旧板面；Index 按 vgId 保留） */
+  const rebuildPlates = () => {
+    if (!selectedBatch) return;
+    const d = selectedBatch;
+    const males = [...(d.male_blood_samples || []), ...(d.male_other_samples || [])];
+    if (region === "XIAMEN") {
+      setXiamenPlate(prev => keepIndex(buildXiamenPlateGrid(d.female_samples || [], males), prev));
+    } else {
+      setFemalePlate(prev => keepIndex(hkFemaleStart ? buildPlateFromStart(d.female_samples || [], hkFemaleStart, "F") : buildCenteredPlate(d.female_samples || [], "F"), prev));
+      setMalePlate(prev => keepIndex(hkMaleStart ? buildPlateFromStart(males, hkMaleStart, "M") : buildCenteredPlate(males, "M"), prev));
+    }
+    message.success("已按当前样本重排孔板（确认无误后点「保存全部」）");
+  };
+
   const renderNiptPlate = (plate:PlateGrid, setter:any, plateKey:string) => (
     <div style={{overflowX:"auto"}}>
       <table data-plate-grid={plateKey} style={{borderCollapse:"collapse",fontSize:12,margin:"0 auto"}}>
@@ -759,6 +779,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
               {selectedBatch.status!=="COMPLETED"&&<Button size="small" danger icon={<DeleteOutlined/>} onClick={async()=>{ if(await confirmBatchDelete("library", selectedBatch.id)) await deleteBatch(selectedBatch.id); }}>删除</Button>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               <Button disabled={false} icon={<DownloadOutlined/>} size="small" onClick={exportExcel}>导出Excel</Button>
+              {selectedBatch.status!=="COMPLETED"&&<Button icon={<ReloadOutlined/>} size="small" onClick={rebuildPlates}>按样本重排</Button>}
               {selectedBatch.status!=="COMPLETED"&&<>
                 <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={() => saveProcessing("all")}>保存全部</Button>
                 <Popconfirm title="完成批次？" onConfirm={completeBatch}><Button type="primary" size="small" danger>完成</Button></Popconfirm>
