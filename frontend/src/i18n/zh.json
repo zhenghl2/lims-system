@@ -969,7 +969,8 @@
       "batchFillVgId": "批量填写VG ID",
       "batchVgIdTitle": "批量填写 VG ID ({count} 个样本)",
       "vgIdSaved": "已保存 {count} 个样本的 VG ID",
-      "selectSamples": "请先选择样本"
+      "selectSamples": "请先选择样本",
+      "photoRequired": "请先拍照上传照片，再进行签收/拒收"
     },
     "plasmaSeparation": {
       "title": "血浆分离",

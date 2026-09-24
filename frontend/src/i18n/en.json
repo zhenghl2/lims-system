@@ -969,7 +969,8 @@
       "batchFillVgId": "Batch Fill VG ID",
       "batchVgIdTitle": "Batch Fill VG ID ({count} samples)",
       "vgIdSaved": "Saved VG IDs for {count} samples",
-      "selectSamples": "Select samples first"
+      "selectSamples": "Select samples first",
+      "photoRequired": "Please take/upload a photo before receiving or rejecting"
     },
     "plasmaSeparation": {
       "title": "Plasma Separation",

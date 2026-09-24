@@ -969,7 +969,8 @@
       "batchFillVgId": "Preencher VG ID em Lote",
       "batchVgIdTitle": "Preencher VG ID em Lote ({count} amostras)",
       "vgIdSaved": "VG IDs salvos para {count} amostras",
-      "selectSamples": "Selecione amostras primeiro"
+      "selectSamples": "Selecione amostras primeiro",
+      "photoRequired": "Envie uma foto antes de receber ou rejeitar"
     },
     "plasmaSeparation": {
       "title": "Separação de Plasma",

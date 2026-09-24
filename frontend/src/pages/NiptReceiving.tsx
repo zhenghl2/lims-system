@@ -103,6 +103,10 @@ export default function NiptReceiving() {
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleReceive = (sample: any) => {
+    if (!sample.image) {
+      message.warning(t("nipt.receiving.photoRequired"));
+      return;
+    }
     setReceiveTarget(sample);
     setVgIdInput(sample.vg_id || "");
     setReceiverName(sample.received_by_name || undefined);
@@ -114,6 +118,10 @@ export default function NiptReceiving() {
 
   const confirmReceive = async () => {
     if (!receiveTarget) return;
+    if (!receiveTarget.image) {
+      message.warning(t("nipt.receiving.photoRequired"));
+      return;
+    }
     setReceiveLoading(true);
     try {
       if (!vgIdInput.trim()) { message.warning("Please enter VG ID"); setReceiveLoading(false); return; }
@@ -183,12 +191,20 @@ export default function NiptReceiving() {
   };
 
   const handleReject = (sample: any) => {
+    if (!sample.image) {
+      message.warning(t("nipt.receiving.photoRequired"));
+      return;
+    }
     setSelectedSample(sample);
     form.resetFields();
     setRejectOpen(true);
   };
 
   const confirmReject = async () => {
+    if (!selectedSample?.image) {
+      message.warning(t("nipt.receiving.photoRequired"));
+      return;
+    }
     try {
       const values = await form.validateFields();
       await samplesApi.reject(selectedSample.id, values.reason, values.note);
