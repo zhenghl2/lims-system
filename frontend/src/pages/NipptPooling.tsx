@@ -400,7 +400,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const samples = rows.map(r=>({id:r.id,qc_status:r.qc,qc_note:""}));
       const pd = {
         quant_kit:quantKit,poolingBase,globalElutionVol,groupBases,groupElutions,manual_alloc:manualAlloc,customAmounts,hk_doubled:hkDoubled,
-        rows:rows.map(r=>({concentration:r.concentration,elutionVolume:r.elutionVolume,yield:r.yield,poolingAmount:r.poolingAmount,poolingVolume:r.poolingVolume,eliminated:r.eliminated,qc:r.qc,mixOverride:r.mixOverride??null})),
+        rows:rows.map(r=>({id:r.id,concentration:r.concentration,elutionVolume:r.elutionVolume,yield:r.yield,poolingAmount:r.poolingAmount,poolingVolume:r.poolingVolume,eliminated:r.eliminated,qc:r.qc,mixOverride:r.mixOverride??null})),
         indexes:savedIndexes,
         pool_date:poolDate,pool_time:poolTime,
       };
