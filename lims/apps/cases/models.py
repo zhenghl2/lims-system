@@ -1020,6 +1020,9 @@ class NipptBioinfoPair(models.Model):
 
 
 class WorkflowLog(models.Model):
+    # id 必须与 DB 实际的 uuid 列一致：migration 0012 误声明为 BigAutoField，
+    # 导致 update_or_create 的更新分支 save(update_fields=...) 用错类型 pk → 500
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     case_sample = models.ForeignKey(CaseSample, on_delete=models.CASCADE, related_name="workflow_logs")
     stage = models.CharField(max_length=30, db_index=True)
     action = models.CharField(max_length=20)

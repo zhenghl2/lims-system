@@ -47,7 +47,7 @@ const STEPS = [
 // ── Types ──
 interface ExtractionSample {
   id: string; patient_name: string; role: string; category: string;
-  case_sample_ids: string[]; test_sample_id: string | null;
+  case_sample_ids: string[]; test_sample_id: string | null; redo_count?: number;
   extraction_method: string; well_position: string;
   plasma_volume: number | null; elution_volume: number;
   dna_concentration: number | null; aliquot_tubes: number;
@@ -1114,7 +1114,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   return (<div key={e.case_sample_ids.join(",")} style={{ padding: "4px 8px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8 }}>
                     <Checkbox checked={allIn} indeterminate={!allIn && someIn} onChange={() => { setSelectedKeys(prev => { const next = new Set(prev); if (allIn) e.case_sample_ids.forEach((id: string) => next.delete(id)); else e.case_sample_ids.forEach((id: string) => next.add(id)); return next; }); }} />
                     <Text code style={{ fontSize: 11, width: 150 }}>{e.case_number}</Text>{e.test_sample_id && <Tag color="blue" style={{ fontSize: 11 }}>{e.test_sample_id}</Tag>}
-                    <Text strong>{e.patient_name}</Text>{e.receipt_location && <Tag color={e.receipt_location === "HONGKONG" ? "geekblue" : "volcano"} style={{ fontSize: 10, marginRight: 0 }}>📍{LOC_LABEL[e.receipt_location] || e.receipt_location}</Tag>}<Space size={2} wrap>{e.sample_types.map((t: string) => <Tag key={t} color="green" style={{ fontSize: 10 }}>{SAMPLE_TYPE_LABELS[t]||t}</Tag>)}</Space></div>);})}</div>);})}
+                    <Text strong>{e.patient_name}</Text>{e.redo_count ? <Tag color="orange" style={{ fontSize: 10, marginRight: 0 }}>重做#{e.redo_count}</Tag> : null}{e.receipt_location && <Tag color={e.receipt_location === "HONGKONG" ? "geekblue" : "volcano"} style={{ fontSize: 10, marginRight: 0 }}>📍{LOC_LABEL[e.receipt_location] || e.receipt_location}</Tag>}<Space size={2} wrap>{e.sample_types.map((t: string) => <Tag key={t} color="green" style={{ fontSize: 10 }}>{SAMPLE_TYPE_LABELS[t]||t}</Tag>)}</Space></div>);})}</div>);})}
           </div>
           <Divider style={{ margin: "8px 0" }} />
           <div style={{ padding: "8px 12px", background: "#fffbe6", borderRadius: 6 }}>

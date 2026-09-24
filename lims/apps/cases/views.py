@@ -1131,6 +1131,8 @@ class CaseViewSet(viewsets.ModelViewSet):
                 sample_source=sample_source,
                 redo_of=original_cs, redo_count=next_n,
                 workflow_stage=target_stage,
+                # 重做沿用原样本的签收地，否则候选列表/批次里看不到 📍 标签
+                receipt_location=original_cs.receipt_location,
             )
             new_cs.test_sample_id = case.generate_test_sample_id(
                 new_cs, resample_num=original_cs.resample_number, redo_num=next_n)
@@ -2522,11 +2524,12 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
             if key not in groups:
                 groups[key] = {"case_id":str(cs.case_id),"case_number":cs.case.case_number,
                     "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,
-                    "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id,"receipt_location":cs.receipt_location or ""}
+                    "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id,"receipt_location":cs.receipt_location or "","redo_count":0}
             g = groups[key]
             if cs.sample_source not in g["sample_types"]: g["sample_types"].append(cs.sample_source)
             g["case_sample_ids"].append(str(cs.id))
             if not g["test_sample_id"]: g["test_sample_id"] = cs.test_sample_id
+            if cs.redo_count and cs.redo_count > g["redo_count"]: g["redo_count"] = cs.redo_count
         entries = list(groups.values())
         return Response({"female_count":sum(1 for e in entries if e["category"]=="FEMALE_BLOOD"),
             "male_blood_count":sum(1 for e in entries if e["category"]=="MALE_BLOOD"),
