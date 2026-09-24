@@ -452,6 +452,7 @@ export default function Cases() {
           allowClear
         >
           <Select.Option value="国内">国内</Select.Option>
+          <Select.Option value="中国香港">中国香港</Select.Option>
           <Select.Option value="泰国">泰国</Select.Option>
           <Select.Option value="巴西">巴西</Select.Option>
           <Select.Option value="巴西万基">巴西万基</Select.Option>

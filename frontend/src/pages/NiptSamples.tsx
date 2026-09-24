@@ -30,6 +30,7 @@ const TEST_OPTIONS = [
 ];
 
 const SOURCE_OPTIONS = [
+  { label: "中国香港", value: "中国香港" },
   { label: "BCC (泰国)", value: "BCC" },
   { label: "巴西万基", value: "巴西万基" },
   { label: "韩国", value: "韩国" },

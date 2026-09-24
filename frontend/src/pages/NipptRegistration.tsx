@@ -37,6 +37,7 @@ const SAMPLE_TYPE_OPTIONS = [
 
 const SOURCE_OPTIONS = [
   { value: "国内", label: "国内" },
+  { value: "中国香港", label: "中国香港" },
   { value: "泰国", label: "泰国" },
   { value: "巴西", label: "巴西" },
   { value: "巴西万基", label: "巴西万基" },
