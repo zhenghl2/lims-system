@@ -103,10 +103,15 @@ export default function NipptHybSeq() {
   const [finalConc, setFinalConc] = useState(0.783);
 /** 按 PT 编号排序（仅显示层）：与后端 Length(pt_number) 规则一致 —— 先按编号长度，再按序号。
  *  只复制数组、不动对象；用于 mix 表显示顺序，不参与 mix 分配。 */
-const sortByPt = <T extends { ptId?: string }>(arr: T[]): T[] => {
-  const k = (s?: string) => String(s || "").replace(/^PT/i, "");
+/** 先女后男；男女内部按 PT 编号排序（兼容 ptId / test_sample_id 两种字段） */
+const sortBySexThenPt = <T extends { ptId?: string; test_sample_id?: string; category?: string }>(arr: T[]): T[] => {
+  const pt = (o: any) => String(o?.ptId || o?.test_sample_id || "");
+  const k = (s: string) => s.replace(/^PT/i, "");
   return [...arr].sort((a, b) => {
-    const ka = k(a.ptId), kb = k(b.ptId);
+    const fa = a.category === "FEMALE_BLOOD" ? 0 : 1;
+    const fb = b.category === "FEMALE_BLOOD" ? 0 : 1;
+    if (fa !== fb) return fa - fb;
+    const ka = k(pt(a)), kb = k(pt(b));
     if (ka.length !== kb.length) return ka.length - kb.length;
     return ka.localeCompare(kb, "en", { numeric: true });
   });
@@ -232,10 +237,17 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     return o === "" ? undefined : o;
   };
 
+  /** 汇总样本（先女后男、男女内部按 PT）；已完成批次保持原顺序 */
+  const hybRows = useMemo(() => {
+    const raw = [...(selectedBatch?.female_samples||[]),...(selectedBatch?.male_blood_samples||[]),...(selectedBatch?.male_other_samples||[])];
+    if (!selectedBatch) return raw;
+    return selectedBatch.status === "COMPLETED" ? raw : sortBySexThenPt(raw as any[]);
+  }, [selectedBatch]);
+
   // ── Index 列表 CSV 下载（SampleSheet 格式，参考 NIPT 上机测序）──
   const handleDownloadCsv = () => {
     if (!selectedBatch) return;
-    const all = [...(selectedBatch.female_samples||[]),...(selectedBatch.male_blood_samples||[]),...(selectedBatch.male_other_samples||[])];
+    const all = hybRows;
     const chip = selectedBatch.hyb_seq_data?.chip_number || selectedBatch.batch_number;
     const header = "Sample_ID,Index1_i7,Index2_i5,Mismatch";
     const rows = all.map((s:any, i:number) => {
@@ -488,7 +500,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                       <th style={{...th,width:140}}>上传ID</th>
                     </tr></thead>
                     <tbody>
-                      {sortByPt([...(selectedBatch.female_samples||[]),...(selectedBatch.male_blood_samples||[]),...(selectedBatch.male_other_samples||[])] as any[]).map((s:any,i:number)=>{
+                      {hybRows.map((s:any,i:number)=>{
                         const idxVal = s.index||String(i+1);
                         const idxNum = parseInt(idxVal)||0;
                         const padded = String(idxNum||"").padStart(3,"0");

@@ -59,10 +59,15 @@ export default function NipptPooling() {
   const [rows, setRows] = useState<PoolRow[]>([]);
 /** 按 PT 编号排序（仅显示层）：与后端 Length(pt_number) 规则一致 —— 先按编号长度，再按序号。
  *  只复制数组、不动对象；用于 mix 表显示顺序，不参与 mix 分配。 */
-const sortByPt = <T extends { ptId?: string }>(arr: T[]): T[] => {
-  const k = (s?: string) => String(s || "").replace(/^PT/i, "");
+/** 先女后男；男女内部按 PT 编号排序（兼容 ptId / test_sample_id 两种字段） */
+const sortBySexThenPt = <T extends { ptId?: string; test_sample_id?: string; category?: string }>(arr: T[]): T[] => {
+  const pt = (o: any) => String(o?.ptId || o?.test_sample_id || "");
+  const k = (s: string) => s.replace(/^PT/i, "");
   return [...arr].sort((a, b) => {
-    const ka = k(a.ptId), kb = k(b.ptId);
+    const fa = a.category === "FEMALE_BLOOD" ? 0 : 1;
+    const fb = b.category === "FEMALE_BLOOD" ? 0 : 1;
+    if (fa !== fb) return fa - fb;
+    const ka = k(pt(a)), kb = k(pt(b));
     if (ka.length !== kb.length) return ka.length - kb.length;
     return ka.localeCompare(kb, "en", { numeric: true });
   });
@@ -150,7 +155,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     for (let g = 0; g < numGroups; g++) {
       const groupRows = mixArrays[g];
       // 显示顺序：未完成批次按 PT 编号排（已完成保持原样）；分配顺序 groupRows 不变
-      const dispRows = selectedBatch?.status === "COMPLETED" ? groupRows : sortByPt(groupRows);
+      const dispRows = selectedBatch?.status === "COMPLETED" ? groupRows : sortBySexThenPt(groupRows);
       const fCount = groupRows.filter(r => r.category === "FEMALE_BLOOD").length;
       const mCount = groupRows.filter(r => r.category !== "FEMALE_BLOOD").length;
       const dataAmt = fCount * 2 + mCount * 1;
