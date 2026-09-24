@@ -29,12 +29,13 @@ interface Props {
 const { Text } = Typography;
 
 // ── SampleCell: clickable cell with Pass/Fail popover ──
-function SampleCell({ label, sampleIdx, results, onChange, cellStyle }: {
+function SampleCell({ label, sampleIdx, results, onChange, cellStyle, tdProps }: {
   label: string;
   sampleIdx: number;
   results: Record<string, { status: string; note: string }>;
   onChange: (key: string, status: string, note: string) => void;
   cellStyle: any;
+  tdProps?: any;
 }) {
   const key = String(sampleIdx);
   const result = results[key];
@@ -45,7 +46,7 @@ function SampleCell({ label, sampleIdx, results, onChange, cellStyle }: {
   const [localNote, setLocalNote] = useState(note);
 
   if (!label || label === "-") {
-    return <td style={cellStyle}></td>;
+    return <td style={cellStyle} {...(tdProps || {})}></td>;
   }
 
   const bg = cellStyle?.background || (status === "fail" ? "#fff1f0" : "#f6ffed");
@@ -90,7 +91,7 @@ function SampleCell({ label, sampleIdx, results, onChange, cellStyle }: {
       placement="bottomLeft"
       destroyTooltipOnHide
     >
-      <td style={{ ...cellStyle, background: bg, cursor: "pointer", color }}>
+      <td style={{ ...cellStyle, background: bg, cursor: "pointer", color }} {...(tdProps || {})}>
         {label}
       </td>
     </Popover>
@@ -112,6 +113,13 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   const [photos, setPhotos] = useState<string[]>((batch.extraction_data?.photos as string[]) || []);
   const [plateSkipCoords, setPlateSkipCoords] = useState<Record<number, string>>((batch.extraction_data?.plate_skip_coords as any) || {});
   const [plateKitTypes, setPlateKitTypes] = useState<Record<number, string>>((batch.extraction_data?.plate_kit_types as any) || {});
+  // 磁棒法孔板换位覆盖：{板号: {孔位(如"A1"): vgId}}；为空则按规则推导
+  const [plateLayout, setPlateLayout] = useState<Record<string, Record<string, string>>>(
+    (batch.extraction_data?.plate_layout as any) || {}
+  );
+  const canDrag = batch.status !== "COMPLETED";
+  const magneticDragRef = useRef<{ pi: number; well: string } | null>(null);
+  const [magneticDragOver, setMagneticDragOver] = useState<{ pi: number; well: string } | null>(null);
   const [region, setRegion] = useState(batch.region || "");
   const magneticNotesRef = useRef<Record<string, string>>({});
   const edata = useMemo(() => batch.extraction_data || {}, [batch.extraction_data]);
@@ -226,6 +234,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
           manual_notes: manualNotes,
           magnetic_notes: magneticNotesRef.current,
           plate_skip_coords: plateSkipCoords,
+          plate_layout: plateLayout,
           plate_kit_types: plateKitTypes,
           sample_results: sampleResults,
           photos,
@@ -287,6 +296,77 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   };
   const getSampleBadgeLocal = (idx: number) => getSampleBadge(samples[idx]);
   const getCellBgLocal = (idx?: number) => getCellBg(idx, samples);
+
+  // ── 磁棒法孔板拖动换位 ──
+  const parseSkipsOf = (s?: string) => new Set(
+    String(s || "").split(",").map(x => x.trim().toUpperCase()).filter(x => /^[A-H](1[0-2]|[1-9])$/.test(x))
+  );
+  const sampleVgId = (idx: number) => {
+    const s = samples[idx]; if (!s) return "";
+    return (s.sample_vg_id || s.sample_barcode || s.vg_id || s.sample_id || "") + (s.is_qc ? "QC" : "");
+  };
+  const platesToLayout = (plates: { cells: { row: number; col: number; sampleIdx: number }[] }[]) => {
+    const out: Record<string, Record<string, string>> = {};
+    plates.forEach((p, pi) => {
+      const m: Record<string, string> = {};
+      p.cells.forEach(cc => {
+        const vg = sampleVgId(cc.sampleIdx);
+        if (vg) m[`${ROWS_8[cc.row]}${cc.col}`] = vg;
+      });
+      out[String(pi)] = m;
+    });
+    return out;
+  };
+  const isDropTarget = (pi: number, well: string) =>
+    canDrag && !!magneticDragOver && magneticDragOver.pi === pi && magneticDragOver.well === well;
+  const dragProps = (pi: number, well: string, plates: { cells: { row: number; col: number; sampleIdx: number }[] }[]) => {
+    if (!canDrag) return {};
+    return {
+      draggable: true,
+      onDragStart: (e: any) => {
+        magneticDragRef.current = { pi, well };
+        try { e.dataTransfer.setData("text/plain", ""); } catch {}
+        e.dataTransfer.effectAllowed = "move";
+      },
+      onDragEnd: () => { magneticDragRef.current = null; setMagneticDragOver(null); },
+      onDragOver: (e: any) => {
+        const s0 = magneticDragRef.current;
+        if (!s0) return;
+        if (s0.pi === pi && s0.well === well) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        if (!magneticDragOver || magneticDragOver.pi !== pi || magneticDragOver.well !== well) setMagneticDragOver({ pi, well });
+      },
+      onDragLeave: () => setMagneticDragOver(p2 => (p2 && p2.pi === pi && p2.well === well ? null : p2)),
+      onDrop: (e: any) => { e.preventDefault(); magneticDrop(pi, well, plates); },
+    };
+  };
+  const magneticDrop = (targetPi: number, targetWell: string, plates: { cells: { row: number; col: number; sampleIdx: number }[] }[]) => {
+    const srcPos = magneticDragRef.current;
+    magneticDragRef.current = null;
+    setMagneticDragOver(null);
+    if (!srcPos) return;
+    if (parseSkipsOf(plateSkipCoords[targetPi]).has(targetWell)) {
+      message.warning(`${targetWell} 是跳过孔位，不能放置样本`);
+      return;
+    }
+    if (srcPos.pi === targetPi && srcPos.well === targetWell) return;
+    const base = Object.keys(plateLayout).length ? plateLayout : platesToLayout(plates);
+    const next: Record<string, Record<string, string>> = {};
+    Object.keys(base).forEach(k => { next[k] = { ...(base[k] || {}) }; });
+    const maxPi = Math.max(srcPos.pi, targetPi);
+    for (let p = 0; p <= maxPi; p++) if (!next[String(p)]) next[String(p)] = {};
+    const a = next[String(srcPos.pi)][srcPos.well];
+    const b = next[String(targetPi)][targetWell];
+    if (!a && !b) return;
+    if (b) next[String(srcPos.pi)][srcPos.well] = b; else delete next[String(srcPos.pi)][srcPos.well];
+    if (a) next[String(targetPi)][targetWell] = a; else delete next[String(targetPi)][targetWell];
+    setPlateLayout(next);
+  };
+  const resetMagneticLayout = () => {
+    setPlateLayout({});
+    message.success("已按规则重排孔板");
+  };
 
   return (
     <div>
@@ -419,6 +499,40 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
           if (cells.length > 0) { plates.push({ cells }); pi++; }
           else break;
         }
+        const defaultTotalPlates = plates.length;
+        // ── 位置覆盖（拖动换位后以 plateLayout 为准）──
+        const vgIdOfIdx = (idx: number) => {
+          const s = samples[idx]; if (!s) return "";
+          return (s.sample_vg_id || s.sample_barcode || s.vg_id || s.sample_id || "") + (s.is_qc ? "QC" : "");
+        };
+        const idxByVgId: Record<string, number> = {};
+        samples.forEach((_s: any, i: number) => { const v = vgIdOfIdx(i); if (v) idxByVgId[v] = i; });
+        const layoutKeys = Object.keys(plateLayout);
+        let useLayout = false;
+        if (layoutKeys.length > 0) {
+          const layIds = new Set<string>();
+          layoutKeys.forEach(k => Object.values(plateLayout[k] || {}).forEach(v => { if (v) layIds.add(v as string); }));
+          const curIds = new Set<string>(Object.keys(idxByVgId));
+          useLayout = layIds.size > 0 && layIds.size === curIds.size && [...layIds].every(v => curIds.has(v));
+        }
+        if (useLayout) {
+          const layoutMax = Math.max(...layoutKeys.map(k => parseInt(k, 10) + 1));
+          const total = Math.max(layoutMax, defaultTotalPlates);
+          const laidOut: { cells: {row:number; col:number; sampleIdx:number}[] }[] = [];
+          for (let p = 0; p < total; p++) {
+            const m = plateLayout[String(p)] || {};
+            const cells: {row:number; col:number; sampleIdx:number}[] = [];
+            Object.entries(m).forEach(([well, vg]) => {
+              const row = ROWS_8.indexOf(String(well).charAt(0));
+              const col = parseInt(String(well).slice(1), 10);
+              const sx = idxByVgId[vg as string];
+              if (row >= 0 && col >= 1 && sx !== undefined) cells.push({ row, col, sampleIdx: sx });
+            });
+            laidOut.push({ cells });
+          }
+          plates.length = 0;
+          laidOut.forEach(p => plates.push(p));
+        }
         const totalPlates = plates.length;
         return (
           <div id="extraction-magnetic-plates">
@@ -437,9 +551,11 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                       size="small"
                       placeholder="如 B1,C7"
                       value={skips}
-                      onChange={e => setPlateSkipCoords(prev => ({...prev, [pIdx]: e.target.value.toUpperCase()}))}
+                      onChange={e => { setPlateLayout({}); setPlateSkipCoords(prev => ({...prev, [pIdx]: e.target.value.toUpperCase()})); }}
                       style={{ width: 160 }}
                     />
+                    {canDrag && <Button size="small" onClick={resetMagneticLayout}>按规则重排</Button>}
+                    {canDrag && <Text type="secondary" style={{ fontSize: 11 }}>（可直接拖动样本换位，支持跨板）</Text>}
                   </div>
                 <Card key={pIdx} title={<div style={{ display: "flex", alignItems: "center", gap: 12 }}><span>{plateNo} {t("nipt.extraction.magneticRod")} Plate {pIdx+1}/{totalPlates} ({plate.cells.length} samples)</span>{batch.region === "HONGKONG" && <Select size="small" style={{ width: 90 }} placeholder="试剂盒" value={plateKitTypes[pIdx] || undefined} onChange={(v: string) => setPlateKitTypes(prev => ({...prev, [pIdx]: v}))} options={[{ value: "round", label: "圆底" }, { value: "conical", label: "锥底" }]} allowClear />}</div>} size="small" style={{ marginBottom: 8 }} bodyStyle={{ padding: "4px 8px" }}
                   extra={<Input.TextArea placeholder={`${plateNo} ${t("nipt.extraction.magneticNotes")}`} defaultValue={magneticNotesRef.current[pIdx]||""} onChange={e=>{magneticNotesRef.current[pIdx]=e.target.value}} autoSize={{minRows:1,maxRows:2}} style={{width:240,fontSize:11}} allowClear />}
@@ -463,13 +579,19 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
                             if(isProductCol) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:"#fff1f0",minHeight:28,verticalAlign:"middle"}}><span style={{color:"#cf1322",fontWeight:600}}>产物</span></td>;
                             if(c===1) {
                               if(skipped1) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:"#fff2f0",minHeight:28,verticalAlign:"middle",color:"#cf1322"}}>✕</td>;
-                              if(s1) return <SampleCell label={s1} sampleIdx={col1Idx!} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle"}} />;
+                              if(s1) return <SampleCell key={c} label={s1} sampleIdx={col1Idx!} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle",outline: isDropTarget(pIdx, `${r}1`) ? "2px dashed #1677ff" : undefined,outlineOffset:-2}} tdProps={dragProps(pIdx, `${r}1`, plates)} />;
                             }
                             if(c===7) {
                               if(skipped7) return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:"#fff2f0",minHeight:28,verticalAlign:"middle",color:"#cf1322"}}>✕</td>;
-                              if(s7) return <SampleCell label={s7} sampleIdx={col7Idx!} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle"}} />;
+                              if(s7) return <SampleCell key={c} label={s7} sampleIdx={col7Idx!} results={sampleResults} onChange={setSampleResult} cellStyle={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,minHeight:28,verticalAlign:"middle",outline: isDropTarget(pIdx, `${r}7`) ? "2px dashed #1677ff" : undefined,outlineOffset:-2}} tdProps={dragProps(pIdx, `${r}7`, plates)} />;
                             }
-                            return <td key={c} style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:bg,minHeight:28,verticalAlign:"middle"}}></td>;
+                            {
+                              const isSampleCol = (c === 1 || c === 7);
+                              const wellStr = `${r}${c}`;
+                              return <td key={c}
+                                {...(isSampleCol ? dragProps(pIdx, wellStr, plates) : {})}
+                                style={{border:"1px solid #d9d9d9",padding:"2px 3px",textAlign:"center",fontSize:10,background:bg,minHeight:28,verticalAlign:"middle",outline: isDropTarget(pIdx, wellStr) ? "2px dashed #1677ff" : undefined,outlineOffset:-2}}></td>;
+                            }
                           })}
                         </tr>);
                       })}
