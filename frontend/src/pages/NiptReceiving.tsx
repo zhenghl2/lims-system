@@ -67,7 +67,7 @@ export default function NiptReceiving() {
   const [rejectOpen, setRejectOpen] = useState(false);
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchVgModal, setBatchVgModal] = useState(false);
-  const [batchVgList, setBatchVgList] = useState<{id:string; sample_id:string; vg_id:string; receiver_name:string}[]>([]);
+  const [batchVgList, setBatchVgList] = useState<{id:string; sample_id:string; external_id:string; vg_id:string; receiver_name:string}[]>([]);
   const [receiveModalOpen, setReceiveModalOpen] = useState(false);
   const [receiveTarget, setReceiveTarget] = useState<any>(null);
   const [receiveLoading, setReceiveLoading] = useState(false);
@@ -142,7 +142,7 @@ export default function NiptReceiving() {
     if (selectedRowKeys.length === 0) { message.warning(t("nipt.receiving.selectSamples")); return; }
     const selected = data.filter((s: any) => selectedRowKeys.includes(s.id));
     const list = selected.map((s: any, i: number) => ({
-      id: s.id, sample_id: s.sample_id,
+      id: s.id, sample_id: s.sample_id, external_id: s.external_id || "",
       vg_id: s.vg_id || (i === 0 ? "HN" : ""),
       receiver_name: s.received_by_name || "",
     }));
@@ -354,11 +354,13 @@ export default function NiptReceiving() {
       <Modal
         title={t("nipt.receiving.batchVgIdTitle").replace("{count}", String(batchVgList.length))}
         open={batchVgModal} onOk={confirmBatchFillVg} onCancel={() => setBatchVgModal(false)}
-        confirmLoading={batchLoading} width={550} destroyOnClose
+        confirmLoading={batchLoading} width={760} destroyOnClose
       >
         <Table rowKey="id" size="small" pagination={false} dataSource={batchVgList}
           columns={[
             { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", width: 170, render: (v: string) => <Text code>{v}</Text> },
+            { title: t("nipt.samples.accessioningId"), dataIndex: "external_id", width: 150, ellipsis: true,
+              render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : <Text type="secondary">-</Text> },
             { title: t("nipt.samples.vgId"), dataIndex: "vg_id", width: 200,
               render: (v: string, _r: any, i: number) => (
                 <Input value={v} autoFocus={i === 0} placeholder={t("nipt.receiving.vgIdPlaceholder")}
