@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
-import { Table, Button, Tag, Modal, Form, Select, Input, Space, Typography, message, Card, Row, Col, Tabs, Image } from "antd";
+import { Table, Button, Tag, Modal, Form, Select, Input, Space, Typography, message, Card, Row, Col, Tabs, Image, Tooltip } from "antd";
 import { CheckOutlined, CloseOutlined, CameraOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { samplesApi } from "../api";
@@ -219,11 +219,12 @@ export default function NiptReceiving() {
 
   const pendingColumns = [
     { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", key: "sample_id", width: 180 },
-    { title: t("nipt.samples.accessioningId"), dataIndex: "external_id", key: "external_id", width: 150,
-      render: (v: string) => v ? <Text code style={{ fontSize: 11 }}>{v}</Text> : <Text type="secondary">-</Text> },
+    { title: t("nipt.samples.accessioningId"), dataIndex: "external_id", key: "external_id", width: 150, ellipsis: true,
+      render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : <Text type="secondary">-</Text> },
     { title: t("nipt.samples.fedexNo"), dataIndex: "fedex_no", key: "fedex_no", width: 150,
       render: (v: string) => v ? <Text style={{ fontSize: 11 }}>{v}</Text> : <Text type="secondary">-</Text> },
-    { title: t("nipt.samples.name"), dataIndex: "patient_name", key: "patient_name", width: 120 },
+    { title: t("nipt.samples.name"), dataIndex: "patient_name", key: "patient_name", width: 120, ellipsis: true,
+      render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : <Text type="secondary">-</Text> },
     { title: t("nipt.samples.vgId"), dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
     { title: t("nipt.samples.age"), dataIndex: "age", key: "age", width: 60 },
     { title: t("nipt.samples.gestWeeks"), dataIndex: "gestational_weeks", key: "gestational_weeks", width: 80 },
@@ -250,11 +251,12 @@ export default function NiptReceiving() {
 
   const receivedColumns = [
     { title: t("nipt.samples.sampleId"), dataIndex: "sample_id", key: "sample_id", width: 180 },
-    { title: t("nipt.samples.accessioningId"), dataIndex: "external_id", key: "external_id", width: 150,
-      render: (v: string) => v ? <Text code style={{ fontSize: 11 }}>{v}</Text> : <Text type="secondary">-</Text> },
+    { title: t("nipt.samples.accessioningId"), dataIndex: "external_id", key: "external_id", width: 150, ellipsis: true,
+      render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : <Text type="secondary">-</Text> },
     { title: t("nipt.samples.fedexNo"), dataIndex: "fedex_no", key: "fedex_no", width: 150,
       render: (v: string) => v ? <Text style={{ fontSize: 11 }}>{v}</Text> : <Text type="secondary">-</Text> },
-    { title: t("nipt.samples.name"), dataIndex: "patient_name", key: "patient_name", width: 120 },
+    { title: t("nipt.samples.name"), dataIndex: "patient_name", key: "patient_name", width: 120, ellipsis: true,
+      render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : <Text type="secondary">-</Text> },
     { title: t("nipt.samples.vgId"), dataIndex: "vg_id", key: "vg_id", width: 100, render: (v: string) => v || <Text type="secondary">-</Text> },
     { title: t("nipt.samples.age"), dataIndex: "age", key: "age", width: 60 },
     { title: t("nipt.samples.gestWeeks"), dataIndex: "gestational_weeks", key: "gestational_weeks", width: 80 },
