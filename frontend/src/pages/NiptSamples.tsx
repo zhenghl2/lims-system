@@ -23,11 +23,24 @@ const STATUS_MAP: Record<string, string> = {
 
 // Module-level (kept for reference, use STATUS_LABEL_TL in component)
 
+// 档位口径：与后端 samples/views.py(388-395) 及巴西导入 xlsx_extract.py 对齐
+//   Basic     → panel NIPT      （NIPT Basic      基础版）
+//   Plus      → panel NIPT_PLUS （NIPT Plus       增强版；Pooling 投入量 ×2.5，见 utils/badge.ts）
+//   Basic All → panel NIPT_FULL （NIPT Basic-All  全项版）
 const TEST_OPTIONS = [
-  { label: "NIPT Basic", value: "NIPT" },
-  { label: "NIPT Basic-All", value: "NIPT_PLUS" },
-  { label: "NIPT Plus", value: "NIPT_FULL" },
+  { label: "NIPT Basic", value: "Basic" },
+  { label: "NIPT Basic-All", value: "Basic All" },
+  { label: "NIPT Plus", value: "Plus" },
 ];
+const TEST_OPTION_PANEL: Record<string, string> = {
+  Basic: "NIPT", Plus: "NIPT_PLUS", "Basic All": "NIPT_FULL",
+};
+// 列表显示用：兼容 label 形式与历史 code 形式（NIPT/NIPT_PLUS/NIPT_FULL）
+const TEST_OPTION_LABELS: Record<string, string> = {
+  Basic: "NIPT Basic", NIPT: "NIPT Basic",
+  Plus: "NIPT Plus", NIPT_PLUS: "NIPT Plus",
+  "Basic All": "NIPT Basic-All", NIPT_FULL: "NIPT Basic-All",
+};
 
 const SOURCE_OPTIONS = [
   { label: "中国香港", value: "中国香港" },
@@ -50,7 +63,7 @@ const SOURCE_OPTIONS = [
 
 const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;visible:boolean;ellipsis?:boolean;render?:(v:any, r?:any)=>React.ReactNode}> = [
   { key: "source", title: "Sample Source",dataIndex: "sample_source", visible: true, width: 100, render: (v: string) => v === "巴西" ? "巴西万基" : (v || "-") },
-  { key: "test_option", title: "Test Option", dataIndex: "test_option", visible: true, width: 100, render: (v: string) => v || "-" },
+  { key: "test_option", title: "Test Option", dataIndex: "test_option", visible: true, width: 100, render: (v: string) => TEST_OPTION_LABELS[v] || v || "-" },
   { key: "external_id", title: "Accessioning ID", dataIndex: "external_id", visible: true, width: 140, ellipsis: true, render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : "-" },
   { key: "collection_date", title: "Collection Date", dataIndex: "collection_date", visible: true, width: 110, render: (v: string) => v || "-" },
   { key: "acceptance_date", title: "Acceptance Date", dataIndex: "acceptance_date", visible: true, width: 110, render: (v: string) => v || "-" },
@@ -295,8 +308,8 @@ export default function NiptSamples() {
 
   const buildPayload = (values: any) => ({
     sample_type_code: "BLOOD",
-    panel_code: values.panel || "NIPT",
-    test_option: values.test_option || "NIPT",
+    panel_code: values.panel || TEST_OPTION_PANEL[values.test_option] || "NIPT",
+    test_option: values.test_option || "Basic",
     sample_source: values.source === "" ? values.source_other : values.source,
     external_id: values.external_id || "",
     vg_id: values.vg_id || "",
@@ -574,7 +587,7 @@ export default function NiptSamples() {
           <Space style={{ display: "flex" }} wrap>
             <Form.Item name="source" label={t("nipt.samples.sourceLabel")}><Select options={SOURCE_OPTIONS} style={{ width: 160 }} /></Form.Item>
             <Form.Item name="source_other" label={t("nipt.receiving.rejectionReasons.other")}><Input style={{ width: 160 }} /></Form.Item>
-            <Form.Item name="test_option" label={t("nipt.samples.testOptionLabel")} initialValue="NIPT"><Select options={TEST_OPTIONS} style={{ width: 160 }} /></Form.Item>
+            <Form.Item name="test_option" label={t("nipt.samples.testOptionLabel")} initialValue="Basic"><Select options={TEST_OPTIONS} style={{ width: 160 }} /></Form.Item>
             <Form.Item name="external_id" label={t("nipt.samples.accessioningId")}><Input style={{ width: 160 }} /></Form.Item>
           </Space>
           <Space style={{ display: "flex" }} wrap>
