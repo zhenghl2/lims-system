@@ -215,6 +215,18 @@ class Case(models.Model):
             return False
         return all(s.received_at is not None for s in samples)
 
+    def origin_country(self):
+        """案例级来源(国家)：优先孕妇样本，其次任一已填来源的样本；均无则返回空串。
+
+        用于补充样本/重做/重采等「给已有案例新增样本」的场景继承原案例来源
+        （Sample.sample_source 为自由文本，非枚举）。
+        """
+        qs = self.case_samples.select_related("sample").exclude(sample__sample_source="")
+        cs = qs.filter(role=CaseSample.Role.MOTHER).first() or qs.first()
+        if cs and cs.sample:
+            return cs.sample.sample_source or ""
+        return ""
+
 
 class CaseSample(models.Model):
     """Association between a Case and a Sample with NIPPT-specific metadata."""

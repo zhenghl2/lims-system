@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import {
-  Card, Form, Input, Select, Button, message, Typography,
+  Card, Form, Input, Select, AutoComplete, Button, message, Typography,
   Divider, Table, Tag, Modal, DatePicker, Row, Col,
   Radio, Space, Collapse, InputNumber, Upload,
   Checkbox, Descriptions,
@@ -43,6 +43,7 @@ const SOURCE_OPTIONS = [
   { value: "巴西万基", label: "巴西万基" },
   { value: "越南", label: "越南" },
   { value: "韩国", label: "韩国" },
+  { value: "阿联酋", label: "阿联酋" },
   { value: "澳洲", label: "澳洲" },
   { value: "CYJ印度", label: "CYJ印度" },
   { value: "CYJ澳洲", label: "CYJ澳洲" },
@@ -405,7 +406,7 @@ export default function NipptRegistration() {
           multiple_gestation: values.multiple_gestation === undefined ? null : values.multiple_gestation,
           risk_warnings: values.risk ? Object.entries(values.risk).filter(([_, v]) => v).map(([k]) => k) : [],
           registration_type: "FIRST",
-          sample_source: values.sample_source,
+          sample_source: (values.sample_source || "").trim(),
           collection_method: values.collection_method,
           application_signed: values.application_signed || "",
           expected_completion: values.report_deadline
@@ -566,8 +567,29 @@ export default function NipptRegistration() {
             </Form.Item>
             <Row gutter={[16, 0]} style={{ marginLeft: 32, marginTop: 12 }}>
               <Col xs={24} sm={8}>
-                <Form.Item name="sample_source" label="来源(国家)" rules={[{ required: true, message: "必填" }]} style={{ marginBottom: 8 }}>
-                  <Select options={SOURCE_OPTIONS} placeholder="选择来源" allowClear size="small" />
+                <Form.Item
+                  name="sample_source"
+                  label="来源(国家)"
+                  style={{ marginBottom: 8 }}
+                  rules={[{
+                    validator: (_: any, v: any) => {
+                      const s = String(v ?? "").trim();
+                      if (!s) return Promise.reject(new Error("必填"));
+                      if (s.length > 50) return Promise.reject(new Error("来源最多 50 个字符"));
+                      return Promise.resolve();
+                    },
+                  }]}
+                >
+                  <AutoComplete
+                    options={SOURCE_OPTIONS}
+                    placeholder="选择或输入来源国家"
+                    allowClear
+                    size="small"
+                    style={{ width: "100%" }}
+                    filterOption={(input, option) => String((option as any)?.value ?? "").includes(input)}
+                  >
+                    <Input size="small" placeholder="选择或输入来源国家" />
+                  </AutoComplete>
                 </Form.Item>
               </Col>
               <Col xs={24} sm={8}>

@@ -598,6 +598,7 @@ class SupplementSerializer(serializers.Serializer):
                 panel=case.panel,
                 patient_name=patient_name,
                 external_id=external_id,
+                sample_source=case.origin_country(),
                 patient_sex="F" if role == "MOTHER" else "M",
                 collection_date=today,
                 receipt_date=today,
