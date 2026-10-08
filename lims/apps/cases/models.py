@@ -336,6 +336,16 @@ class CaseSample(models.Model):
         unique_together = [["case", "sample"]]
         ordering = ["role", "created_at"]
 
+    @property
+    def effective_sample_type(self):
+        """现行样本类型（单一口径）：优先签收时填写的实际收到类型 actual_sample_type，
+        为空回退登记时的 sample_source。
+
+        凡「按样本类型分流/过滤/分组/显示」的逻辑都必须用本属性，不要直接比较
+        self.sample_source —— 签收可以改类型，用登记值会与前处理显示、后端校验互相矛盾。
+        """
+        return (self.actual_sample_type or "").strip() or (self.sample_source or "").strip()
+
     def __str__(self):
         return f"{self.case.case_number} - {self.get_role_display()} ({self.sample.sample_id})"
 
@@ -499,7 +509,7 @@ class NipptPreProcessingSample(models.Model):
             cs = by_id.get(str(cid))
             if not cs:
                 continue
-            t = (cs.actual_sample_type or "").strip() or (cs.sample_source or "").strip()
+            t = cs.effective_sample_type
             if t:
                 out.append(t)
         # 兜底：case_sample_ids 为空/悬空时按 case 反查（保持旧行为不丢数据）

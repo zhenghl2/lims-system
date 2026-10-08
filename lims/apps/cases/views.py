@@ -2315,7 +2315,7 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
         for cs in qs:
             if cs.role == "MOTHER":
                 cat = "FEMALE_BLOOD"
-            elif cs.sample_source == "BLOOD":
+            elif cs.effective_sample_type == "BLOOD":
                 cat = "MALE_BLOOD"
             else:
                 cat = "MALE_OTHER"
@@ -2504,7 +2504,7 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
             for _cs in CaseSample.objects.filter(id__in=pp.case_sample_ids):
                 if _cs.role == "MOTHER":
                     passed_ids.add(str(_cs.id))
-                elif exp_type and _cs.sample_source == exp_type:
+                elif exp_type and _cs.effective_sample_type == exp_type:
                     passed_ids.add(str(_cs.id))
         excluded_ids = set()
         for b in NipptExtractionBatch.objects.all().prefetch_related("samples"):
@@ -2520,7 +2520,7 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
         for cs in qs:
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
             else:
-                if cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
+                if cs.effective_sample_type == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
             key = (str(cs.case_id), cs.sample.patient_name, cs.sample_source)
             if key not in groups:
@@ -2528,7 +2528,8 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
                     "patient_name":cs.sample.patient_name,"role":cs.role,"category":cat,
                     "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id,"receipt_location":cs.receipt_location or "","redo_count":0}
             g = groups[key]
-            if cs.sample_source not in g["sample_types"]: g["sample_types"].append(cs.sample_source)
+            _rsp = cs.effective_sample_type
+            if _rsp and _rsp not in g["sample_types"]: g["sample_types"].append(_rsp)
             g["case_sample_ids"].append(str(cs.id))
             if not g["test_sample_id"]: g["test_sample_id"] = cs.test_sample_id
             if cs.redo_count and cs.redo_count > g["redo_count"]: g["redo_count"] = cs.redo_count
@@ -2653,7 +2654,7 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
         for cs in qs:
             es = id2es.get(str(cs.id))
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
-            elif cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
+            elif cs.effective_sample_type == "BLOOD": cat = "MALE_BLOOD"
             else: cat = "MALE_OTHER"
             key = (str(cs.case_id), cs.sample.patient_name, cs.sample_source)
             if key not in groups:
@@ -2664,7 +2665,8 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
                     "dna_concentration":es.dna_concentration if es else None,
                     "extraction_sample_id":str(es.id) if es else None}
             g = groups[key]
-            if cs.sample_source not in g["sample_types"]: g["sample_types"].append(cs.sample_source)
+            _rsp = cs.effective_sample_type
+            if _rsp and _rsp not in g["sample_types"]: g["sample_types"].append(_rsp)
             g["case_sample_ids"].append(str(cs.id))
             if not g["test_sample_id"]: g["test_sample_id"] = cs.test_sample_id
         entries = list(groups.values())
@@ -2733,7 +2735,7 @@ class NipptPoolingViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         for cs in qs:
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
             else:
-                if cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
+                if cs.effective_sample_type == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
             key = (str(cs.case_id), cs.sample.patient_name, cs.sample_source)
             if key not in groups:
@@ -2742,7 +2744,8 @@ class NipptPoolingViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                     "expected_completion": cs.case.expected_completion.isoformat() if cs.case.expected_completion else "",
                     "sample_types":[],"case_sample_ids":[],"test_sample_id":cs.test_sample_id,"receipt_location":cs.receipt_location or ""}
             g = groups[key]
-            if cs.sample_source not in g["sample_types"]: g["sample_types"].append(cs.sample_source)
+            _rsp = cs.effective_sample_type
+            if _rsp and _rsp not in g["sample_types"]: g["sample_types"].append(_rsp)
             g["case_sample_ids"].append(str(cs.id))
             if not g["test_sample_id"]: g["test_sample_id"] = cs.test_sample_id
         entries = list(groups.values())

@@ -866,7 +866,7 @@ class NipptPreProcessingBatchCreateSerializer(serializers.ModelSerializer):
                 if key not in groups:
                     if cs.role == "MOTHER":
                         cat = "FEMALE_BLOOD"
-                    elif cs.sample_source == "BLOOD":
+                    elif cs.effective_sample_type == "BLOOD":
                         cat = "MALE_BLOOD"
                     else:
                         cat = "MALE_OTHER"
@@ -1082,7 +1082,7 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
             groups = {}
             for cs in css:
                 if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
-                elif cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
+                elif cs.effective_sample_type == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
                 key = (str(cs.case_id), cs.sample.patient_name, cat)
                 if key not in groups: groups[key] = {"case": cs.case, "ids": [], "role": cs.role}
@@ -1245,7 +1245,7 @@ class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
             groups = {}
             for cs in css:
                 if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
-                elif cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
+                elif cs.effective_sample_type == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
                 key = (str(cs.case_id), cs.sample.patient_name, cat)
                 if key not in groups: groups[key] = {"case":cs.case,"ids":[],"role":cs.role}
@@ -1525,7 +1525,7 @@ class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
             groups = {}
             for cs in css:
                 if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
-                elif cs.sample_source == "BLOOD": cat = "MALE_BLOOD"
+                elif cs.effective_sample_type == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
                 key = (str(cs.case_id), cs.sample.patient_name, cat)
                 if key not in groups: groups[key] = {"case":cs.case,"ids":[],"role":cs.role}
