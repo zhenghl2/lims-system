@@ -3007,6 +3007,18 @@ from .serializers import (
 )
 
 
+# ── NIPPT 生信：模板结果字母 ↔ 库内枚举 ↔ CPI 派生规则 ──
+# 模板里 auto_result / result 两列都用字母；库内 result 仍是 INCLUSION/EXCLUSION/INCONCLUSIVE
+NIPPT_RESULT_LETTER = {"INCLUSION": "Y", "EXCLUSION": "N", "INCONCLUSIVE": "O"}
+NIPPT_LETTER_RESULT = {
+    "Y": "INCLUSION", "N": "EXCLUSION", "O": "INCONCLUSIVE",
+    # 兼容旧模板（字母约定启用前下载的那批用全称）
+    "INCLUSION": "INCLUSION", "EXCLUSION": "EXCLUSION", "INCONCLUSIVE": "INCONCLUSIVE",
+}
+# cpi 不再由文件/页面提供，一律由 result 自动派生：支持=10000 / 不支持=0.0001 / 临界与无结果=空
+NIPPT_CPI_BY_RESULT = {"INCLUSION": 10000.0, "EXCLUSION": 0.0001, "INCONCLUSIVE": None, "": None}
+
+
 class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
     nippt_stage = "BIOINFO"
     """NIPPT Bioinformatics — pair-based CPI analysis"""
@@ -3071,9 +3083,12 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         for pd in pairs_data:
             pair_id = pd.get("id")
             if not pair_id: continue
+            result_val = pd.get("result", "") or ""
             updates = {
-                "cpi": pd.get("cpi"), "cpi_combined": pd.get("cpi_combined"),
-                "result": pd.get("result", ""), "note": pd.get("note", ""),
+                # cpi 由 result 自动派生（前端 CPI 列已改为只读展示）：支持=10000 / 不支持=0.0001 / 临界与空=空
+                "cpi": NIPPT_CPI_BY_RESULT.get(result_val),
+                "cpi_combined": pd.get("cpi_combined"),
+                "result": result_val, "note": pd.get("note", ""),
                 "report_data": pd.get("report_data", {}), "updated_at": timezone.now(),
             }
             for f in METRIC_FIELDS:
@@ -3158,16 +3173,18 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         import csv, io
         output = io.StringIO()
         writer = csv.writer(output)
+        # 14 列：不再含 cpi / cpi_combined（cpi 由 result 自动派生）；result 前新增 auto_result
+        # auto_result = 分析系统自动生成的结果（人工从分析系统转录，不落库，仅用于上传时核对）
         writer.writerow([
             "case_number", "pt_number", "father_label",
-            "cpi", "cpi_combined", "result", "note",
+            "auto_result", "result", "note",
             "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
             "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",
         ])
         for p in pairs:
             writer.writerow([
                 p.case.case_number, p.case.pt_number or "", p.father_label,
-                p.cpi or "", p.cpi_combined or "", p.result or "", p.note or "",
+                "", NIPPT_RESULT_LETTER.get(p.result, ""), p.note or "",
                 p.mother_layers or "", p.mother_concentration or "", p.mother_het_ratio or "", p.mother_y_ratio or "",
                 p.father_layers or "", p.father_concentration or "", p.father_het_ratio or "", p.father_y_ratio or "",
             ])
@@ -3177,7 +3194,13 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def import_cpi(self, request, pk=None):
-        """Import CPI + metrics from CSV or Excel file"""
+        """Import result (Y/N/O) + metrics from CSV or Excel file.
+
+- result / auto_result 取值 Y=支持 N=不支持 O=临界（兼容旧模板全称）
+- auto_result 与 result 同时有值且不一致 → **整批中止**，不写入任何行
+- cpi 不再从文件读取，按 result 自动派生（支持=10000 / 不支持=0.0001 / 临界与空=空）
+- auto_result 不落库，仅用于核对
+"""
         batch = self.get_object()
         if batch.status == "COMPLETED":
             return Response({"error": "Batch already completed"}, status=400)
@@ -3207,12 +3230,14 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         for p in batch.pairs.select_related("case"):
             key = (p.case.case_number, p.case.pt_number or "", p.father_label)
             pair_index[key] = p
-        RESULT_VALS = {"INCLUSION", "EXCLUSION", "INCONCLUSIVE"}
         METRIC_FIELDS = [
             "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
             "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",
         ]
-        updated = 0; skipped = 0; errors = []
+        # ── Pass 1：解析 + 校验 + 收集 auto_result/result 不一致 ──
+        parsed = []       # [(pair, upd, result_enum|None)]
+        errors = []
+        mismatches = []
         for i, row in enumerate(rows, start=2):
             cn = (row.get("case_number") or "").strip()
             pt = (row.get("pt_number") or "").strip()
@@ -3220,33 +3245,66 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             pair = pair_index.get((cn, pt, fl))
             if not pair:
                 errors.append(f"Row {i}: pair not found ({cn}/{pt}/{fl})")
-                skipped += 1
+                continue
+            auto_raw = (row.get("auto_result") or "").strip().upper()
+            result_raw = (row.get("result") or "").strip().upper()
+            auto_enum = NIPPT_LETTER_RESULT.get(auto_raw) if auto_raw else None
+            result_enum = NIPPT_LETTER_RESULT.get(result_raw) if result_raw else None
+            if auto_raw and not auto_enum:
+                errors.append(f"Row {i}: invalid auto_result '{auto_raw}' (允许 Y/N/O)")
+                continue
+            if result_raw and not result_enum:
+                errors.append(f"Row {i}: invalid result '{result_raw}' (允许 Y/N/O)")
+                continue
+            # 核对：两列都有值且不一致 → 记入不一致清单（随后整批中止）
+            if auto_enum and result_enum and auto_enum != result_enum:
+                mismatches.append({
+                    "row": i, "case_number": cn, "pt_number": pt, "father_label": fl,
+                    "auto_result": auto_raw, "result": result_raw,
+                })
                 continue
             upd = {"updated_at": timezone.now()}
-            cpi_s = (row.get("cpi") or "").strip()
-            result_s = (row.get("result") or "").strip().upper()
             note_s = (row.get("note") or "").strip()
-            if cpi_s:
-                try: upd["cpi"] = float(cpi_s)
-                except ValueError:
-                    errors.append(f"Row {i}: invalid cpi '{cpi_s}'"); skipped += 1; continue
-            if result_s:
-                if result_s not in RESULT_VALS:
-                    errors.append(f"Row {i}: invalid result '{result_s}'"); skipped += 1; continue
-                upd["result"] = result_s
-            if note_s: upd["note"] = note_s
+            if note_s:
+                upd["note"] = note_s
+            bad = False
             for f in METRIC_FIELDS:
                 val_s = (row.get(f) or "").strip()
                 if val_s:
-                    try: upd[f] = float(val_s)
+                    try:
+                        upd[f] = float(val_s)
                     except ValueError:
-                        errors.append(f"Row {i}: invalid {f} '{val_s}'"); skipped += 1; continue
+                        errors.append(f"Row {i}: invalid {f} '{val_s}'")
+                        bad = True
+                        break
+            if bad:
+                continue
+            parsed.append((pair, upd, result_enum))
+
+        # 有不一致 → 整批中止，一行都不写入
+        if mismatches:
+            return Response({
+                "error": f"导入已中止：auto_result 与 result 不一致 {len(mismatches)} 行，请核对后再上传",
+                "aborted": True,
+                "mismatch_count": len(mismatches),
+                "mismatches": mismatches[:20],
+                "errors": errors[:20],
+                "total_rows": len(rows),
+            }, status=400)
+
+        # ── Pass 2：写入（cpi 由 result 自动派生）──
+        updated = 0
+        for pair, upd, result_enum in parsed:
+            final_result = result_enum if result_enum is not None else (pair.result or "")
+            upd["result"] = final_result
+            upd["cpi"] = NIPPT_CPI_BY_RESULT.get(final_result)
             NipptBioinfoPair.objects.filter(id=pair.id).update(**upd)
             updated += 1
+        skipped = len(errors)
         return Response({
             "message": f"Updated {updated}, skipped {skipped}",
             "updated": updated, "skipped": skipped,
-            "errors": errors[:20], "total_rows": len(rows),
+            "errors": errors[:20], "total_rows": len(rows), "mismatches": [],
         })
 
     # destroy 由 NipptBatchDeleteMixin 提供

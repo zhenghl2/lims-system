@@ -155,7 +155,11 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         headers: { "Content-Type": "multipart/form-data" },
       });
       setImportResult(res.data); setImportModalOpen(true); fetchDetail(selectedBatch.id);
-    } catch (e: any) { message.error(e.response?.data?.error || "Import failed"); }
+    } catch (e: any) {
+      const d = e.response?.data;
+      if (d?.aborted) { setImportResult(d); setImportModalOpen(true); }   // 不一致 → 整批中止，展示清单
+      else message.error(d?.error || "Import failed");
+    }
     return false; // Prevent default upload
   };
 
@@ -220,20 +224,24 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     { title: "F.Conc", key: "fc", width: 70, render: (_: any, r: PairItem) => metricInput(r.id, "father_concentration", r.father_concentration) },
     { title: "F.Het", key: "fh", width: 65, render: (_: any, r: PairItem) => metricInput(r.id, "father_het_ratio", r.father_het_ratio) },
     { title: "F.Y", key: "fy", width: 65, render: (_: any, r: PairItem) => metricInput(r.id, "father_y_ratio", r.father_y_ratio) },
-    // CPI + Result
+    // CPI（只读）：由 result 自动派生 —— 支持=10000 / 不支持=0.0001 / 临界与空=空
     { title: "CPI", dataIndex: "cpi", key: "cpi", width: 110,
-      render: (v: any, r: PairItem) => <InputNumber size="small" style={{width:100}}
-        value={editingPairs[r.id]?.cpi !== undefined ? editingPairs[r.id].cpi : v}
-        onChange={(val) => handlePairEdit(r.id, "cpi", val)} placeholder="99.99" /> },
+      render: (_: any, r: PairItem) => {
+        const rv = editingPairs[r.id]?.result !== undefined ? editingPairs[r.id].result : r.result;
+        const derived = rv === "INCLUSION" ? 10000 : rv === "EXCLUSION" ? 0.0001 : null;
+        return derived != null
+          ? <Text strong>{derived}</Text>
+          : <Text type="secondary">—</Text>;
+      } },
     { title: "Result", dataIndex: "result", key: "res", width: 135,
       render: (v: string, r: PairItem) => {
         const val = editingPairs[r.id]?.result !== undefined ? editingPairs[r.id].result : v;
         return <Select size="small" style={{width:125}} value={val || undefined}
           onChange={(val) => handlePairEdit(r.id, "result", val)} placeholder="Select..."
           options={[
-            { label: <Text type="success">Support</Text>, value: "INCLUSION" },
-            { label: <Text type="danger">Exclusion</Text>, value: "EXCLUSION" },
-            { label: <Text type="warning">Inconclusive</Text>, value: "INCONCLUSIVE" },
+            { label: <Text type="success">支持</Text>, value: "INCLUSION" },
+            { label: <Text type="danger">不支持</Text>, value: "EXCLUSION" },
+            { label: <Text type="warning">临界</Text>, value: "INCONCLUSIVE" },
           ]} />; }},
     { title: "Note", dataIndex: "note", key: "nt", width: 120,
       render: (v: string, r: PairItem) => <Input size="small"
@@ -388,7 +396,19 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       {/* Import Result Modal */}
       <Modal title="Import Result" open={importModalOpen} onOk={() => setImportModalOpen(false)} onCancel={() => setImportModalOpen(false)} footer={<Button type="primary" onClick={() => setImportModalOpen(false)}>OK</Button>}>
         {importResult && (<>
-          <Text>Updated: <Text strong style={{color:"#52c41a"}}>{importResult.updated}</Text> | Skipped: <Text strong style={{color:"#faad14"}}>{importResult.skipped}</Text> | Total: {importResult.total_rows}</Text>
+          {importResult.aborted ? (
+            <Alert type="error" showIcon message={importResult.error || "导入已中止"}
+              description={<span>共 <b>{importResult.mismatch_count}</b> 行 auto_result 与 result 不一致，<b>未写入任何数据</b>。请核对后再上传。</span>} />
+          ) : (
+            <Text>Updated: <Text strong style={{color:"#52c41a"}}>{importResult.updated}</Text> | Skipped: <Text strong style={{color:"#faad14"}}>{importResult.skipped}</Text> | Total: {importResult.total_rows}</Text>
+          )}
+          {importResult.mismatches?.length > 0 && (<>
+            <Alert type="error" message={`${importResult.mismatches.length} 行结果不一致`} style={{marginTop:12}} />
+            <ul style={{maxHeight:200,overflow:"auto",marginTop:8}}>
+              {importResult.mismatches.map((m:any,i:number) => <li key={i} style={{fontSize:12}}>
+                Row {m.row}: {m.case_number} / {m.pt_number} / {m.father_label} —— auto_result=<b>{m.auto_result}</b>，result=<b>{m.result}</b>
+              </li>)}
+            </ul></>)}
           {importResult.errors?.length > 0 && (<>
             <Alert type="warning" message={`${importResult.errors.length} error(s)`} style={{marginTop:12}} />
             <ul style={{maxHeight:200,overflow:"auto",marginTop:8}}>{importResult.errors.map((e:string,i:number) => <li key={i} style={{fontSize:12}}>{e}</li>)}</ul></>)}
