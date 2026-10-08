@@ -582,7 +582,6 @@ export default function NipptRegistration() {
                 >
                   <AutoComplete
                     options={SOURCE_OPTIONS}
-                    placeholder="选择或输入来源国家"
                     allowClear
                     size="small"
                     style={{ width: "100%" }}
