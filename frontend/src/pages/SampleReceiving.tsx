@@ -241,7 +241,8 @@ export default function SampleReceiving() {
     setLoading(true);
     try {
       // 全量拉取一次 → 本地分类（Tab 计数与列表同源，永不失配）
-      const params: any = { page_size: 500 };
+      // 升序：与巴西送检单（表格）导入顺序一致，便于从上往下批量填写 PT 编号
+      const params: any = { page_size: 500, ordering: "created_at,case_number" };
       if (search.trim().length >= 2) params.search = search.trim();
       const _r = await (casesApi as any).list(params);
       const cases = _r.data?.results || [];
