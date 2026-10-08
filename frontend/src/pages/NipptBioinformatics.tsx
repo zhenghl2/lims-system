@@ -180,8 +180,10 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   };
 
   // Compact metric input renderer
+  // Layers 列一律显示整数（precision=0，四舍五入）；其余指标保留小数
   const metricInput = (pairId: string, field: string, v: any) => (
     <InputNumber size="small" style={{ width: 60 }}
+      precision={field.endsWith("layers") ? 0 : undefined}
       value={editingPairs[pairId]?.[field] !== undefined ? editingPairs[pairId][field] : v}
       onChange={(val) => handlePairEdit(pairId, field, val)} />
   );
@@ -214,16 +216,16 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       render: (_: any, r: PairItem) => r.is_cross_batch
         ? <Tooltip title="跨批次配对"><Tag icon={<SwapOutlined />} color="orange" style={{margin:0}} /></Tooltip>
         : <Tooltip title={`来源批次: ${r.mother_source_batch || "—"}`}><Tag icon={<LinkOutlined />} color="green" style={{margin:0}}>{r.mother_source_batch?.slice(-6)}</Tag></Tooltip> },
-    // Mother metrics
+    // Mother metrics（顺序：Layers → Het → Y → Conc）
     { title: "M.Layers", key: "ml", width: 70, render: (_: any, r: PairItem) => metricInput(r.id, "mother_layers", r.mother_layers) },
-    { title: "M.Conc", key: "mc", width: 70, render: (_: any, r: PairItem) => metricInput(r.id, "mother_concentration", r.mother_concentration) },
     { title: "M.Het", key: "mh", width: 65, render: (_: any, r: PairItem) => metricInput(r.id, "mother_het_ratio", r.mother_het_ratio) },
     { title: "M.Y", key: "my", width: 65, render: (_: any, r: PairItem) => metricInput(r.id, "mother_y_ratio", r.mother_y_ratio) },
-    // Father metrics
+    { title: "M.Conc", key: "mc", width: 70, render: (_: any, r: PairItem) => metricInput(r.id, "mother_concentration", r.mother_concentration) },
+    // Father metrics（顺序同上）
     { title: "F.Layers", key: "fl", width: 70, render: (_: any, r: PairItem) => metricInput(r.id, "father_layers", r.father_layers) },
-    { title: "F.Conc", key: "fc", width: 70, render: (_: any, r: PairItem) => metricInput(r.id, "father_concentration", r.father_concentration) },
     { title: "F.Het", key: "fh", width: 65, render: (_: any, r: PairItem) => metricInput(r.id, "father_het_ratio", r.father_het_ratio) },
     { title: "F.Y", key: "fy", width: 65, render: (_: any, r: PairItem) => metricInput(r.id, "father_y_ratio", r.father_y_ratio) },
+    { title: "F.Conc", key: "fc", width: 70, render: (_: any, r: PairItem) => metricInput(r.id, "father_concentration", r.father_concentration) },
     // CPI（只读）：由 result 自动派生 —— 支持=10000 / 不支持=0.0001 / 临界与空=空
     { title: "CPI", dataIndex: "cpi", key: "cpi", width: 110,
       render: (_: any, r: PairItem) => {
@@ -274,14 +276,14 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       render: (_: any, r: any) => r.father ? <Text>{r.father.patient_name}<Text type="secondary" style={{fontSize:11}}>{r.father.index ? ` (${r.father.index}` : ""}{r.father.sample_type ? `, ${r.father.sample_type})` : r.father.index ? ")" : ""}</Text></Text> : emptyText },
     { title: "", key: "ul", width: 42, render: () => emptyText },
     { title: "", key: "us", width: 55, render: () => emptyText },
-    { title: "M.Layers", key: "uml", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.mother.id]?.layers} onChange={(v) => handleSampleEdit(r.mother.id, "layers", v)} /> : emptyText },
-    { title: "M.Conc", key: "umc", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.mother.id]?.concentration} onChange={(v) => handleSampleEdit(r.mother.id, "concentration", v)} /> : emptyText },
+    { title: "M.Layers", key: "uml", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} precision={0} value={editingSamples[r.mother.id]?.layers} onChange={(v) => handleSampleEdit(r.mother.id, "layers", v)} /> : emptyText },
     { title: "M.Het", key: "umh", width: 65, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.mother.id]?.het_ratio} onChange={(v) => handleSampleEdit(r.mother.id, "het_ratio", v)} /> : emptyText },
     { title: "M.Y", key: "umy", width: 65, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.mother.id]?.y_ratio} onChange={(v) => handleSampleEdit(r.mother.id, "y_ratio", v)} /> : emptyText },
-    { title: "F.Layers", key: "ufl", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.father.id]?.layers} onChange={(v) => handleSampleEdit(r.father.id, "layers", v)} /> : emptyText },
-    { title: "F.Conc", key: "ufc", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.father.id]?.concentration} onChange={(v) => handleSampleEdit(r.father.id, "concentration", v)} /> : emptyText },
+    { title: "M.Conc", key: "umc", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.mother.id]?.concentration} onChange={(v) => handleSampleEdit(r.mother.id, "concentration", v)} /> : emptyText },
+    { title: "F.Layers", key: "ufl", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} precision={0} value={editingSamples[r.father.id]?.layers} onChange={(v) => handleSampleEdit(r.father.id, "layers", v)} /> : emptyText },
     { title: "F.Het", key: "ufh", width: 65, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.father.id]?.het_ratio} onChange={(v) => handleSampleEdit(r.father.id, "het_ratio", v)} /> : emptyText },
     { title: "F.Y", key: "ufy", width: 65, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.father.id]?.y_ratio} onChange={(v) => handleSampleEdit(r.father.id, "y_ratio", v)} /> : emptyText },
+    { title: "F.Conc", key: "ufc", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.father.id]?.concentration} onChange={(v) => handleSampleEdit(r.father.id, "concentration", v)} /> : emptyText },
     { title: "CPI", key: "ucpi", width: 110, render: () => emptyText },
     { title: "Result", key: "ures", width: 135, render: () => emptyText },
     { title: "Note", key: "unt", width: 120, render: () => emptyText },

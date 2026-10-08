@@ -3192,15 +3192,16 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         writer.writerow([
             "case_number", "pt_number", "father_label",
             "auto_result", "result", "note",
-            "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
-            "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",
+            # 指标列顺序：layers → het_ratio → y_ratio → concentration（母、父各 4）
+            "mother_layers", "mother_het_ratio", "mother_y_ratio", "mother_concentration",
+            "father_layers", "father_het_ratio", "father_y_ratio", "father_concentration",
         ])
         for p in pairs:
             writer.writerow([
                 p.case.case_number, p.case.pt_number or "", p.father_label,
                 "", NIPPT_RESULT_LETTER.get(p.result, ""), p.note or "",
-                p.mother_layers or "", p.mother_concentration or "", p.mother_het_ratio or "", p.mother_y_ratio or "",
-                p.father_layers or "", p.father_concentration or "", p.father_het_ratio or "", p.father_y_ratio or "",
+                p.mother_layers or "", p.mother_het_ratio or "", p.mother_y_ratio or "", p.mother_concentration or "",
+                p.father_layers or "", p.father_het_ratio or "", p.father_y_ratio or "", p.father_concentration or "",
             ])
         response = HttpResponse(output.getvalue(), content_type="text/csv")
         response["Content-Disposition"] = f'attachment; filename="bioinfo_{batch.batch_number}_template.csv"'
