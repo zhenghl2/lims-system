@@ -147,7 +147,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       setPlatform(sd.platform||""); setChip(sd.chip||""); setReadType(sd.read_type||""); setSeqKit(sd.sequencing_kit||""); setStepConfirmations(sd.step_confirmations||{});
       setMixRows(buildMixRowsFromServer(sd, d)); setFinalConc(sd.final_conc??0.783);
       form.setFieldsValue({
-        seq_date:sd.seq_date?dayjs(sd.seq_date):dayjs(), seq_time:sd.seq_time?dayjs(sd.seq_time,"HH:mm"):dayjs(),
+        seq_date:sd.seq_date?dayjs(sd.seq_date):dayjs(), seq_time:sd.seq_time?dayjs(sd.seq_time):dayjs(),
         equipment:sd.equipment||"", chip:sd.chip||"", read_type:sd.read_type||"",
         chip_number:sd.chip_number||"",
       });
