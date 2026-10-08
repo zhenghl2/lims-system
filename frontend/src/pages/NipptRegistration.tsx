@@ -45,6 +45,8 @@ const SOURCE_OPTIONS = [
   { value: "越南", label: "越南" },
   { value: "韩国", label: "韩国" },
   { value: "阿联酋", label: "阿联酋" },
+  { value: "北马其顿", label: "北马其顿" },
+  { value: "马来西亚", label: "马来西亚" },
   { value: "CYJ印度", label: "CYJ印度" },
   { value: "CYJ澳洲", label: "CYJ澳洲" },
   { value: "CYJ秘鲁", label: "CYJ秘鲁" },
