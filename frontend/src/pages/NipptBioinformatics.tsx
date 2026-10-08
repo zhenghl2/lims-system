@@ -159,9 +159,20 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     return false; // Prevent default upload
   };
 
-  const downloadTemplate = () => {
+  const downloadTemplate = async () => {
     if (!selectedBatch) return;
-    window.open(`/api/v1/cases/bioinfo/${selectedBatch.id}/export_template/`);
+    try {
+      // 必须走带 JWT 的 api 客户端：接口需鉴权，window.open 直连会 401（下载失败）
+      const res = await api.get(`/cases/bioinfo/${selectedBatch.id}/export_template/`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data], { type: "text/csv;charset=utf-8;" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `bioinfo_${selectedBatch.batch_number || "batch"}_template.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      message.error("Template 下载失败，请重试");
+    }
   };
 
   // Compact metric input renderer
