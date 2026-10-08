@@ -996,6 +996,151 @@ class CaseViewSet(viewsets.ModelViewSet):
 
         return Response(CaseSampleSerializer(cs).data)
 
+    @staticmethod
+    def _unique_supplement_sample_id(case, role, type_code):
+        """补样样本编号：{case_number}-SUP-{M|F}-{类型码}，冲突自动加序号。"""
+        prefix = f"{case.case_number}-SUP-{'M' if role == 'MOTHER' else 'F'}-{type_code}"
+        sid = prefix
+        i = 1
+        while Sample.objects.filter(sample_id=sid).exists():
+            i += 1
+            sid = f"{prefix}-{i}"
+        return sid
+
+    @action(detail=True, methods=["post"], url_path="receipt-supplement")
+    def receipt_supplement(self, request, pk=None):
+        """签收时补录「实收比登记多出」的样本类型 → 按补样新建 CaseSample，并直接计为已签收。
+
+        仅限疑父（ALLEGED_FATHER）；母亲样本走登记/补充样本入口。
+        幂等：该人已存在的类型进 skipped，不重复建档。
+        新样本 Sample.status=RECEIVED → 直接进入前处理待处理。
+        """
+        case = self.get_object()
+        src_id = (request.data.get("case_sample_id") or "").strip()
+        types = request.data.get("sample_types") or []
+        if isinstance(types, str):
+            types = [types]
+        types = list(dict.fromkeys(str(t).strip() for t in types if str(t or "").strip()))
+        received_by_name = (request.data.get("received_by_name") or "").strip()
+        receipt_location = (request.data.get("receipt_location") or "").strip()
+        pt_number = (request.data.get("pt_number") or "").strip()
+
+        if not src_id:
+            raise ValidationError("case_sample_id is required")
+        if not types:
+            raise ValidationError("请至少选择一个实收样本类型")
+        invalid = [t for t in types if t not in CaseSample.SampleSource.values]
+        if invalid:
+            raise ValidationError("无效的样本类型：%s" % "、".join(invalid))
+        if not received_by_name:
+            raise ValidationError("请先选择签收人")
+        if receipt_location not in ("XIAMEN", "HONGKONG"):
+            raise ValidationError("请先选择签收地（厦门/香港）")
+
+        src_cs = case.case_samples.filter(id=src_id).select_related("sample").first()
+        if not src_cs:
+            raise NotFound("CaseSample not found in this case")
+        if src_cs.role != CaseSample.Role.ALLEGED_FATHER:
+            raise ValidationError("仅疑父样本支持补录实收类型，母亲样本请在登记/补充样本入口处理")
+        if src_cs.receipt_condition == "REJECTED" or src_cs.sample.status == "REJECTED":
+            raise ValidationError("该样本已拒收，无法补录实收类型")
+
+        # PT 编号（与签收口径一致：行上填的优先，写回案例）
+        if pt_number and not case.pt_number:
+            case.pt_number = pt_number
+            case.save(update_fields=["pt_number", "updated_at"])
+        if not case.pt_number:
+            raise ValidationError("请先填写 PT 编号再补录实收类型")
+
+        # 该人（同 role + 同姓名）已有的类型集合 → 只有「未登记」的类型才建档
+        person_css = list(
+            case.case_samples.filter(
+                role=src_cs.role, sample__patient_name=src_cs.sample.patient_name
+            ).select_related("sample")
+        )
+        existing = set()
+        for cs_x in person_css:
+            if (cs_x.sample_source or "").strip():
+                existing.add(cs_x.sample_source.strip())
+            if cs_x.effective_sample_type:
+                existing.add(cs_x.effective_sample_type)
+        extras = [t for t in types if t not in existing]
+        skipped = [t for t in types if t in existing]
+
+        created = []
+        if extras:
+            sample_type, _ = SampleType.objects.get_or_create(
+                code="BLOOD", defaults={"name": "Peripheral Blood"}
+            )
+            now = timezone.now()
+            with transaction.atomic():
+                for t in extras:
+                    sid = self._unique_supplement_sample_id(case, src_cs.role, t)
+                    s = Sample.objects.create(
+                        sample_id=sid,
+                        sample_type=sample_type,
+                        panel=case.panel,
+                        patient_name=src_cs.sample.patient_name,
+                        patient_sex=src_cs.sample.patient_sex,
+                        patient_dob=src_cs.sample.patient_dob,
+                        external_id=src_cs.sample.external_id,
+                        fedex_no=src_cs.sample.fedex_no,
+                        sample_source=case.origin_country(),
+                        collection_date=now.date(),
+                        receipt_date=now.date(),
+                        receipt_time=now.time(),
+                        status="RECEIVED",
+                        site=case.site,
+                        created_by=request.user,
+                    )
+                    new_cs = CaseSample.objects.create(
+                        case=case,
+                        sample=s,
+                        role=src_cs.role,
+                        sample_source=t,
+                        actual_sample_type=t,
+                        workflow_stage="RECEIVED",
+                        received_at=now,
+                        received_by=request.user,
+                        received_by_name=received_by_name,
+                        receipt_location=receipt_location,
+                        receipt_condition="OK",
+                        arrival_date=now.date(),
+                        collection_notes=f"签收补录实收类型（签收人：{received_by_name}）",
+                    )
+                    new_cs.test_sample_id = case.generate_test_sample_id(new_cs)
+                    new_cs.save(update_fields=["test_sample_id"])
+                    created.append(new_cs)
+
+                labels = "、".join(
+                    (cs.get_sample_source_display() or cs.sample_source) for cs in created
+                )
+                case.notes = (case.notes + "\n" if case.notes else "") + \
+                    f"[签收补登] 实收多出 {labels}（签收人：{received_by_name}）"
+                case.save(update_fields=["notes", "updated_at"])
+                case.update_status()
+
+        for nc in created:
+            log_audit(request, "CREATE", nc, changes={
+                "sample_source": {"old": "", "new": nc.sample_source},
+                "actual_sample_type": {"old": "", "new": nc.actual_sample_type or ""},
+                "test_sample_id": {"old": "", "new": nc.test_sample_id or ""},
+                "received_by_name": {"old": "", "new": nc.received_by_name or ""},
+                "来源": {"old": "", "new": "签收补录"},
+            }, entity_type="casesample",
+                entity_repr="%s/%s" % (case.case_number, nc.sample_id))
+
+        return Response({
+            "created": [{
+                "cs_id": str(cs.id),
+                "sample_id": cs.sample.sample_id,
+                "sample_source": cs.sample_source,
+                "sample_source_display": cs.get_sample_source_display() or cs.sample_source,
+                "test_sample_id": cs.test_sample_id or "",
+            } for cs in created],
+            "skipped": skipped,
+        }, status=status.HTTP_201_CREATED)
+
     @action(detail=True, methods=["post"])
     def reject(self, request, pk=None):
         """Reject a specific CaseSample with reason."""

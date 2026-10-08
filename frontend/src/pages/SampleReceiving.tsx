@@ -8,7 +8,7 @@ import {
   Modal, Tabs, Row, Col, Image, Tooltip,
 } from "antd";
 import {
-  CheckOutlined, CloseOutlined, CameraOutlined,
+  CheckOutlined, CloseOutlined, CameraOutlined, PlusOutlined,
   ReloadOutlined, NumberOutlined,
 } from "@ant-design/icons";
 import { casesApi } from "../api";
@@ -95,6 +95,7 @@ interface CaseSampleRow {
   receivedByName: string;
   receiptLocation: string;
   workflowStage: string;
+  personTypes: string[];        // 该人（同案例+同角色+同姓名）已存在的样本类型集合
   caseHasPhoto?: boolean;
 }
 
@@ -169,6 +170,11 @@ export default function SampleReceiving() {
   // Receipt location per row: key = rowKey, value = location code (XIAMEN/HONGKONG)
   const [receiptLocations, setReceiptLocations] = useState<Record<string, string>>({});
 
+  // 签收补录（实收比登记多出的样本类型）
+  const [supTarget, setSupTarget] = useState<CaseSampleRow | null>(null);
+  const [supTypes, setSupTypes] = useState<string[]>([]);
+  const [supLoading, setSupLoading] = useState(false);
+
   // Reject Modal
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectTarget, setRejectTarget] = useState<CaseSampleRow | null>(null);
@@ -181,8 +187,19 @@ export default function SampleReceiving() {
     for (const c of cases) {
       const caseSamples = c.case_samples || [];
       const caseExtId = caseSamples.find((s: any) => s.role === "MOTHER")?.external_id || "";
+      // 该人（同案例 + 同角色 + 同姓名）已存在的样本类型集合 → 补录弹窗只列未登记的类型
+      const personTypes: Record<string, string[]> = {};
+      for (const cs of caseSamples) {
+        const pname = cs.role === "MOTHER" ? (c.mother_name || cs.patient_name || "") : (cs.patient_name || "");
+        const k = `${cs.role}|${pname}`;
+        const set = personTypes[k] || (personTypes[k] = []);
+        for (const t of [cs.sample_source, cs.actual_sample_type]) {
+          if (t && !set.includes(t)) set.push(t);
+        }
+      }
       for (const cs of caseSamples) {
         const isMother = cs.role === "MOTHER";
+        const rowPname = isMother ? (c.mother_name || cs.patient_name || "") : (cs.patient_name || "");
         rows.push({
           key: `${c.id}:${cs.id}`,
           caseId: c.id,
@@ -213,6 +230,7 @@ export default function SampleReceiving() {
           receivedAt: cs.received_at || "",
           receivedByName: cs.received_by_name || "",
           receiptLocation: cs.receipt_location || "",
+          personTypes: personTypes[`${cs.role}|${rowPname}`] || [],
         });
       }
     }
@@ -600,6 +618,64 @@ export default function SampleReceiving() {
     }
   };
 
+  // --- 签收补录：实收比登记多出的样本类型 ---
+  const openReceiptSupplement = (row: CaseSampleRow) => {
+    if (row.role !== "ALLEGED_FATHER") return;          // 本期仅疑父开放
+    if (row.received || row.status === "REJECTED") return;
+    if (!(row.ptBase || "").trim()) {
+      message.error("请先填写 PT 编号，再补录实收类型");
+      return;
+    }
+    if (!receiptPersons[row.key]) {
+      message.error("请先选择签收人，再补录实收类型");
+      return;
+    }
+    if (!receiptLocations[row.key]) {
+      message.error("请先选择签收地，再补录实收类型");
+      return;
+    }
+    setSupTypes([]);
+    setSupTarget(row);
+  };
+
+  const submitReceiptSupplement = async () => {
+    if (!supTarget) return;
+    if (!supTypes.length) {
+      message.warning("请至少选择一个实收样本类型");
+      return;
+    }
+    setSupLoading(true);
+    try {
+      const resp = await (casesApi as any).receiptSupplement(supTarget.caseId, {
+        case_sample_id: supTarget.csId,
+        sample_types: supTypes,
+        pt_number: supTarget.ptBase ? `PT${supTarget.ptBase}` : undefined,
+        received_by_name: receiptPersons[supTarget.key],
+        receipt_location: receiptLocations[supTarget.key] || "",
+      });
+      const created = resp?.data?.created || [];
+      const skipped = resp?.data?.skipped || [];
+      if (created.length) {
+        const names = created.map((x: any) => x.sample_source_display || x.sample_source).join("、");
+        message.success(`已补录并签收：${names}`);
+      }
+      if (skipped.length) {
+        const sk = skipped
+          .map((t: string) => SAMPLE_TYPE_OPTIONS.find((o) => o.value === t)?.label || t)
+          .join("、");
+        message.info(`${sk} 已登记，已跳过`);
+      }
+      setSupTarget(null);
+      setSupTypes([]);
+      fetchData();
+    } catch (e: any) {
+      const d = e?.response?.data;
+      message.error((Array.isArray(d) ? d[0] : d?.detail) || "补录失败");
+    } finally {
+      setSupLoading(false);
+    }
+  };
+
   // --- Columns ---
   const columns: any[] = [
     {
@@ -804,7 +880,7 @@ export default function SampleReceiving() {
       render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD HH:mm") : <Text type="secondary">—</Text>,
     },
     {
-      title: "操作", key: "act", width: 180, fixed: "right" as const,
+      title: "操作", key: "act", width: 220, fixed: "right" as const,
       render: (_: any, r: CaseSampleRow) =>
         r.received || r.status === "REJECTED" ? (
           <Text type="secondary">{r.status === "REJECTED" ? "已拒收" : "已签收"}</Text>
@@ -825,6 +901,15 @@ export default function SampleReceiving() {
               icon={<CameraOutlined />}
               onClick={() => handlePhotoClick(r)}
             />
+            {r.role === "ALLEGED_FATHER" && (
+              <Tooltip title="补录实收样本类型（按补样登记并直接签收）">
+                <Button
+                  size="small"
+                  icon={<PlusOutlined />}
+                  onClick={() => openReceiptSupplement(r)}
+                />
+              </Tooltip>
+            )}
           </Space>
         ),
     },
@@ -1060,6 +1145,43 @@ export default function SampleReceiving() {
               value={rejectNote}
               onChange={(e) => setRejectNote(e.target.value)}
             />
+          </div>
+        </Space>
+      </Modal>
+
+      {/* 补录实收样本类型（实收比登记多出）*/}
+      <Modal
+        open={!!supTarget}
+        title={supTarget ? `补录实收样本类型 — ${supTarget.patientName}（${supTarget.caseNumber}）` : ""}
+        onCancel={() => { setSupTarget(null); setSupTypes([]); }}
+        onOk={submitReceiptSupplement}
+        confirmLoading={supLoading}
+        okText="确认补录"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <div style={{ background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 4, padding: "8px 12px", fontSize: 12, color: "#874d00" }}>
+            补录的样本将按「补样」登记并<span style={{ fontWeight: 600 }}>直接计为已签收</span>：
+            登记人＝当前登录账号，签收人＝{supTarget ? (receiptPersons[supTarget.key] || "—") : "—"}，
+            到样日期＝今天。已登记的类型不会重复建档。
+          </div>
+          <div>
+            <Text strong style={{ display: "block", marginBottom: 6 }}>实际收到（未登记）的样本类型</Text>
+            <Select
+              mode="multiple"
+              style={{ width: "100%" }}
+              placeholder="选择实际收到但未登记的样本类型"
+              value={supTypes}
+              onChange={(v) => setSupTypes(v as string[])}
+              options={SAMPLE_TYPE_OPTIONS.filter(
+                (o) => !(supTarget?.personTypes || []).includes(o.value)
+              )}
+            />
+            {!!supTarget &&
+              SAMPLE_TYPE_OPTIONS.filter((o) => !(supTarget.personTypes || []).includes(o.value)).length === 0 && (
+                <Text type="secondary" style={{ fontSize: 12 }}>该人的所有样本类型都已登记，无需补录</Text>
+              )}
           </div>
         </Space>
       </Modal>
