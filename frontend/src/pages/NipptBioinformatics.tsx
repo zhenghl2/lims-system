@@ -58,7 +58,10 @@ export default function NipptBioinformatics() {
   const [manualPairFather, setManualPairFather] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<any>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
-const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
+const PERSONS = ["郑海灵","祝兴强","吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
+// 生信模块默认操作人/审核人（后端建批次时也会写入，这里兜底显示空批次）
+const DEFAULT_OPERATOR = "郑海灵";
+const DEFAULT_REVIEWER = "祝兴强";
 const [operators, setOperators] = useState<Record<string,string>>({});
 const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
@@ -358,20 +361,24 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
               <Text type="secondary">操作人: </Text>
               <Select size="small" placeholder="选择" style={{ width: 100 }}
-                value={operators[selectedBatch.id] || (selectedBatch as any).operator_name || undefined}
+                value={operators[selectedBatch.id] || (selectedBatch as any).operator_name || DEFAULT_OPERATOR}
                 onChange={v => setOperators(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
                 {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
               </Select>
               <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
               <Select size="small" placeholder="选择" style={{ width: 100 }}
-                value={reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || undefined}
+                value={reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || DEFAULT_REVIEWER}
                 onChange={v => setReviewers(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
                 {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
               </Select>
 
               <Button size="small" type="primary" style={{ marginLeft: 16 }}
                 onClick={async () => {
-                  const data = { operator_name: operators[selectedBatch.id] || "", reviewer: reviewers[selectedBatch.id] || "" };
+                  // 提交"显示值"（含默认），避免空状态把已存的默认人写成空串
+                  const data = {
+                    operator_name: operators[selectedBatch.id] || (selectedBatch as any).operator_name || DEFAULT_OPERATOR,
+                    reviewer: reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || DEFAULT_REVIEWER,
+                  };
                   const url = "/api/v1/cases/bioinfo/" + selectedBatch.id + "/";
                   const r = await fetch(url, { method: "PATCH",
                     headers: { "Content-Type": "application/json", "Authorization": "Bearer " + localStorage.getItem("access_token") },

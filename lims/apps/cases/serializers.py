@@ -1961,8 +1961,10 @@ class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
 
         with transaction.atomic():
             batch_number = NipptBioinfoBatch.generate_batch_number()
+            # 生信模块默认操作人/审核人（页面上仍可改选并保存）
             batch = NipptBioinfoBatch.objects.create(
                 batch_number=batch_number, status="DRAFT", created_by=request.user,
+                operator_name="郑海灵", reviewer="祝兴强",
             )
 
             hs_samples = NipptHybSeqSample.objects.filter(
