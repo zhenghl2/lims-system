@@ -47,17 +47,19 @@ const SOURCE_OPTIONS = [
   { label: "BCC (泰国)", value: "BCC" },
   { label: "巴西万基", value: "巴西万基" },
   { label: "韩国", value: "韩国" },
-  { label: "澳洲经销商", value: "澳洲经销商" },
   { label: "西班牙代理", value: "西班牙代理" },
-  { label: "澳洲", value: "澳洲" },
   { label: "西班牙巴塞罗那经销商", value: "西班牙巴塞罗那经销商" },
   { label: "CYJ印度", value: "CYJ印度" },
   { label: "CYJ澳洲", value: "CYJ澳洲" },
-  { label: "YLH西班牙bygens", value: "YLH西班牙bygens" },
-  { label: "YLH西班牙LABGENETICS", value: "YLH西班牙LABGENETICS" },
-  { label: "CYJ澳洲经销商", value: "CYJ澳洲经销商" },
   { label: "CYJ秘鲁", value: "CYJ秘鲁" },
   { label: "CYJ美国", value: "CYJ美国" },
+  { label: "CYJ西班牙", value: "CYJ西班牙" },
+  { label: "CYJ加纳", value: "CYJ加纳" },
+  { label: "CYJ马来西亚", value: "CYJ马来西亚" },
+  { label: "YLH西班牙bygens", value: "YLH西班牙bygens" },
+  { label: "YLH西班牙LABGENETICS", value: "YLH西班牙LABGENETICS" },
+  { label: "YLH墨西哥经销商", value: "YLH墨西哥经销商" },
+  { label: "YLH新加坡经销商", value: "YLH新加坡经销商" },
   { label: "Other (custom)", value: "" },
 ];
 
@@ -572,7 +574,7 @@ export default function NiptSamples() {
         <DatePicker placeholder={t("nipt.samples.acceptanceDate")} allowClear value={acceptanceDateFilter ? dayjs(acceptanceDateFilter) : null} onChange={d => { setAcceptanceDateFilter(d?.format("YYYY-MM-DD") || ""); setPage(1); }} style={{ width: 140 }} format="YYYY-MM-DD" />
         <Select placeholder={t("nipt.samples.sampleSource")} allowClear style={{ width: 150 }} value={sourceFilter || undefined}
           onChange={(v) => { setSourceFilter(v || ""); setPage(1); }}
-          options={["BCC", "巴西万基", "韩国", "CYJ印度", "CYJ澳洲", "澳洲经销商", "西班牙代理", "澳洲", "西班牙巴塞罗那经销商", "YLH西班牙bygens", "YLH西班牙LABGENETICS", "CYJ澳洲经销商", "CYJ秘鲁", "CYJ美国"].map(v => ({ label: v, value: v }))} />
+          options={["BCC", "巴西万基", "韩国", "CYJ印度", "CYJ澳洲", "CYJ秘鲁", "CYJ美国", "CYJ西班牙", "CYJ加纳", "CYJ马来西亚", "西班牙代理", "西班牙巴塞罗那经销商", "YLH西班牙bygens", "YLH西班牙LABGENETICS", "YLH墨西哥经销商", "YLH新加坡经销商"].map(v => ({ label: v, value: v }))} />
         <Select placeholder={t("nipt.samples.status")} allowClear style={{ width: 150 }} value={statusFilter || undefined}
           onChange={(v) => { setStatusFilter(v || ""); setPage(1); }}
           options={["", ...Object.keys(STATUS_LABEL_TL)].map(v => ({ label: v || "All Statuses", value: v }))} />

@@ -80,7 +80,8 @@ def select_template(sample_source, test_option, is_twin, has_no_result, gender_r
         return _get_template_path(TEMPLATE_MAP["basic_aus"])
 
     # CYJ
-    if src in ("CYJ", "CYJ印度", "CYJ澳洲", "CYJ澳洲经销商", "CYJ秘鲁", "CYJ美国"):
+    if src in ("CYJ", "CYJ印度", "CYJ澳洲", "CYJ澳洲经销商", "CYJ秘鲁", "CYJ美国",
+               "CYJ西班牙", "CYJ加纳", "CYJ马来西亚"):
         if test_option == "Plus":
             return _get_template_path(TEMPLATE_MAP["plus_cyj"])
         return _get_template_path(TEMPLATE_MAP["basic_cyj"])

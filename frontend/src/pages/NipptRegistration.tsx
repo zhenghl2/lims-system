@@ -44,16 +44,19 @@ const SOURCE_OPTIONS = [
   { value: "越南", label: "越南" },
   { value: "韩国", label: "韩国" },
   { value: "阿联酋", label: "阿联酋" },
-  { value: "澳洲", label: "澳洲" },
   { value: "CYJ印度", label: "CYJ印度" },
   { value: "CYJ澳洲", label: "CYJ澳洲" },
   { value: "CYJ秘鲁", label: "CYJ秘鲁" },
   { value: "CYJ美国", label: "CYJ美国" },
-  { value: "澳洲经销商", label: "澳洲经销商" },
+  { value: "CYJ西班牙", label: "CYJ西班牙" },
+  { value: "CYJ加纳", label: "CYJ加纳" },
+  { value: "CYJ马来西亚", label: "CYJ马来西亚" },
   { value: "西班牙代理", label: "西班牙代理" },
   { value: "西班牙巴塞罗那经销商", label: "西班牙巴塞罗那经销商" },
   { value: "YLH西班牙bygens", label: "YLH西班牙bygens" },
   { value: "YLH西班牙LABGENETICS", label: "YLH西班牙LABGENETICS" },
+  { value: "YLH墨西哥经销商", label: "YLH墨西哥经销商" },
+  { value: "YLH新加坡经销商", label: "YLH新加坡经销商" },
 ];
 
 // ===== 草稿保存（localStorage）=====
