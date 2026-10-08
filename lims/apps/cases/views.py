@@ -3012,9 +3012,23 @@ from .serializers import (
 NIPPT_RESULT_LETTER = {"INCLUSION": "Y", "EXCLUSION": "N", "INCONCLUSIVE": "O"}
 NIPPT_LETTER_RESULT = {
     "Y": "INCLUSION", "N": "EXCLUSION", "O": "INCONCLUSIVE",
+    # 中文（人工填 result 时常用；与页面下拉文案一致）
+    "支持": "INCLUSION", "不支持": "EXCLUSION", "临界": "INCONCLUSIVE", "亲缘临界": "INCONCLUSIVE",
     # 兼容旧模板（字母约定启用前下载的那批用全称）
     "INCLUSION": "INCLUSION", "EXCLUSION": "EXCLUSION", "INCONCLUSIVE": "INCONCLUSIVE",
 }
+
+
+def nippt_parse_metric_number(raw):
+    """解析指标数值：支持小数('0.09')与百分号('9%' / '9％')两种写法。
+
+    百分号按小数换算（9% → 0.09），与库内既有口径一致（库内指标均为小数）；
+    无法解析时抛 ValueError，由调用方记为该行错误。
+    """
+    t = str(raw or "").strip().replace(" ", "").replace("％", "%")
+    if t.endswith("%"):
+        return float(t[:-1]) / 100.0
+    return float(t)
 # cpi 不再由文件/页面提供，一律由 result 自动派生：支持=10000 / 不支持=0.0001 / 临界与无结果=空
 NIPPT_CPI_BY_RESULT = {"INCLUSION": 10000.0, "EXCLUSION": 0.0001, "INCONCLUSIVE": None, "": None}
 
@@ -3251,10 +3265,10 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             auto_enum = NIPPT_LETTER_RESULT.get(auto_raw) if auto_raw else None
             result_enum = NIPPT_LETTER_RESULT.get(result_raw) if result_raw else None
             if auto_raw and not auto_enum:
-                errors.append(f"Row {i}: invalid auto_result '{auto_raw}' (允许 Y/N/O)")
+                errors.append(f"Row {i}: invalid auto_result '{auto_raw}' (允许 Y/N/O 或 支持/不支持/临界)")
                 continue
             if result_raw and not result_enum:
-                errors.append(f"Row {i}: invalid result '{result_raw}' (允许 Y/N/O)")
+                errors.append(f"Row {i}: invalid result '{result_raw}' (允许 Y/N/O 或 支持/不支持/临界)")
                 continue
             # 核对：两列都有值且不一致 → 记入不一致清单（随后整批中止）
             if auto_enum and result_enum and auto_enum != result_enum:
@@ -3272,8 +3286,8 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                 val_s = (row.get(f) or "").strip()
                 if val_s:
                     try:
-                        upd[f] = float(val_s)
-                    except ValueError:
+                        upd[f] = nippt_parse_metric_number(val_s)
+                    except (ValueError, TypeError):
                         errors.append(f"Row {i}: invalid {f} '{val_s}'")
                         bad = True
                         break
