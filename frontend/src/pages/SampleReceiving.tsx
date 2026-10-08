@@ -938,7 +938,7 @@ export default function SampleReceiving() {
             style={{ width: 140 }}
             value={sourceFilter || undefined}
             onChange={(v) => setSourceFilter(v || "")}
-            options={["国内", "中国香港", "泰国", "巴西", "巴西万基", "越南", "韩国", "北马其顿", "马来西亚", "CYJ印度", "CYJ澳洲", "CYJ秘鲁", "CYJ美国", "CYJ西班牙", "CYJ加纳", "CYJ马来西亚", "西班牙代理", "西班牙巴塞罗那经销商", "YLH西班牙bygens", "YLH西班牙LABGENETICS", "YLH墨西哥经销商", "YLH新加坡经销商"].map((v) => ({ value: v, label: v }))}
+            options={["国内", "中国香港", "泰国", "巴西", "巴西万基", "越南", "韩国", "阿联酋", "北马其顿", "马来西亚", "CYJ印度", "CYJ澳洲", "CYJ秘鲁", "CYJ美国", "CYJ西班牙", "CYJ加纳", "CYJ马来西亚", "西班牙代理", "西班牙巴塞罗那经销商", "YLH西班牙bygens", "YLH西班牙LABGENETICS", "YLH墨西哥经销商", "YLH新加坡经销商"].map((v) => ({ value: v, label: v }))}
           />
         </Col>
         <Col>

@@ -808,13 +808,36 @@ class CaseViewSet(viewsets.ModelViewSet):
         cases, error_files = [], []
         for f in files:
             fname = f.name
-            if not fname.lower().endswith(".xlsx"):
-                error_files.append({"file": fname, "error": "仅支持 .xlsx 文件"})
+            if not fname.lower().endswith((".xlsx", ".xlsm", ".xls")):
+                error_files.append({"file": fname, "error": "仅支持 .xlsx 文件（当前文件扩展名不是 .xlsx/.xlsm/.xls）"})
                 continue
+            data = b""
             try:
                 data = f.read()
                 if len(data) > 20 * 1024 * 1024:
-                    raise ValidationError("文件超过 20MB")
+                    error_files.append({"file": fname, "error": "文件超过 20MB"})
+                    continue
+                # ── 内容体检：openpyxl 对 .xls / 空文件 / HTML 都只报同一句 BadZipFile（File is not a zip file），
+                #    这里先按文件头把真实原因讲清楚，避免"看不到病因"。 ──
+                magic = data[:4]
+                if len(data) == 0:
+                    error_files.append({
+                        "file": fname,
+                        "error": "文件内容为空（0 字节）：可能只是快捷方式/别名，或拖拽时没有真正读取到文件"})
+                    continue
+                if magic[:2] != b"PK":
+                    if magic == b"\xd0\xcf\x11\xe0":
+                        tip = ("这是 Excel 97-2003 格式（.xls）；越南导入只支持 .xlsx："
+                               "请用 Excel/WPS 打开后「另存为 → Excel 工作簿 (*.xlsx)」再上传")
+                    elif data[:200].lstrip()[:1] in (b"<", b"{", b"["):
+                        tip = ("文件内容看着是网页/文本（不是 Excel）：请确认文件已完整下载"
+                               "（微信、邮件里有时给出的是预览页而非原文件）")
+                    else:
+                        tip = ("文件头不是 PK（.xlsx 的 zip 标志）：文件可能损坏，或不是 Excel 文件")
+                    error_files.append({
+                        "file": fname,
+                        "error": f"{tip}（大小 {len(data)} 字节，文件头 {magic.hex(' ')}）"})
+                    continue
                 parsed, row_errors = parse_vn_xlsx_bytes(data, fname)
                 for r in parsed:
                     r["file"] = fname
@@ -824,7 +847,9 @@ class CaseViewSet(viewsets.ModelViewSet):
             except NipptVnParseError as e:
                 error_files.append({"file": fname, "error": str(e)})
             except Exception as e:
-                error_files.append({"file": fname, "error": f"解析异常: {str(e)[:200]}"})
+                error_files.append({
+                    "file": fname,
+                    "error": f"解析异常: {str(e)[:200]}（大小 {len(data)} 字节，文件头 {data[:4].hex(' ')}）"})
 
         # 查重：按 S/N 编号（落在母样本 Sample.external_id 上，Case 本身无此字段）
         from lims.apps.samples.models import Sample

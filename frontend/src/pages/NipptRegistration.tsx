@@ -291,8 +291,35 @@ export default function NipptRegistration() {
   };
 
   // ── 越南导入 handlers ──
+  /** 上传前预检文件头：openpyxl 对 .xls/空/其它格式都只报同一句「不是 zip 文件」，
+   *  这里先按文件头给出精确原因，避免用户看到看不懂的报错。返回可上传的文件。 */
+  const vnPrecheckFiles = async (files: File[]): Promise<File[]> => {
+    const good: File[] = [];
+    for (const f of files) {
+      try {
+        const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+        const hex = Array.from(head).map((b) => b.toString(16).padStart(2, "0")).join(" ");
+        const isZip = head[0] === 0x50 && head[1] === 0x4b;   // PK → xlsx/xlsm
+        const isOle = head[0] === 0xd0 && head[1] === 0xcf;   // OLE2 → 老版 .xls
+        if (isZip) { good.push(f); continue; }
+        if (isOle) {
+          message.error(`「${f.name}」是 Excel 97-2003 格式（.xls）：越南导入只支持 .xlsx，请用 Excel/WPS 打开后「另存为 → Excel 工作簿 (*.xlsx)」再上传`);
+        } else if (f.size === 0) {
+          message.error(`「${f.name}」内容为空（0 字节）：可能只是快捷方式/别名，或拖拽时没有真正读取到文件`);
+        } else {
+          message.error(`「${f.name}」不是 Excel 文件（文件头 ${hex}，大小 ${f.size} 字节）：可能只是快捷方式/别名，或文件已损坏`);
+        }
+      } catch (e) {
+        good.push(f);   // 读不出头部就交给服务端判断
+      }
+    }
+    return good;
+  };
+
   const handleVnImportFiles = async (files: File[]) => {
     if (!files || !files.length) return;
+    files = await vnPrecheckFiles(files);
+    if (!files.length) return;
     const fd = new FormData();
     files.forEach((f) => fd.append("files", f));
     setVnLoading(true);
