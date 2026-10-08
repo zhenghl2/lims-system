@@ -526,6 +526,34 @@ class NipptCnBatchImportSerializer(serializers.Serializer):
     """国内送检表批量导入"""
     cases = NipptCnImportCaseItemSerializer(many=True)
 
+class NipptVnImportCaseItemSerializer(serializers.Serializer):
+    """越南客户信息表单行（一行 = 一个案例：孕妇 + 单疑父，疑父可多类型样本）"""
+    row_no = serializers.IntegerField(required=False)
+    file = serializers.CharField(required=False, allow_blank=True, default="")
+    mother_name = serializers.CharField(required=False, allow_blank=True, default="")
+    father_name = serializers.CharField(required=False, allow_blank=True, default="")
+    father_sample_types = serializers.ListField(
+        child=serializers.ChoiceField(choices=CaseSample.SampleSource.choices),
+        required=False, default=list,
+        help_text="疑父样本类型列表（表里一格写多种时建多个样本）",
+    )
+    external_id = serializers.CharField(required=False, allow_blank=True, default="")
+    applicant = serializers.CharField(required=False, allow_blank=True, default="越南")
+    sales_person = serializers.CharField(required=False, allow_blank=True, default="吴梦婷")
+    gestational_age_weeks = serializers.IntegerField(required=False, allow_null=True, default=None)
+    gestational_age_days = serializers.IntegerField(required=False, allow_null=True, default=None)
+    mother_collection_date = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
+    father_collection_date = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
+    expected_completion = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")  # YYYY-MM-DD
+    notes = serializers.CharField(required=False, allow_blank=True, default="")
+    type_warnings = serializers.ListField(child=serializers.CharField(), required=False, default=list)
+
+
+class NipptVnBatchImportSerializer(serializers.Serializer):
+    """越南客户信息表批量导入"""
+    cases = NipptVnImportCaseItemSerializer(many=True)
+
+
 class SupplementSerializer(serializers.Serializer):
     """补充样本：给已有 Case 添加新的 CaseSample (母亲或父亲)."""
     role = serializers.ChoiceField(choices=[("MOTHER", "Mother"), ("ALLEGED_FATHER", "Alleged Father")])

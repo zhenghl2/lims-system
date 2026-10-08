@@ -6,12 +6,13 @@ import {
   Card, Form, Input, Select, AutoComplete, Button, message, Typography,
   Divider, Table, Tag, Modal, DatePicker, Row, Col,
   Radio, Space, Collapse, InputNumber, Upload,
-  Checkbox, Descriptions,
+  Checkbox, Descriptions, Tooltip,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, SendOutlined,
   SearchOutlined,
   CopyOutlined, InboxOutlined, SaveOutlined, FileExcelOutlined,
+  ExclamationCircleOutlined,
 } from "@ant-design/icons";
 
 import { casesApi } from "../api";
@@ -161,6 +162,13 @@ export default function NipptRegistration() {
   const [cnFileName, setCnFileName] = useState("");
   const [cnLoading, setCnLoading] = useState(false);
   const [cnResult, setCnResult] = useState<any>(null);
+  const [vnRows, setVnRows] = useState<any[]>([]);
+  const [vnChecked, setVnChecked] = useState<Set<number>>(new Set());
+  const [vnExisting, setVnExisting] = useState<any[]>([]);
+  const [vnErrors, setVnErrors] = useState<any[]>([]);
+  const [vnFileName, setVnFileName] = useState("");
+  const [vnLoading, setVnLoading] = useState(false);
+  const [vnResult, setVnResult] = useState<any>(null);
 
   useEffect(() => { refreshCases(); }, []);
 
@@ -277,6 +285,58 @@ export default function NipptRegistration() {
       message.error("导入失败: " + (e?.response?.data?.detail || e?.message || "未知错误"));
     } finally {
       setCnLoading(false);
+    }
+  };
+
+  // ── 越南导入 handlers ──
+  const handleVnImportFiles = async (files: File[]) => {
+    if (!files || !files.length) return;
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    setVnLoading(true);
+    try {
+      const res = await (casesApi as any).parseVnDocs(fd, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      const d = res.data;
+      const rows = d.cases || [];
+      setVnRows(rows);
+      setVnErrors(d.errors || []);
+      setVnFileName(files.map((f) => f.name).join("、"));
+      const existingRows = new Set((d.existing_info || []).map((e: any) => e.row_no));
+      setVnExisting(d.existing_info || []);
+      setVnChecked(new Set(rows.filter((r: any) => !existingRows.has(r.row_no)).map((r: any) => r.row_no)));
+      setVnResult(null);
+    } catch (e: any) {
+      message.error("解析失败: " + (e?.response?.data?.detail || e?.message || "未知错误"));
+    } finally {
+      setVnLoading(false);
+    }
+  };
+
+  const handleVnImportSubmit = async () => {
+    const selected = vnRows.filter((r) => vnChecked.has(r.row_no));
+    if (!selected.length) { message.warning("请先勾选要导入的行"); return; }
+    setVnLoading(true);
+    try {
+      const res = await (casesApi as any).batchImportVn({ cases: selected });
+      const d = res.data;
+      const createdCount = d.created_count ?? 0;
+      const skippedCount = d.skipped_count ?? 0;
+      const errCount = d.error_count ?? 0;
+      if (errCount > 0 || skippedCount > 0) {
+        message.warning(`导入完成：成功 ${createdCount}，跳过 ${skippedCount}，失败 ${errCount}（详见下方结果）`);
+      } else {
+        message.success(`导入成功 ${createdCount} 个Case`);
+      }
+      setVnResult(d);
+      const doneRows = new Set((d.created || []).map((c: any) => c.row_no));
+      setVnRows((prev: any[]) => prev.filter((r: any) => !doneRows.has(r.row_no)));
+      setVnChecked((prev) => { const n = new Set(prev); doneRows.forEach((rn) => n.delete(rn as number)); return n; });
+    } catch (e: any) {
+      message.error("导入失败: " + (e?.response?.data?.detail || e?.message || "未知错误"));
+    } finally {
+      setVnLoading(false);
     }
   };
 
@@ -518,6 +578,7 @@ export default function NipptRegistration() {
           <Radio.Button value="RESAMPLE">重采样本</Radio.Button>
           <Radio.Button value="IMPORT">巴西导入</Radio.Button>
           <Radio.Button value="IMPORT_CN">国内导入</Radio.Button>
+          <Radio.Button value="IMPORT_VN">越南导入</Radio.Button>
         </Radio.Group>
 
         {/* PT Search for supplement/resample */}
@@ -1468,6 +1529,147 @@ export default function NipptRegistration() {
                     <>
                       <Text type="warning" style={{ fontSize: 12, display: "block", marginTop: 4 }}>跳过明细：</Text>
                       {cnResult.skipped.map((s: any, i: number) => (
+                        <div key={i} style={{ fontSize: 11, color: "#d46b08" }}>行 {s.row_no}: {s.case_number ? `已存在（${s.case_number}）` : s.reason}</div>
+                      ))}
+                    </>
+                  )}
+                </div>
+              )}
+            </>
+          )}
+        </Card>
+      )}
+
+      {/* === 越南导入 === */}
+      {regType === "IMPORT_VN" && (
+        <Card size="small">
+          <div style={{ marginBottom: 12, color: "#666", fontSize: 12 }}>
+            上传越南客户信息表（.xlsx，一行 = 一个案例：孕妇 + 疑父），
+            按「S/N 编号」查重后批量登记首次检测 Case（来源：越南，人员：吴梦婷）。
+            孕妇样本按血液处理；疑父样本类型按表格填写（一格多种时建多个样本）。
+          </div>
+          <Row gutter={16} style={{ marginBottom: 16 }}>
+            <Col xs={24} md={12}>
+              <Upload.Dragger
+                accept=".xlsx"
+                multiple
+                showUploadList={false}
+                beforeUpload={(_f: any, fileList: any) => {
+                  handleVnImportFiles(fileList.map((f: any) => f.originFileObj || f));
+                  return false;
+                }}
+              >
+                <p className="ant-upload-drag-icon"><FileExcelOutlined style={{ fontSize: 32, color: "#1890ff" }} /></p>
+                <p className="ant-upload-text">上传越南客户信息表（.xlsx）</p>
+                <p className="ant-upload-hint">支持批量上传，按表头「Pregnant woman&apos;s Name」「Alleged father&apos;s Name」解析</p>
+              </Upload.Dragger>
+            </Col>
+          </Row>
+
+          {vnFileName && (
+            <div style={{ marginBottom: 8 }}>
+              <Tag color="blue">{vnFileName}</Tag>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                共 {vnRows.length} 个Case{vnExisting.length > 0 ? `，已存在 ${vnExisting.length} 个` : ""}
+                {vnErrors.length > 0 ? `，解析失败 ${vnErrors.length} 行` : ""}
+              </Text>
+            </div>
+          )}
+
+          {vnErrors.length > 0 && (
+            <div style={{ marginBottom: 8, padding: "6px 10px", background: "#fff1f0", borderRadius: 6 }}>
+              <Text type="danger" style={{ fontSize: 12 }}>解析失败:</Text>
+              {vnErrors.map((f: any, i: number) => (
+                <Tag key={i} color="red" style={{ marginLeft: 4, marginBottom: 2 }}>{f.file} 行{f.row_no}: {f.error}</Tag>
+              ))}
+            </div>
+          )}
+
+          {vnRows.length > 0 && (
+            <>
+              <Table
+                dataSource={vnRows}
+                rowKey="row_no"
+                size="small"
+                pagination={false}
+                scroll={{ x: 1500, y: 400 }}
+                columns={[
+                  { title: "导入", width: 90, render: (_: any, r: any) => {
+                      const ex = vnExisting.find((e: any) => e.row_no === r.row_no);
+                      const cb = (
+                        <Checkbox checked={vnChecked.has(r.row_no)}
+                          onChange={(e) => setVnChecked((prev) => {
+                            const next = new Set(prev);
+                            e.target.checked ? next.add(r.row_no) : next.delete(r.row_no);
+                            return next;
+                          })} />
+                      );
+                      if (ex) {
+                        return (
+                          <Space size={2} direction="vertical" style={{ alignItems: "center", maxWidth: 86 }}>
+                            <Tag color="orange" style={{ fontSize: 10, margin: 0, whiteSpace: "normal", lineHeight: "14px" }}>
+                              重复<span style={{ fontSize: 9, opacity: 0.8 }}>{` (${String(ex.case_number).slice(-4)})`}</span>
+                            </Tag>
+                            {cb}
+                          </Space>
+                        );
+                      }
+                      return cb;
+                    } },
+                  { title: "行", dataIndex: "row_no", width: 44 },
+                  { title: "S/N 编号", dataIndex: "external_id", width: 110, ellipsis: true },
+                  { title: "孕妇", dataIndex: "mother_name", width: 150, ellipsis: true },
+                  { title: "疑父", dataIndex: "father_name", width: 150, ellipsis: true },
+                  { title: "疑父样本类型", key: "ftypes", width: 150,
+                    render: (_: any, r: any) => {
+                      const m: Record<string, string> = { BLOOD: "血液", DBS: "血痕", HAIR: "毛发", NAIL: "指甲", SWAB: "口拭子", SEMEN: "精液", SEMSTAIN: "精斑", TOOTHBRUSH: "牙刷", CIGARETTE: "烟头", BOTTLE: "水瓶", BEARD: "胡须", FLOSS: "牙线", GUM: "口香糖" };
+                      const list: string[] = r.father_sample_types || [];
+                      const warn = (r.type_warnings || []).length > 0;
+                      return (
+                        <span>
+                          {list.map((t) => m[t] || t).join(" + ") || "—"}
+                          {warn && (
+                            <Tooltip title={(r.type_warnings || []).join("；")}>
+                              <ExclamationCircleOutlined style={{ color: "#faad14", marginLeft: 4 }} />
+                            </Tooltip>
+                          )}
+                        </span>
+                      );
+                    } },
+                  { title: "孕周", key: "gw", width: 70,
+                    render: (_: any, r: any) => r.gestational_age_weeks != null ? `${r.gestational_age_weeks}周${r.gestational_age_days ? `${r.gestational_age_days}天` : ""}` : "—" },
+                  { title: "孕妇采样", dataIndex: "mother_collection_date", width: 100,
+                    render: (v: string) => v || "—" },
+                  { title: "疑父采样", dataIndex: "father_collection_date", width: 100,
+                    render: (v: string) => v || "—" },
+                  { title: "预计报告", dataIndex: "expected_completion", width: 100,
+                    render: (v: string) => v || "—" },
+                  { title: "来源", dataIndex: "applicant", width: 80, ellipsis: true },
+                  { title: "人员", dataIndex: "sales_person", width: 80, ellipsis: true },
+                  { title: "备注", dataIndex: "notes", ellipsis: true,
+                    render: (v: string) => v || "—" },
+                ]}
+              />
+              <div style={{ marginTop: 12 }}>
+                <Button type="primary" icon={<PlusOutlined />} loading={vnLoading}
+                  onClick={handleVnImportSubmit} size="large">
+                  批量导入（{vnChecked.size} 个Case）
+                </Button>
+              </div>
+              {vnResult && (vnResult.errors?.length > 0 || vnResult.skipped?.length > 0) && (
+                <div style={{ marginTop: 8 }}>
+                  {vnResult.errors?.length > 0 && (
+                    <>
+                      <Text type="danger" style={{ fontSize: 12 }}>失败明细：</Text>
+                      {vnResult.errors.map((e: any, i: number) => (
+                        <div key={i} style={{ fontSize: 11, color: "#cf1322" }}>行 {e.row_no}: {e.error}</div>
+                      ))}
+                    </>
+                  )}
+                  {vnResult.skipped?.length > 0 && (
+                    <>
+                      <Text type="warning" style={{ fontSize: 12, display: "block", marginTop: 4 }}>跳过明细：</Text>
+                      {vnResult.skipped.map((s: any, i: number) => (
                         <div key={i} style={{ fontSize: 11, color: "#d46b08" }}>行 {s.row_no}: {s.case_number ? `已存在（${s.case_number}）` : s.reason}</div>
                       ))}
                     </>

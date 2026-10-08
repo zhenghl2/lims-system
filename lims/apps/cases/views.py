@@ -23,6 +23,7 @@ from .serializers import (
     SupplementSerializer,
     NipptBatchImportSerializer,
     NipptCnBatchImportSerializer,
+    NipptVnBatchImportSerializer,
 )
 from lims.apps.samples.models import Sample, SampleType
 from lims.apps.organizations.models import Site
@@ -782,6 +783,149 @@ class CaseViewSet(viewsets.ModelViewSet):
                     log_audit(request, "CREATE", case, changes={
                         "source": {"old": "", "new": "batch_import_cn"},
                         "row_no": {"old": "", "new": item.get("row_no")},
+                    }, entity_type="case", entity_repr=str(case))
+            except Exception as e:
+                errors.append({"row_no": item.get("row_no"), "error": str(e)[:300]})
+
+        return Response({
+            "created": created,
+            "skipped": skipped,
+            "errors": errors,
+            "created_count": len(created),
+            "skipped_count": len(skipped),
+            "error_count": len(errors),
+        })
+
+    @action(detail=False, methods=["post"], parser_classes=[MultiPartParser, FormParser, JSONParser])
+    def parse_vn_docs(self, request):
+        """越南客户信息表解析：上传 .xlsx，解析并按 S/N 编号查重，不创建数据。"""
+        from .nippt_vn_xlsx_parser import parse_vn_xlsx_bytes, NipptVnParseError
+
+        files = request.FILES.getlist("files")
+        if not files:
+            raise ValidationError("请上传至少一个文件（.xlsx）")
+
+        cases, error_files = [], []
+        for f in files:
+            fname = f.name
+            if not fname.lower().endswith(".xlsx"):
+                error_files.append({"file": fname, "error": "仅支持 .xlsx 文件"})
+                continue
+            try:
+                data = f.read()
+                if len(data) > 20 * 1024 * 1024:
+                    raise ValidationError("文件超过 20MB")
+                parsed, row_errors = parse_vn_xlsx_bytes(data, fname)
+                for r in parsed:
+                    r["file"] = fname
+                cases.extend(parsed)
+                for e in row_errors:
+                    error_files.append({"file": fname, "row_no": e["row_no"], "error": e["error"]})
+            except NipptVnParseError as e:
+                error_files.append({"file": fname, "error": str(e)})
+            except Exception as e:
+                error_files.append({"file": fname, "error": f"解析异常: {str(e)[:200]}"})
+
+        # 查重：按 S/N 编号（落在母样本 Sample.external_id 上，Case 本身无此字段）
+        from lims.apps.samples.models import Sample
+        existing_info = []
+        sns = [c.get("external_id") for c in cases if c.get("external_id")]
+        if sns:
+            hit = {}
+            qs = (Sample.objects.filter(external_id__in=sns)
+                  .select_related("case_sample__case"))
+            for smp in qs:
+                cs = getattr(smp, "case_sample", None)
+                if cs and cs.case and str(cs.case.case_number).startswith("NIPPT"):
+                    hit.setdefault(smp.external_id, cs.case.case_number)
+            for c in cases:
+                sn = c.get("external_id")
+                if sn and sn in hit:
+                    existing_info.append({"row_no": c["row_no"], "file": c.get("file", ""), "case_number": hit[sn]})
+
+        return Response({
+            "cases": cases,
+            "errors": error_files,
+            "existing_info": existing_info,
+            "case_count": len(cases),
+        })
+
+    @action(detail=False, methods=["post"])
+    def batch_import_vn(self, request):
+        """越南客户信息表批量导入：逐行创建 Case（孕妇 + 单疑父，疑父可多样本），按 S/N 编号查重。"""
+        from datetime import datetime as _dt
+
+        serializer = NipptVnBatchImportSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        def parse_iso(d):
+            if not d:
+                return None
+            try:
+                return _dt.strptime(str(d).strip(), "%Y-%m-%d").date()
+            except (ValueError, AttributeError):
+                return None
+
+        created, skipped, errors = [], [], []
+        for item in serializer.validated_data["cases"]:
+            mother = (item["mother_name"] or "").strip()
+            father = (item["father_name"] or "").strip()
+            sn = (item["external_id"] or "").strip()
+            if not mother and not father:
+                skipped.append({"row_no": item.get("row_no"), "reason": "empty"})
+                continue
+            # 查重：S/N 编号（与预览口径一致）
+            dup = None
+            if sn:
+                from lims.apps.samples.models import Sample as _Smp
+                dup_smp = (_Smp.objects
+                           .filter(external_id=sn, case_sample__case__case_number__startswith="NIPPT")
+                           .select_related("case_sample__case").first())
+                if dup_smp:
+                    dup = dup_smp.case_sample.case.case_number
+            if dup:
+                skipped.append({"row_no": item.get("row_no"), "reason": "exists", "case_number": dup})
+                continue
+            try:
+                with transaction.atomic():
+                    ftypes = [t for t in (item["father_sample_types"] or []) if t] or ["BLOOD"]
+                    create_data = {
+                        "mother_name": mother,
+                        "father_names": [father] if father else [],
+                        "father_sample_types": [ftypes] if father else [],
+                        "sample_source": "越南",
+                        "sales_person": item["sales_person"] or "",
+                        "notes": item["notes"] or "",
+                        "external_id": sn,
+                        "applicant": item["applicant"] or "",
+                        "registration_type": "FIRST",
+                    }
+                    due = parse_iso(item.get("expected_completion"))
+                    if due:
+                        create_data["expected_completion"] = due
+                    if item["gestational_age_weeks"] is not None:
+                        create_data["gestational_age_weeks"] = item["gestational_age_weeks"]
+                        create_data["gestational_age_days"] = item["gestational_age_days"] or 0
+                    create_serializer = CaseCreateSerializer(data=create_data, context={"request": request})
+                    create_serializer.is_valid(raise_exception=True)
+                    case = create_serializer.save()
+                    # 采集日期：孕妇（E 列）、疑父（I 列）分别写入
+                    mcd = parse_iso(item.get("mother_collection_date"))
+                    if mcd:
+                        mother_cs = case.case_samples.filter(role=CaseSample.Role.MOTHER).select_related("sample").first()
+                        if mother_cs:
+                            mother_cs.sample.collection_date = mcd
+                            mother_cs.sample.save(update_fields=["collection_date", "updated_at"])
+                    fcd = parse_iso(item.get("father_collection_date"))
+                    if fcd:
+                        for fcs in case.case_samples.filter(role=CaseSample.Role.ALLEGED_FATHER).select_related("sample"):
+                            fcs.sample.collection_date = fcd
+                            fcs.sample.save(update_fields=["collection_date", "updated_at"])
+                    created.append({"row_no": item.get("row_no"), "case_number": case.case_number})
+                    log_audit(request, "CREATE", case, changes={
+                        "source": {"old": "", "new": "batch_import_vn"},
+                        "row_no": {"old": "", "new": item.get("row_no")},
+                        "external_id": {"old": "", "new": sn},
                     }, entity_type="case", entity_repr=str(case))
             except Exception as e:
                 errors.append({"row_no": item.get("row_no"), "error": str(e)[:300]})
