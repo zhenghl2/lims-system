@@ -96,6 +96,11 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     } catch (e: any) { message.error(e.response?.data?.hybseq_batch_id || "Create failed"); }
   };
 
+  /** 未配对样本列显示值：优先本地编辑值，否则回退服务器值。
+   *  修复：此前只读 editingSamples[...]，导入进来的指标在页面显示为空。 */
+  const sampleField = (s: any, field: string) =>
+    editingSamples[s.id]?.[field] !== undefined ? editingSamples[s.id][field] : s[field];
+
   const handleSampleEdit = (sampleId: string, field: string, value: any) => {
     setEditingSamples(prev => ({ ...prev, [sampleId]: { ...(prev[sampleId] || {}), [field]: value } }));
   };
@@ -279,21 +284,22 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       render: (_: any, r: any) => r.father ? <Text>{r.father.patient_name}<Text type="secondary" style={{fontSize:11}}>{r.father.index ? ` (${r.father.index}` : ""}{r.father.sample_type ? `, ${r.father.sample_type})` : r.father.index ? ")" : ""}</Text></Text> : emptyText },
     { title: "", key: "ul", width: 42, render: () => emptyText },
     { title: "", key: "us", width: 55, render: () => emptyText },
-    { title: "M.Layers", key: "uml", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} precision={0} value={editingSamples[r.mother.id]?.layers} onChange={(v) => handleSampleEdit(r.mother.id, "layers", v)} /> : emptyText },
-    { title: "M.Het", key: "umh", width: 65, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.mother.id]?.het_ratio} onChange={(v) => handleSampleEdit(r.mother.id, "het_ratio", v)} /> : emptyText },
-    { title: "M.Y", key: "umy", width: 65, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.mother.id]?.y_ratio} onChange={(v) => handleSampleEdit(r.mother.id, "y_ratio", v)} /> : emptyText },
-    { title: "M.Conc", key: "umc", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.mother.id]?.concentration} onChange={(v) => handleSampleEdit(r.mother.id, "concentration", v)} /> : emptyText },
-    { title: "F.Layers", key: "ufl", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} precision={0} value={editingSamples[r.father.id]?.layers} onChange={(v) => handleSampleEdit(r.father.id, "layers", v)} /> : emptyText },
-    { title: "F.Het", key: "ufh", width: 65, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.father.id]?.het_ratio} onChange={(v) => handleSampleEdit(r.father.id, "het_ratio", v)} /> : emptyText },
-    { title: "F.Y", key: "ufy", width: 65, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.father.id]?.y_ratio} onChange={(v) => handleSampleEdit(r.father.id, "y_ratio", v)} /> : emptyText },
-    { title: "F.Conc", key: "ufc", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={editingSamples[r.father.id]?.concentration} onChange={(v) => handleSampleEdit(r.father.id, "concentration", v)} /> : emptyText },
+    { title: "M.Layers", key: "uml", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} precision={0} value={sampleField(r.mother, "layers")} onChange={(v) => handleSampleEdit(r.mother.id, "layers", v)} /> : emptyText },
+    { title: "M.Het", key: "umh", width: 65, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={sampleField(r.mother, "het_ratio")} onChange={(v) => handleSampleEdit(r.mother.id, "het_ratio", v)} /> : emptyText },
+    { title: "M.Y", key: "umy", width: 65, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={sampleField(r.mother, "y_ratio")} onChange={(v) => handleSampleEdit(r.mother.id, "y_ratio", v)} /> : emptyText },
+    { title: "M.Conc", key: "umc", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={sampleField(r.mother, "concentration")} onChange={(v) => handleSampleEdit(r.mother.id, "concentration", v)} /> : emptyText },
+    { title: "F.Layers", key: "ufl", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} precision={0} value={sampleField(r.father, "layers")} onChange={(v) => handleSampleEdit(r.father.id, "layers", v)} /> : emptyText },
+    { title: "F.Het", key: "ufh", width: 65, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={sampleField(r.father, "het_ratio")} onChange={(v) => handleSampleEdit(r.father.id, "het_ratio", v)} /> : emptyText },
+    { title: "F.Y", key: "ufy", width: 65, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={sampleField(r.father, "y_ratio")} onChange={(v) => handleSampleEdit(r.father.id, "y_ratio", v)} /> : emptyText },
+    { title: "F.Conc", key: "ufc", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={sampleField(r.father, "concentration")} onChange={(v) => handleSampleEdit(r.father.id, "concentration", v)} /> : emptyText },
     { title: "CPI", key: "ucpi", width: 110, render: () => emptyText },
     { title: "Result", key: "ures", width: 135, render: () => emptyText },
     { title: "Note", key: "unt", width: 120, render: () => emptyText },
     { title: "QC", key: "uqc", width: 120, render: (_: any, r: any) => {
       const sid = r.mother?.id || r.father?.id;
       if (!sid) return emptyText;
-      const val = editingSamples[sid]?.qc_flag;
+      const srv = r.mother?.qc_flag ?? r.father?.qc_flag ?? "";
+      const val = editingSamples[sid]?.qc_flag !== undefined ? editingSamples[sid].qc_flag : srv;
       return <Select size="small" style={{width:110}} value={val || undefined} allowClear placeholder="Normal"
         onChange={(v) => handleSampleEdit(sid, "qc_flag", v || "")}
         options={QC_FLAG_OPTIONS.map(o => ({ label: o.label || "Normal", value: o.value }))} />;
