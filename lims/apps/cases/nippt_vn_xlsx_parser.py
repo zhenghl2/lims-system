@@ -44,6 +44,50 @@ class NipptVnParseError(Exception):
     pass
 
 
+def repair_truncated_zip(data, max_pad=4):
+    """尾部被截断时补 0x00 修复 zip（仅限 EOCD 记录缺 ≤ max_pad 字节的情况）。
+
+    背景：xlsx 是 zip，结尾必须有 22 字节的 EOCD 记录（PK\x05\x06 ... 00 00）。
+    文件在微信下载/另存/同步等"当文本处理"的环节里，结尾的 0x00 常被丢掉
+    （典型"正好少 1 字节"），于是 zipfile/openpyxl 只报 "File is not a zip file"。
+
+    返回 (修复后的 bytes, 补齐字节数)；无法修复时返回 (None, 0)。
+    只有补完能通过 zipfile 完整性校验（testzip 逐项验 CRC）才接受，绝不"猜着补"。
+    """
+    if not data or data[:2] != b"PK":
+        return None, 0
+    idx = data.rfind(b"PK\x05\x06")
+    if idx == -1:
+        return None, 0
+    have = len(data) - idx
+    if have >= 22:            # EOCD 完整 → 不是这种截断，交给正常流程报错
+        return None, 0
+    need = 22 - have
+    if need > max_pad:
+        return None, 0
+    cand = data + b"\x00" * need
+    import io as _io
+    import zipfile as _zip
+    try:
+        with _zip.ZipFile(_io.BytesIO(cand)) as z:
+            if z.testzip() is not None:      # 有任何一项 CRC 不符就不接受
+                return None, 0
+    except Exception:
+        return None, 0
+    return cand, need
+
+
+def missing_tail_bytes(data):
+    """结尾 EOCD 缺多少字节（0 = 不适用/完整），供报错信息用。"""
+    if not data:
+        return 0
+    idx = data.rfind(b"PK\x05\x06")
+    if idx == -1:
+        return 0
+    have = len(data) - idx
+    return (22 - have) if 0 < have < 22 else 0
+
+
 # ── 定值（按用户确认）──
 FIXED_APPLICANT = "越南"
 FIXED_SALES_PERSON = "吴梦婷"

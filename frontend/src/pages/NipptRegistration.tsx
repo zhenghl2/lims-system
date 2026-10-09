@@ -1602,6 +1602,11 @@ export default function NipptRegistration() {
                 共 {vnRows.length} 个Case{vnExisting.length > 0 ? `，已存在 ${vnExisting.length} 个` : ""}
                 {vnErrors.length > 0 ? `，解析失败 ${vnErrors.length} 行` : ""}
               </Text>
+              {vnRows.find((r: any) => r.file_repaired) && (
+                <Tag color="orange" style={{ marginLeft: 6 }}>
+                  {vnRows.find((r: any) => r.file_repaired).file_repaired}
+                </Tag>
+              )}
             </div>
           )}
 

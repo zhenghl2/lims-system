@@ -799,7 +799,9 @@ class CaseViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["post"], parser_classes=[MultiPartParser, FormParser, JSONParser])
     def parse_vn_docs(self, request):
         """越南客户信息表解析：上传 .xlsx，解析并按 S/N 编号查重，不创建数据。"""
-        from .nippt_vn_xlsx_parser import parse_vn_xlsx_bytes, NipptVnParseError
+        from .nippt_vn_xlsx_parser import (
+            parse_vn_xlsx_bytes, NipptVnParseError, repair_truncated_zip, missing_tail_bytes,
+        )
 
         files = request.FILES.getlist("files")
         if not files:
@@ -838,18 +840,30 @@ class CaseViewSet(viewsets.ModelViewSet):
                         "file": fname,
                         "error": f"{tip}（大小 {len(data)} 字节，文件头 {magic.hex(' ')}）"})
                     continue
+                # 尾部截断（微信下载/另存时结尾 0x00 被丢）→ 补 0x00 修复
+                # 仅当 EOCD 缺 ≤4 字节且补完能通过 zip 完整性校验（testzip）才接受
+                repaired, padded = repair_truncated_zip(data)
+                repair_note = ""
+                if padded:
+                    data = repaired
+                    repair_note = f"已修复尾部缺失的 {padded} 字节（数据未受影响）"
                 parsed, row_errors = parse_vn_xlsx_bytes(data, fname)
                 for r in parsed:
                     r["file"] = fname
+                    if repair_note:
+                        r["file_repaired"] = repair_note
                 cases.extend(parsed)
                 for e in row_errors:
                     error_files.append({"file": fname, "row_no": e["row_no"], "error": e["error"]})
             except NipptVnParseError as e:
                 error_files.append({"file": fname, "error": str(e)})
             except Exception as e:
+                miss = missing_tail_bytes(data)
+                tail_hint = (f"；zip 结尾记录缺 {miss} 字节 → 文件被截断，请重新获取/另存该文件"
+                             if miss else "")
                 error_files.append({
                     "file": fname,
-                    "error": f"解析异常: {str(e)[:200]}（大小 {len(data)} 字节，文件头 {data[:4].hex(' ')}）"})
+                    "error": f"解析异常: {str(e)[:200]}{tail_hint}（大小 {len(data)} 字节，文件头 {data[:4].hex(' ')}）"})
 
         # 查重：按 S/N 编号（落在母样本 Sample.external_id 上，Case 本身无此字段）
         from lims.apps.samples.models import Sample
