@@ -127,11 +127,12 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const handleComplete = async () => {
     if (!selectedBatch) return;
     const pairs = selectedBatch.pairs || [];
-    const empty = pairs.filter((p: PairItem) => !editingPairs[p.id]?.result && !p.result);
-    if (empty.length > 0) { message.warning(`${empty.length} pair(s) missing result`); return; }
+    // 「无结果」是合法状态（低浓度样本可能拿不到结果）→ 不再拦截完成，仅在提示里报个数
+    const noResult = pairs.filter((p: PairItem) => !(editingPairs[p.id]?.result ?? p.result));
     try {
       await api.post(`/cases/bioinfo/${selectedBatch.id}/complete/`);
-      message.success(`Completed ${pairs.length} pairs`); setSelectedBatch(null); fetchBatches();
+      message.success(`Completed ${pairs.length} pairs${noResult.length ? `（含 ${noResult.length} 个无结果）` : ""}`);
+      setSelectedBatch(null); fetchBatches();
     } catch (e: any) { message.error(e.response?.data?.error || "Complete failed"); }
   };
 
@@ -253,7 +254,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             { label: <Text type="success">支持</Text>, value: "INCLUSION" },
             { label: <Text type="danger">不支持</Text>, value: "EXCLUSION" },
             { label: <Text type="warning">临界</Text>, value: "INCONCLUSIVE" },
-            { label: <Text type="secondary">空</Text>, value: "" },
+            { label: <Text type="secondary">无结果</Text>, value: "" },
           ]} />; }},
     { title: "Note", dataIndex: "note", key: "nt", width: 120,
       render: (v: string, r: PairItem) => <Input size="small"

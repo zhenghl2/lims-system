@@ -3360,14 +3360,15 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         batch = self.get_object()
         if batch.status == "COMPLETED":
             return Response({"error": "Already completed"}, status=400)
-        incomplete = batch.pairs.filter(result="").count()
-        if incomplete > 0:
-            return Response({"error": f"{incomplete} pair(s) missing CPI", "incomplete": incomplete}, status=400)
-
+        # 「无结果」（result 为空）是合法状态：低浓度样本可能拿不到 CPI 结果，不再拦截完成
+        no_result = batch.pairs.filter(result="").count()
         batch.status = "COMPLETED"
         batch.save(update_fields=["status", "updated_at"])
         advance_batch(batch, "REPORT_DRAFT", request.user, failed_stage="BIOINFO")
-        return Response({"message": f"Completed {batch.pairs.count()} pairs"})
+        msg = f"Completed {batch.pairs.count()} pairs"
+        if no_result:
+            msg += f"（{no_result} 个无结果）"
+        return Response({"message": msg, "no_result_count": no_result})
 
     @action(detail=True, methods=["post"], url_path="set-review")
     def set_review(self, request, pk=None):
