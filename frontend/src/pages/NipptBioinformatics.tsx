@@ -126,12 +126,15 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
   const handleComplete = async () => {
     if (!selectedBatch) return;
-    const pairs = selectedBatch.pairs || [];
-    // 「无结果」是合法状态（低浓度样本可能拿不到结果）→ 不再拦截完成，仅在提示里报个数
-    const noResult = pairs.filter((p: PairItem) => !(editingPairs[p.id]?.result ?? p.result));
     try {
-      await api.post(`/cases/bioinfo/${selectedBatch.id}/complete/`);
-      message.success(`Completed ${pairs.length} pairs${noResult.length ? `（含 ${noResult.length} 个无结果）` : ""}`);
+      const res = await api.post(`/cases/bioinfo/${selectedBatch.id}/complete/`);
+      const d = res.data || {};
+      message.success(d.message || `Completed ${(selectedBatch.pairs || []).length} pairs`);
+      if (d.bad_pairs?.length) {
+        // 未进报告的已按 QC 判侧退回：一侧需重做/重采，另一侧在生信等待对方结果
+        const pts = d.bad_pairs.slice(0, 6).map((x: any) => x.pt_number).filter(Boolean).join("、");
+        message.warning(`${d.bad_pairs.length} 个 pair 未进报告（需重做/重采）：${pts}${d.bad_pairs.length > 6 ? " 等" : ""}`, 6);
+      }
       setSelectedBatch(null); fetchBatches();
     } catch (e: any) { message.error(e.response?.data?.error || "Complete failed"); }
   };
@@ -261,11 +264,15 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         value={editingPairs[r.id]?.note !== undefined ? editingPairs[r.id].note : v || ""}
         onChange={(e) => handlePairEdit(r.id, "note", e.target.value)} placeholder="Note" /> },
     { title: "QC", dataIndex: "qc_flag", key: "qc", width: 120,
-      render: (v: string, r: PairItem) => (
-        <Select size="small" style={{width:110}} value={v || undefined} allowClear placeholder="Normal"
-          onChange={(val) => handlePairEdit(r.id, "qc_flag", val || "")}
-          options={QC_FLAG_OPTIONS.map(o => ({ label: o.label || "Normal", value: o.value }))} />
-      )},
+      render: (v: string, r: PairItem) => {
+        // 显示值优先本地编辑态，否则回退服务器值（此前只读 v，选完会弹回原值）
+        const val = editingPairs[r.id]?.qc_flag !== undefined ? editingPairs[r.id].qc_flag : (v || "");
+        return (
+          <Select size="small" style={{width:110}} value={val || undefined} allowClear placeholder="Normal"
+            onChange={(val) => handlePairEdit(r.id, "qc_flag", val || "")}
+            options={QC_FLAG_OPTIONS.map(o => ({ label: o.label || "Normal", value: o.value }))} />
+        );
+      }},
   ];
 
   const unpairedMothers: SampleItem[] = selectedBatch?.unpaired_mothers || [];

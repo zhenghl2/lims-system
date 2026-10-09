@@ -3329,6 +3329,9 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                 "result": result_val, "note": pd.get("note", ""),
                 "report_data": pd.get("report_data", {}), "updated_at": timezone.now(),
             }
+            # 修复：此前 pairs 不接受 qc_flag → 页面上设的 QC 标记保存后被静默丢弃
+            if "qc_flag" in pd:
+                updates["qc_flag"] = pd.get("qc_flag") or ""
             for f in METRIC_FIELDS:
                 if f in pd and pd[f] is not None:
                     updates[f] = pd[f]
@@ -3357,19 +3360,78 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
+        """完成批次前的准入：pair 有结果 且 QC 为 normal → 进报告；否则退回（需重做/重采）。
+
+        · 不满足条件的 pair 不能进报告（报告需要男女双方数据齐全）
+        · 按 QC 标记判断"有问题的那侧"：男性* → 疑父；女性* / 胎儿* → 母亲
+          → 该侧样本 workflow_stage=BIOINFO_FAILED（需重做/重采）
+          → 另一侧退回 BIOINFO（在生信等待对方重做/重采结果，双方齐了再一起进报告）
+        · QC 为空（只是没结果）→ 两侧都判 FAIL
+        · Case 级状态由 update_wf → sync_case_status_for_samples 自动同步为「有失败」
+        """
         batch = self.get_object()
         if batch.status == "COMPLETED":
             return Response({"error": "Already completed"}, status=400)
-        # 「无结果」（result 为空）是合法状态：低浓度样本可能拿不到 CPI 结果，不再拦截完成
-        no_result = batch.pairs.filter(result="").count()
-        batch.status = "COMPLETED"
-        batch.save(update_fields=["status", "updated_at"])
-        advance_batch(batch, "REPORT_DRAFT", request.user, failed_stage="BIOINFO")
-        msg = f"Completed {batch.pairs.count()} pairs"
-        if no_result:
-            msg += f"（{no_result} 个无结果）"
-        return Response({"message": msg, "no_result_count": no_result})
 
+        MALE_FLAGS = {"MALE_LOW_LAYERS", "MALE_CONTAM"}
+        FEMALE_FLAGS = {"FEMALE_LOW_LAYERS", "FEMALE_CONTAM", "FETAL_LOW_CONC"}
+        passed_ids, failed_ids, held_ids = [], [], []
+        bad_pairs = []
+        ok_count = 0
+        for pair in batch.pairs.select_related("mother_sample", "father_sample", "case"):
+            m_smp, f_smp = pair.mother_sample, pair.father_sample
+            qc = (pair.qc_flag or "").strip()
+            m_ids = [str(x) for x in (m_smp.case_sample_ids or [])]
+            f_ids = [str(x) for x in (f_smp.case_sample_ids or [])]
+            ok = bool((pair.result or "").strip()) and not qc
+            if ok:
+                ok_count += 1
+                passed_ids += m_ids + f_ids
+                NipptBioinfoSample.objects.filter(id__in=[m_smp.id, f_smp.id]).update(qc_status="PASS")
+                continue
+            if qc in MALE_FLAGS:
+                fail_ids, hold_ids, side = f_ids, m_ids, "疑父"
+            elif qc in FEMALE_FLAGS:
+                fail_ids, hold_ids, side = m_ids, f_ids, "母亲"
+            else:
+                fail_ids, hold_ids, side = m_ids + f_ids, [], "双方"
+            failed_ids += fail_ids
+            held_ids += hold_ids
+            NipptBioinfoSample.objects.filter(id=m_smp.id).update(
+                qc_status="FAIL" if (m_ids and m_ids[0] in fail_ids) else "PASS")
+            NipptBioinfoSample.objects.filter(id=f_smp.id).update(
+                qc_status="FAIL" if (f_ids and f_ids[0] in fail_ids) else "PASS")
+            bad_pairs.append({"case_number": pair.case.case_number,
+                              "pt_number": pair.case.pt_number or "",
+                              "result": pair.result or "", "qc_flag": qc, "fail_side": side})
+
+        with transaction.atomic():
+            batch.status = "COMPLETED"
+            batch.save(update_fields=["status", "updated_at"])
+            if passed_ids:
+                update_wf(passed_ids, "REPORT_DRAFT", "COMPLETE", batch.batch_number, request.user)
+            if failed_ids:
+                update_wf(failed_ids, "BIOINFO_FAILED", "FAIL", batch.batch_number, request.user)
+            if held_ids:
+                # 在生信阶段等待对方重做/重采结果
+                update_wf(held_ids, "BIOINFO", "HOLD", batch.batch_number, request.user)
+            # 统一再同步一次案例状态（避免分组调用顺序影响结果）
+            all_ids = list({*passed_ids, *failed_ids, *held_ids})
+            if all_ids:
+                from .models import sync_case_status_for_samples
+                sync_case_status_for_samples(all_ids)
+
+        msg = f"完成：{ok_count} 个 pair 进入报告"
+        if bad_pairs:
+            msg += f"；{len(bad_pairs)} 个未进报告（需重做/重采）"
+        return Response({
+            "message": msg,
+            "ok_pairs": ok_count,
+            "bad_pair_count": len(bad_pairs),
+            "bad_pairs": bad_pairs[:50],
+            "failed_samples": len(failed_ids),
+            "held_samples": len(held_ids),
+        })
     @action(detail=True, methods=["post"], url_path="set-review")
     def set_review(self, request, pk=None):
         """Reports：复核/审核/报告备注（下拉选人 + 自动记录日期）"""
