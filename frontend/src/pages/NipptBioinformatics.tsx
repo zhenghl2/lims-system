@@ -409,7 +409,22 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             <Alert type="error" showIcon message={importResult.error || "导入已中止"}
               description={<span>共 <b>{importResult.mismatch_count}</b> 行 auto_result 与 result 不一致，<b>未写入任何数据</b>。请核对后再上传。</span>} />
           ) : (
-            <Text>Updated: <Text strong style={{color:"#52c41a"}}>{importResult.updated}</Text> | Skipped: <Text strong style={{color:"#faad14"}}>{importResult.skipped}</Text> | Total: {importResult.total_rows}</Text>
+            <>
+              <Text>
+                {importResult.mode === "pipeline" ? "管线格式自动匹配：" : "Updated: "}
+                <Text strong style={{color:"#52c41a"}}>{importResult.updated}</Text> | Skipped: <Text strong style={{color:"#faad14"}}>{importResult.skipped}</Text> | Total: {importResult.total_rows}
+              </Text>
+              {importResult.mode === "pipeline" && importResult.matched?.length > 0 && (<>
+                <Alert type="success" showIcon style={{marginTop:12}}
+                  message={`按 PT 号自动匹配到本批次 ${importResult.matched.length} 个样本`}
+                  description="管线原始格式（W/H 文件名）无需 case_number/father_label，系统按文件名里的 PT 号在本批次内匹配。" />
+                <ul style={{maxHeight:200,overflow:"auto",marginTop:8}}>
+                  {importResult.matched.map((m:any,i:number) => <li key={i} style={{fontSize:12}}>
+                    行 {m.row}: <b>{m.pt_number}</b> → <b>{m.case_number}</b>（疑父标签 {m.father_label}）
+                  </li>)}
+                </ul>
+              </>)}
+            </>
           )}
           {importResult.mismatches?.length > 0 && (<>
             <Alert type="error" message={`${importResult.mismatches.length} 行结果不一致`} style={{marginTop:12}} />
@@ -421,6 +436,9 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
           {importResult.errors?.length > 0 && (<>
             <Alert type="warning" message={`${importResult.errors.length} error(s)`} style={{marginTop:12}} />
             <ul style={{maxHeight:200,overflow:"auto",marginTop:8}}>{importResult.errors.map((e:string,i:number) => <li key={i} style={{fontSize:12}}>{e}</li>)}</ul></>)}
+          {importResult.warnings?.length > 0 && (<>
+            <Alert type="warning" showIcon message={`${importResult.warnings.length} 条提示`} style={{marginTop:12}} />
+            <ul style={{maxHeight:160,overflow:"auto",marginTop:8}}>{importResult.warnings.map((w:string,i:number) => <li key={i} style={{fontSize:12}}>{w}</li>)}</ul></>)}
         </>)}
       </Modal>
 

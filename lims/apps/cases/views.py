@@ -3202,6 +3202,32 @@ NIPPT_LETTER_RESULT = {
 }
 
 
+def nippt_pipeline_parse_name(h_val, w_val):
+    """从管线文件名解析 (父方 PT 号, 父标签, 母方 PT 号)。
+
+    例：H='H_chip7028_020_PT71839H.unif', W='W_chip7028_006_PT71839W.unif'
+        → ('PT71839', 'H', 'PT71839')
+    解析不出 PT 号时返回 ('', '', '')。
+    """
+    import re as _re
+
+    def _pt(s):
+        m = _re.search(r"PT\s*(\d+)", str(s or ""), _re.I)
+        return ("PT" + m.group(1)) if m else ""
+
+    h = str(h_val or "")
+    m = _re.search(r"PT\s*(\d+)\s*([A-Za-z0-9]*)", h, _re.I)
+    pt_h = ("PT" + m.group(1)) if m else ""
+    label = (m.group(2) or "").upper() if m else ""
+    return pt_h, label, _pt(w_val)
+
+
+def nippt_pt_norm(s):
+    """PT 号归一化（去空白、转大写）用于匹配比较。"""
+    import re as _re
+    return _re.sub(r"\s+", "", str(s or "")).upper()
+
+
 def nippt_parse_metric_number(raw):
     """解析指标数值：支持小数('0.09')与百分号('9%' / '9％')两种写法。
 
@@ -3423,11 +3449,25 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                 rows.append(dict(zip(headers, [str(v) if v is not None else "" for v in row])))
         else:
             return Response({"error": "Unsupported format. Use .csv or .xlsx"}, status=400)
-        # Build pair index
+        # Build pair index（模板格式：三键精确匹配）
         pair_index = {}
+        # Build PT index（管线格式：按 PT 号自动匹配，仅限本批次）
+        pt_index = {}
         for p in batch.pairs.select_related("case"):
             key = (p.case.case_number, p.case.pt_number or "", p.father_label)
             pair_index[key] = p
+            pt_index.setdefault(nippt_pt_norm(p.case.pt_number or ""), []).append(p)
+
+        # ── 格式判定：管线原始格式（W/H 文件名列）还是标准 14 列模板 ──
+        _hdr = {str(k).strip().lower() for k in (rows[0].keys() if rows else [])}
+        is_pipeline = ("w" in _hdr and "h" in _hdr and "case_number" not in _hdr)
+
+        def _row_get(row, name):
+            """按列名取值（忽略大小写/空白）"""
+            for k, v in row.items():
+                if str(k).strip().lower() == name:
+                    return v
+            return ""
         METRIC_FIELDS = [
             "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
             "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",
@@ -3436,14 +3476,49 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         parsed = []       # [(pair, upd, result_enum|None)]
         errors = []
         mismatches = []
+        warnings = []
+        matched = []      # 管线模式：自动匹配成功的行
         for i, row in enumerate(rows, start=2):
-            cn = (row.get("case_number") or "").strip()
-            pt = (row.get("pt_number") or "").strip()
-            fl = (row.get("father_label") or "").strip()
-            pair = pair_index.get((cn, pt, fl))
-            if not pair:
-                errors.append(f"Row {i}: pair not found ({cn}/{pt}/{fl})")
-                continue
+            if is_pipeline:
+                # ── 管线格式：从 W/H 文件名提取 PT 号 + 父标签，在本批次自动匹配 ──
+                h_raw = _row_get(row, "h")
+                w_raw = _row_get(row, "w")
+                pt_h, label, pt_w = nippt_pipeline_parse_name(h_raw, w_raw)
+                if not pt_h:
+                    errors.append(f"行 {i}: 无法从文件名解析 PT 号（H 列='{h_raw}'）")
+                    continue
+                cands = pt_index.get(nippt_pt_norm(pt_h), [])
+                if not cands:
+                    errors.append(
+                        f"行 {i}: 本批次没有 PT={pt_h} 的样本（H 文件名='{h_raw}'）→ 已跳过该行")
+                    continue
+                if len(cands) == 1:
+                    pair = cands[0]
+                else:
+                    narrowed = [p for p in cands
+                                if (p.father_label or "").upper() == label]
+                    if len(narrowed) != 1:
+                        errors.append(
+                            f"行 {i}: PT={pt_h} 在本批次有 {len(cands)} 个疑父样本，"
+                            f"文件名标签='{label}' 无法唯一确定 → 已跳过该行")
+                        continue
+                    pair = narrowed[0]
+                if pt_w and nippt_pt_norm(pt_w) != nippt_pt_norm(pt_h):
+                    warnings.append(
+                        f"行 {i}: 母/父文件名 PT 号不一致（W={pt_w} / H={pt_h}），已按 H 列匹配")
+                cn = pair.case.case_number
+                pt = pair.case.pt_number or ""
+                fl = pair.father_label
+                matched.append({"row": i, "case_number": cn, "pt_number": pt,
+                                "father_label": fl, "h_file": str(h_raw)})
+            else:
+                cn = (row.get("case_number") or "").strip()
+                pt = (row.get("pt_number") or "").strip()
+                fl = (row.get("father_label") or "").strip()
+                pair = pair_index.get((cn, pt, fl))
+                if not pair:
+                    errors.append(f"Row {i}: pair not found ({cn}/{pt}/{fl})")
+                    continue
             auto_raw = (row.get("auto_result") or "").strip().upper()
             result_raw = (row.get("result") or "").strip().upper()
             auto_enum = NIPPT_LETTER_RESULT.get(auto_raw) if auto_raw else None
@@ -3499,10 +3574,16 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             NipptBioinfoPair.objects.filter(id=pair.id).update(**upd)
             updated += 1
         skipped = len(errors)
+        if is_pipeline:
+            msg = f"管线格式：自动匹配成功 {len(matched)} 行，跳过 {skipped} 行"
+        else:
+            msg = f"Updated {updated}, skipped {skipped}"
         return Response({
-            "message": f"Updated {updated}, skipped {skipped}",
+            "message": msg,
+            "mode": "pipeline" if is_pipeline else "template",
             "updated": updated, "skipped": skipped,
             "errors": errors[:20], "total_rows": len(rows), "mismatches": [],
+            "matched": matched[:50], "warnings": warnings[:20],
         })
 
     # destroy 由 NipptBatchDeleteMixin 提供
