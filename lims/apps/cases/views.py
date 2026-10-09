@@ -3442,6 +3442,10 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         if not pair:
             return Response({"error": "Pair not found"}, status=404)
         act = request.data.get("action_type")
+        if act in ("review", "audit"):
+            qc = (pair.qc_flag or "").strip()
+            if not (pair.result or "").strip() or qc:
+                return Response({"error": "该配对未达标（无结果/QC异常），不需要复核/审核"}, status=400)
         if act == "review":
             rid = request.data.get("reviewer_id")
             pair.report_reviewer = User.objects.filter(id=rid).first() if rid else None

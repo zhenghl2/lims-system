@@ -329,7 +329,9 @@ export default function NipptReports() {
         );
       } },
     { title: "复核人", key: "rv", width: 145,
-      render: (_: any, r: any) => (
+      render: (_: any, r: any) => notQualified(r) ? (
+        <Select size="small" style={{ width: 125 }} disabled placeholder="未达标·无需复核" />
+      ) : (
         <Space size={2} direction="vertical" style={{ lineHeight: 1.2 }}>
           <Select size="small" style={{ width: 125 }} placeholder="选择"
             value={revSel[r.id] ?? (r.report_reviewer || undefined)}
@@ -340,7 +342,9 @@ export default function NipptReports() {
       ) },
     { title: "复核日期", dataIndex: "report_reviewed_at", key: "rvd", width: 100, render: fmtDT },
     { title: "审核人", key: "ad", width: 145,
-      render: (_: any, r: any) => (
+      render: (_: any, r: any) => notQualified(r) ? (
+        <Select size="small" style={{ width: 125 }} disabled placeholder="未达标·无需审核" />
+      ) : (
         <Space size={2} direction="vertical" style={{ lineHeight: 1.2 }}>
           <Select size="small" style={{ width: 125 }} placeholder="选择"
             value={audSel[r.id] ?? (r.report_auditor || undefined)}
@@ -357,14 +361,17 @@ export default function NipptReports() {
           onBlur={() => saveNote(r)} style={{ width: 150 }} />
       ) },
     { title: "操作", key: "act", width: 135, fixed: "right" as const,
-      render: (_: any, r: any) => (
-        <Space size={4}>
-          <Button size="small" type="primary" ghost icon={<CheckCircleOutlined />}
-            onClick={() => doSetReview(r, "review")}>复核</Button>
-          <Button size="small" icon={<CheckCircleOutlined />}
-            onClick={() => doSetReview(r, "audit")}>审核</Button>
-        </Space>
-      ) },
+      render: (_: any, r: any) => {
+        const bad = notQualified(r);
+        return (
+          <Space size={4}>
+            <Button size="small" type="primary" ghost icon={<CheckCircleOutlined />} disabled={bad}
+              onClick={() => doSetReview(r, "review")}>复核</Button>
+            <Button size="small" icon={<CheckCircleOutlined />} disabled={bad}
+              onClick={() => doSetReview(r, "audit")}>审核</Button>
+          </Space>
+        );
+      } },
   ];
 
   if (loading) return <div style={{ textAlign: "center", padding: 80 }}><Spin size="large" tip="加载中..." /></div>;
