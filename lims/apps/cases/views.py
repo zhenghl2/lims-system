@@ -3570,7 +3570,29 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             ids += [str(x) for x in (p.father_sample.case_sample_ids or [])]
         ids = list(dict.fromkeys(ids))
 
+        # ── 备用样本：同一 test_sample_id（同一孕妇/同一疑父）但不属于任何配对的样本
+        #    → is_active=False 退出 case 状态计算（阶段保持不动，与“重做替代”样本的处理一致）
+        #    ⚠️ 不同疑父（HA/HB，test_id 不同）不受影响 → 必须等各自配对都完成，case 才算完成
+        referenced = set()
+        for pp in NipptBioinfoPair.objects.select_related("mother_sample", "father_sample"):
+            referenced |= {str(x) for x in (pp.mother_sample.case_sample_ids or [])}
+            referenced |= {str(x) for x in (pp.father_sample.case_sample_ids or [])}
+        spare_ids = []
+        for p in todo:
+            own = {str(x) for x in (p.mother_sample.case_sample_ids or [])}
+            own |= {str(x) for x in (p.father_sample.case_sample_ids or [])}
+            tids = set(CaseSample.objects.filter(id__in=own).exclude(test_sample_id="")
+                       .values_list("test_sample_id", flat=True))
+            if not tids:
+                continue
+            for cs in CaseSample.objects.filter(case=p.case, is_active=True, test_sample_id__in=tids):
+                if str(cs.id) not in referenced:
+                    spare_ids.append(str(cs.id))
+        spare_ids = list(dict.fromkeys(spare_ids))
+
         with transaction.atomic():
+            if spare_ids:
+                CaseSample.objects.filter(id__in=spare_ids).update(is_active=False)
             batch.report_reviewer = reviewer
             batch.report_auditor = auditor
             batch.report_reviewed_at = now
