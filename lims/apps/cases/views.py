@@ -3538,10 +3538,13 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                     f"'{_row_get(row, 'pt_number')}'）")
                 continue
 
-            # 两侧是否有数据：该侧文件名叫得出 PT，或该侧任一指标非空
+            # 两侧是否有数据：该侧文件名叫得出 PT、该侧任一指标非空，或（模板格式）填了 father_label
+            # 注意：模板行可能"只填 result 不填指标"，此时 father_label='H' 说明这是配对行，不能当"只有孕妇"
             f_side = ["father_layers", "father_concentration", "father_het_ratio", "father_y_ratio"]
             m_side = ["mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio"]
-            has_f = bool(pt_h) or any(str(_row_get(row, f) or "").strip() for f in f_side)
+            label_col = str(_row_get(row, "father_label") or "").strip()
+            has_f = (bool(pt_h) or bool(label_col)
+                     or any(str(_row_get(row, f) or "").strip() for f in f_side))
             has_m = bool(pt_w) or any(str(_row_get(row, f) or "").strip() for f in m_side)
 
             auto_raw = str(_row_get(row, "auto_result") or "").strip().upper()
@@ -3678,7 +3681,8 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         for pair, target_sample, upd, result_enum, write_result in parsed:
             if pair is not None:
                 if write_result:
-                    final_result = result_enum if result_enum is not None else (pair.result or "")
+                    # 文件里 result 为空 → 结果就为空（低浓度样本可能没有结果），不再保留库内原值
+                    final_result = result_enum if result_enum is not None else ""
                     upd["result"] = final_result
                     upd["cpi"] = NIPPT_CPI_BY_RESULT.get(final_result)
                 NipptBioinfoPair.objects.filter(id=pair.id).update(**upd)

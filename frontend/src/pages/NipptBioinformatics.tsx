@@ -245,13 +245,15 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       } },
     { title: "Result", dataIndex: "result", key: "res", width: 135,
       render: (v: string, r: PairItem) => {
-        const val = editingPairs[r.id]?.result !== undefined ? editingPairs[r.id].result : v;
-        return <Select size="small" style={{width:125}} value={val || undefined}
-          onChange={(val) => handlePairEdit(r.id, "result", val)} placeholder="Select..."
+        const val = editingPairs[r.id]?.result !== undefined ? editingPairs[r.id].result : (v ?? "");
+        // 值可为空串：低浓度样本可能没有结果，此时结果就为空（显式「空」选项，与未选择区分开）
+        return <Select size="small" style={{width:125}} value={val}
+          onChange={(val) => handlePairEdit(r.id, "result", val ?? "")} placeholder="Select..."
           options={[
             { label: <Text type="success">支持</Text>, value: "INCLUSION" },
             { label: <Text type="danger">不支持</Text>, value: "EXCLUSION" },
             { label: <Text type="warning">临界</Text>, value: "INCONCLUSIVE" },
+            { label: <Text type="secondary">空</Text>, value: "" },
           ]} />; }},
     { title: "Note", dataIndex: "note", key: "nt", width: 120,
       render: (v: string, r: PairItem) => <Input size="small"
