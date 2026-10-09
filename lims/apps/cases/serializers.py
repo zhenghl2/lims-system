@@ -1782,7 +1782,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             "note", "report_data",
             "report_file", "report_file_url", "report_reviewer", "report_reviewer_name",
             "report_auditor", "report_auditor_name", "report_note",
-            "report_reviewed_at", "report_audited_at",
+            "report_reviewed_at", "report_audited_at", "report_history",
             "qc_flag", "qc_flag_display",
             "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
             "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",

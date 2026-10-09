@@ -1014,6 +1014,8 @@ class NipptBioinfoPair(models.Model):
     report_note = models.TextField(blank=True, default="")
     report_reviewed_at = models.DateTimeField(null=True, blank=True)
     report_audited_at = models.DateTimeField(null=True, blank=True)
+    # 报告上传/替换记录：[{action: upload|replace|keep, filename, prev_filename, by, at, size}]
+    report_history = models.JSONField(default=list, blank=True)
 
     # QC Flag (optional)
     qc_flag = models.CharField(max_length=20, blank=True, default="", choices=QCFlag.choices, db_index=True)

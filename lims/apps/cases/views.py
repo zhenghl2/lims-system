@@ -3457,6 +3457,62 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             pair.save(update_fields=["report_note", "updated_at"])
         return Response(NipptBioinfoPairSerializer(pair, context={"request": request}).data)
 
+    @action(detail=True, methods=["post"], url_path="upload-report")
+    def upload_report(self, request, pk=None):
+        """Reports：上传/替换某个配对的报告文件（PDF）。
+
+        multipart/form-data: file=<file>, pair_id=<uuid>, mode=overwrite|keep
+        · 未达标（结果未填 或 QC 非 normal）的配对不允许上传报告（前后端两层都拦）
+        · mode=keep：保留原报告，只记一条「保留」记录
+        · 每次都写 pair.report_history（谁/何时/文件名/动作/大小）并落审计
+        """
+        batch = self.get_object()
+        pair = batch.pairs.filter(id=request.data.get("pair_id")).first()
+        if not pair:
+            return Response({"error": "Pair not found"}, status=404)
+
+        qc = (pair.qc_flag or "").strip()
+        if not (pair.result or "").strip() or qc:
+            reason = "结果未填" if not (pair.result or "").strip() else f"QC异常：{(pair.get_qc_flag_display() or qc)}"
+            return Response({"error": f"该配对未达标（{reason}），不能上传报告"}, status=400)
+
+        f = request.FILES.get("file")
+        if not f:
+            return Response({"error": "未选择文件"}, status=400)
+        if not str(f.name or "").lower().endswith(".pdf"):
+            return Response({"error": "只支持 PDF 文件"}, status=400)
+
+        mode = (request.data.get("mode") or "overwrite").strip().lower()
+        if mode not in ("overwrite", "keep"):
+            mode = "overwrite"
+        prev_name = str(pair.report_file.name).rsplit("/", 1)[-1] if pair.report_file else ""
+        now = timezone.now()
+
+        if mode == "keep" and prev_name:
+            entry = {"action": "keep", "filename": f.name, "prev_filename": prev_name,
+                     "by": getattr(request.user, "username", ""), "at": now.isoformat(), "size": f.size}
+            hist = list(pair.report_history or [])
+            hist.append(entry)
+            pair.report_history = hist[-50:]
+            pair.save(update_fields=["report_history", "updated_at"])
+            log_audit(request, "UPDATE", pair,
+                      {"report_file": {"old": prev_name, "new": prev_name,
+                                       "note": f"保留原报告未替换；本次上传 {f.name}"}})
+            data = NipptBioinfoPairSerializer(pair, context={"request": request}).data
+            return Response({"message": "已保留原报告（仅记录本次上传）", "mode": "keep", "pair": data})
+
+        action = "replace" if prev_name else "upload"
+        pair.report_file = f
+        entry = {"action": action, "filename": f.name, "prev_filename": prev_name,
+                 "by": getattr(request.user, "username", ""), "at": now.isoformat(), "size": f.size}
+        hist = list(pair.report_history or [])
+        hist.append(entry)
+        pair.report_history = hist[-50:]
+        pair.save(update_fields=["report_file", "report_history", "updated_at"])
+        log_audit(request, "UPDATE", pair, {"report_file": {"old": prev_name, "new": f.name}})
+        data = NipptBioinfoPairSerializer(pair, context={"request": request}).data
+        return Response({"message": "报告已上传" if action == "upload" else "报告已替换", "mode": mode, "pair": data})
+
     @action(detail=True, methods=["post"])
     def add_manual_pair(self, request, pk=None):
         batch = self.get_object()
