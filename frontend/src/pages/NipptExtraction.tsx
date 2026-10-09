@@ -138,6 +138,11 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   const [maleSkipCoords, setMaleSkipCoords] = useState<Record<number, string>>({});
   const [femaleKitTypes, setFemaleKitTypes] = useState<Record<number, string>>({});
   const [maleKitTypes, setMaleKitTypes] = useState<Record<number, string>>({});
+  // 磁棒法板拖动换位后的位置覆盖：{ "板号": { "孔位(A1..H12)": "样本id" } }
+  const [femalePlateLayout, setFemalePlateLayout] = useState<Record<string, Record<string, string>>>({});
+  const [malePlateLayout, setMalePlateLayout] = useState<Record<string, Record<string, string>>>({});
+  const [magneticDragOver, setMagneticDragOver] = useState<{ pi: number; well: string } | null>(null);
+  const magneticDragRef = useRef<{ pi: number; well: string } | null>(null);
   const femaleMagneticNotes = useRef<Record<string, string>>({});
   const maleMagneticNotes = useRef<Record<string, string>>({});
   const [femaleManualNotes, setFemaleManualNotes] = useState("");
@@ -167,6 +172,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       setFemaleResults(fed.sample_results || {});
       setFemaleSkipCoords(fed.plate_skip_coords || {});
       setFemaleKitTypes(fed.plate_kit_types || {});
+      setFemalePlateLayout(fed.plate_layout || {});
       femaleMagneticNotes.current = fed.magnetic_notes || {};
       setFemaleManualNotes(fed.manual_notes || "");
       setFemaleAutoNotes(fed.auto_notes || "");
@@ -176,6 +182,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       setMaleResults(med.sample_results || {});
       setMaleSkipCoords(med.plate_skip_coords || {});
       setMaleKitTypes(med.plate_kit_types || {});
+      setMalePlateLayout(med.plate_layout || {});
       maleMagneticNotes.current = med.magnetic_notes || {};
       setMaleManualNotes(med.manual_notes || "");
       setMaleAutoNotes(med.auto_notes || "");
@@ -332,11 +339,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
     const sid = selectedBatch?.id || "";
     return {
       female: { method: femaleMethod, sample_results: femaleResults, plate_skip_coords: femaleSkipCoords,
-        plate_kit_types: femaleKitTypes, magnetic_notes: femaleMagneticNotes.current,
+        plate_kit_types: femaleKitTypes, plate_layout: femalePlateLayout,
+        magnetic_notes: femaleMagneticNotes.current,
         manual_notes: femaleManualNotes, auto_notes: femaleAutoNotes,
         extraction_date: dateF || "", extraction_time: timeF || "" },
       male: { method: maleMethod, sample_results: maleResults, plate_skip_coords: maleSkipCoords,
-        plate_kit_types: maleKitTypes, magnetic_notes: maleMagneticNotes.current,
+        plate_kit_types: maleKitTypes, plate_layout: malePlateLayout,
+        magnetic_notes: maleMagneticNotes.current,
         manual_notes: maleManualNotes, auto_notes: maleAutoNotes,
         extraction_date: dateM || "", extraction_time: timeM || "" },
       ...extForm.getFieldsValue(),
@@ -590,8 +599,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   };
 
   // ── Well Popover Cell ──
-  const WellCell = ({ sample, isFemale }: { sample: ExtractionSample; isFemale: boolean }) => {
-    if (!sample) return <td style={{ background: "#f0f0f0", width: 80, height: 42, textAlign: "center", fontSize: 11, color: "#bbb" }}>—</td>;
+  const WellCell = ({ sample, isFemale, tdProps, dropTarget }:
+    { sample: ExtractionSample; isFemale: boolean; tdProps?: any; dropTarget?: boolean }) => {
+    // 空孔：可作落点（拖到空孔=移动），但不可从空孔发起拖动
+    if (!sample) return <td {...(tdProps || {})} draggable={false} style={{ background: "#f0f0f0", width: 80, height: 42, textAlign: "center", fontSize: 11, color: "#bbb", outline: dropTarget ? "2px dashed #1677ff" : undefined, outlineOffset: -2 }}>—</td>;
     const r = getResult(isFemale, sample.id);
     const status = r.status || "pass";
     const note = r.note || "";
@@ -630,7 +641,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   return (
       <Popover content={popContent} trigger="click" open={open} onOpenChange={v => { setOpen(v); if (v) { setLocalStatus(status); setLocalNote(note); setLocalConc(r.concentration); } }}
         placement="bottomLeft" destroyTooltipOnHide>
-        <td style={{ background: bg, cursor: "pointer", width: 80, height: 42, textAlign: "center", fontSize: 11, color, padding: 2, lineHeight: 1.25, wordBreak: "break-all" }}>
+        <td {...(tdProps || {})} style={{ background: bg, cursor: tdProps?.draggable ? "grab" : "pointer", width: 80, height: 42, textAlign: "center", fontSize: 11, color, padding: 2, lineHeight: 1.25, wordBreak: "break-all", outline: dropTarget ? "2px dashed #1677ff" : undefined, outlineOffset: -2 }}>
           {getWellLabel(sample)}
         </td>
       </Popover>
@@ -662,7 +673,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   };
 
   // ── Build magnetic rod plate (col 1 + col 7 only) ──
-  const buildMagneticPlates = (samples: ExtractionSample[], isFemale: boolean, skipCoords: Record<number, string>, kitTypes: Record<number, string>, setSkipCoords: any, setKitTypes: any, notesRef: any) => {
+  const buildMagneticPlates = (samples: ExtractionSample[], isFemale: boolean, skipCoords: Record<number, string>, kitTypes: Record<number, string>, setSkipCoords: any, setKitTypes: any, notesRef: any, plateLayout: Record<string, Record<string, string>>, setPlateLayout: any) => {
+    const canDrag = selectedBatch?.status !== "COMPLETED";
     const plates: { cells: { row: number; col: number; sampleIdx: number }[] }[] = [];
     let si = 0, pi = 0;
     while (si < samples.length) {
@@ -673,6 +685,97 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       for (let r = 0; r < 8; r++) { if (!skipSet.has(`${ROWS_8[r]}7`) && si < samples.length) cells.push({ row: r, col: 7, sampleIdx: si++ }); }
       if (cells.length > 0) { plates.push({ cells }); pi++; } else break;
     }
+    const defaultTotalPlates = plates.length;
+
+    // ── 位置覆盖（拖动换位后以 plateLayout 为准；样本集变了就忽略旧布局，回到规则排列）──
+    const idxById: Record<string, number> = {};
+    samples.forEach((s, i) => { if (s?.id) idxById[s.id] = i; });
+    const layoutKeys = Object.keys(plateLayout || {});
+    let useLayout = false;
+    if (layoutKeys.length > 0) {
+      const layIds = new Set<string>();
+      layoutKeys.forEach(k => Object.values(plateLayout[k] || {}).forEach(v => { if (v) layIds.add(v as string); }));
+      const curIds = new Set<string>(Object.keys(idxById));
+      useLayout = layIds.size > 0 && layIds.size === curIds.size && [...layIds].every(v => curIds.has(v));
+    }
+    if (useLayout) {
+      const layoutMax = Math.max(...layoutKeys.map(k => parseInt(k, 10) + 1));
+      const total = Math.max(layoutMax, defaultTotalPlates);
+      const laidOut: { cells: { row: number; col: number; sampleIdx: number }[] }[] = [];
+      for (let p = 0; p < total; p++) {
+        const m = plateLayout[String(p)] || {};
+        const cells: { row: number; col: number; sampleIdx: number }[] = [];
+        Object.entries(m).forEach(([well, sid]) => {
+          const row = ROWS_8.indexOf(String(well).charAt(0));
+          const col = parseInt(String(well).slice(1), 10);
+          const sx = idxById[sid as string];
+          if (row >= 0 && col >= 1 && sx !== undefined) cells.push({ row, col, sampleIdx: sx });
+        });
+        laidOut.push({ cells });
+      }
+      plates.length = 0;
+      laidOut.forEach(p => plates.push(p));
+    }
+
+    // ── 拖动换位（交换两孔样本；拖到空孔=移动；支持跨板；跳过孔不可落样）──
+    const parseSkipsOf = (v?: string) => new Set(
+      String(v || "").split(",").map(x => x.trim().toUpperCase()).filter(x => /^[A-H](1[0-2]|[1-9])$/.test(x)));
+    const platesToLayout = () => {
+      const out: Record<string, Record<string, string>> = {};
+      plates.forEach((p, pIdx) => {
+        const m: Record<string, string> = {};
+        p.cells.forEach(c => { const sid = samples[c.sampleIdx]?.id || ""; if (sid) m[`${ROWS_8[c.row]}${c.col}`] = sid; });
+        out[String(pIdx)] = m;
+      });
+      return out;
+    };
+    const magneticDrop = (targetPi: number, targetWell: string) => {
+      const srcPos = magneticDragRef.current;
+      magneticDragRef.current = null;
+      setMagneticDragOver(null);
+      if (!srcPos) return;
+      if (parseSkipsOf(skipCoords[targetPi]).has(targetWell)) {
+        message.warning(`${targetWell} 是跳过孔位，不能放置样本`);
+        return;
+      }
+      if (srcPos.pi === targetPi && srcPos.well === targetWell) return;
+      const base = useLayout ? plateLayout : platesToLayout();
+      const next: Record<string, Record<string, string>> = {};
+      Object.keys(base).forEach(k => { next[k] = { ...(base[k] || {}) }; });
+      const maxPi = Math.max(srcPos.pi, targetPi);
+      for (let p = 0; p <= maxPi; p++) if (!next[String(p)]) next[String(p)] = {};
+      const a = next[String(srcPos.pi)][srcPos.well];
+      const b = next[String(targetPi)][targetWell];
+      if (!a && !b) return;
+      if (b) next[String(srcPos.pi)][srcPos.well] = b; else delete next[String(srcPos.pi)][srcPos.well];
+      if (a) next[String(targetPi)][targetWell] = a; else delete next[String(targetPi)][targetWell];
+      setPlateLayout(next);
+    };
+    const isDropTarget = (pIdx: number, well: string) =>
+      canDrag && !!magneticDragOver && magneticDragOver.pi === pIdx && magneticDragOver.well === well;
+    const dragProps = (pIdx: number, well: string) => {
+      if (!canDrag) return {};
+      return {
+        draggable: true,
+        onDragStart: (e: any) => {
+          magneticDragRef.current = { pi: pIdx, well };
+          try { e.dataTransfer.setData("text/plain", ""); } catch { /* noop */ }
+          e.dataTransfer.effectAllowed = "move";
+        },
+        onDragEnd: () => { magneticDragRef.current = null; setMagneticDragOver(null); },
+        onDragOver: (e: any) => {
+          const s0 = magneticDragRef.current;
+          if (!s0) return;
+          if (s0.pi === pIdx && s0.well === well) return;
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          if (!magneticDragOver || magneticDragOver.pi !== pIdx || magneticDragOver.well !== well) setMagneticDragOver({ pi: pIdx, well });
+        },
+        onDragLeave: () => setMagneticDragOver(p2 => (p2 && p2.pi === pIdx && p2.well === well ? null : p2)),
+        onDrop: (e: any) => { e.preventDefault(); magneticDrop(pIdx, well); },
+      };
+    };
+    const resetMagneticLayout = () => { setPlateLayout({}); message.success("已按规则重排孔板"); };
 
   return (
       <div>
@@ -688,10 +791,14 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, fontSize: 12 }}>
                 <span style={{ color: "#666", whiteSpace: "nowrap" }}>{plateNo} 跳过孔位:</span>
                 <Input size="small" placeholder="如 B1,C7" value={skips}
-                  onChange={e => setSkipCoords((prev: any) => ({ ...prev, [pIdx]: e.target.value.toUpperCase() }))} style={{ width: 160 }} />
+                  onChange={e => { setPlateLayout({}); setSkipCoords((prev: any) => ({ ...prev, [pIdx]: e.target.value.toUpperCase() })); }} style={{ width: 160 }} />
                 <Select size="small" style={{ width: 90 }} placeholder="试剂盒" value={kitTypes[pIdx] || undefined}
                   onChange={(v: string) => setKitTypes((prev: any) => ({ ...prev, [pIdx]: v }))}
                   options={[{ value: "round", label: "圆底" }, { value: "conical", label: "锥底" }]} allowClear />
+                {canDrag && <Button size="small" onClick={resetMagneticLayout}>按规则重排</Button>}
+                {canDrag
+                  ? <span style={{ color: "#8c8c8c", fontSize: 11 }}>（可直接拖动样本换位，支持跨板）</span>
+                  : <span style={{ color: "#bbb", fontSize: 11 }}>🔒 已完成</span>}
               </div>
               <Card size="small" title={<span>{plateNo} 磁棒法 Plate {pIdx+1}/{plates.length} ({plate.cells.length} samples)</span>}
                 extra={<Input.TextArea placeholder={`${plateNo} 磁棒备注`} defaultValue={notesRef.current[pIdx] || ""}
@@ -726,7 +833,11 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                           }
                           return <td key={key} style={{ width: 80, height: 42, textAlign: "center", fontSize: 11, background: "#f0f0f0", color: "#bbb" }}>—</td>;
                         }
-                        return <WellCell key={key} sample={sample!} isFemale={isFemale} />;
+                        // 只有孔1/孔7 是真实上样孔（空孔也算落点，支持"拖到空孔=移动"）
+                        const isWellCol = col === 1 || col === 7;
+                        return <WellCell key={key} sample={sample!} isFemale={isFemale}
+                          tdProps={isWellCol ? dragProps(pIdx, key) : undefined}
+                          dropTarget={isWellCol && isDropTarget(pIdx, key)} />;
                       })}
                     </tr>
                   ))}</tbody>
@@ -742,6 +853,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
   // ── Render extraction tab content ──
   const renderExtractionTab = (samples: ExtractionSample[], isFemale: boolean, method: string, setMethod: any,
     skipCoords: any, setSkipCoords: any, kitTypes: any, setKitTypes: any, notesRef: any,
+    plateLayout: Record<string, Record<string, string>>, setPlateLayout: any,
     manualNotes: string, setManualNotes: any, autoNotes: string, setAutoNotes: any) => {
 
     const manualHide = method === "MANUAL";
@@ -867,7 +979,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
 
         {/* MAGNETIC_ROD */}
         {method === "MAGNETIC_ROD" && (
-          buildMagneticPlates(samples, isFemale, skipCoords, kitTypes, setSkipCoords, setKitTypes, notesRef)
+          buildMagneticPlates(samples, isFemale, skipCoords, kitTypes, setSkipCoords, setKitTypes, notesRef, plateLayout, setPlateLayout)
         )}
 
         {/* AUTOMATED */}
@@ -905,6 +1017,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       const operator = (isF ? operators : operatorsM)[sid] || "";
       const reviewer = (isF ? reviewers : reviewersM)[sid] || "";
       const skipCoords: any = isF ? femaleSkipCoords : maleSkipCoords;
+      const plateLayout: any = isF ? femalePlateLayout : malePlateLayout;
       const kitTypes: any = isF ? femaleKitTypes : maleKitTypes;
       const magNotes: any = (isF ? femaleMagneticNotes : maleMagneticNotes).current || {};
       const results: any = isF ? femaleResults : maleResults;
@@ -957,6 +1070,35 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
           for (let r = 0; r < 8; r++) if (!sk0.has(`${ROWS_8[r]}1`) && si < samples.length) cells.push({ row: r, col: 1, idx: si++ });
           for (let r = 0; r < 8; r++) if (!sk0.has(`${ROWS_8[r]}7`) && si < samples.length) cells.push({ row: r, col: 7, idx: si++ });
           if (cells.length > 0) { plates.push({ cells }); pi++; } else break;
+        }
+        // 位置覆盖：拖动换位后导出也按 plate_layout（样本集变了则忽略）
+        {
+          const idxById: Record<string, number> = {};
+          samples.forEach((sm: any, i: number) => { if (sm?.id) idxById[sm.id] = i; });
+          const lk = Object.keys(plateLayout || {});
+          if (lk.length > 0) {
+            const layIds = new Set<string>();
+            lk.forEach(k => Object.values(plateLayout[k] || {}).forEach(v => { if (v) layIds.add(v as string); }));
+            const curIds = new Set<string>(Object.keys(idxById));
+            if (layIds.size > 0 && layIds.size === curIds.size && [...layIds].every(v => curIds.has(v))) {
+              const layoutMax = Math.max(...lk.map(k => parseInt(k, 10) + 1));
+              const total = Math.max(layoutMax, plates.length);
+              const laidOut: { cells: { row: number; col: number; idx: number }[] }[] = [];
+              for (let p = 0; p < total; p++) {
+                const m = plateLayout[String(p)] || {};
+                const cells: { row: number; col: number; idx: number }[] = [];
+                Object.entries(m).forEach(([well, sid]) => {
+                  const row = ROWS_8.indexOf(String(well).charAt(0));
+                  const col = parseInt(String(well).slice(1), 10);
+                  const sx = idxById[sid as string];
+                  if (row >= 0 && col >= 1 && sx !== undefined) cells.push({ row, col, idx: sx });
+                });
+                laidOut.push({ cells });
+              }
+              plates.length = 0;
+              laidOut.forEach(p => plates.push(p));
+            }
+          }
         }
         plates.forEach((plate, pIdx) => {
           const kt = kitTypes?.[pIdx];
@@ -1065,6 +1207,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                   <>
                     {renderExtractionTab(selectedBatch.female_samples, true, femaleMethod, setFemaleMethod,
                       femaleSkipCoords, setFemaleSkipCoords, femaleKitTypes, setFemaleKitTypes, femaleMagneticNotes,
+                      femalePlateLayout, setFemalePlateLayout,
                       femaleManualNotes, setFemaleManualNotes, femaleAutoNotes, setFemaleAutoNotes)}
                     {renderPhotosPersons("f")}
                   </>
@@ -1074,6 +1217,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
                   <>
                     {renderExtractionTab([...selectedBatch.male_blood_samples, ...selectedBatch.male_other_samples], false, maleMethod, setMaleMethod,
                       maleSkipCoords, setMaleSkipCoords, maleKitTypes, setMaleKitTypes, maleMagneticNotes,
+                      malePlateLayout, setMalePlateLayout,
                       maleManualNotes, setMaleManualNotes, maleAutoNotes, setMaleAutoNotes)}
                     {renderPhotosPersons("m")}
                   </>
