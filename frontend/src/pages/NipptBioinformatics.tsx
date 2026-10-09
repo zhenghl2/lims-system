@@ -412,7 +412,9 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             <>
               <Text>
                 {importResult.mode === "pipeline" ? "管线格式自动匹配：" : "Updated: "}
-                <Text strong style={{color:"#52c41a"}}>{importResult.updated}</Text> | Skipped: <Text strong style={{color:"#faad14"}}>{importResult.skipped}</Text> | Total: {importResult.total_rows}
+                <Text strong style={{color:"#52c41a"}}>{importResult.updated}</Text>
+                {importResult.samples_updated ? <> + 未配对样本 <Text strong style={{color:"#52c41a"}}>{importResult.samples_updated}</Text></> : null}
+                {" "}| Skipped: <Text strong style={{color:"#faad14"}}>{importResult.skipped}</Text> | Total: {importResult.total_rows}
               </Text>
               {importResult.mode === "pipeline" && importResult.matched?.length > 0 && (<>
                 <Alert type="success" showIcon style={{marginTop:12}}
@@ -420,7 +422,17 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                   description="管线原始格式（W/H 文件名）无需 case_number/father_label，系统按文件名里的 PT 号在本批次内匹配。" />
                 <ul style={{maxHeight:200,overflow:"auto",marginTop:8}}>
                   {importResult.matched.map((m:any,i:number) => <li key={i} style={{fontSize:12}}>
-                    行 {m.row}: <b>{m.pt_number}</b> → <b>{m.case_number}</b>（疑父标签 {m.father_label}）
+                    行 {m.row}: <b>{m.pt_number}</b> → <b>{m.case_number}</b>（疑父标签 {m.father_label}{m.mother_only ? "，仅孕妇数据→只写母侧" : ""}）
+                  </li>)}
+                </ul>
+              </>)}
+              {importResult.sample_matched?.length > 0 && (<>
+                <Alert type="success" showIcon style={{marginTop:12}}
+                  message={`匹配到本批次 ${importResult.sample_matched.length} 个未配对样本（写入样本行指标）`}
+                  description="只有孕妇/只有疑父的行：层数·浓度·杂纯比·Y比例 写到该样本自己，不写 result。" />
+                <ul style={{maxHeight:200,overflow:"auto",marginTop:8}}>
+                  {importResult.sample_matched.map((m:any,i:number) => <li key={i} style={{fontSize:12}}>
+                    行 {m.row}: <b>{m.pt_number}</b> → {m.case_number} · {m.name}（{m.kind}）
                   </li>)}
                 </ul>
               </>)}

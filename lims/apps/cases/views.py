@@ -3228,6 +3228,21 @@ def nippt_pt_norm(s):
     return _re.sub(r"\s+", "", str(s or "")).upper()
 
 
+# 管线/表格里的"无数据"占位符（大小写不敏感）一律当空处理
+NIPPT_EMPTY_TOKENS = {"", "na", "n/a", "n.a.", "nan", "null", "none", "nil", "-", "--", "—", "－"}
+
+
+def nippt_cell_norm(v):
+    """单元格归一化：na / N/A / nan / null / none / - / 空 → ""（不覆盖原值、不报错）。"""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        t = v.strip()
+    else:
+        t = str(v).strip()
+    return "" if t.lower() in NIPPT_EMPTY_TOKENS else t
+
+
 def nippt_parse_metric_number(raw):
     """解析指标数值：支持小数('0.09')与百分号('9%' / '9％')两种写法。
 
@@ -3318,11 +3333,27 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                 if f in pd and pd[f] is not None:
                     updates[f] = pd[f]
             NipptBioinfoPair.objects.filter(id=pair_id, batch=batch).update(**updates)
+        # ── 未配对样本的指标保存（前端 editingSamples → samples 数组）──
+        # 修复：此前只处理 pairs，samples 被静默丢弃 → 未配对样本指标填完刷新就没了
+        samples_data = request.data.get("samples", [])
+        SAMPLE_METRIC_FIELDS = ["layers", "concentration", "het_ratio", "y_ratio"]
+        samples_updated = 0
+        for sd2 in samples_data:
+            sid = sd2.get("id")
+            if not sid:
+                continue
+            supd = {"processed_at": timezone.now()}
+            for f in SAMPLE_METRIC_FIELDS:
+                if f in sd2 and sd2[f] is not None:
+                    supd[f] = sd2[f]
+            if "qc_flag" in sd2:
+                supd["qc_flag"] = sd2.get("qc_flag") or ""
+            samples_updated += NipptBioinfoSample.objects.filter(id=sid, batch=batch).update(**supd)
         sd = request.data.get("bioinfo_data", {})
         if sd:
             batch.bioinfo_data = sd
             batch.save(update_fields=["bioinfo_data", "updated_at"])
-        return Response({"message": "Saved"})
+        return Response({"message": "Saved", "samples_updated": samples_updated})
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
@@ -3449,14 +3480,28 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                 rows.append(dict(zip(headers, [str(v) if v is not None else "" for v in row])))
         else:
             return Response({"error": "Unsupported format. Use .csv or .xlsx"}, status=400)
+        # ── 单元格归一化：na / N/A / nan / - / null 等一律视为空（不覆盖原值、不报错）──
+        rows = [{k: nippt_cell_norm(v) for k, v in r.items()} for r in rows]
+
         # Build pair index（模板格式：三键精确匹配）
         pair_index = {}
         # Build PT index（管线格式：按 PT 号自动匹配，仅限本批次）
         pt_index = {}
+        paired_sample_ids = set()
         for p in batch.pairs.select_related("case"):
             key = (p.case.case_number, p.case.pt_number or "", p.father_label)
             pair_index[key] = p
             pt_index.setdefault(nippt_pt_norm(p.case.pt_number or ""), []).append(p)
+            paired_sample_ids.add(str(p.mother_sample_id))
+            paired_sample_ids.add(str(p.father_sample_id))
+        # 未配对样本索引（按 PT 号）：只有一侧数据时写到样本行指标
+        unpaired_mother_index = {}
+        unpaired_father_index = {}
+        for s in batch.samples.select_related("case"):
+            if str(s.id) in paired_sample_ids:
+                continue
+            k = nippt_pt_norm(s.case.pt_number or "")
+            (unpaired_mother_index if s.role == "MOTHER" else unpaired_father_index).setdefault(k, []).append(s)
 
         # ── 格式判定：管线原始格式（W/H 文件名列）还是标准 14 列模板 ──
         _hdr = {str(k).strip().lower() for k in (rows[0].keys() if rows else [])}
@@ -3477,82 +3522,144 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         errors = []
         mismatches = []
         warnings = []
-        matched = []      # 管线模式：自动匹配成功的行
+        matched = []      # 管线模式：自动匹配成功的行（配对）
+        sample_matched = []   # 只有一侧数据时落到"未配对样本"的行
         for i, row in enumerate(rows, start=2):
-            if is_pipeline:
-                # ── 管线格式：从 W/H 文件名提取 PT 号 + 父标签，在本批次自动匹配 ──
-                h_raw = _row_get(row, "h")
-                w_raw = _row_get(row, "w")
-                pt_h, label, pt_w = nippt_pipeline_parse_name(h_raw, w_raw)
-                if not pt_h:
-                    errors.append(f"行 {i}: 无法从文件名解析 PT 号（H 列='{h_raw}'）")
-                    continue
-                cands = pt_index.get(nippt_pt_norm(pt_h), [])
-                if not cands:
-                    errors.append(
-                        f"行 {i}: 本批次没有 PT={pt_h} 的样本（H 文件名='{h_raw}'）→ 已跳过该行")
-                    continue
-                if len(cands) == 1:
-                    pair = cands[0]
-                else:
-                    narrowed = [p for p in cands
-                                if (p.father_label or "").upper() == label]
-                    if len(narrowed) != 1:
-                        errors.append(
-                            f"行 {i}: PT={pt_h} 在本批次有 {len(cands)} 个疑父样本，"
-                            f"文件名标签='{label}' 无法唯一确定 → 已跳过该行")
-                        continue
-                    pair = narrowed[0]
-                if pt_w and nippt_pt_norm(pt_w) != nippt_pt_norm(pt_h):
-                    warnings.append(
-                        f"行 {i}: 母/父文件名 PT 号不一致（W={pt_w} / H={pt_h}），已按 H 列匹配")
-                cn = pair.case.case_number
-                pt = pair.case.pt_number or ""
-                fl = pair.father_label
-                matched.append({"row": i, "case_number": cn, "pt_number": pt,
-                                "father_label": fl, "h_file": str(h_raw)})
-            else:
-                cn = (row.get("case_number") or "").strip()
-                pt = (row.get("pt_number") or "").strip()
-                fl = (row.get("father_label") or "").strip()
-                pair = pair_index.get((cn, pt, fl))
-                if not pair:
-                    errors.append(f"Row {i}: pair not found ({cn}/{pt}/{fl})")
-                    continue
-            auto_raw = (row.get("auto_result") or "").strip().upper()
-            result_raw = (row.get("result") or "").strip().upper()
+            # ── 行身份：PT 号（pt_number 列 或 W/H 文件名）+ 父标签 ──
+            h_raw = str(_row_get(row, "h") or "")
+            w_raw = str(_row_get(row, "w") or "")
+            pt_h, label_file, pt_w = nippt_pipeline_parse_name(h_raw, w_raw)
+            pt_col = nippt_pt_norm(_row_get(row, "pt_number"))
+            pt_key = pt_col or nippt_pt_norm(pt_h) or nippt_pt_norm(pt_w)
+            label = str(_row_get(row, "father_label") or "").strip().upper() or label_file
+            if not pt_key:
+                errors.append(
+                    f"行 {i}: 无法确定 PT 号（H 列='{h_raw}'，W 列='{w_raw}'，pt_number 列="
+                    f"'{_row_get(row, 'pt_number')}'）")
+                continue
+
+            # 两侧是否有数据：该侧文件名叫得出 PT，或该侧任一指标非空
+            f_side = ["father_layers", "father_concentration", "father_het_ratio", "father_y_ratio"]
+            m_side = ["mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio"]
+            has_f = bool(pt_h) or any(str(_row_get(row, f) or "").strip() for f in f_side)
+            has_m = bool(pt_w) or any(str(_row_get(row, f) or "").strip() for f in m_side)
+
+            auto_raw = str(_row_get(row, "auto_result") or "").strip().upper()
+            result_raw = str(_row_get(row, "result") or "").strip().upper()
             auto_enum = NIPPT_LETTER_RESULT.get(auto_raw) if auto_raw else None
             result_enum = NIPPT_LETTER_RESULT.get(result_raw) if result_raw else None
             if auto_raw and not auto_enum:
-                errors.append(f"Row {i}: invalid auto_result '{auto_raw}' (允许 Y/N/O 或 支持/不支持/临界)")
+                errors.append(f"行 {i}: invalid auto_result '{auto_raw}'（允许 Y/N/O 或 支持/不支持/临界）")
                 continue
             if result_raw and not result_enum:
-                errors.append(f"Row {i}: invalid result '{result_raw}' (允许 Y/N/O 或 支持/不支持/临界)")
+                errors.append(f"行 {i}: invalid result '{result_raw}'（允许 Y/N/O 或 支持/不支持/临界）")
                 continue
-            # 核对：两列都有值且不一致 → 记入不一致清单（随后整批中止）
-            if auto_enum and result_enum and auto_enum != result_enum:
+
+            pair = None
+            target_sample = None
+            write_result = False
+            if has_f:
+                # ── 有疑父数据：按 PT 找配对（同 PT 多父时用文件名标签缩小）──
+                cands = pt_index.get(pt_key, [])
+                if len(cands) == 1:
+                    pair = cands[0]
+                elif len(cands) > 1:
+                    narrowed = [p for p in cands if (p.father_label or "").upper() == label]
+                    if len(narrowed) != 1:
+                        errors.append(
+                            f"行 {i}: PT={pt_key} 在本批次有 {len(cands)} 个疑父样本，标签='{label}' 无法唯一确定 → 已跳过")
+                        continue
+                    pair = narrowed[0]
+                else:
+                    s_cands = unpaired_father_index.get(pt_key, [])
+                    if len(s_cands) == 1:
+                        target_sample = s_cands[0]
+                    elif len(s_cands) > 1:
+                        errors.append(f"行 {i}: PT={pt_key} 在本批次有 {len(s_cands)} 个未配对疑父样本 → 已跳过")
+                        continue
+                    else:
+                        errors.append(
+                            f"行 {i}: 本批次没有 PT={pt_key} 的配对或未配对样本（H 文件名='{h_raw}'）→ 已跳过")
+                        continue
+                if pair is not None:
+                    write_result = True
+                    if pt_w and pt_h and nippt_pt_norm(pt_w) != nippt_pt_norm(pt_h):
+                        warnings.append(
+                            f"行 {i}: 母/父文件名 PT 号不一致（W={pt_w} / H={pt_h}），已按 H 列匹配")
+                    matched.append({"row": i, "case_number": pair.case.case_number,
+                                    "pt_number": pair.case.pt_number or "",
+                                    "father_label": pair.father_label, "h_file": h_raw})
+                else:
+                    if result_raw:
+                        warnings.append(
+                            f"行 {i}: 未配对样本没有 CPI 结果字段，文件里的 result='{result_raw}' 已忽略")
+                    sample_matched.append({"row": i, "kind": "未配对疑父样本",
+                                           "case_number": target_sample.case.case_number,
+                                           "pt_number": target_sample.case.pt_number or "",
+                                           "name": target_sample.patient_name})
+            else:
+                # ── 只有孕妇（H 为 na/空）：先找未配对母样本，再找配对；只写母侧指标，不动 result/cpi ──
+                s_cands = unpaired_mother_index.get(pt_key, [])
+                p_cands = pt_index.get(pt_key, [])
+                if len(s_cands) == 1 and not p_cands:
+                    target_sample = s_cands[0]
+                elif len(p_cands) == 1 and not s_cands:
+                    pair = p_cands[0]
+                elif not s_cands and not p_cands:
+                    errors.append(f"行 {i}: 本批次没有 PT={pt_key} 的样本或配对（W 文件名='{w_raw}'）→ 已跳过")
+                    continue
+                else:
+                    errors.append(
+                        f"行 {i}: PT={pt_key} 匹配不唯一（未配对母样本 {len(s_cands)} 个、配对 {len(p_cands)} 个）"
+                        f" → 已跳过，请人工确认")
+                    continue
+                if result_raw:
+                    warnings.append(
+                        f"行 {i}: 只有孕妇的行不含 CPI 结果，文件里的 result='{result_raw}' 已忽略")
+                if pair is not None:
+                    matched.append({"row": i, "case_number": pair.case.case_number,
+                                    "pt_number": pair.case.pt_number or "",
+                                    "father_label": pair.father_label, "h_file": h_raw,
+                                    "mother_only": True})
+                else:
+                    sample_matched.append({"row": i, "kind": "未配对母样本",
+                                           "case_number": target_sample.case.case_number,
+                                           "pt_number": target_sample.case.pt_number or "",
+                                           "name": target_sample.patient_name})
+
+            # 一致性核对：仅对会写入 result 的配对行生效（只有孕妇的行不含 CPI，不参与核对）
+            if write_result and auto_enum and result_enum and auto_enum != result_enum:
                 mismatches.append({
-                    "row": i, "case_number": cn, "pt_number": pt, "father_label": fl,
+                    "row": i, "case_number": pair.case.case_number,
+                    "pt_number": pair.case.pt_number or "", "father_label": pair.father_label,
                     "auto_result": auto_raw, "result": result_raw,
                 })
                 continue
+
             upd = {"updated_at": timezone.now()}
-            note_s = (row.get("note") or "").strip()
-            if note_s:
-                upd["note"] = note_s
+            if pair is not None:
+                note_s = str(_row_get(row, "note") or "").strip()
+                if note_s:
+                    upd["note"] = note_s
+                fields = METRIC_FIELDS
+            else:
+                # 未配对样本：该侧指标 → 样本行字段（father_layers → layers 等）；样本无 note 字段、无 updated_at
+                fields = m_side if (target_sample.role == "MOTHER") else f_side
+                upd = {"processed_at": timezone.now()}
             bad = False
-            for f in METRIC_FIELDS:
-                val_s = (row.get(f) or "").strip()
+            for f in fields:
+                val_s = str(_row_get(row, f) or "").strip()
                 if val_s:
                     try:
-                        upd[f] = nippt_parse_metric_number(val_s)
+                        v = nippt_parse_metric_number(val_s)
                     except (ValueError, TypeError):
-                        errors.append(f"Row {i}: invalid {f} '{val_s}'")
+                        errors.append(f"行 {i}: invalid {f} '{val_s}'")
                         bad = True
                         break
+                    upd[f if pair is not None else f.split("_", 1)[1]] = v
             if bad:
                 continue
-            parsed.append((pair, upd, result_enum))
+            parsed.append((pair, target_sample, upd, result_enum, write_result))
 
         # 有不一致 → 整批中止，一行都不写入
         if mismatches:
@@ -3565,25 +3672,34 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                 "total_rows": len(rows),
             }, status=400)
 
-        # ── Pass 2：写入（cpi 由 result 自动派生）──
+        # ── Pass 2：写入（配对：cpi 由 result 自动派生；未配对样本：只写该侧指标）──
         updated = 0
-        for pair, upd, result_enum in parsed:
-            final_result = result_enum if result_enum is not None else (pair.result or "")
-            upd["result"] = final_result
-            upd["cpi"] = NIPPT_CPI_BY_RESULT.get(final_result)
-            NipptBioinfoPair.objects.filter(id=pair.id).update(**upd)
-            updated += 1
+        samples_updated = 0
+        for pair, target_sample, upd, result_enum, write_result in parsed:
+            if pair is not None:
+                if write_result:
+                    final_result = result_enum if result_enum is not None else (pair.result or "")
+                    upd["result"] = final_result
+                    upd["cpi"] = NIPPT_CPI_BY_RESULT.get(final_result)
+                NipptBioinfoPair.objects.filter(id=pair.id).update(**upd)
+                updated += 1
+            else:
+                NipptBioinfoSample.objects.filter(id=target_sample.id, batch=batch).update(**upd)
+                samples_updated += 1
         skipped = len(errors)
-        if is_pipeline:
-            msg = f"管线格式：自动匹配成功 {len(matched)} 行，跳过 {skipped} 行"
+        if is_pipeline or samples_updated or matched or sample_matched:
+            msg = f"导入完成：配对更新 {updated} 行"
+            if samples_updated:
+                msg += f"、未配对样本更新 {samples_updated} 行"
+            msg += f"，跳过 {skipped} 行"
         else:
             msg = f"Updated {updated}, skipped {skipped}"
         return Response({
             "message": msg,
             "mode": "pipeline" if is_pipeline else "template",
-            "updated": updated, "skipped": skipped,
+            "updated": updated, "samples_updated": samples_updated, "skipped": skipped,
             "errors": errors[:20], "total_rows": len(rows), "mismatches": [],
-            "matched": matched[:50], "warnings": warnings[:20],
+            "matched": matched[:50], "sample_matched": sample_matched[:50], "warnings": warnings[:20],
         })
 
     # destroy 由 NipptBatchDeleteMixin 提供
