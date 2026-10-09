@@ -3457,6 +3457,23 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             pair.save(update_fields=["report_note", "updated_at"])
         return Response(NipptBioinfoPairSerializer(pair, context={"request": request}).data)
 
+    @staticmethod
+    def _reportable_pairs(batch):
+        """达标（可出报告）= 有结果 且 QC 为 normal"""
+        return [p for p in batch.pairs.all()
+                if (p.result or "").strip() and not (p.qc_flag or "").strip()]
+
+    def _recompute_report_status(self, batch):
+        """达标配对是否都已上传报告 → 待复核；否则 待上传。已完成的不动。"""
+        if batch.report_status == "COMPLETED":
+            return
+        todo = self._reportable_pairs(batch)
+        done = [p for p in todo if p.report_file]
+        new = "TO_REVIEW" if len(done) == len(todo) else "PENDING"
+        if new != batch.report_status:
+            batch.report_status = new
+            batch.save(update_fields=["report_status", "updated_at"])
+
     @action(detail=True, methods=["post"], url_path="upload-report")
     def upload_report(self, request, pk=None):
         """Reports：上传/替换某个配对的报告文件（PDF）。
@@ -3498,6 +3515,7 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             log_audit(request, "UPDATE", pair,
                       {"report_file": {"old": prev_name, "new": prev_name,
                                        "note": f"保留原报告未替换；本次上传 {f.name}"}})
+            self._recompute_report_status(batch)
             data = NipptBioinfoPairSerializer(pair, context={"request": request}).data
             return Response({"message": "已保留原报告（仅记录本次上传）", "mode": "keep", "pair": data})
 
@@ -3510,8 +3528,60 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         pair.report_history = hist[-50:]
         pair.save(update_fields=["report_file", "report_history", "updated_at"])
         log_audit(request, "UPDATE", pair, {"report_file": {"old": prev_name, "new": f.name}})
+        self._recompute_report_status(batch)
         data = NipptBioinfoPairSerializer(pair, context={"request": request}).data
         return Response({"message": "报告已上传" if action == "upload" else "报告已替换", "mode": mode, "pair": data})
+
+    @action(detail=True, methods=["post"], url_path="complete-report")
+    def complete_report(self, request, pk=None):
+        """Reports：完成报告批次。
+
+        · 准入：所有达标配对（有结果且 QC normal）都已上传报告 + 已选复核人/审核人
+        · 完成时把达标配对两侧样本的 workflow_stage 置 COMPLETED
+          → 案例管理里对应的 case 变成「已完成」
+        · 未达标配对不参与（其 case 保持「有失败」，需重做/重采）
+        """
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+        batch = self.get_object()
+        if batch.report_status == "COMPLETED":
+            return Response({"error": "该批次报告已完成"}, status=400)
+
+        todo = self._reportable_pairs(batch)
+        missing = [p for p in todo if not p.report_file]
+        if missing:
+            names = "、".join((p.case.pt_number or p.case.case_number) for p in missing)
+            return Response({"error": f"以下配对还未上传报告：{names}"}, status=400)
+
+        rid, aid = request.data.get("reviewer_id"), request.data.get("auditor_id")
+        reviewer = User.objects.filter(id=rid).first() if rid else None
+        auditor = User.objects.filter(id=aid).first() if aid else None
+        if not reviewer or not auditor:
+            return Response({"error": "请先选择复核人和审核人"}, status=400)
+
+        now = timezone.now()
+        ids = []
+        for p in todo:
+            ids += [str(x) for x in (p.mother_sample.case_sample_ids or [])]
+            ids += [str(x) for x in (p.father_sample.case_sample_ids or [])]
+        ids = list(dict.fromkeys(ids))
+
+        with transaction.atomic():
+            batch.report_reviewer = reviewer
+            batch.report_auditor = auditor
+            batch.report_reviewed_at = now
+            batch.report_audited_at = now
+            batch.report_status = "COMPLETED"
+            batch.save(update_fields=["report_reviewer", "report_auditor", "report_reviewed_at",
+                                      "report_audited_at", "report_status", "updated_at"])
+            if ids:
+                # COMPLETED 分支内部会同步案例级状态（sync_case_status_for_samples）
+                update_wf(ids, "COMPLETED", "COMPLETE", batch.batch_number, request.user)
+
+        log_audit(request, "UPDATE", batch, {"report_status": {"old": "TO_REVIEW", "new": "COMPLETED",
+                                                              "note": f"复核 {reviewer.username} / 审核 {auditor.username}"}})
+        return Response({"message": f"报告批次已完成（{len(todo)} 个达标配对，{len(ids)} 个样本转入已完成）",
+                         "advanced_samples": len(ids), "report_status": "COMPLETED"})
 
     @action(detail=True, methods=["post"])
     def add_manual_pair(self, request, pk=None):

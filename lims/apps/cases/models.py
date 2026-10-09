@@ -881,10 +881,24 @@ class NipptBioinfoBatch(models.Model):
         IN_PROGRESS = "IN_PROGRESS", "处理中"
         COMPLETED = "COMPLETED", "已完成"
 
+    class ReportStatus(models.TextChoices):
+        PENDING = "PENDING", "待上传"
+        TO_REVIEW = "TO_REVIEW", "待复核"
+        COMPLETED = "COMPLETED", "已完成"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     batch_number = models.CharField(max_length=30, unique=True, db_index=True)
     status = models.CharField(max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True)
     bioinfo_data = models.JSONField(default=dict, blank=True)
+    # ── Reports 模块：报告批次状态 + 批次级复核/审核 ──
+    report_status = models.CharField(max_length=20, default=ReportStatus.PENDING,
+                                     choices=ReportStatus.choices, db_index=True)
+    report_reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                        null=True, blank=True, related_name="+")
+    report_auditor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+                                       null=True, blank=True, related_name="+")
+    report_reviewed_at = models.DateTimeField(null=True, blank=True)
+    report_audited_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
     operator_name = models.CharField(max_length=50, blank=True, default="")
     reviewer = models.CharField(max_length=50, blank=True, default="")

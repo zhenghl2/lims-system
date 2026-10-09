@@ -1,6 +1,6 @@
 // NipptReports.tsx — NIPPT 报告模块：按生信批次组织，配对级报告管理
 import { useState, useEffect, useRef } from "react";
-import { Table, Tag, Spin, Typography, Space, Button, Drawer, Select, Input, message, Tooltip, Modal, Popover, Alert } from "antd";
+import { Table, Tag, Spin, Typography, Space, Button, Card, Empty, Select, Input, message, Tooltip, Modal, Popover, Alert } from "antd";
 import {
   FileTextOutlined, DownloadOutlined, EyeOutlined, UploadOutlined,
   CheckCircleOutlined, ReloadOutlined, HistoryOutlined,
@@ -15,7 +15,9 @@ export default function NipptReports() {
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  // 批次级复核/审核（底部统一填，不需要每份报告都填）
+  const [batRev, setBatRev] = useState<string | undefined>(undefined);
+  const [batAud, setBatAud] = useState<string | undefined>(undefined);
   const [detailLoading, setDetailLoading] = useState(false);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [revSel, setRevSel] = useState<Record<string, string>>({});
@@ -44,7 +46,8 @@ export default function NipptReports() {
   }, []);
 
   const openBatch = async (b: any) => {
-    setDrawerOpen(true); setDetailLoading(true);
+    setDetailLoading(true);
+    setBatRev(undefined); setBatAud(undefined);
     setRevSel({}); setAudSel({}); setNoteEdit({});
     try {
       const r = await api.get(`/cases/bioinfo/${b.id}/`);
@@ -194,22 +197,70 @@ export default function NipptReports() {
     } catch { message.error("保存失败"); }
   };
 
+  // 报告批次状态：待上传 → 待复核 → 已完成
+  const reportTag = (v: string) => {
+    const mp: Record<string, { color: string; text: string }> = {
+      PENDING: { color: "orange", text: "待上传" },
+      TO_REVIEW: { color: "blue", text: "待复核" },
+      COMPLETED: { color: "green", text: "已完成" },
+    };
+    const x = mp[v] || { color: "default", text: v || "—" };
+    return <Tag color={x.color} style={{ margin: 0 }}>{x.text}</Tag>;
+  };
+
   const batchColumns = [
-    { title: "批次号", dataIndex: "batch_number", key: "bn", width: 180, render: (v: string) => <Text code>{v}</Text> },
-    { title: "状态", dataIndex: "status", key: "st", width: 90, render: () => <Tag color="green">已完成</Tag> },
-    { title: "配对数", dataIndex: "pair_count", key: "pc", width: 80, align: "center" as const },
-    { title: "结果已填", key: "cc", width: 90, align: "center" as const,
-      render: (_: any, r: any) => `${r.completed_pair_count ?? 0}/${r.pair_count ?? 0}` },
-    { title: "报告进度", key: "rp", width: 110, align: "center" as const,
-      render: (_: any, r: any) => {
-        const n = r.reported_pair_count || 0;
-        const t = r.pair_count || 0;
-        return <Tag color={t > 0 && n >= t ? "green" : n > 0 ? "orange" : "default"}>{n}/{t}</Tag>;
-      } },
-    { title: "完成时间", dataIndex: "updated_at", key: "ut", width: 130, render: fmtDT },
-    { title: "操作", key: "op", width: 90,
-      render: (_: any, r: any) => <Button size="small" type="primary" ghost onClick={() => openBatch(r)}>查看</Button> },
+    { title: "批次号", dataIndex: "batch_number", key: "bn", width: 150,
+      render: (v: string, r: any) => (
+        <div style={{ lineHeight: 1.35 }}>
+          <Text code style={{ fontSize: 12 }}>{v}</Text>
+          <div style={{ fontSize: 11, color: "#888" }}>
+            配对 {r.pair_count ?? 0} · 可出报告 {r.reportable_pair_count ?? 0}
+          </div>
+        </div>
+      ) },
+    { title: "状态", dataIndex: "report_status", key: "rs", width: 76, render: (v: string) => reportTag(v) },
+    { title: "进度", key: "rp", width: 62, align: "center" as const,
+      render: (_: any, r: any) => <Text style={{ fontSize: 12 }}>{r.report_uploaded_count ?? 0}/{r.reportable_pair_count ?? 0}</Text> },
+    { title: "完成时间", dataIndex: "updated_at", key: "ut", width: 92, render: fmtDT },
   ];
+
+  // ── 完成批次准入 ──
+  const rp = selectedBatch ? (selectedBatch.pairs || []) : [];
+  const reportable = rp.filter((p: any) => !notQualified(p));
+  const reportMissing = reportable.filter((p: any) => !p.report_file_url);
+  const revVal = batRev ?? (selectedBatch?.report_reviewer || undefined);
+  const audVal = batAud ?? (selectedBatch?.report_auditor || undefined);
+  const uname = (id?: string) => users.find((u: UserItem) => u.id === id)?.username || "—";
+  const doneReport = selectedBatch?.report_status === "COMPLETED";
+  const canComplete = !!selectedBatch && !doneReport && reportMissing.length === 0 && !!revVal && !!audVal;
+  const completeHint = !selectedBatch || doneReport ? ""
+    : reportMissing.length > 0
+      ? `还有 ${reportMissing.length} 个可出报告的配对未上传：${reportMissing.map((p: any) => p.pt_number || p.case_number).join("、")}`
+      : !revVal ? "请选择复核人" : !audVal ? "请选择审核人" : "可完成";
+
+  const doComplete = () => {
+    if (!selectedBatch) return;
+    Modal.confirm({
+      title: "确认完成报告批次",
+      content: (
+        <div style={{ fontSize: 12, lineHeight: 1.9 }}>
+          <div>批次：<Text code>{selectedBatch.batch_number}</Text></div>
+          <div>可出报告配对：<b>{reportable.length}</b>（已全部上传） · 未达标配对：<b>{rp.length - reportable.length}</b>（不参与，保持「有失败」）</div>
+          <div>复核人：<b>{uname(revVal)}</b> · 审核人：<b>{uname(audVal)}</b></div>
+          <div style={{ color: "#8c8c8c" }}>完成后：这些配对对应的 case 在案例管理里变为「已完成」；未达标的 case 保持「有失败」。</div>
+        </div>
+      ),
+      onOk: async () => {
+        try {
+          const res = await api.post(`/cases/bioinfo/${selectedBatch.id}/complete-report/`,
+            { reviewer_id: revVal, auditor_id: audVal });
+          message.success(res.data?.message || "报告批次已完成");
+          await refreshDetail();
+          loadBatches();
+        } catch (e: any) { message.error(e?.response?.data?.error || "完成失败"); }
+      },
+    });
+  };
 
   const pairColumns = [
     { title: "Case#", dataIndex: "case_number", key: "cn", width: 150, ellipsis: true, fixed: "left" as const },
@@ -329,28 +380,43 @@ export default function NipptReports() {
         <Button icon={<ReloadOutlined />} onClick={loadBatches}>刷新</Button>
       </div>
 
-      <Table
-        size="small"
-        rowKey="id"
-        columns={batchColumns}
-        dataSource={batches}
-        pagination={{ pageSize: 15, showSizeChanger: false }}
-        locale={{ emptyText: "暂无已完成的生信批次" }}
-      />
+      <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+        {/* 左：批次一列 */}
+        <Card size="small" title={`报告批次（${batches.length}）`} style={{ width: 400, flexShrink: 0 }}
+          bodyStyle={{ padding: 0, maxHeight: "calc(100vh - 230px)", overflowY: "auto" }}>
+          <Table
+            size="small"
+            rowKey="id"
+            columns={batchColumns}
+            dataSource={batches}
+            pagination={false}
+            locale={{ emptyText: "暂无已完成的生信批次" }}
+            onRow={(r: any) => ({
+              onClick: () => openBatch(r),
+              style: { cursor: "pointer", background: selectedBatch?.id === r.id ? "#e6f4ff" : undefined },
+            })}
+          />
+        </Card>
 
-      <Drawer
-        title={<Space><FileTextOutlined /> 报告批次 — <Text code>{selectedBatch?.batch_number || ""}</Text></Space>}
-        width={1560}
-        open={drawerOpen}
-        onClose={() => { setDrawerOpen(false); loadBatches(); }}
-        destroyOnClose
-      >
-        {detailLoading ? <div style={{ textAlign: "center", padding: 60 }}><Spin /></div> : selectedBatch && (
+        {/* 右：批次详情 */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <Card size="small"
+            title={<Space><FileTextOutlined /> 报告批次 <Text code>{selectedBatch?.batch_number || ""}</Text>
+              {selectedBatch ? reportTag(selectedBatch.report_status) : null}</Space>}>
+            {!selectedBatch
+              ? <Empty description="请选择左侧批次" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              : detailLoading
+                ? <div style={{ textAlign: "center", padding: 60 }}><Spin /></div>
+                : (
           <>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
               <Space>
-                <Text>配对数: <b>{selectedBatch.pairs?.length ?? 0}</b></Text>
-                <Text>已上传报告: <b>{(selectedBatch.pairs || []).filter((p: any) => p.report_file_url).length}</b>/{(selectedBatch.pairs || []).length}</Text>
+                <Text>配对: <b>{rp.length}</b></Text>
+                <Text>可出报告: <b>{reportable.length}</b></Text>
+                <Text>已上传报告: <b>{reportable.length - reportMissing.length}</b>/{reportable.length}</Text>
+                {rp.length > reportable.length && (
+                  <Text type="warning">未达标（不出报告）: <b>{rp.length - reportable.length}</b></Text>
+                )}
               </Space>
               <Space>
                 <Button icon={<ReloadOutlined />} onClick={refreshDetail}>刷新</Button>
@@ -419,9 +485,36 @@ export default function NipptReports() {
                   rowExpandable: (r: any) => !!r.reason }}
               />
             </Modal>
+
+            {/* 底部：批次级复核/审核 + 完成批次（不需要每份报告都填） */}
+            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #f0f0f0",
+              display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+              <Space>
+                <Text>复核人：</Text>
+                <Select size="small" style={{ width: 150 }} placeholder="选择复核人" showSearch optionFilterProp="label"
+                  value={batRev ?? (selectedBatch.report_reviewer || undefined)}
+                  onChange={(v: string) => setBatRev(v)}
+                  options={users.map((u: UserItem) => ({ label: u.username, value: u.id }))} />
+                {selectedBatch.report_reviewed_at && <Text type="success" style={{ fontSize: 11 }}>✓ {fmtDT(selectedBatch.report_reviewed_at)}</Text>}
+              </Space>
+              <Space>
+                <Text>审核人：</Text>
+                <Select size="small" style={{ width: 150 }} placeholder="选择审核人" showSearch optionFilterProp="label"
+                  value={batAud ?? (selectedBatch.report_auditor || undefined)}
+                  onChange={(v: string) => setBatAud(v)}
+                  options={users.map((u: UserItem) => ({ label: u.username, value: u.id }))} />
+                {selectedBatch.report_audited_at && <Text type="success" style={{ fontSize: 11 }}>✓ {fmtDT(selectedBatch.report_audited_at)}</Text>}
+              </Space>
+              <Button type="primary" icon={<CheckCircleOutlined />} disabled={!canComplete} onClick={doComplete}>完成批次</Button>
+              {doneReport
+                ? <Text type="success" style={{ fontSize: 12 }}>该批次报告已完成（复核 {selectedBatch.report_reviewer_name || "—"} / 审核 {selectedBatch.report_auditor_name || "—"}）</Text>
+                : <Text type="secondary" style={{ fontSize: 11 }}>{completeHint}</Text>}
+            </div>
           </>
-        )}
-      </Drawer>
+                )}
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

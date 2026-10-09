@@ -1889,16 +1889,25 @@ class NipptBioinfoSampleSerializer(serializers.ModelSerializer):
 
 class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    report_status = serializers.SerializerMethodField()
+    report_status_display = serializers.SerializerMethodField()
+    report_reviewer_name = serializers.CharField(source="report_reviewer.username", read_only=True, default=None)
+    report_auditor_name = serializers.CharField(source="report_auditor.username", read_only=True, default=None)
     pair_count = serializers.SerializerMethodField()
     completed_pair_count = serializers.SerializerMethodField()
     reported_pair_count = serializers.SerializerMethodField()
+    reportable_pair_count = serializers.SerializerMethodField()
+    report_uploaded_count = serializers.SerializerMethodField()
     sample_count = serializers.SerializerMethodField()
 
     class Meta:
         model = NipptBioinfoBatch
         fields = [
             "id", "batch_number", "status", "status_display",
-            "pair_count", "completed_pair_count", "reported_pair_count", "sample_count",
+            "report_status", "report_status_display", "report_reviewer", "report_reviewer_name",
+            "report_auditor", "report_auditor_name", "report_reviewed_at", "report_audited_at",
+            "pair_count", "completed_pair_count", "reported_pair_count",
+            "reportable_pair_count", "report_uploaded_count", "sample_count",
             "created_by", "operator_name", "reviewer", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
@@ -1908,6 +1917,34 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
 
     def get_completed_pair_count(self, obj):
         return obj.pairs.exclude(result="").count() if hasattr(obj, 'pairs') else 0
+
+    def _eff_report_status(self, obj):
+        """已完成以库里为准（含复核/审核锁定）；否则实时推导 待上传/待复核，避免陈旧状态"""
+        if obj.report_status == "COMPLETED":
+            return "COMPLETED"
+        pairs = list(obj.pairs.all()) if hasattr(obj, "pairs") else []
+        todo = [p for p in pairs if (p.result or "").strip() and not (p.qc_flag or "").strip()]
+        done = [p for p in todo if p.report_file]
+        return "TO_REVIEW" if len(done) == len(todo) else "PENDING"
+
+    def get_report_status(self, obj):
+        return self._eff_report_status(obj)
+
+    def get_report_status_display(self, obj):
+        return dict(NipptBioinfoBatch.ReportStatus.choices).get(self._eff_report_status(obj), "")
+
+    def get_reportable_pair_count(self, obj):
+        """达标（可出报告）= 有结果 且 QC 为 normal"""
+        if not hasattr(obj, "pairs"):
+            return 0
+        return sum(1 for p in obj.pairs.all() if (p.result or "").strip() and not (p.qc_flag or "").strip())
+
+    def get_report_uploaded_count(self, obj):
+        """达标且已上传报告的配对数"""
+        if not hasattr(obj, "pairs"):
+            return 0
+        return sum(1 for p in obj.pairs.all()
+                   if (p.result or "").strip() and not (p.qc_flag or "").strip() and p.report_file)
 
     def get_reported_pair_count(self, obj):
         if not hasattr(obj, 'pairs'):
@@ -1920,8 +1957,14 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
 
 class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
+    report_status = serializers.SerializerMethodField()
+    report_status_display = serializers.SerializerMethodField()
+    report_reviewer_name = serializers.CharField(source="report_reviewer.username", read_only=True, default=None)
+    report_auditor_name = serializers.CharField(source="report_auditor.username", read_only=True, default=None)
     pair_count = serializers.SerializerMethodField()
     sample_count = serializers.SerializerMethodField()
+    reportable_pair_count = serializers.SerializerMethodField()
+    report_uploaded_count = serializers.SerializerMethodField()
     pairs = NipptBioinfoPairSerializer(many=True, read_only=True)
     unpaired_mothers = serializers.SerializerMethodField()
     unpaired_fathers = serializers.SerializerMethodField()
@@ -1930,7 +1973,9 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
         model = NipptBioinfoBatch
         fields = [
             "id", "batch_number", "status", "status_display",
-            "bioinfo_data", "pair_count", "sample_count",
+            "report_status", "report_status_display", "report_reviewer", "report_reviewer_name",
+            "report_auditor", "report_auditor_name", "report_reviewed_at", "report_audited_at",
+            "bioinfo_data", "pair_count", "sample_count", "reportable_pair_count", "report_uploaded_count",
             "pairs", "unpaired_mothers", "unpaired_fathers",
             "created_by", "operator_name", "reviewer", "created_at", "updated_at",
         ]
@@ -1941,6 +1986,32 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
 
     def get_sample_count(self, obj):
         return obj.samples.count() if hasattr(obj, 'samples') else 0
+
+    def _eff_report_status(self, obj):
+        """已完成以库里为准（含复核/审核锁定）；否则实时推导 待上传/待复核，避免陈旧状态"""
+        if obj.report_status == "COMPLETED":
+            return "COMPLETED"
+        pairs = list(obj.pairs.all()) if hasattr(obj, "pairs") else []
+        todo = [p for p in pairs if (p.result or "").strip() and not (p.qc_flag or "").strip()]
+        done = [p for p in todo if p.report_file]
+        return "TO_REVIEW" if len(done) == len(todo) else "PENDING"
+
+    def get_report_status(self, obj):
+        return self._eff_report_status(obj)
+
+    def get_report_status_display(self, obj):
+        return dict(NipptBioinfoBatch.ReportStatus.choices).get(self._eff_report_status(obj), "")
+
+    def get_reportable_pair_count(self, obj):
+        if not hasattr(obj, "pairs"):
+            return 0
+        return sum(1 for p in obj.pairs.all() if (p.result or "").strip() and not (p.qc_flag or "").strip())
+
+    def get_report_uploaded_count(self, obj):
+        if not hasattr(obj, "pairs"):
+            return 0
+        return sum(1 for p in obj.pairs.all()
+                   if (p.result or "").strip() and not (p.qc_flag or "").strip() and p.report_file)
 
     def get_unpaired_mothers(self, obj):
         if not hasattr(obj, 'pairs'):
