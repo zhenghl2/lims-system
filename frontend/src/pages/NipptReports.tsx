@@ -4,6 +4,7 @@ import { Table, Tag, Spin, Typography, Space, Button, Card, Empty, Select, Input
 import {
   FileTextOutlined, DownloadOutlined, EyeOutlined, UploadOutlined,
   CheckCircleOutlined, ReloadOutlined, HistoryOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined,
 } from "@ant-design/icons";
 import api from "../api/client";
 
@@ -15,6 +16,7 @@ export default function NipptReports() {
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // 批次级复核/审核（底部统一填，不需要每份报告都填）
   const [batRev, setBatRev] = useState<string | undefined>(undefined);
   const [batAud, setBatAud] = useState<string | undefined>(undefined);
@@ -411,20 +413,31 @@ export default function NipptReports() {
 
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
         {/* 左：批次一列 */}
-        <Card size="small" title={`报告批次（${batches.length}）`} style={{ width: 400, flexShrink: 0 }}
+        <Card size="small"
+          title={sidebarCollapsed ? undefined : `报告批次（${batches.length}）`}
+          extra={<Button type="text" size="small"
+            title={sidebarCollapsed ? "展开批次列表" : "收起批次列表"}
+            icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            onClick={() => setSidebarCollapsed(!sidebarCollapsed)} />}
+          style={{
+            width: sidebarCollapsed ? 48 : 400, flexShrink: 0,
+            transition: "width 0.25s", overflow: "hidden",
+          }}
           bodyStyle={{ padding: 0, maxHeight: "calc(100vh - 230px)", overflowY: "auto" }}>
-          <Table
-            size="small"
-            rowKey="id"
-            columns={batchColumns}
-            dataSource={batches}
-            pagination={false}
-            locale={{ emptyText: "暂无已完成的生信批次" }}
-            onRow={(r: any) => ({
-              onClick: () => openBatch(r),
-              style: { cursor: "pointer", background: selectedBatch?.id === r.id ? "#e6f4ff" : undefined },
-            })}
-          />
+          {!sidebarCollapsed && (
+            <Table
+              size="small"
+              rowKey="id"
+              columns={batchColumns}
+              dataSource={batches}
+              pagination={false}
+              locale={{ emptyText: "暂无已完成的生信批次" }}
+              onRow={(r: any) => ({
+                onClick: () => openBatch(r),
+                style: { cursor: "pointer", background: selectedBatch?.id === r.id ? "#e6f4ff" : undefined },
+              })}
+            />
+          )}
         </Card>
 
         {/* 右：批次详情 */}
