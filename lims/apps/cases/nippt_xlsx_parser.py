@@ -179,6 +179,8 @@ def parse_xlsx_bytes(data, filename=""):
         rg_f = norm(r[5]) if len(r) > 5 else ""
         father_name = norm(r[7]) if len(r) > 7 else ""
         rg_m = norm(r[8]) if len(r) > 8 else ""
+        tubo_f = norm(r[6]) if len(r) > 6 else ""   # ID do tubo-F（孕妇管号）
+        tubo_m = norm(r[9]) if len(r) > 9 else ""   # ID do tubo-M（疑父管号）
         sm_type = norm(r[10]) if len(r) > 10 else ""
         dob = norm(r[11]) if len(r) > 11 else ""
         ga_raw = norm(r[12]) if len(r) > 12 else ""
@@ -209,6 +211,7 @@ def parse_xlsx_bytes(data, filename=""):
             father = {
                 "name": father_name,
                 "id_card": rg_m,
+                "tube_no": tubo_m,
                 "sample_types": _map_sample_types(sm_type),
             }
 
@@ -227,6 +230,7 @@ def parse_xlsx_bytes(data, filename=""):
             "mother_name": mother_name or mother_name2,
             "mother_dob": _to_text(_parse_date_dmy(dob) or ""),
             "mother_id_card": rg_f,
+            "mother_tube_no": tubo_f,
             "gestational_age_weeks": _extract_gestational_week(ga_raw),
             "collection_date": _first_part(coll_date),
             "collection_site": _first_part(coll_site),

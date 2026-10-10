@@ -67,6 +67,10 @@ class Sample(models.Model):
     patient_dob = models.DateField(null=True, blank=True)
     gestational_weeks = models.PositiveSmallIntegerField(null=True, blank=True)
     id_card = models.CharField(max_length=50, blank=True, default="")
+    tube_no = models.CharField(
+        max_length=60, blank=True, default="",
+        help_text="送检方管号（如巴西送检单 ID do tubo-F / ID do tubo-M）",
+    )
     external_id = models.CharField(max_length=100, blank=True, default="")
     vg_id = models.CharField(max_length=50, blank=True, default="", db_index=True, help_text="VG internal lab ID")
     maternal_weight = models.FloatField(null=True, blank=True, help_text="Maternal weight in kg")

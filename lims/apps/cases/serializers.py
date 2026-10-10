@@ -20,6 +20,8 @@ class CaseSampleSerializer(serializers.ModelSerializer):
     collection_date = serializers.CharField(source="sample.collection_date", read_only=True, allow_null=True)
     fedex_no = serializers.CharField(source="sample.fedex_no", read_only=True, allow_null=True, allow_blank=True)
     external_id = serializers.CharField(source="sample.external_id", read_only=True)
+    id_card = serializers.CharField(source="sample.id_card", read_only=True, allow_null=True, allow_blank=True, default="")
+    tube_no = serializers.CharField(source="sample.tube_no", read_only=True, allow_null=True, allow_blank=True, default="")
     gender_info = serializers.CharField(source="sample.gender_info", read_only=True, allow_null=True, allow_blank=True)
     patient_dob = serializers.CharField(source="sample.patient_dob", read_only=True, allow_null=True, allow_blank=True)
     last_menstrual_period = serializers.CharField(source="sample.last_menstrual_period", read_only=True, allow_null=True, allow_blank=True)
@@ -39,6 +41,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
             "arrival_date", "actual_sample_type", "preservation_method",
             "receipt_note",
             "rejection_reason", "rejection_note", "external_id",
+            "id_card", "tube_no",
             "receipt_photo_url",
             "case_source",
             "collection_date", "fedex_no", "gender_info",
@@ -472,6 +475,7 @@ class NipptImportFatherSerializer(serializers.Serializer):
     """巴西导入：单个疑父"""
     name = serializers.CharField(allow_blank=True, default="")
     id_card = serializers.CharField(required=False, allow_blank=True, default="")
+    tube_no = serializers.CharField(required=False, allow_blank=True, default="")  # ID do tubo-M
     sample_types = serializers.ListField(
         child=serializers.ChoiceField(choices=CaseSample.SampleSource.choices),
         required=False, default=list,
@@ -484,6 +488,7 @@ class NipptImportCaseItemSerializer(serializers.Serializer):
     mother_name = serializers.CharField()
     mother_dob = serializers.CharField(required=False, allow_blank=True, default="")      # DD/MM/YYYY
     mother_id_card = serializers.CharField(required=False, allow_blank=True, default="")
+    mother_tube_no = serializers.CharField(required=False, allow_blank=True, default="")  # ID do tubo-F
     gestational_age_weeks = serializers.IntegerField(required=False, allow_null=True, default=None)
     collection_date = serializers.CharField(required=False, allow_blank=True, default="") # DD/MM/YYYY
     collection_site = serializers.CharField(required=False, allow_blank=True, default="")
@@ -1770,13 +1775,46 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     report_file_url = serializers.SerializerMethodField()
     report_reviewer_name = serializers.CharField(source="report_reviewer.username", read_only=True, default=None)
     report_auditor_name = serializers.CharField(source="report_auditor.username", read_only=True, default=None)
+    mother_id_card = serializers.SerializerMethodField()
+    mother_tube_no = serializers.SerializerMethodField()
+    father_id_card = serializers.SerializerMethodField()
+    father_tube_no = serializers.SerializerMethodField()
+    mother_display = serializers.SerializerMethodField()
+    father_display = serializers.SerializerMethodField()
+
+    @staticmethod
+    def _sattr(sample, attr):
+        return (getattr(sample, attr, "") or "") if sample else ""
+
+    def get_mother_id_card(self, obj):
+        return self._sattr(obj.mother_sample, "id_card")
+
+    def get_mother_tube_no(self, obj):
+        return self._sattr(obj.mother_sample, "tube_no")
+
+    def get_father_id_card(self, obj):
+        return self._sattr(obj.father_sample, "id_card")
+
+    def get_father_tube_no(self, obj):
+        return self._sattr(obj.father_sample, "tube_no")
+
+    def get_mother_display(self, obj):
+        """证件号 / 管号，逗号拼接（前端一列显示）"""
+        return " · ".join([x for x in (self._sattr(obj.mother_sample, "id_card"),
+                                       self._sattr(obj.mother_sample, "tube_no")) if x])
+
+    def get_father_display(self, obj):
+        return " · ".join([x for x in (self._sattr(obj.father_sample, "id_card"),
+                                       self._sattr(obj.father_sample, "tube_no")) if x])
 
     class Meta:
         model = NipptBioinfoPair
         fields = [
             "id", "batch", "case", "case_number", "pt_number", "case_source",
             "mother_sample", "mother_name", "mother_index",
+            "mother_id_card", "mother_tube_no", "mother_display",
             "father_sample", "father_name", "father_index", "father_sample_type",
+            "father_id_card", "father_tube_no", "father_display",
             "father_label", "is_cross_batch",
             "mother_source_batch", "father_source_batch",
             "cpi", "cpi_combined", "result", "result_display",

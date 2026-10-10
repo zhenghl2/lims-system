@@ -857,6 +857,18 @@ export default function Cases() {
                       <Tag color="red" style={{fontSize:11}}>🩸 血浆 {cs.plasma_tubes} 管</Tag>
                     )}
                   </Space>
+                  {String(selectedCase.case_number || "").startsWith("NIPPT") && (
+                    <div style={{ fontSize: 11, color: "#595959", marginBottom: 4 }}>
+                      <Space size={14}>
+                        <span>证件号：
+                          <Text code style={{ fontSize: 11 }}>{cs.id_card || "—"}</Text>
+                        </span>
+                        <span>管号：
+                          <Text code style={{ fontSize: 11 }}>{cs.tube_no || "—"}</Text>
+                        </span>
+                      </Space>
+                    </div>
+                  )}
                   <Tag color={STATUS_COLORS[cs.sample_status]}>
                     {SAMPLE_STATUS_DISPLAY[cs.sample_status] || cs.sample_status}
                   </Tag>

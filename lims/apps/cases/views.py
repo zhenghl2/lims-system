@@ -608,6 +608,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                     if mother_cs:
                         m = mother_cs.sample
                         m.id_card = item["mother_id_card"] or ""
+                        m.tube_no = item.get("mother_tube_no", "") or ""
                         m.price = item["price"] or ""
                         m.balance = item["balance"] or ""
                         m.gender_info = item["gender_info"] or ""
@@ -618,7 +619,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                         if fx:
                             m.fedex_no = fx
                         m.save(update_fields=[
-                            "id_card", "price", "balance", "gender_info",
+                            "id_card", "tube_no", "price", "balance", "gender_info",
                             "collection_date", "fedex_no", "updated_at",
                         ])
                     # 采集地点存母亲 CaseSample.collection_site
@@ -628,17 +629,20 @@ class CaseViewSet(viewsets.ModelViewSet):
                         mother_cs.save(update_fields=["collection_site", "updated_at"])
                     # 附加字段：疑父 id_card
                     for f in item["fathers"]:
-                        if not f["name"] or f["name"] == "-" or not f["id_card"]:
+                        f_id = f.get("id_card") or ""
+                        f_tube = f.get("tube_no") or ""
+                        if not f["name"] or f["name"] == "-" or (not f_id and not f_tube):
                             continue
                         fcss = case.case_samples.filter(
                             role=CaseSample.Role.ALLEGED_FATHER,
                             sample__patient_name=f["name"],
                         ).select_related("sample")
                         for cs in fcss:
-                            cs.sample.id_card = f["id_card"]
+                            cs.sample.id_card = f_id
+                            cs.sample.tube_no = f_tube
                             if fx:
                                 cs.sample.fedex_no = fx
-                            cs.sample.save(update_fields=["id_card", "fedex_no", "updated_at"])
+                            cs.sample.save(update_fields=["id_card", "tube_no", "fedex_no", "updated_at"])
                     # 报告截止日期
                     due = parse_d(item["expected_completion"])
                     if due:

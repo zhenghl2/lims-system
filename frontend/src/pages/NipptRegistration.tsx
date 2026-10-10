@@ -1431,9 +1431,16 @@ export default function NipptRegistration() {
                   { title: "Seq", dataIndex: "seq", width: 90,
                     render: (v: string) => <Text code>{v}</Text> },
                   { title: "孕妇", dataIndex: "mother_name", width: 170, ellipsis: true },
-                  { title: "RG_F", dataIndex: "mother_id_card", width: 110 },
+                  { title: "RG_F", dataIndex: "mother_id_card", width: 110,
+                    render: (v: string) => v || "—" },
+                  { title: "ID_tubo_F", dataIndex: "mother_tube_no", width: 110,
+                    render: (v: string) => v || "—" },
                   { title: "疑父", key: "fathers", width: 200, ellipsis: true,
                     render: (_: any, r: any) => r.fathers.map((f: any) => f.name).join("；") },
+                  { title: "RG_M / ID_tubo_M", key: "ftube", width: 170,
+                    render: (_: any, r: any) => r.fathers
+                      .map((f: any) => [f.id_card, f.tube_no].filter(Boolean).join(" / ") || "—")
+                      .join("；") },
                   { title: "疑父样本类型", key: "types", width: 140,
                     render: (_: any, r: any) => r.fathers.map((f: any) => f.sample_types.join("/")).join("；") },
                   { title: "Sales", dataIndex: "sales_person", width: 70 },

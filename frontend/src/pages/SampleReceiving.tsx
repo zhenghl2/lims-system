@@ -97,6 +97,8 @@ interface CaseSampleRow {
   workflowStage: string;
   personTypes: string[];        // 该人（同案例+同角色+同姓名）已存在的样本类型集合
   caseHasPhoto?: boolean;
+  idCard?: string;
+  tubeNo?: string;
 }
 
 // ===== 待签收编辑草稿（sessionStorage：路由切换保留，F5 清空）=====
@@ -218,6 +220,8 @@ export default function SampleReceiving() {
           salesPerson: c.sales_person || "",
           fedexNo: cs.fedex_no || "",
           externalId: cs.external_id || caseExtId || "",
+          idCard: cs.id_card || "",
+          tubeNo: cs.tube_no || "",
           phone: c.phone || "",
           preservationMethod: cs.preservation_method || "",
           receiptNote: cs.receipt_note || "",
@@ -725,6 +729,14 @@ export default function SampleReceiving() {
           addonAfter={<Text type="secondary" style={{ fontSize: 11 }}>{v ? v.replace("PT" + r.ptBase, "") : ""}</Text>}
         />
       ),
+    },
+    {
+      title: "证件号", dataIndex: "idCard", key: "idc", width: 130, ellipsis: true,
+      render: (v: string) => v || "—",
+    },
+    {
+      title: "管号", dataIndex: "tubeNo", key: "tno", width: 130, ellipsis: true,
+      render: (v: string) => v || "—",
     },
     {
       title: "姓名", dataIndex: "patientName", key: "name", width: 180, ellipsis: true,
