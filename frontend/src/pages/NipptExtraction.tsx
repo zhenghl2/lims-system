@@ -117,6 +117,14 @@ export default function NipptExtraction() {
   const [timeM, setTimeM] = useState<string>("");
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 
+/** 操作人/审核人：多选（数组）↔ 存储文本（顿号分隔；兼容历史单值） */
+const joinPersons = (v?: string[] | string | null): string =>
+  Array.isArray(v) ? v.filter(Boolean).join("、") : (v || "");
+const splitPersons = (v?: string | string[] | null): string[] =>
+  Array.isArray(v) ? v.filter(Boolean)
+    : (v || "").split("、").map((x: string) => x.trim()).filter(Boolean);
+
+
 // 签收地（receipt_location）：厦门 / 香港
 const LOC_OPTIONS = [
   { label: "厦门", value: "XIAMEN" },
@@ -125,11 +133,11 @@ const LOC_OPTIONS = [
 const LOC_LABEL: Record<string, string> = { XIAMEN: "厦门", HONGKONG: "香港" };
 
 // 女性操作人/审核人
-const [operators, setOperators] = useState<Record<string,string>>({});
-const [reviewers, setReviewers] = useState<Record<string,string>>({});
+const [operators, setOperators] = useState<Record<string,string[]>>({});
+const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
 // 男性操作人/审核人
-const [operatorsM, setOperatorsM] = useState<Record<string,string>>({});
-const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
+const [operatorsM, setOperatorsM] = useState<Record<string,string[]>>({});
+const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   // sampleResults: { [sampleId]: { status: "pass"|"fail", note: string, concentration?: number } }
   const [femaleResults, setFemaleResults] = useState<Record<string, any>>({});
   const [maleResults, setMaleResults] = useState<Record<string, any>>({});
@@ -198,10 +206,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       migrateLegacyNipptPhotos("extraction", id, "f", _pf, setPhotosFSync);
       migrateLegacyNipptPhotos("extraction", id, "m", _pm, setPhotosMSync);
       // 人员（男女独立；旧批次字段归女性）
-      setOperators(prev => ({ ...prev, [id]: ed.operator_female ?? d.operator_name ?? "" }));
-      setReviewers(prev => ({ ...prev, [id]: ed.reviewer_female ?? d.reviewer ?? "" }));
-      setOperatorsM(prev => ({ ...prev, [id]: ed.operator_male ?? "" }));
-      setReviewersM(prev => ({ ...prev, [id]: ed.reviewer_male ?? "" }));
+      setOperators(prev => ({ ...prev, [id]: splitPersons(ed.operator_female ?? d.operator_name) }));
+      setReviewers(prev => ({ ...prev, [id]: splitPersons(ed.reviewer_female ?? d.reviewer) }));
+      setOperatorsM(prev => ({ ...prev, [id]: splitPersons(ed.operator_male) }));
+      setReviewersM(prev => ({ ...prev, [id]: splitPersons(ed.reviewer_male) }));
       // 日期/时间（男女独立；旧值归女性；未完成批次空值默认当前时间）
       const _exNotDone = d.status !== "COMPLETED";
       const _exD0 = dayjs().format("YYYY-MM-DD"), _exT0 = dayjs().format("HH:mm");
@@ -308,8 +316,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       const opMap = s === "f" ? operators : operatorsM;
       const rvMap = s === "f" ? reviewers : reviewersM;
       if (!ph.length) missing.push(`上传${who}实验照片`);
-      if (!opMap[selectedBatch.id]) missing.push(`选择${who}操作人`);
-      if (!rvMap[selectedBatch.id]) missing.push(`选择${who}审核人`);
+      if (!(opMap[selectedBatch.id] || []).length) missing.push(`选择${who}操作人`);
+      if (!(rvMap[selectedBatch.id] || []).length) missing.push(`选择${who}审核人`);
     };
     if (side === "f" || side === "all") check("f");
     if (side === "m" || side === "all") check("m");
@@ -350,8 +358,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
         extraction_date: dateM || "", extraction_time: timeM || "" },
       ...extForm.getFieldsValue(),
       photos_female: photosFRef.current, photos_male: photosMRef.current,
-      operator_female: operators[sid] || "", reviewer_female: reviewers[sid] || "",
-      operator_male: operatorsM[sid] || "", reviewer_male: reviewersM[sid] || "",
+      operator_female: joinPersons(operators[sid]), reviewer_female: joinPersons(reviewers[sid]),
+      operator_male: joinPersons(operatorsM[sid]), reviewer_male: joinPersons(reviewersM[sid]),
       step_confirmations: stepConfirmations,
     };
   };
@@ -550,15 +558,17 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
         </div>
         <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
           <Text type="secondary">操作人: </Text>
-          <Select size="small" placeholder="选择" style={{ width: 100 }}
-            value={opMap[selectedBatch.id] || undefined}
-            onChange={v => setOpMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+          <Select size="small" mode="multiple" maxTagCount="responsive" placeholder="可选择多个"
+            style={{ width: 190, minWidth: 190 }}
+            value={opMap[selectedBatch.id] || []}
+            onChange={(v: string[]) => setOpMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
             {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
           </Select>
           <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
-          <Select size="small" placeholder="选择" style={{ width: 100 }}
-            value={rvMap[selectedBatch.id] || undefined}
-            onChange={v => setRvMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+          <Select size="small" mode="multiple" maxTagCount="responsive" placeholder="可选择多个"
+            style={{ width: 190, minWidth: 190 }}
+            value={rvMap[selectedBatch.id] || []}
+            onChange={(v: string[]) => setRvMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
             {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
           </Select>
           <Button size="small" type="primary" style={{ marginLeft: 16 }} onClick={() => saveProcessing(side)}>保存</Button>
@@ -1014,8 +1024,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       const date = isF ? dateF : dateM;
       const time = isF ? timeF : timeM;
       const photos = isF ? photosF : photosM;
-      const operator = (isF ? operators : operatorsM)[sid] || "";
-      const reviewer = (isF ? reviewers : reviewersM)[sid] || "";
+      const operator = joinPersons((isF ? operators : operatorsM)[sid]);
+      const reviewer = joinPersons((isF ? reviewers : reviewersM)[sid]);
       const skipCoords: any = isF ? femaleSkipCoords : maleSkipCoords;
       const plateLayout: any = isF ? femalePlateLayout : malePlateLayout;
       const kitTypes: any = isF ? femaleKitTypes : maleKitTypes;

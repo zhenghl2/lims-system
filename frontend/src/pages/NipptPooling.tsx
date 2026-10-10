@@ -75,6 +75,14 @@ const sortBySexThenPt = <T extends { ptId?: string; test_sample_id?: string; cat
 
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 
+/** 操作人/审核人：多选（数组）↔ 存储文本（顿号分隔；兼容历史单值） */
+const joinPersons = (v?: string[] | string | null): string =>
+  Array.isArray(v) ? v.filter(Boolean).join("、") : (v || "");
+const splitPersons = (v?: string | string[] | null): string[] =>
+  Array.isArray(v) ? v.filter(Boolean)
+    : (v || "").split("、").map((x: string) => x.trim()).filter(Boolean);
+
+
 // 签收地（receipt_location）：厦门 / 香港
 const LOC_OPTIONS = [
   { label: "厦门", value: "XIAMEN" },
@@ -82,8 +90,8 @@ const LOC_OPTIONS = [
 ];
 const LOC_LABEL: Record<string, string> = { XIAMEN: "厦门", HONGKONG: "香港" };
 
-const [operators, setOperators] = useState<Record<string,string>>({});
-const [reviewers, setReviewers] = useState<Record<string,string>>({});
+const [operators, setOperators] = useState<Record<string,string[]>>({});
+const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
   const [manualAlloc, setManualAlloc] = useState<{female:number;male:number}[]>([]);
   const [pendingAlloc, setPendingAlloc] = useState<{female:number;male:number}[]>([]);
   const [showAllocInputs, setShowAllocInputs] = useState(false);
@@ -309,8 +317,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     if (!selectedBatch) return;
     if (!hasSaved) { message.warning("请先保存后再导出"); return; }
     const sid = selectedBatch.id;
-    const opName = operators[sid] || (selectedBatch as any).operator_name || "";
-    const rvName = reviewers[sid] || (selectedBatch as any).reviewer || "";
+    const opName = joinPersons(operators[sid]) || (selectedBatch as any).operator_name || "";
+    const rvName = joinPersons(reviewers[sid]) || (selectedBatch as any).reviewer || "";
 
     const aoa: any[][] = [];
     aoa.push([`${selectedBatch.batch_number} — 文库定量及 Pooling 记录`]);
@@ -366,7 +374,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     quantKit, poolingBase, globalElutionVol, groupBases, groupElutions, manualAlloc,
     customAmounts, hkDoubled, savedIndexes, poolDate, poolTime,
     rows: rows.map(r=>({id:r.id,concentration:r.concentration,elutionVolume:r.elutionVolume,poolingAmount:r.poolingAmount,eliminated:r.eliminated,qc:r.qc,mixOverride:r.mixOverride??null})),
-    persons: {op: selectedBatch ? (operators[selectedBatch.id]||"") : "", rv: selectedBatch ? (reviewers[selectedBatch.id]||"") : ""},
+    persons: {op: selectedBatch ? joinPersons(operators[selectedBatch.id]) : "", rv: selectedBatch ? joinPersons(reviewers[selectedBatch.id]) : ""},
   });
 
   /** 数据加载完成（切换批次/刷新）后重置基线 */
@@ -376,8 +384,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const validateBeforeSave = (): string[] => {
     const missing: string[] = [];
     if (!selectedBatch) return missing;
-    if (!(operators[selectedBatch.id] || (selectedBatch as any).operator_name)) missing.push("选择操作人");
-    if (!(reviewers[selectedBatch.id] || (selectedBatch as any).reviewer)) missing.push("选择审核人");
+    if (!(operators[selectedBatch.id] || []).length && !(selectedBatch as any).operator_name) missing.push("选择操作人");
+    if (!(reviewers[selectedBatch.id] || []).length && !(selectedBatch as any).reviewer) missing.push("选择审核人");
     return missing;
   };
 
@@ -386,8 +394,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     if (!selectedBatch) return false;
     try {
       await api.patch("/cases/pooling/" + selectedBatch.id + "/", {
-        operator_name: operators[selectedBatch.id] || (selectedBatch as any).operator_name || "",
-        reviewer: reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || "",
+        operator_name: joinPersons(operators[selectedBatch.id]) || (selectedBatch as any).operator_name || "",
+        reviewer: joinPersons(reviewers[selectedBatch.id]) || (selectedBatch as any).reviewer || "",
       });
       return true;
     } catch { return false; }
@@ -635,15 +643,17 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             ))}
             <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
               <Text type="secondary">操作人: </Text>
-              <Select size="small" placeholder="选择" style={{ width: 100 }}
-                value={operators[selectedBatch.id] || (selectedBatch as any).operator_name || undefined}
-                onChange={v => setOperators(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+              <Select size="small" mode="multiple" maxTagCount="responsive" placeholder="可选择多个"
+                style={{ width: 190, minWidth: 190 }}
+                value={operators[selectedBatch.id] || splitPersons((selectedBatch as any).operator_name)}
+                onChange={(v: string[]) => setOperators(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
                 {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
               </Select>
               <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
-              <Select size="small" placeholder="选择" style={{ width: 100 }}
-                value={reviewers[selectedBatch.id] || (selectedBatch as any).reviewer || undefined}
-                onChange={v => setReviewers(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+              <Select size="small" mode="multiple" maxTagCount="responsive" placeholder="可选择多个"
+                style={{ width: 190, minWidth: 190 }}
+                value={reviewers[selectedBatch.id] || splitPersons((selectedBatch as any).reviewer)}
+                onChange={(v: string[]) => setReviewers(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
                 {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
               </Select>
 

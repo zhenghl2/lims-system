@@ -138,6 +138,14 @@ export default function NipptPreProcessing() {
   const draftSkipRef = useRef(false);
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 
+/** 操作人/审核人：多选（数组）↔ 存储文本（顿号分隔；兼容历史单值） */
+const joinPersons = (v?: string[] | string | null): string =>
+  Array.isArray(v) ? v.filter(Boolean).join("、") : (v || "");
+const splitPersons = (v?: string | string[] | null): string[] =>
+  Array.isArray(v) ? v.filter(Boolean)
+    : (v || "").split("、").map((x: string) => x.trim()).filter(Boolean);
+
+
 // 签收地（receipt_location）：厦门 / 香港
 const LOC_OPTIONS = [
   { label: "厦门", value: "XIAMEN" },
@@ -146,11 +154,11 @@ const LOC_OPTIONS = [
 const LOC_LABEL: Record<string, string> = { XIAMEN: "厦门", HONGKONG: "香港" };
 
 // 女性操作人/审核人
-const [operators, setOperators] = useState<Record<string,string>>({});
-const [reviewers, setReviewers] = useState<Record<string,string>>({});
+const [operators, setOperators] = useState<Record<string,string[]>>({});
+const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
 // 男性操作人/审核人
-const [operatorsM, setOperatorsM] = useState<Record<string,string>>({});
-const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
+const [operatorsM, setOperatorsM] = useState<Record<string,string[]>>({});
+const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 // 照片 ref 镜像：保证保存/校验时读到最新值（防闭包旧快照）
 const photosFRef = useRef<string[]>([]);
 const photosMRef = useRef<string[]>([]);
@@ -277,10 +285,10 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       // 历史 base64 照片后台迁移为 URL（幂等：同内容复用同一文件；失败保持 base64）
       migrateLegacyNipptPhotos("preprocessing", id, "f", _pf, setPhotosFSync);
       migrateLegacyNipptPhotos("preprocessing", id, "m", _pm, setPhotosMSync);
-      setOperators(prev => ({ ...prev, [id]: pd.operator_female ?? res.data?.operator_name ?? "" }));
-      setReviewers(prev => ({ ...prev, [id]: pd.reviewer_female ?? res.data?.reviewer ?? "" }));
-      setOperatorsM(prev => ({ ...prev, [id]: pd.operator_male ?? "" }));
-      setReviewersM(prev => ({ ...prev, [id]: pd.reviewer_male ?? "" }));
+      setOperators(prev => ({ ...prev, [id]: splitPersons(pd.operator_female ?? res.data?.operator_name) }));
+      setReviewers(prev => ({ ...prev, [id]: splitPersons(pd.reviewer_female ?? res.data?.reviewer) }));
+      setOperatorsM(prev => ({ ...prev, [id]: splitPersons(pd.operator_male) }));
+      setReviewersM(prev => ({ ...prev, [id]: splitPersons(pd.reviewer_male) }));
       // 日期/时间（男女独立；旧值归女性；未完成批次空值默认当前时间）
       const _ppNotDone = res.data?.status !== "COMPLETED";
       const _ppD0 = dayjs().format("YYYY-MM-DD"), _ppT0 = dayjs().format("HH:mm");
@@ -291,10 +299,10 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       // 草稿恢复：人员（sessionStorage）+ 照片（IndexedDB，异步）
       const draft = loadPpDraft()[id];
       if (draft) {
-        if (typeof draft.operator_female === "string") setOperators(prev => ({ ...prev, [id]: draft.operator_female }));
-        if (typeof draft.reviewer_female === "string") setReviewers(prev => ({ ...prev, [id]: draft.reviewer_female }));
-        if (typeof draft.operator_male === "string") setOperatorsM(prev => ({ ...prev, [id]: draft.operator_male }));
-        if (typeof draft.reviewer_male === "string") setReviewersM(prev => ({ ...prev, [id]: draft.reviewer_male }));
+        if (draft.operator_female != null) setOperators(prev => ({ ...prev, [id]: splitPersons(draft.operator_female) }));
+        if (draft.reviewer_female != null) setReviewers(prev => ({ ...prev, [id]: splitPersons(draft.reviewer_female) }));
+        if (draft.operator_male != null) setOperatorsM(prev => ({ ...prev, [id]: splitPersons(draft.operator_male) }));
+        if (draft.reviewer_male != null) setReviewersM(prev => ({ ...prev, [id]: splitPersons(draft.reviewer_male) }));
         if (typeof draft.pp_date_female === "string") setPpDate(draft.pp_date_female);
         if (typeof draft.pp_time_female === "string") setPpTime(draft.pp_time_female);
         if (typeof draft.pp_date_male === "string") setPpDateM(draft.pp_date_male);
@@ -318,10 +326,10 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
   useEffect(() => {
     if (!selectedBatch || draftSkipRef.current) return;
     savePpDraft({
-      operator_female: operators[selectedBatch.id] || "",
-      reviewer_female: reviewers[selectedBatch.id] || "",
-      operator_male: operatorsM[selectedBatch.id] || "",
-      reviewer_male: reviewersM[selectedBatch.id] || "",
+      operator_female: joinPersons(operators[selectedBatch.id]),
+      reviewer_female: joinPersons(reviewers[selectedBatch.id]),
+      operator_male: joinPersons(operatorsM[selectedBatch.id]),
+      reviewer_male: joinPersons(reviewersM[selectedBatch.id]),
       pp_date_female: ppDate, pp_time_female: ppTime,
       pp_date_male: ppDateM, pp_time_male: ppTimeM,
     });
@@ -443,8 +451,8 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     const opMap = side === "f" ? operators : operatorsM;
     const rvMap = side === "f" ? reviewers : reviewersM;
     if (!ph.length) missing.push(`上传${who}实验照片`);
-    if (!opMap[selectedBatch.id]) missing.push(`选择${who}操作人`);
-    if (!rvMap[selectedBatch.id]) missing.push(`选择${who}审核人`);
+    if (!(opMap[selectedBatch.id] || []).length) missing.push(`选择${who}操作人`);
+    if (!(rvMap[selectedBatch.id] || []).length) missing.push(`选择${who}审核人`);
     return missing;
   };
 
@@ -473,10 +481,10 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       ...(selectedBatch?.processing_data || {}),
       photos_female: photosFRef.current,
       photos_male: photosMRef.current,
-      operator_female: operators[sid] || "",
-      reviewer_female: reviewers[sid] || "",
-      operator_male: operatorsM[sid] || "",
-      reviewer_male: reviewersM[sid] || "",
+      operator_female: joinPersons(operators[sid]),
+      reviewer_female: joinPersons(reviewers[sid]),
+      operator_male: joinPersons(operatorsM[sid]),
+      reviewer_male: joinPersons(reviewersM[sid]),
       pp_date_female: ppDate, pp_time_female: ppTime,
       pp_date_male: ppDateM, pp_time_male: ppTimeM,
     };
@@ -711,15 +719,17 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
         </div>
         <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
           <Text type="secondary">操作人: </Text>
-          <Select size="small" placeholder="选择" style={{ width: 100 }}
-            value={opMap[selectedBatch.id] || undefined}
-            onChange={v => setOpMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+          <Select size="small" mode="multiple" maxTagCount="responsive" placeholder="可选择多个"
+            style={{ width: 190, minWidth: 190 }}
+            value={opMap[selectedBatch.id] || []}
+            onChange={(v: string[]) => setOpMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
             {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
           </Select>
           <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
-          <Select size="small" placeholder="选择" style={{ width: 100 }}
-            value={rvMap[selectedBatch.id] || undefined}
-            onChange={v => setRvMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+          <Select size="small" mode="multiple" maxTagCount="responsive" placeholder="可选择多个"
+            style={{ width: 190, minWidth: 190 }}
+            value={rvMap[selectedBatch.id] || []}
+            onChange={(v: string[]) => setRvMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
             {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
           </Select>
           <Button size="small" type="primary" style={{ marginLeft: 16 }}

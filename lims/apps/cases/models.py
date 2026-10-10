@@ -409,8 +409,8 @@ class NipptPreProcessingBatch(models.Model):
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+"
     )
-    operator_name = models.CharField(max_length=50, blank=True, default="")
-    reviewer = models.CharField(max_length=50, blank=True, default="")
+    operator_name = models.CharField(max_length=200, blank=True, default="")
+    reviewer = models.CharField(max_length=200, blank=True, default="")
     experiment_time = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -552,8 +552,8 @@ class NipptExtractionBatch(models.Model):
     status = models.CharField(max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True)
     extraction_data = models.JSONField(default=dict, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
-    operator_name = models.CharField(max_length=50, blank=True, default="")
-    reviewer = models.CharField(max_length=50, blank=True, default="")
+    operator_name = models.CharField(max_length=200, blank=True, default="")
+    reviewer = models.CharField(max_length=200, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -639,8 +639,8 @@ class NipptLibraryBatch(models.Model):
     status = models.CharField(max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True)
     library_data = models.JSONField(default=dict, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
-    operator_name = models.CharField(max_length=50, blank=True, default="")
-    reviewer = models.CharField(max_length=50, blank=True, default="")
+    operator_name = models.CharField(max_length=200, blank=True, default="")
+    reviewer = models.CharField(max_length=200, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -723,8 +723,8 @@ class NipptPoolingBatch(models.Model):
     pool_date = models.CharField(max_length=20, blank=True, default="")
     pool_time = models.CharField(max_length=10, blank=True, default="")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
-    operator_name = models.CharField(max_length=50, blank=True, default="")
-    reviewer = models.CharField(max_length=50, blank=True, default="")
+    operator_name = models.CharField(max_length=200, blank=True, default="")
+    reviewer = models.CharField(max_length=200, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -805,8 +805,8 @@ class NipptHybSeqBatch(models.Model):
     status = models.CharField(max_length=20, default=Status.DRAFT, choices=Status.choices, db_index=True)
     hyb_seq_data = models.JSONField(default=dict, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, related_name="+")
-    operator_name = models.CharField(max_length=50, blank=True, default="")
-    reviewer = models.CharField(max_length=50, blank=True, default="")
+    operator_name = models.CharField(max_length=200, blank=True, default="")
+    reviewer = models.CharField(max_length=200, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

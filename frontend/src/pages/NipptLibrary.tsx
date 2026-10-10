@@ -89,6 +89,14 @@ export default function NipptLibrary() {
   const [timeM, setTimeM] = useState<string>("");
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 
+/** 操作人/审核人：多选（数组）↔ 存储文本（顿号分隔；兼容历史单值） */
+const joinPersons = (v?: string[] | string | null): string =>
+  Array.isArray(v) ? v.filter(Boolean).join("、") : (v || "");
+const splitPersons = (v?: string | string[] | null): string[] =>
+  Array.isArray(v) ? v.filter(Boolean)
+    : (v || "").split("、").map((x: string) => x.trim()).filter(Boolean);
+
+
 // 签收地（receipt_location）：厦门 / 香港
 const LOC_OPTIONS = [
   { label: "厦门", value: "XIAMEN" },
@@ -97,11 +105,11 @@ const LOC_OPTIONS = [
 const LOC_LABEL: Record<string, string> = { XIAMEN: "厦门", HONGKONG: "香港" };
 
 // 女性操作人/审核人
-const [operators, setOperators] = useState<Record<string,string>>({});
-const [reviewers, setReviewers] = useState<Record<string,string>>({});
+const [operators, setOperators] = useState<Record<string,string[]>>({});
+const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
 // 男性操作人/审核人
-const [operatorsM, setOperatorsM] = useState<Record<string,string>>({});
-const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
+const [operatorsM, setOperatorsM] = useState<Record<string,string[]>>({});
+const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
   // ── Plate data (NIPT-style grid) ──
   const emptyPlate = ():PlateGrid => Array.from({length:8},()=>Array.from({length:12},()=>({vgId:"",index:""})));
@@ -251,10 +259,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       migrateLegacyNipptPhotos("library", id, "f", _pf, setPhotosFSync);
       migrateLegacyNipptPhotos("library", id, "m", _pm, setPhotosMSync);
       // 人员（男女独立；旧批次字段归女性；厦门合并记录：female 空时取 male）
-      setOperators(prev => ({ ...prev, [id]: ld.operator_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.operator_male || "") : "") || d.operator_name || "" }));
-      setReviewers(prev => ({ ...prev, [id]: ld.reviewer_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.reviewer_male || "") : "") || d.reviewer || "" }));
-      setOperatorsM(prev => ({ ...prev, [id]: ld.operator_male ?? "" }));
-      setReviewersM(prev => ({ ...prev, [id]: ld.reviewer_male ?? "" }));
+      setOperators(prev => ({ ...prev, [id]: splitPersons(ld.operator_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.operator_male || "") : "") || d.operator_name || "") }));
+      setReviewers(prev => ({ ...prev, [id]: splitPersons(ld.reviewer_female || ((ld.region||"XIAMEN")==="XIAMEN" ? (ld.reviewer_male || "") : "") || d.reviewer || "") }));
+      setOperatorsM(prev => ({ ...prev, [id]: splitPersons(ld.operator_male) }));
+      setReviewersM(prev => ({ ...prev, [id]: splitPersons(ld.reviewer_male) }));
       // 日期/时间（男女独立；旧值归女性；厦门合并记录：female 空时取 male；未完成批次空值默认当前时间）
       const _lbNotDone = d.status !== "COMPLETED";
       const _lbD0 = dayjs().format("YYYY-MM-DD"), _lbT0 = dayjs().format("HH:mm");
@@ -334,8 +342,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       const rvMap = s === "f" ? reviewers : reviewersM;
       if (!ph.length) missing.push(`上传${who}实验照片`);
       if (!dv) missing.push(`选择${who}日期`);
-      if (!opMap[selectedBatch.id]) missing.push(`选择${who}操作人`);
-      if (!rvMap[selectedBatch.id]) missing.push(`选择${who}审核人`);
+      if (!(opMap[selectedBatch.id] || []).length) missing.push(`选择${who}操作人`);
+      if (!(rvMap[selectedBatch.id] || []).length) missing.push(`选择${who}审核人`);
     };
     if (xiamen) {
       // 厦门：合并记录（承载在 female 字段），只校验一套
@@ -378,8 +386,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       lib_date_male: dateM || "", lib_time_male: timeM || "",
       ...libForm.getFieldsValue(),step_confirmations:stepConfirmations,sample_results:sampleResults,
       photos_female: photosFRef.current, photos_male: photosMRef.current,
-      operator_female: operators[sid] || "", reviewer_female: reviewers[sid] || "",
-      operator_male: operatorsM[sid] || "", reviewer_male: reviewersM[sid] || "",
+      operator_female: joinPersons(operators[sid]), reviewer_female: joinPersons(reviewers[sid]),
+      operator_male: joinPersons(operatorsM[sid]), reviewer_male: joinPersons(reviewersM[sid]),
       female_plate:femalePlate,male_plate:malePlate,xiamen_plate:xiamenPlate,
     };
   };
@@ -516,7 +524,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
       // 厦门：单 sheet（合并板，人员/日期走女性那套，与网页一致）
       const aoa: any[][] = [[`${selectedBatch.batch_number} — 文库构建记录（厦门）`], []];
       aoa.push(...commonReagents());
-      aoa.push(...records("", dateF, timeF, femaleLibKit, operators[sid] || "", reviewers[sid] || ""));
+      aoa.push(...records("", dateF, timeF, femaleLibKit, joinPersons(operators[sid]), joinPersons(reviewers[sid])));
       const xmStart = [femaleStartCoord && `女起 ${femaleStartCoord}`, maleStartCoord && `男起 ${maleStartCoord}`].filter(Boolean).join("  ");
       const xmPlate = plateRows(xiamenPlate, `三、96孔板（👩${femSamples.length}+👨${maleSamples.length} 合并板）`, "起始", xmStart);
       const xmStartRow = aoa.length;
@@ -532,8 +540,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
           isF ? dateF : dateM,
           isF ? timeF : timeM,
           isF ? femaleLibKit : maleLibKit,
-          (isF ? operators : operatorsM)[sid] || "",
-          (isF ? reviewers : reviewersM)[sid] || "",
+          joinPersons((isF ? operators : operatorsM)[sid]),
+          joinPersons((isF ? reviewers : reviewersM)[sid]),
         ));
         const hkPlate = plateRows(
           isF ? femalePlate : malePlate,
@@ -664,15 +672,17 @@ const [reviewersM, setReviewersM] = useState<Record<string,string>>({});
         </div>
         <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
           <Text type="secondary">操作人: </Text>
-          <Select size="small" placeholder="选择" style={{ width: 100 }}
-            value={opMap[selectedBatch.id] || undefined}
-            onChange={v => setOpMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+          <Select size="small" mode="multiple" maxTagCount="responsive" placeholder="可选择多个"
+            style={{ width: 190, minWidth: 190 }}
+            value={opMap[selectedBatch.id] || []}
+            onChange={(v: string[]) => setOpMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
             {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
           </Select>
           <Text type="secondary" style={{ marginLeft: 16 }}>审核人: </Text>
-          <Select size="small" placeholder="选择" style={{ width: 100 }}
-            value={rvMap[selectedBatch.id] || undefined}
-            onChange={v => setRvMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
+          <Select size="small" mode="multiple" maxTagCount="responsive" placeholder="可选择多个"
+            style={{ width: 190, minWidth: 190 }}
+            value={rvMap[selectedBatch.id] || []}
+            onChange={(v: string[]) => setRvMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
             {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
           </Select>
           <Button size="small" type="primary" style={{ marginLeft: 16 }} onClick={() => saveProcessing(side)}>保存</Button>
