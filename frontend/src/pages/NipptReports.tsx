@@ -268,7 +268,7 @@ export default function NipptReports() {
     { title: "标签", dataIndex: "father_label", key: "lb", width: 52, render: (v: string) => <Tag style={{ margin: 0 }}>{v}</Tag> },
     { title: "外部编号", key: "extid", width: 140, ellipsis: true,
       render: (_: any, r: any) => {
-        const v = r.sample_dates?.mother?.external_id;
+        const v = r.sample_dates?.external_id || r.sample_dates?.mother?.external_id;
         return v ? <Tooltip title={v}>{v}</Tooltip> : "—";
       } },
     { title: "来源", dataIndex: "case_source", key: "src", width: 66, render: (v: string) => v || "—" },

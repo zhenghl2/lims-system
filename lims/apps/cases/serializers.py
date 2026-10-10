@@ -116,10 +116,9 @@ class CaseListSerializer(serializers.ModelSerializer):
         return ""
 
     def get_case_source(self, obj):
-        cs = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
-        if cs and cs.sample:
-            return cs.sample.sample_source or ""
-        return ""
+        """案例级来源：复用 Case.origin_country()（优先孕妇样本，其次任一已填来源的样本）
+        ——只登记男性、孕妇样本尚未到样时也能正确显示，不再读成空。"""
+        return obj.origin_country()
 
     def get_status(self, obj):
         return obj.computed_status
@@ -265,10 +264,9 @@ class CaseDetailSerializer(serializers.ModelSerializer):
         return ""
 
     def get_case_source(self, obj):
-        cs = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
-        if cs and cs.sample:
-            return cs.sample.sample_source or ""
-        return ""
+        """案例级来源：复用 Case.origin_country()（优先孕妇样本，其次任一已填来源的样本）
+        ——只登记男性、孕妇样本尚未到样时也能正确显示，不再读成空。"""
+        return obj.origin_country()
 
     def get_can_redo(self, obj):
         """Return list of CaseSample IDs that have a FAIL workflow stage."""
@@ -366,6 +364,8 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("至少需要一个样本：孕妇或疑父（至少填写一个姓名）")
         external_id = validated_data.pop("external_id", "") or ""
         sample_source = validated_data.pop("sample_source", "") or ""
+        # 外部编号：本次没有登记孕妇时，落到男性样本上（否则整单信息随「无母样本」丢失）
+        father_external_id = "" if mother_name.strip() else external_id
         fedex_no = validated_data.pop("fedex_no", "") or ""
         female_arrival = validated_data.pop("female_arrival_date", None)
         male_arrivals = validated_data.pop("male_arrival_dates", [])
@@ -451,6 +451,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
                     sample_type=sample_type,
                     panel=panel,
                     patient_name=name,
+                    external_id=father_external_id,
                     sample_source=sample_source,
                     collection_date=today,
                     receipt_date=today,
@@ -618,9 +619,18 @@ class SupplementSerializer(serializers.Serializer):
             defaults={"name": "Peripheral Blood"},
         )
 
+        # 外部编号：调用方未显式给时继承案例级已有值（先登记男性、后补孕妇/补样场景）
+        # ⚠️ sample_id 仍按「显式 external_id」决定，保持既有编号规则不变
+        explicit_external_id = external_id
+        if not external_id:
+            for _cs in case.case_samples.select_related("sample").order_by("created_at"):
+                if (_cs.sample.external_id or "").strip():
+                    external_id = _cs.sample.external_id
+                    break
+
         # Determine sample ID
         role_prefix = "M" if role == "MOTHER" else f"AF{case.case_samples.filter(role='ALLEGED_FATHER').count() + 1}"
-        sample_id = external_id or f"{case.case_number}-{role_prefix}-SUP"
+        sample_id = explicit_external_id or f"{case.case_number}-{role_prefix}-SUP"
 
         css = []
         for st in sample_types:
@@ -1847,7 +1857,11 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
                 "collection_date": sm.collection_date.isoformat() if sm.collection_date else None,
             }
 
-        return {"mother": pick(obj.mother_sample), "father": pick(obj.father_sample)}
+        md = pick(obj.mother_sample)
+        fd = pick(obj.father_sample)
+        # 合并外部编号：母优先、父兜底（只登记男性或母样本编号缺失时仍能显示）
+        return {"mother": md, "father": fd,
+                "external_id": md["external_id"] or fd["external_id"]}
 
     def get_mother_id_card(self, obj):
         return self._sattr(obj.mother_sample, "id_card")
@@ -1912,14 +1926,8 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
         return self._get_sample_type(obj.father_sample)
 
     def get_case_source(self, obj):
-        """Get country/region source from mother's Sample"""
-        if obj.mother_sample and obj.mother_sample.case_sample_ids:
-            cs = CaseSample.objects.filter(
-                id=obj.mother_sample.case_sample_ids[0]
-            ).select_related("sample").first()
-            if cs and cs.sample:
-                return cs.sample.sample_source or ""
-        return ""
+        """来源：改用案例级 Case.origin_country()（优先孕妇样本，其次任一已填来源的样本）"""
+        return obj.case.origin_country() if obj.case else ""
 
     def _get_index(self, sample):
         if not sample or not sample.source_hybseq_sample_id:
