@@ -125,7 +125,7 @@ class CaseViewSet(viewsets.ModelViewSet):
     CASE_EDITABLE_FIELDS = [
         "gestational_age_weeks", "gestational_age_days", "multiple_gestation",
         "clinic_name", "clinic_contact", "sales_person",
-        "applicant", "phone", "email",
+        "applicant", "phone", "email", "report_version",
         "collection_method", "application_signed", "expected_completion",
         "risk_warnings", "registration_type", "notes", "is_urgent",
     ]
@@ -156,6 +156,18 @@ class CaseViewSet(viewsets.ModelViewSet):
         if stage != "REGISTERED":
             return "已进实验（%s）" % self.STAGE_DISPLAY.get(stage, stage)
         return None
+
+    @action(detail=False, methods=["get"], url_path="report-versions")
+    def report_versions(self, request):
+        """报告版本候选项：预设清单 + 库里已用过的值（登记时可自由输入新增）"""
+        presets = ["英文", "英繁", "英文-美", "泰国", "法语", "意大利",
+                   "西班牙", "加纳", "印度", "德语", "澳洲"]
+        used = list(
+            Case.objects.exclude(report_version="").exclude(report_version__isnull=True)
+            .values_list("report_version", flat=True).distinct()
+        )
+        return Response({"presets": presets, "used": used,
+                         "options": presets + [u for u in used if u not in presets]})
 
     @action(detail=True, methods=["get"])
     def notes_summary(self, request, pk=None):

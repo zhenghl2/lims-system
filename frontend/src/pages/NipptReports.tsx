@@ -266,6 +266,7 @@ export default function NipptReports() {
     { title: "Case#", dataIndex: "case_number", key: "cn", width: 150, ellipsis: true, fixed: "left" as const },
     { title: "PT#", dataIndex: "pt_number", key: "pt", width: 90 },
     { title: "来源", dataIndex: "case_source", key: "src", width: 66, render: (v: string) => v || "—" },
+    { title: "报告版本", dataIndex: "report_version", key: "rvs", width: 84, render: (v: string) => v || "—" },
     { title: "Mother", dataIndex: "mother_name", key: "mn", width: 110, ellipsis: true },
     { title: "Father", dataIndex: "father_name", key: "fn", width: 120, ellipsis: true },
     { title: "标签", dataIndex: "father_label", key: "lb", width: 52, render: (v: string) => <Tag style={{ margin: 0 }}>{v}</Tag> },

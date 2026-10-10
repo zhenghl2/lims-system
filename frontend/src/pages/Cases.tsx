@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import dayjs from "dayjs";
-import {
+import { AutoComplete,
   Card, Table, Tag, Typography, Button, Input, Select, Space, Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse, Descriptions, Modal, Timeline, Tooltip, Image, Spin, Empty, InputNumber, Switch, Alert } from "antd";
 import {
   EyeOutlined, LinkOutlined, RedoOutlined,
   CloseCircleOutlined, DeleteOutlined,
   CopyOutlined, EditOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
+import { REPORT_VERSION_PRESETS, fetchReportVersions } from "../utils/reportVersions";
 
 import api from "../api/client";
 import type { CaseDetail } from "../api/types";
@@ -27,7 +28,7 @@ const { TextArea } = Input;
 const CASE_EDIT_FIELDS = [
   "gestational_age_weeks", "gestational_age_days", "multiple_gestation",
   "clinic_name", "clinic_contact", "sales_person",
-  "applicant", "phone", "email",
+  "applicant", "phone", "email", "report_version",
   "collection_method", "application_signed", "expected_completion",
   "registration_type", "is_urgent",
 ] as const;
@@ -91,6 +92,7 @@ export default function Cases() {
   const [editSamples, setEditSamples] = useState<any>({});     // { [csId]: {patient_name, collection_date, collection_notes, locked, lock_reason} }
   const [editState, setEditState] = useState<any>(null);
   const [editorModal, setEditorModal] = useState(false);
+  const [caseReportVersionOpts, setCaseReportVersionOpts] = useState<string[]>(REPORT_VERSION_PRESETS);
   const [editedBy, setEditedBy] = useState("");
   const [saving, setSaving] = useState(false);
   const [stageNotes, setStageNotes] = useState<any[]>([]);      // 工序备注聚合（只读）
@@ -121,6 +123,9 @@ export default function Cases() {
   };
 
   useEffect(() => { loadData(page); }, [search, statusFilter, sourceFilter, dateRange, dateType, page, pageSize]);
+
+  // 报告版本候选（预设 + 库里已用过的值）
+  useEffect(() => { fetchReportVersions(casesApi).then(setCaseReportVersionOpts).catch(() => {}); }, []);
 
   const doRedo = async () => {
     if (!redoTarget) return;
@@ -610,6 +615,8 @@ export default function Cases() {
                     ["邮箱", (selectedCase as any).email],
                     ["来源", (selectedCase as any).case_source],
                     ["申请方", (selectedCase as any).applicant],
+                    ...((String(selectedCase.case_number || "").startsWith("NIPPT")
+                      ? [["报告版本", (selectedCase as any).report_version || "-"]] : []) as any),
                     ["登记类型", rt[(selectedCase as any).registration_type] || "-"],
                     ["创建时间", fmtDate(selectedCase.created_at)],
                     ["报告截止", selectedCase.expected_completion || "-"],
@@ -678,6 +685,17 @@ export default function Cases() {
                               <Input size="small" value={editForm.applicant ?? ""}
                                 onChange={(e) => setEditForm({ ...editForm, applicant: e.target.value })} />
                             </Descriptions.Item>
+                            {String(selectedCase.case_number || "").startsWith("NIPPT") && (
+                              <Descriptions.Item label="报告版本">
+                                <AutoComplete size="small" style={{ width: "100%" }}
+                                  value={editForm.report_version ?? ""}
+                                  onChange={(v: string) => setEditForm({ ...editForm, report_version: v })}
+                                  options={caseReportVersionOpts.map((v: string) => ({ value: v }))}
+                                  filterOption={(input, option) =>
+                                    String((option as any)?.value ?? "").toLowerCase().includes(String(input).toLowerCase())}
+                                  allowClear />
+                              </Descriptions.Item>
+                            )}
                             <Descriptions.Item label="电话">
                               <Input size="small" value={editForm.phone ?? ""}
                                 onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })} />

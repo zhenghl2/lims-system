@@ -87,7 +87,7 @@ class CaseListSerializer(serializers.ModelSerializer):
             "status", "status_display", "is_urgent",
             "sample_count", "received_count", "mother_name", "can_redo", "progress",
             "gestational_age_weeks", "gestational_age_days",
-            "clinic_name", "sales_person",
+            "clinic_name", "sales_person", "report_version",
             "applicant", "case_source", "registration_type",
             "collection_method", "application_signed",
             "expected_completion", "workflow_status", "created_at",
@@ -207,7 +207,7 @@ class CaseDetailSerializer(serializers.ModelSerializer):
             "id", "case_number", "pt_number", "panel", "panel_code", "panel_name",
             "status", "status_display", "all_samples_received", "progress",
             "gestational_age_weeks", "gestational_age_days",
-            "clinic_name", "clinic_contact", "sales_person",
+            "clinic_name", "clinic_contact", "sales_person", "report_version",
             "applicant", "phone", "email", "multiple_gestation",
             "risk_warnings", "registration_type",
             "collection_method", "application_signed",
@@ -338,7 +338,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         fields = [
             "id", "case_number",
             "sample_id", "gestational_age_weeks", "gestational_age_days",
-            "clinic_name", "clinic_contact", "sales_person",
+            "clinic_name", "clinic_contact", "sales_person", "report_version",
             "applicant", "phone", "email", "multiple_gestation",
             "risk_warnings", "registration_type",
             "last_menstrual_period",
@@ -1763,6 +1763,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     father_sample_type = serializers.SerializerMethodField()
     case_number = serializers.CharField(source="case.case_number", read_only=True)
     pt_number = serializers.CharField(source="case.pt_number", read_only=True)
+    report_version = serializers.CharField(source="case.report_version", read_only=True, default="")
     case_source = serializers.SerializerMethodField()
     result_display = serializers.CharField(source="get_result_display", read_only=True)
     qc_flag_display = serializers.CharField(source="get_qc_flag_display", read_only=True)
@@ -1781,7 +1782,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             "cpi", "cpi_combined", "result", "result_display",
             "note", "report_data",
             "report_file", "report_file_url", "report_reviewer", "report_reviewer_name",
-            "report_auditor", "report_auditor_name", "report_note",
+            "report_auditor", "report_auditor_name", "report_note", "report_version",
             "report_reviewed_at", "report_audited_at", "report_history",
             "qc_flag", "qc_flag_display",
             "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",

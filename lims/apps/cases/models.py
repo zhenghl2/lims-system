@@ -52,6 +52,8 @@ class Case(models.Model):
     clinic_name = models.CharField(max_length=200, blank=True)
     clinic_contact = models.CharField(max_length=100, blank=True)
     sales_person = models.CharField(max_length=100, blank=True)
+    # 报告版本（如 英文/英繁/泰国/法语…）：登记时选择，后续自动生成报告时据此选模板
+    report_version = models.CharField(max_length=50, blank=True, default="", db_index=True)
     notes = models.TextField(blank=True)
     is_urgent = models.BooleanField(default=False)
     expected_completion = models.DateField(null=True, blank=True)

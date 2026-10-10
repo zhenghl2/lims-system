@@ -16,6 +16,7 @@ import {
 } from "@ant-design/icons";
 
 import { casesApi } from "../api";
+import { REPORT_VERSION_PRESETS, fetchReportVersions } from "../utils/reportVersions";
 import dayjs from "dayjs";
 
 const { Text } = Typography;
@@ -209,11 +210,18 @@ export default function NipptRegistration() {
     }
   };
 
+  const [reportVersionOpts, setReportVersionOpts] = useState<string[]>(REPORT_VERSION_PRESETS);
+
+  useEffect(() => {
+    fetchReportVersions(casesApi).then(setReportVersionOpts).catch(() => {});
+  }, []);
+
   const fillCaseInfo = (caseData: any) => {
     form.setFieldsValue({
       sales_person: caseData.sales_person || "",
       clinic_name: caseData.clinic_name || "",
       applicant: caseData.applicant || "",
+      report_version: caseData.report_version || "",
       notes: caseData.notes || "",
     });
   };
@@ -492,6 +500,7 @@ export default function NipptRegistration() {
           gestational_age_days: values.gestational_age_days,
           clinic_name: values.clinic_name,
           sales_person: values.sales_person,
+          report_version: (values.report_version || "").trim(),
           applicant: values.applicant,
           phone: values.phone,
           email: values.email,
@@ -862,6 +871,17 @@ export default function NipptRegistration() {
               <Col xs={24} sm={12}>
                 <Form.Item name="sales_person" label="销售/代理" style={{ marginBottom: 8 }}>
                   <Input placeholder="销售或代理名称" size="small" />
+                </Form.Item>
+                <Form.Item name="report_version" label="报告版本" style={{ marginBottom: 8 }}
+                  tooltip="决定出报告用哪个模板（后续支持自动生成时生效）；可直接输入新版本">
+                  <AutoComplete
+                    size="small"
+                    placeholder="选择或输入（如 英文 / 英繁 / 泰国…）"
+                    options={reportVersionOpts.map((v: string) => ({ value: v }))}
+                    filterOption={(input, option) =>
+                      String((option as any)?.value ?? "").toLowerCase().includes(String(input).toLowerCase())}
+                    allowClear
+                  />
                 </Form.Item>
                 <Form.Item name="external_id" label="外部编号" style={{ marginBottom: 8 }}>
                   <Input placeholder="外部编号" size="small" />
