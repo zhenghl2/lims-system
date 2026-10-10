@@ -472,7 +472,7 @@ export default function NipptReports() {
               columns={pairColumns}
               dataSource={selectedBatch.pairs || []}
               pagination={false}
-              scroll={{ x: 2280 }}
+              scroll={{ x: 2280, y: "calc(100vh - 430px)" }}
               onRow={(r: any) => ({
                 style: notQualified(r) ? { background: "#fff2f0" } : {},
               })}
@@ -529,8 +529,9 @@ export default function NipptReports() {
             </Modal>
 
             {/* 底部：批次级复核/审核 + 完成批次（不需要每份报告都填） */}
-            <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid #f0f0f0",
-              display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+            <div style={{ marginTop: 12, paddingTop: 12, paddingBottom: 4, borderTop: "1px solid #f0f0f0",
+              display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap",
+              position: "sticky", bottom: 0, background: "#fff", zIndex: 5 }}>
               <Space>
                 <Text>复核人：</Text>
                 <Select size="small" style={{ width: 150 }} placeholder="选择复核人" showSearch optionFilterProp="label"
