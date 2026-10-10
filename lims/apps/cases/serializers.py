@@ -1760,6 +1760,30 @@ from .models import NipptBioinfoBatch, NipptBioinfoSample, NipptBioinfoPair, Nip
 
 # ── NIPPT Bioinformatics Serializers ──
 
+class CaseNoteSampleSerializer(serializers.ModelSerializer):
+    """案例备注聚合原料：字段与案例管理「备注」列渲染逻辑一一对应（不多不少）"""
+
+    patient_name = serializers.CharField(source="sample.patient_name", read_only=True)
+    sample_status = serializers.CharField(source="sample.status", read_only=True)
+    rejection_reason = serializers.CharField(source="sample.rejection_reason", read_only=True)
+    rejection_note = serializers.CharField(source="sample.rejection_note", read_only=True)
+    received_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    resample_number = serializers.IntegerField(read_only=True)
+    redo_count = serializers.IntegerField(read_only=True)
+    collection_notes = serializers.CharField(read_only=True)
+    receipt_note = serializers.CharField(read_only=True)
+    created_at = serializers.DateTimeField(read_only=True)
+
+    class Meta:
+        model = CaseSample
+        fields = [
+            "id", "patient_name", "sample_status",
+            "rejection_reason", "rejection_note", "received_at",
+            "resample_of", "resample_number", "redo_count",
+            "collection_notes", "receipt_note", "created_at",
+        ]
+
+
 class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     mother_name = serializers.CharField(source="mother_sample.patient_name", read_only=True)
     father_name = serializers.CharField(source="father_sample.patient_name", read_only=True)
@@ -1775,6 +1799,8 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     report_file_url = serializers.SerializerMethodField()
     report_reviewer_name = serializers.CharField(source="report_reviewer.username", read_only=True, default=None)
     report_auditor_name = serializers.CharField(source="report_auditor.username", read_only=True, default=None)
+    case_notes = serializers.CharField(source="case.notes", read_only=True, default="", allow_blank=True)
+    case_note_samples = CaseNoteSampleSerializer(source="case.case_samples", many=True, read_only=True)
     mother_id_card = serializers.SerializerMethodField()
     mother_tube_no = serializers.SerializerMethodField()
     father_id_card = serializers.SerializerMethodField()
@@ -1822,6 +1848,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             "report_file", "report_file_url", "report_reviewer", "report_reviewer_name",
             "report_auditor", "report_auditor_name", "report_note", "report_version",
             "report_reviewed_at", "report_audited_at", "report_history",
+            "case_notes", "case_note_samples",
             "qc_flag", "qc_flag_display",
             "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
             "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",
@@ -1885,6 +1912,8 @@ class NipptBioinfoSampleSerializer(serializers.ModelSerializer):
     index = serializers.SerializerMethodField()
     sample_type = serializers.SerializerMethodField()
     qc_flag_display = serializers.CharField(source="get_qc_flag_display", read_only=True)
+    case_notes = serializers.CharField(source="case.notes", read_only=True, default="", allow_blank=True)
+    case_note_samples = CaseNoteSampleSerializer(source="case.case_samples", many=True, read_only=True)
 
     class Meta:
         model = NipptBioinfoSample
@@ -1895,6 +1924,7 @@ class NipptBioinfoSampleSerializer(serializers.ModelSerializer):
             "case_number", "pt_number",
             "qc_flag", "qc_flag_display", "layers", "concentration", "het_ratio", "y_ratio",
             "qc_status", "qc_note",
+            "case_notes", "case_note_samples",
         ]
 
     def get_test_sample_id(self, obj):

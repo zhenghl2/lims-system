@@ -6,7 +6,53 @@ import { PlusOutlined, ReloadOutlined, CheckOutlined, DeleteOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, SwapOutlined, LinkOutlined,
   DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import api from "../api/client";
+import { REJECTION_REASONS } from "../api/types";
 const { Text, Title } = Typography;
+
+// ── 案例备注（只读，与案例管理「备注」列渲染逻辑完全一致）──
+const fmtDT = (v: string | null | undefined) => {
+  if (!v) return "-";
+  return `${v.slice(5, 10)} ${v.slice(11, 16)}`;  // MM-DD HH:mm
+};
+const rejectionLabel = (reason: string) =>
+  reason === "REJECTED" ? "拒收" : (REJECTION_REASONS[reason || ""] || reason || "");
+
+const renderCaseNoteTags = (r: { case_notes?: string; case_note_samples?: any[] }) => {
+  const evts: { label: string; color: string; tip: string }[] = [];
+  if (r.case_notes) {
+    evts.push({ label: "登记备注", color: "purple", tip: r.case_notes });
+  }
+  for (const cs of r.case_note_samples || []) {
+    const who = cs.patient_name ? `${cs.patient_name} · ` : "";
+    if (cs.sample_status === "REJECTED") {
+      const reason = rejectionLabel(cs.rejection_reason);
+      const note = cs.rejection_note ? `: ${cs.rejection_note}` : "";
+      evts.push({ label: "拒收", color: "red", tip: `${reason}${note} · ${who}${fmtDT(cs.received_at)}` });
+    }
+    if (cs.resample_of) {
+      evts.push({ label: `重采R${cs.resample_number || ""}`, color: "orange", tip: `重采样本 · ${who}${fmtDT(cs.created_at)}` });
+    }
+    if (cs.redo_count) {
+      evts.push({ label: `重做T${cs.redo_count}`, color: "cyan", tip: `重做样本 · ${who}${fmtDT(cs.created_at)}` });
+    }
+    if (cs.collection_notes) {
+      evts.push({ label: "备注", color: "gold", tip: cs.collection_notes });
+    }
+    if (cs.receipt_note) {
+      evts.push({ label: "签收备注", color: "volcano", tip: cs.receipt_note });
+    }
+  }
+  if (!evts.length) return <Text type="secondary">-</Text>;
+  return (
+    <Space size={2} wrap>
+      {evts.map((e, i) => (
+        <Tooltip key={i} title={e.tip}>
+          <Tag color={e.color} style={{ fontSize: 11, margin: 0 }}>{e.label}</Tag>
+        </Tooltip>
+      ))}
+    </Space>
+  );
+};
 
 interface BatchItem {
   id: string; batch_number: string; status: string; status_display: string;
@@ -24,11 +70,13 @@ interface PairItem {
   mother_het_ratio: number | null; mother_y_ratio: number | null;
   father_layers: number | null; father_concentration: number | null;
   father_het_ratio: number | null; father_y_ratio: number | null;
+  case_notes?: string; case_note_samples?: any[];
 }
 interface SampleItem {
   id: string; patient_name: string; test_sample_id: string | null;
   index: string; sample_type: string; role: string;
   case_number: string; pt_number: string;
+  case_notes?: string; case_note_samples?: any[];
 }
 
 const QC_FLAG_OPTIONS = [
@@ -214,6 +262,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         : emptyText },
     { title: "PT#", dataIndex: "pt_number", key: "pt", width: 85 },
     { title: "来源", dataIndex: "case_source", key: "src2", width: 70, render: (v: string) => <Text style={{fontSize:12}}>{v || "—"}</Text> },
+    { title: "备注", key: "cnotes", width: 180, render: (_: any, r: PairItem) => renderCaseNoteTags(r) },
     { title: "Mother", key: "m", width: 130,
       render: (_: any, r: PairItem) => <Text>{r.mother_name}{r.mother_index ? <Text type="secondary" style={{fontSize:11}}> ({r.mother_index})</Text> : ""}</Text> },
     { title: "Father", key: "f", width: 145,
@@ -288,6 +337,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     { title: "Case#", key: "uc", width: 180, ellipsis: true, render: (_:any,r:any)=>{const s=r.mother||r.father;return s && s.case_number?<Tooltip title={s.case_number}><span style={{ cursor: "default" }}>{s.case_number}</span></Tooltip>:emptyText}},
     { title: "PT#", key: "upt", width: 85, render: (_:any,r:any)=>{const s=r.mother||r.father;return s?<Text>{s.pt_number||"—"}</Text>:emptyText}},
     { title: "来源", key: "usrc", width: 70, render: () => emptyText },
+    { title: "备注", key: "unotes", width: 180, render: (_: any, r: any) => renderCaseNoteTags(r.mother || r.father || {}) },
     { title: "Mother", key: "um", width: 130,
       render: (_: any, r: any) => r.mother ? <Text>{r.mother.patient_name}<Text type="secondary" style={{fontSize:11}}>{r.mother.index ? ` (${r.mother.index})` : ""}</Text></Text> : emptyText },
     { title: "Father", key: "uf", width: 145,
