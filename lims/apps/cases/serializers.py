@@ -1801,6 +1801,9 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     report_auditor_name = serializers.CharField(source="report_auditor.username", read_only=True, default=None)
     case_notes = serializers.CharField(source="case.notes", read_only=True, default="", allow_blank=True)
     case_note_samples = CaseNoteSampleSerializer(source="case.case_samples", many=True, read_only=True)
+    # 报告模块用：报告日期（案例的报告截止）+ 母/父样本的 外部编号/到样日期/采样日期
+    report_date = serializers.DateField(source="case.expected_completion", read_only=True, allow_null=True)
+    sample_dates = serializers.SerializerMethodField()
     mother_id_card = serializers.SerializerMethodField()
     mother_tube_no = serializers.SerializerMethodField()
     father_id_card = serializers.SerializerMethodField()
@@ -1811,6 +1814,40 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     @staticmethod
     def _sattr(sample, attr):
         return (getattr(sample, attr, "") or "") if sample else ""
+
+    def get_sample_dates(self, obj):
+        """母/父样本的 外部编号 + 到样日期(收样 receipt_date) + 采样日期(collection_date)
+        经 case_sample_ids 回查 CaseSample/Sample（与 case_source 同路径）；一次查询覆盖两侧。"""
+        def _empty():
+            return {"external_id": "", "receipt_date": None, "collection_date": None}
+
+        if not obj.mother_sample and not obj.father_sample:
+            return {"mother": _empty(), "father": _empty()}
+        ids = list(getattr(obj.mother_sample, "case_sample_ids", None) or []) + \
+            list(getattr(obj.father_sample, "case_sample_ids", None) or [])
+        cs_map = {}
+        if ids:
+            for cs in CaseSample.objects.filter(id__in=ids).select_related("sample"):
+                cs_map[str(cs.id)] = cs
+
+        def pick(sample):
+            if not sample:
+                return _empty()
+            cs = None
+            for cid in (getattr(sample, "case_sample_ids", None) or []):
+                cs = cs_map.get(str(cid))
+                if cs:
+                    break
+            if not cs or not cs.sample:
+                return _empty()
+            sm = cs.sample
+            return {
+                "external_id": sm.external_id or "",
+                "receipt_date": sm.receipt_date.isoformat() if sm.receipt_date else None,
+                "collection_date": sm.collection_date.isoformat() if sm.collection_date else None,
+            }
+
+        return {"mother": pick(obj.mother_sample), "father": pick(obj.father_sample)}
 
     def get_mother_id_card(self, obj):
         return self._sattr(obj.mother_sample, "id_card")
@@ -1849,6 +1886,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             "report_auditor", "report_auditor_name", "report_note", "report_version",
             "report_reviewed_at", "report_audited_at", "report_history",
             "case_notes", "case_note_samples",
+            "report_date", "sample_dates",
             "qc_flag", "qc_flag_display",
             "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
             "father_layers", "father_concentration", "father_het_ratio", "father_y_ratio",

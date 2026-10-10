@@ -265,7 +265,33 @@ export default function NipptReports() {
   const pairColumns = [
     { title: "Case#", dataIndex: "case_number", key: "cn", width: 150, ellipsis: true, fixed: "left" as const },
     { title: "PT#", dataIndex: "pt_number", key: "pt", width: 90 },
+    { title: "标签", dataIndex: "father_label", key: "lb", width: 52, render: (v: string) => <Tag style={{ margin: 0 }}>{v}</Tag> },
+    { title: "外部编号", key: "extid", width: 140, ellipsis: true,
+      render: (_: any, r: any) => {
+        const v = r.sample_dates?.mother?.external_id;
+        return v ? <Tooltip title={v}>{v}</Tooltip> : "—";
+      } },
     { title: "来源", dataIndex: "case_source", key: "src", width: 66, render: (v: string) => v || "—" },
+    { title: "到样日期", key: "arrv", width: 104,
+      render: (_: any, r: any) => {
+        const m = r.sample_dates?.mother?.receipt_date, f = r.sample_dates?.father?.receipt_date;
+        if (!m && !f) return "—";
+        return <div style={{ fontSize: 12, lineHeight: "16px" }}>
+          <div>母 {m ? String(m).slice(0, 10) : "—"}</div>
+          <div>父 {f ? String(f).slice(0, 10) : "—"}</div>
+        </div>;
+      } },
+    { title: "采样日期", key: "coll", width: 104,
+      render: (_: any, r: any) => {
+        const m = r.sample_dates?.mother?.collection_date, f = r.sample_dates?.father?.collection_date;
+        if (!m && !f) return "—";
+        return <div style={{ fontSize: 12, lineHeight: "16px" }}>
+          <div>母 {m ? String(m).slice(0, 10) : "—"}</div>
+          <div>父 {f ? String(f).slice(0, 10) : "—"}</div>
+        </div>;
+      } },
+    { title: "报告日期", dataIndex: "report_date", key: "rpd", width: 96,
+      render: (v: string) => v ? String(v).slice(0, 10) : "—" },
     { title: "报告版本", dataIndex: "report_version", key: "rvs", width: 84, render: (v: string) => v || "—" },
     { title: "孕妇 证件/管号", dataIndex: "mother_display", key: "mdisp", width: 170, ellipsis: true,
       render: (v: string) => v || "—" },
@@ -273,17 +299,8 @@ export default function NipptReports() {
       render: (v: string) => v || "—" },
     { title: "Mother", dataIndex: "mother_name", key: "mn", width: 110, ellipsis: true },
     { title: "Father", dataIndex: "father_name", key: "fn", width: 120, ellipsis: true },
-    { title: "标签", dataIndex: "father_label", key: "lb", width: 52, render: (v: string) => <Tag style={{ margin: 0 }}>{v}</Tag> },
-    { title: "M.Layers", dataIndex: "mother_layers", key: "ml", width: 76, render: (v: any) => v != null ? Math.round(v) : "—" },
     { title: "M.Het", dataIndex: "mother_het_ratio", key: "mh", width: 68, render: (v: any) => v ?? "—" },
-    { title: "M.Y", dataIndex: "mother_y_ratio", key: "my", width: 64, render: (v: any) => v ?? "—" },
     { title: "M.Conc", dataIndex: "mother_concentration", key: "mc", width: 72, render: (v: any) => v ?? "—" },
-    { title: "F.Layers", dataIndex: "father_layers", key: "fl", width: 76, render: (v: any) => v != null ? Math.round(v) : "—" },
-    { title: "F.Het", dataIndex: "father_het_ratio", key: "fh", width: 68, render: (v: any) => v ?? "—" },
-    { title: "F.Y", dataIndex: "father_y_ratio", key: "fy", width: 64, render: (v: any) => v ?? "—" },
-    { title: "F.Conc", dataIndex: "father_concentration", key: "fc", width: 72, render: (v: any) => v ?? "—" },
-    { title: "CPI", dataIndex: "cpi", key: "cp", width: 96,
-      render: (v: any, r: any) => v != null ? <Text strong>{v}{r.cpi_combined != null ? ` / ${r.cpi_combined}` : ""}</Text> : "—" },
     { title: "Result", dataIndex: "result_display", key: "rd", width: 100,
       render: (v: string) => {
         if (!v) return <Tag color="red">未填</Tag>;
