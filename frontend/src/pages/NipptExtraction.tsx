@@ -18,6 +18,34 @@ import dayjs from "dayjs";
 import * as XLSX from "xlsx";
 import { confirmBatchDelete } from "../utils/batchDelete";
 
+
+/* ── 男性样本排序（2026-10-12 调整）────────────────────────────────────────────
+   原：血液组在前 + 其他组在后（先分样本类型，再各自按 PT 排）
+   新：不再分类型，统一按 PT 号排（位数 → 数值）；HA 与普通样本一起正常排序，
+       HB 一律排到最后（多个 HB 之间仍按 PT 排）。
+   ⚠️ 仅对未完成批次生效：已完成批次保持原顺序（保护历史孔板图，与后端规则一致）。
+   ⚠️ 仅改变顺序，不影响 HA/HB 各自独立成样本/独立完成的规则。 */
+const PT_HB = /HB(?:_[RT]\d+)*$/;
+const ptSortKey = (s: any) => {
+  const t = String(s?.test_sample_id || "");
+  const m = /PT(\d+)/.exec(t);
+  return { len: m ? m[1].length : Number.MAX_SAFE_INTEGER, num: m ? Number(m[1]) : 0, s: t };
+};
+function maleOrder<T = any>(d: any): T[] {
+  const raw = [...(d?.male_blood_samples || []), ...(d?.male_other_samples || [])];
+  if (!d || d.status === "COMPLETED") return raw;   // 已完成批次保持原样
+  return raw.sort((a: any, b: any) => {
+    const ah = PT_HB.test(String(a?.test_sample_id || "")) ? 1 : 0;
+    const bh = PT_HB.test(String(b?.test_sample_id || "")) ? 1 : 0;
+    if (ah !== bh) return ah - bh;                  // HB 一律排最后
+    const ka = ptSortKey(a), kb = ptSortKey(b);
+    if (ka.len !== kb.len) return ka.len - kb.len;  // 位数优先（与后端 Length(pt_number) 口径一致）
+    if (ka.num !== kb.num) return ka.num - kb.num;
+    return ka.s.localeCompare(kb.s, "en", { numeric: true });
+  });
+}
+
+
 const { Text, Title } = Typography;
 const { TextArea } = Input;
 
@@ -1064,7 +1092,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     const parseSkip = (str: string) => new Set((str || "").split(",").map((x: string) => x.trim().toUpperCase()).filter((x: string) => /^[A-H](1[0-2]|[1-9])$/.test(x)));
     const buildSheet = (isF: boolean) => {
       const who = isF ? "女性" : "男性";
-      const samples: ExtractionSample[] = isF ? (selectedBatch.female_samples || []) : [...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])];
+      const samples: ExtractionSample[] = isF ? (selectedBatch.female_samples || []) : maleOrder<ExtractionSample>(selectedBatch);
       const method = isF ? femaleMethod : maleMethod;
       const date = isF ? dateF : dateM;
       const time = isF ? timeF : timeM;
@@ -1271,7 +1299,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               { key: "male", label: `👨 男性 (${selectedBatch.male_blood_count + selectedBatch.male_other_count})`,
                 children: (
                   <>
-                    {renderExtractionTab([...selectedBatch.male_blood_samples, ...selectedBatch.male_other_samples], false, maleMethod, setMaleMethod,
+                    {renderExtractionTab(maleOrder<ExtractionSample>(selectedBatch), false, maleMethod, setMaleMethod,
                       maleSkipCoords, setMaleSkipCoords, maleKitTypes, setMaleKitTypes, maleMagneticNotes,
                       malePlateLayout, setMalePlateLayout,
                       maleManualNotes, setMaleManualNotes, maleAutoNotes, setMaleAutoNotes)}

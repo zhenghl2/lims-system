@@ -10,6 +10,34 @@ import dayjs from "dayjs";
 import * as XLSX from "xlsx";
 import { confirmBatchDelete } from "../utils/batchDelete";
 
+
+/* ── 男性样本排序（2026-10-12 调整）────────────────────────────────────────────
+   原：血液组在前 + 其他组在后（先分样本类型，再各自按 PT 排）
+   新：不再分类型，统一按 PT 号排（位数 → 数值）；HA 与普通样本一起正常排序，
+       HB 一律排到最后（多个 HB 之间仍按 PT 排）。
+   ⚠️ 仅对未完成批次生效：已完成批次保持原顺序（保护历史孔板图，与后端规则一致）。
+   ⚠️ 仅改变顺序，不影响 HA/HB 各自独立成样本/独立完成的规则。 */
+const PT_HB = /HB(?:_[RT]\d+)*$/;
+const ptSortKey = (s: any) => {
+  const t = String(s?.test_sample_id || "");
+  const m = /PT(\d+)/.exec(t);
+  return { len: m ? m[1].length : Number.MAX_SAFE_INTEGER, num: m ? Number(m[1]) : 0, s: t };
+};
+function maleOrder<T = any>(d: any): T[] {
+  const raw = [...(d?.male_blood_samples || []), ...(d?.male_other_samples || [])];
+  if (!d || d.status === "COMPLETED") return raw;   // 已完成批次保持原样
+  return raw.sort((a: any, b: any) => {
+    const ah = PT_HB.test(String(a?.test_sample_id || "")) ? 1 : 0;
+    const bh = PT_HB.test(String(b?.test_sample_id || "")) ? 1 : 0;
+    if (ah !== bh) return ah - bh;                  // HB 一律排最后
+    const ka = ptSortKey(a), kb = ptSortKey(b);
+    if (ka.len !== kb.len) return ka.len - kb.len;  // 位数优先（与后端 Length(pt_number) 口径一致）
+    if (ka.num !== kb.num) return ka.num - kb.num;
+    return ka.s.localeCompare(kb.s, "en", { numeric: true });
+  });
+}
+
+
 const { Text, Title } = Typography;
 const { TextArea } = Input;
 const ROWS = ["A","B","C","D","E","F","G","H"];
@@ -220,7 +248,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     if (plateBaseRef.current === _key) return;                                  // 与基准一致：保持已保存的板面
     plateBaseRef.current = _key;                                                // 用户改了起点/地区：重排
     const d = selectedBatch;
-    const males = [...(d.male_blood_samples || []), ...(d.male_other_samples || [])];
+    const males = maleOrder<SampleItem>(d);
     if (region === "XIAMEN") {
       setXiamenPlate(prev => keepIndex(buildXiamenPlateGrid(d.female_samples || [], males), prev));
     } else {
@@ -276,9 +304,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       if(fp&&Array.isArray(fp)) setFemalePlate(fp);
       else setFemalePlate(hkFemaleStart?buildPlateFromStart(d.female_samples||[],hkFemaleStart,"F"):buildCenteredPlate(d.female_samples||[],"F"));
       if(mp&&Array.isArray(mp)) setMalePlate(mp);
-      else setMalePlate(hkMaleStart?buildPlateFromStart([...(d.male_blood_samples||[]),...(d.male_other_samples||[])],hkMaleStart,"M"):buildCenteredPlate([...(d.male_blood_samples||[]),...(d.male_other_samples||[])],"M"));
+      else setMalePlate(hkMaleStart?buildPlateFromStart(maleOrder<SampleItem>(d),hkMaleStart,"M"):buildCenteredPlate(maleOrder<SampleItem>(d),"M"));
       if(xp&&Array.isArray(xp)) setXiamenPlate(xp);
-      else setXiamenPlate(buildXiamenPlateGrid(d.female_samples||[], [...(d.male_blood_samples||[]),...(d.male_other_samples||[])]));
+      else setXiamenPlate(buildXiamenPlateGrid(d.female_samples||[], maleOrder<SampleItem>(d)));
       libForm.setFieldsValue({
         equipment:ld.equipment||"",pcr_cycles:ld.pcr_cycles??12,cfDNA_volume:ld.cfDNA_volume??undefined,
         elution_volume:ld.elution_volume??undefined,temperature:ld.temperature??undefined,humidity:ld.humidity??undefined,
@@ -439,7 +467,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     if (!selectedBatch) return;
     const sid = selectedBatch.id;
     const femSamples: SampleItem[] = selectedBatch.female_samples || [];
-    const maleSamples: SampleItem[] = [...(selectedBatch.male_blood_samples || []), ...(selectedBatch.male_other_samples || [])];
+    const maleSamples: SampleItem[] = maleOrder<SampleItem>(selectedBatch);
     const kitLabel = (list: { value: string; label: string }[], v: string) => list.find(x => x.value === v)?.label || v || "—";
 
     // 共用试剂（只在第一个 sheet 输出一次）
@@ -719,7 +747,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   const rebuildPlates = () => {
     if (!selectedBatch) return;
     const d = selectedBatch;
-    const males = [...(d.male_blood_samples || []), ...(d.male_other_samples || [])];
+    const males = maleOrder<SampleItem>(d);
     if (region === "XIAMEN") {
       setXiamenPlate(prev => keepIndex(buildXiamenPlateGrid(d.female_samples || [], males), prev));
     } else {
