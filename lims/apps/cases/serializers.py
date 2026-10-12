@@ -1606,7 +1606,8 @@ class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
         with transaction.atomic():
             batch_number = NipptPoolingBatch.generate_batch_number()
             batch = NipptPoolingBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
-            css = CaseSample.objects.filter(id__in=case_sample_ids).select_related("case","sample")
+            # 防御：已被重做取代的失效样本即使被传进来也不建行（候选列表已过滤）
+            css = CaseSample.objects.filter(id__in=case_sample_ids, is_active=True).select_related("case","sample")
             ls_map = {}
             for ls in NipptLibrarySample.objects.filter(batch__status="COMPLETED", qc_status="PASS"):
                 if ls.case_sample_ids:
@@ -1616,10 +1617,11 @@ class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
                 if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
                 elif cs.effective_sample_type == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
-                key = (str(cs.case_id), cs.sample.patient_name, cat)
+                # 分组键带上 PT 号：重做样本(_T1)必须与原始样本拆成两行，否则会被合并成一行
+                key = (str(cs.case_id), cs.sample.patient_name, cat, cs.test_sample_id or "")
                 if key not in groups: groups[key] = {"case":cs.case,"ids":[],"role":cs.role}
                 groups[key]["ids"].append(str(cs.id))
-            for (_,name,cat), gdata in groups.items():
+            for (_,name,cat,_pt), gdata in groups.items():
                 ls = None
                 for cid in gdata["ids"]:
                     if cid in ls_map: ls = ls_map[cid]; break

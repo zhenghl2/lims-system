@@ -2680,8 +2680,9 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
                 elif b.status == "COMPLETED" and sp.qc_status == "PASS":
                     excluded_ids.update(ids)
 
+        # is_active=True：已被重做取代的失效样本不再进入候选（否则原始+重做会被合并处理）
         qs = CaseSample.objects.filter(
-            sample__status="RECEIVED"
+            sample__status="RECEIVED", is_active=True
         ).exclude(
             id__in=list(excluded_ids)[:10000] if excluded_ids else []
         ).select_related("case", "sample").order_by("case__case_number", "sample__patient_name")
@@ -2891,7 +2892,8 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
         valid_ids = passed_ids - excluded_ids
         if not valid_ids:
             return Response({"female_count":0,"male_blood_count":0,"male_other_count":0,"total_pending":0,"entries":[]})
-        qs = CaseSample.objects.filter(id__in=valid_ids).select_related("case","sample").order_by("case__case_number","sample__patient_name")
+        # is_active=True：已被重做取代的失效样本不再进入候选
+        qs = CaseSample.objects.filter(id__in=valid_ids, is_active=True).select_related("case","sample").order_by("case__case_number","sample__patient_name")
         groups = {}
         for cs in qs:
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
@@ -3026,7 +3028,8 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
         valid_ids = passed_ids - excluded_ids
         if not valid_ids:
             return Response({"female_count":0,"male_blood_count":0,"male_other_count":0,"total_pending":0,"entries":[]})
-        qs = CaseSample.objects.filter(id__in=valid_ids).select_related("case","sample").order_by(Length("case__pt_number"), "case__pt_number", "sample__patient_name")
+        # is_active=True：已被重做取代的失效样本不再进入候选
+        qs = CaseSample.objects.filter(id__in=valid_ids, is_active=True).select_related("case","sample").order_by(Length("case__pt_number"), "case__pt_number", "sample__patient_name")
         groups = {}
         for cs in qs:
             es = id2es.get(str(cs.id))
@@ -3107,7 +3110,8 @@ class NipptPoolingViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         valid_ids = passed_ids - excluded_ids
         if not valid_ids:
             return Response({"female_count":0,"male_blood_count":0,"male_other_count":0,"total_pending":0,"entries":[]})
-        qs = CaseSample.objects.filter(id__in=valid_ids).select_related("case","sample").order_by("case__case_number","sample__patient_name")
+        # is_active=True：已被重做取代的失效样本不再进入候选
+        qs = CaseSample.objects.filter(id__in=valid_ids, is_active=True).select_related("case","sample").order_by("case__case_number","sample__patient_name")
         groups = {}
         for cs in qs:
             if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
