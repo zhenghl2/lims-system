@@ -1057,12 +1057,13 @@ class NipptExtractionBatchListSerializer(serializers.ModelSerializer):
     male_other_count = serializers.SerializerMethodField()
 
     receipt_location = serializers.SerializerMethodField()
+    photos_pending = serializers.SerializerMethodField()
 
     class Meta:
         model = NipptExtractionBatch
         fields = ["id", "batch_number", "status", "status_display", "sample_count",
                   "female_count", "male_blood_count", "male_other_count",
-                  "created_by", "operator_name", "reviewer", "created_at", "updated_at", "receipt_location",
+                  "created_by", "operator_name", "reviewer", "created_at", "updated_at", "receipt_location", "photos_pending",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
@@ -1074,6 +1075,19 @@ class NipptExtractionBatchListSerializer(serializers.ModelSerializer):
     def get_receipt_location(self, obj):
         return batch_receipt_location(obj)
 
+    def get_photos_pending(self, obj):
+        """已完成但缺实验照片（任一侧有样本却无照片）→ 前端显示「📷 待补照片」提醒"""
+        if obj.status != "COMPLETED":
+            return False
+        ed = obj.extraction_data or {}
+        cats = {}
+        for s_obj in obj.samples.all():
+            cats[s_obj.category] = cats.get(s_obj.category, 0) + 1
+        if cats.get("FEMALE_BLOOD") and not (ed.get("photos_female") or []):
+            return True
+        if (cats.get("MALE_BLOOD") or cats.get("MALE_OTHER")) and not (ed.get("photos_male") or []):
+            return True
+        return False
 
 class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
@@ -1086,13 +1100,14 @@ class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
     male_other_samples = serializers.SerializerMethodField()
 
     receipt_location = serializers.SerializerMethodField()
+    photos_pending = serializers.SerializerMethodField()
 
     class Meta:
         model = NipptExtractionBatch
         fields = ["id", "batch_number", "status", "status_display",
                   "sample_count", "female_count", "male_blood_count", "male_other_count",
                   "female_samples", "male_blood_samples", "male_other_samples",
-                  "extraction_data", "created_by", "operator_name", "reviewer", "created_at", "updated_at", "receipt_location",
+                  "extraction_data", "created_by", "operator_name", "reviewer", "created_at", "updated_at", "receipt_location", "photos_pending",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
 
@@ -1122,6 +1137,19 @@ class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
     def get_receipt_location(self, obj):
         return batch_receipt_location(obj)
 
+    def get_photos_pending(self, obj):
+        """已完成但缺实验照片（任一侧有样本却无照片）→ 前端显示「📷 待补照片」提醒"""
+        if obj.status != "COMPLETED":
+            return False
+        ed = obj.extraction_data or {}
+        cats = {}
+        for s_obj in obj.samples.all():
+            cats[s_obj.category] = cats.get(s_obj.category, 0) + 1
+        if cats.get("FEMALE_BLOOD") and not (ed.get("photos_female") or []):
+            return True
+        if (cats.get("MALE_BLOOD") or cats.get("MALE_OTHER")) and not (ed.get("photos_male") or []):
+            return True
+        return False
 
 class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
     case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True)

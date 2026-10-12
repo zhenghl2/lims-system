@@ -2948,14 +2948,15 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
         # ── 完成前校验：有样本的侧必须已保存（实验照片+操作人+审核人）──
         ed = batch.extraction_data or {}
         missing = []
+        # 实验照片**不再是完成前提**：允许先完成、之后再补传（前端保存时会弹窗提醒）
         if batch.samples.filter(category="FEMALE_BLOOD").exists():
-            if not (ed.get("operator_female") and ed.get("reviewer_female") and (ed.get("photos_female") or [])):
+            if not (ed.get("operator_female") and ed.get("reviewer_female")):
                 missing.append("女性")
         if batch.samples.filter(category__in=["MALE_BLOOD", "MALE_OTHER"]).exists():
-            if not (ed.get("operator_male") and ed.get("reviewer_male") and (ed.get("photos_male") or [])):
+            if not (ed.get("operator_male") and ed.get("reviewer_male")):
                 missing.append("男性")
         if missing:
-            raise ValidationError(f"请先保存{'、'.join(missing)}实验数据（实验照片+操作人+审核人）后再完成批次")
+            raise ValidationError(f"请先保存{'、'.join(missing)}实验数据（操作人+审核人）后再完成批次")
         batch.status = "COMPLETED"; batch.save(update_fields=["status","updated_at"])
         advance_batch(batch, "LIBRARY_PREP", request.user, failed_stage="EXTRACTION")
         return Response({"message": f"Completed {batch.samples.count()} samples"})
