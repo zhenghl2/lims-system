@@ -193,7 +193,7 @@ class CaseViewSet(viewsets.ModelViewSet):
     def report_versions(self, request):
         """报告版本候选项：预设清单 + 库里已用过的值（登记时可自由输入新增）"""
         presets = ["英文", "英繁", "英文-美", "泰国", "法语", "意大利",
-                   "西班牙", "加纳", "印度", "德语", "澳洲"]
+                   "西班牙", "加纳", "印度", "德语", "澳洲", "巴西"]
         used = list(
             Case.objects.exclude(report_version="").exclude(report_version__isnull=True)
             .values_list("report_version", flat=True).distinct()
@@ -624,6 +624,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                         "father_sample_types": father_sample_types,
                         "gestational_age_weeks": item.get("gestational_age_weeks"),
                         "sample_source": "巴西",
+                        "report_version": "巴西",
                         "sales_person": item["sales_person"],
                         "notes": item["notes"],
                         "external_id": seq,
@@ -804,6 +805,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                         "father_names": [father] if father else [],
                         "father_sample_types": [[item["father_sample_type"] or "BLOOD"]] if father else [],
                         "sample_source": "国内",
+                        "report_version": "国内",
                         "sales_person": item["sales_person"] or "",
                         "notes": item["notes"] or "",
                         "external_id": item["external_id"] or "",
@@ -981,6 +983,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                         "father_names": [father] if father else [],
                         "father_sample_types": [ftypes] if father else [],
                         "sample_source": "越南",
+                        "report_version": "英文",
                         "sales_person": item["sales_person"] or "",
                         "notes": item["notes"] or "",
                         "external_id": sn,
