@@ -68,8 +68,30 @@ class CaseViewSet(viewsets.ModelViewSet):
             qs = qs.filter(case_samples__workflow_stage=wf).distinct()
         return qs
 
+    def get_serializer_context(self):
+        """列表接口预置 plasma_tubes_map：一条 SQL 覆盖整页孕妇样本的前处理记录，
+        避免 CaseSampleSerializer.plasma_tubes 逐样本查询（原每样本 1 条 SQL）。"""
+        ctx = super().get_serializer_context()
+        if getattr(self, "action", None) == "list":
+            try:
+                from .models import NipptPreProcessingSample
+                case_ids = list(self.filter_queryset(self.get_queryset()).values_list("id", flat=True))
+                m = {}
+                if case_ids:
+                    rows = (NipptPreProcessingSample.objects
+                            .filter(case_id__in=case_ids)
+                            .only("case_sample_ids", "aliquot_tubes", "created_at")
+                            .order_by("created_at"))          # 升序 → 后者覆盖前者 = 取最新
+                    for r in rows:
+                        for cid in (r.case_sample_ids or []):
+                            m[str(cid)] = r.aliquot_tubes
+                ctx["plasma_tubes_map"] = m
+            except Exception:
+                pass    # 兜底：失败则回退为逐样本查询，不影响功能
+        return ctx
+
     def get_queryset(self):
-        qs = Case.objects.prefetch_related("case_samples__sample").all()
+        qs = Case.objects.prefetch_related("case_samples__sample").select_related("panel").all()
         # Support comma-separated status values (e.g. ?status=REGISTERED,RECEIVING)
         status_param = self.request.query_params.get("status", "")
         if status_param:

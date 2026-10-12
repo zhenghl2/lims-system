@@ -128,30 +128,38 @@ class Case(models.Model):
 
     @property
     def computed_status(self):
-        """从 CaseSample 实时推导 Case 状态."""
-        active = self.case_samples.filter(is_active=True).exclude(sample__status="REJECTED")
-        if not active.exists():
-            active = self.case_samples.exclude(sample__status="REJECTED")
+        """从 CaseSample 实时推导 Case 状态.
+
+        ⚠️ 全部逻辑在**已预取的 case_samples 列表**上做（原来用 .filter()/.exclude()/.values_list()
+        会绕过 prefetch → 每个案例额外 ~8 条 SQL；案例管理/样本接收列表曾因此慢到 6 秒）。
+        语义与旧实现逐一对应，未改变任何状态判定口径。
+        """
+        css = list(self.case_samples.all())      # prefetch 命中 → 0 查询
+        if not css:
+            return "REGISTERED"
         # 全部样本被拒收 → REJECTED（放在空检查前，兼容全拒收场景）
-        if self.case_samples.exists() and all(cs.sample.status == "REJECTED" for cs in self.case_samples.all()):
+        if all(cs.sample.status == "REJECTED" for cs in css):
             return "REJECTED"
-        if not active.exists():
+        active = [cs for cs in css if cs.is_active and cs.sample.status != "REJECTED"]
+        if not active:
+            active = [cs for cs in css if cs.sample.status != "REJECTED"]
+        if not active:
             return "REGISTERED"
 
         # 有待签收的重采样本 → 有重采（重采样本被签收后自动转具体进度）
-        if self.case_samples.filter(resample_of__isnull=False, sample__status="REGISTERED").exists():
+        if any(cs.resample_of_id and cs.sample.status == "REGISTERED" for cs in css):
             return "HAS_RESAMPLE"
 
         # 已被有效重采处理的原失败样本不再压状态（重采样本本身被拒收的不算已处理）
         resampled_origin_ids = set(
-            self.case_samples.filter(resample_of__isnull=False)
-            .exclude(sample__status="REJECTED")
-            .values_list("resample_of_id", flat=True)
+            cs.resample_of_id for cs in css
+            if cs.resample_of_id and cs.sample.status != "REJECTED"
         )
-        unhandled_failed = active.filter(workflow_stage__endswith="_FAILED").exclude(id__in=resampled_origin_ids)
-        if unhandled_failed.exists():
+        if any((cs.workflow_stage or "").endswith("_FAILED") for cs in active
+               if cs.id not in resampled_origin_ids):
             return "HAS_FAILURE"
-        stages = [cs.workflow_stage for cs in active if cs.id not in resampled_origin_ids and cs.workflow_stage]
+        stages = [cs.workflow_stage for cs in active
+                  if cs.id not in resampled_origin_ids and cs.workflow_stage]
         if stages and all(s == "COMPLETED" for s in stages):
             return "COMPLETED"
         for stage in WORKFLOW_ORDER[:-1]:

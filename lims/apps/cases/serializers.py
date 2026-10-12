@@ -60,9 +60,15 @@ class CaseSampleSerializer(serializers.ModelSerializer):
         return None
 
     def get_plasma_tubes(self, obj):
-        """孕妇样本剩余血浆管数（取最新前处理记录）"""
+        """孕妇样本剩余血浆管数（取最新前处理记录）。
+
+        列表接口会在 context 里预置 plasma_tubes_map（一次 SQL 覆盖整页），
+        避免每个孕妇样本各查一次；未提供时回退为单条查询（详情页路径）。"""
         if obj.role != "MOTHER":
             return None
+        cached = self.context.get("plasma_tubes_map")
+        if cached is not None:
+            return cached.get(str(obj.id))
         rec = NipptPreProcessingSample.objects.filter(
             case_sample_ids__contains=[str(obj.id)]
         ).order_by("-created_at").first()
@@ -110,15 +116,22 @@ class CaseListSerializer(serializers.ModelSerializer):
         return M.get(st, st)
 
     def get_mother_name(self, obj):
-        ms = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
-        if ms and ms.sample:
-            return ms.sample.patient_name or ms.sample.sample_id
+        for cs in obj.case_samples.all():          # 走 prefetch，不再逐案例查询
+            if cs.role == "MOTHER" and cs.sample:
+                return cs.sample.patient_name or cs.sample.sample_id
         return ""
 
     def get_case_source(self, obj):
-        """案例级来源：复用 Case.origin_country()（优先孕妇样本，其次任一已填来源的样本）
-        ——只登记男性、孕妇样本尚未到样时也能正确显示，不再读成空。"""
-        return obj.origin_country()
+        """案例级来源：优先孕妇样本，其次任一已填来源的样本（等价 Case.origin_country()，
+        但走已预取样本，避免每案例一次查询）。"""
+        css = list(obj.case_samples.all())
+        for cs in css:
+            if cs.role == "MOTHER" and cs.sample and cs.sample.sample_source:
+                return cs.sample.sample_source
+        for cs in css:
+            if cs.sample and cs.sample.sample_source:
+                return cs.sample.sample_source
+        return ""
 
     def get_status(self, obj):
         return obj.computed_status
@@ -133,9 +146,8 @@ class CaseListSerializer(serializers.ModelSerializer):
 
     def get_can_redo(self, obj):
         """Return list of CaseSample IDs that have a FAIL workflow stage."""
-        return list(obj.case_samples.filter(
-            workflow_stage__endswith="_FAILED"
-        ).values_list("id", flat=True))
+        return [str(cs.id) for cs in obj.case_samples.all()
+                if (cs.workflow_stage or "").endswith("_FAILED")]
 
     def get_progress(self, obj):
         WORKFLOW_WEIGHT = {
@@ -161,10 +173,10 @@ class CaseListSerializer(serializers.ModelSerializer):
         return round(total_weight / count, 1)
 
     def get_sample_count(self, obj):
-        return obj.case_samples.count()
+        return len(obj.case_samples.all())
 
     def get_received_count(self, obj):
-        return obj.case_samples.exclude(received_at=None).count()
+        return sum(1 for cs in obj.case_samples.all() if cs.received_at is not None)
 
     def get_workflow_status(self, obj):
         WORKFLOW_ORDER = [
@@ -172,9 +184,9 @@ class CaseListSerializer(serializers.ModelSerializer):
             "LIBRARY_PREP", "POOLING", "HYB_SEQ", "BIOINFO",
             "REPORT_DRAFT", "COMPLETED"
         ]
-        css = obj.case_samples.filter(is_active=True)
-        if not css.exists():
-            css = obj.case_samples.all()
+        css = [cs for cs in obj.case_samples.all() if cs.is_active]
+        if not css:
+            css = list(obj.case_samples.all())
         slowest = "REGISTERED"
         slowest_idx = len(WORKFLOW_ORDER)
         for cs in css:
@@ -258,21 +270,27 @@ class CaseDetailSerializer(serializers.ModelSerializer):
         return M.get(st, st)
 
     def get_mother_name(self, obj):
-        ms = obj.case_samples.filter(role="MOTHER").select_related("sample").first()
-        if ms and ms.sample:
-            return ms.sample.patient_name or ms.sample.sample_id
+        for cs in obj.case_samples.all():          # 走 prefetch，不再逐案例查询
+            if cs.role == "MOTHER" and cs.sample:
+                return cs.sample.patient_name or cs.sample.sample_id
         return ""
 
     def get_case_source(self, obj):
-        """案例级来源：复用 Case.origin_country()（优先孕妇样本，其次任一已填来源的样本）
-        ——只登记男性、孕妇样本尚未到样时也能正确显示，不再读成空。"""
-        return obj.origin_country()
+        """案例级来源：优先孕妇样本，其次任一已填来源的样本（等价 Case.origin_country()，
+        但走已预取样本，避免每案例一次查询）。"""
+        css = list(obj.case_samples.all())
+        for cs in css:
+            if cs.role == "MOTHER" and cs.sample and cs.sample.sample_source:
+                return cs.sample.sample_source
+        for cs in css:
+            if cs.sample and cs.sample.sample_source:
+                return cs.sample.sample_source
+        return ""
 
     def get_can_redo(self, obj):
         """Return list of CaseSample IDs that have a FAIL workflow stage."""
-        return list(obj.case_samples.filter(
-            workflow_stage__endswith="_FAILED"
-        ).values_list("id", flat=True))
+        return [str(cs.id) for cs in obj.case_samples.all()
+                if (cs.workflow_stage or "").endswith("_FAILED")]
 
     def get_progress(self, obj):
         WORKFLOW_WEIGHT = {
