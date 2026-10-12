@@ -440,6 +440,20 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       message.warning(`完成批次前需先保存：${cMissing.join("、")}实验数据（操作人+审核人）`);
       return;
     }
+    // 照片提醒：不阻断，确认后继续（照片可完成后再补传）
+    const noPhoto: string[] = [];
+    if ((selectedBatch.female_samples || []).length > 0 && !photosFRef.current.length) noPhoto.push("女性");
+    if (((selectedBatch.male_blood_count || 0) + (selectedBatch.male_other_count || 0)) > 0 && !photosMRef.current.length) noPhoto.push("男性");
+    if (noPhoto.length) {
+      const goOn = await new Promise<boolean>((resolve) => {
+        Modal.confirm({
+          title: "尚未上传实验照片",
+          content: `${noPhoto.join("、")}尚未上传实验照片，确定完成吗？（可完成后再补传）`,
+          okText: "确定完成", cancelText: "返回上传", onOk: () => resolve(true), onCancel: () => resolve(false),
+        });
+      });
+      if (!goOn) return;
+    }
     // ── 未保存改动检测：与服务器最新数据对比，防止完成时丢失未保存修改 ──
     try {
       const fr = await (casesApi as any).getExtractionBatch(selectedBatch.id);
