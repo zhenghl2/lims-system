@@ -92,6 +92,16 @@ class CaseViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Case.objects.prefetch_related("case_samples__sample").select_related("panel").all()
+        # ?receiving=1 —— 样本签收页专用：只回「含待签收/已签收/拒收样本」的 case。
+        # 这三个条件恰好覆盖签收页三个 Tab（REGISTERED / 工序=RECEIVED / REJECTED），
+        # 所以「Tab 计数与列表同源」的设计不受影响；不传该参数的其他页面行为完全不变。
+        if str(self.request.query_params.get("receiving", "")).lower() in ("1", "true", "yes"):
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(case_samples__sample__status="REGISTERED")
+                | Q(case_samples__workflow_stage="RECEIVED")
+                | Q(case_samples__sample__status="REJECTED")
+            ).distinct()
         # Support comma-separated status values (e.g. ?status=REGISTERED,RECEIVING)
         status_param = self.request.query_params.get("status", "")
         if status_param:
