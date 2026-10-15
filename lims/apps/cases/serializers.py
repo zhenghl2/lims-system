@@ -343,6 +343,8 @@ class CaseCreateSerializer(serializers.ModelSerializer):
                                           help_text="样本来源")
     fedex_no = serializers.CharField(write_only=True, required=False, allow_blank=True)
     female_arrival_date = serializers.DateField(write_only=True, required=False)
+    # 额外信息（2026-10-13）：登记页「是/否」→ 写母亲样本 gender_info（Yes/No）
+    gender_info = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
     male_arrival_dates = serializers.ListField(
         child=serializers.DateField(), write_only=True, required=False, default=list
     )
@@ -365,7 +367,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             "mother_name", "mother_dob", "father_names",
             "father_sample_types",
             "external_id", "sample_source", "fedex_no",
-            "female_arrival_date", "male_arrival_dates",
+            "female_arrival_date", "male_arrival_dates", "gender_info",
             "collection_method", "application_signed", "expected_completion",
         ]
 
@@ -385,6 +387,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         # 外部编号：本次没有登记孕妇时，落到男性样本上（否则整单信息随「无母样本」丢失）
         father_external_id = "" if mother_name.strip() else external_id
         fedex_no = validated_data.pop("fedex_no", "") or ""
+        gender_info = (validated_data.pop("gender_info", "") or "").strip()   # 额外信息（Yes/No，2026-10-13）
         female_arrival = validated_data.pop("female_arrival_date", None)
         male_arrivals = validated_data.pop("male_arrival_dates", [])
         last_menstrual_period = validated_data.pop("last_menstrual_period", None)
@@ -443,6 +446,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
                 external_id=external_id,
                 sample_source=sample_source,
                 fedex_no=fedex_no,
+                gender_info=gender_info,                     # 额外信息（Yes/No，2026-10-13）
                 last_menstrual_period=last_menstrual_period,
                 multiple_gestation=bool(validated_data.get("multiple_gestation")),
                 collection_date=today,
@@ -678,8 +682,9 @@ class SupplementSerializer(serializers.Serializer):
                 relationship_to_mother=relationship,
                 collection_notes=notes,
             )
+            # 补样登记即分配 PT 编号（撞号自动按重采给 _R{n}，用户 2026-10-13）
+            case.assign_supplement_test_id(cs_obj)
             css.append(cs_obj)
-        # test_sample_id assigned during receipt confirmation
         # 备注同步案例级 Case.notes（签收页"登记备注"列与案例管理共用）
         if notes:
             case.notes = (case.notes + "\n" if case.notes else "") + f"[补充样本] {notes}"
@@ -1571,12 +1576,23 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
                         if isinstance(cell, dict) and cell.get("vgId") and cell.get("index"):
                             index_map[cell["vgId"]] = cell["index"]
 
-            if ld.get("xiamen_plate"):
-                extract_from_plate(ld["xiamen_plate"])
-            if ld.get("female_plate"):
-                extract_from_plate(ld["female_plate"])
-            if ld.get("male_plate"):
-                extract_from_plate(ld["male_plate"])
+            def extract_any(val):
+                """兼容单板(8x12)与多板数组([8x12, ...])——2026-10-14 建库自动增板。
+
+                板数组优先（含全部板）；旧批次只有单板键时按单板处理。
+                """
+                if not val:
+                    return
+                if (isinstance(val, list) and val and isinstance(val[0], list)
+                        and val[0] and isinstance(val[0][0], list)):
+                    for g in val:
+                        extract_from_plate(g)
+                else:
+                    extract_from_plate(val)
+
+            extract_any(ld.get("xiamen_plates") or ld.get("xiamen_plate"))
+            extract_any(ld.get("female_plates") or ld.get("female_plate"))
+            extract_any(ld.get("male_plates") or ld.get("male_plate"))
         return index_map
 
     def get_library_plate(self, obj):
@@ -1585,9 +1601,13 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
             ls = NipptLibrarySample.objects.filter(id=first.source_library_sample_id).first()
             if ls and ls.batch.library_data:
                 ld = ls.batch.library_data
-                if ld.get("xiamen_plate"): return ld["xiamen_plate"]
-                if ld.get("female_plate"): return ld["female_plate"]
-                if ld.get("male_plate"): return ld["male_plate"]
+                # 保持旧的「单块板」返回形状（多板取第 1 块）——2026-10-14
+                _xp = ld.get("xiamen_plates") or ld.get("xiamen_plate")
+                if _xp: return (_xp[0] if isinstance(_xp, list) and _xp and isinstance(_xp[0], list) and _xp[0] and isinstance(_xp[0][0], list) else _xp)
+                _fp = ld.get("female_plates") or ld.get("female_plate")
+                if _fp: return (_fp[0] if isinstance(_fp, list) and _fp and isinstance(_fp[0], list) and _fp[0] and isinstance(_fp[0][0], list) else _fp)
+                _mp = ld.get("male_plates") or ld.get("male_plate")
+                if _mp: return (_mp[0] if isinstance(_mp, list) and _mp and isinstance(_mp[0], list) and _mp[0] and isinstance(_mp[0][0], list) else _mp)
         return []
 
     def get_receipt_location(self, obj):
@@ -1842,21 +1862,54 @@ class CaseNoteSampleSerializer(serializers.ModelSerializer):
         ]
 
 
+def _user_display_name(u):
+    """用户显示名（2026-10-13）：中文名（姓+名）；无中文名时回退登录名。
+
+    报告模块原先直接显示 report_reviewer.username → 界面出现 zhangyunhong 这类登录名。
+    """
+    if not u:
+        return None
+    # 中文名 last_name 通常为空 → strip 后无多余空格；西文名则保留空格（与 User.__str__ 一致）
+    nm = ("%s %s" % (getattr(u, "first_name", "") or "", getattr(u, "last_name", "") or "")).strip()
+    return nm or getattr(u, "username", None)
+
+
 class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     mother_name = serializers.CharField(source="mother_sample.patient_name", read_only=True)
     father_name = serializers.CharField(source="father_sample.patient_name", read_only=True)
     mother_index = serializers.SerializerMethodField()
     father_index = serializers.SerializerMethodField()
     father_sample_type = serializers.SerializerMethodField()
+    gender_info = serializers.SerializerMethodField()      # 额外信息（Yes/No，2026-10-13）
+    is_surrogacy = serializers.SerializerMethodField()
     case_number = serializers.CharField(source="case.case_number", read_only=True)
     pt_number = serializers.CharField(source="case.pt_number", read_only=True)
     report_version = serializers.CharField(source="case.report_version", read_only=True, default="")
+    has_appendix = serializers.SerializerMethodField()
+    appendix_file_url = serializers.SerializerMethodField()
     case_source = serializers.SerializerMethodField()
     result_display = serializers.CharField(source="get_result_display", read_only=True)
     qc_flag_display = serializers.CharField(source="get_qc_flag_display", read_only=True)
     report_file_url = serializers.SerializerMethodField()
-    report_reviewer_name = serializers.CharField(source="report_reviewer.username", read_only=True, default=None)
-    report_auditor_name = serializers.CharField(source="report_auditor.username", read_only=True, default=None)
+    report_file_pdf_url = serializers.SerializerMethodField()     # 2026-10-13 PDF 槽位
+    report_reviewer_name = serializers.SerializerMethodField()
+    report_auditor_name = serializers.SerializerMethodField()
+
+    def get_report_reviewer_name(self, obj):
+        return _user_display_name(getattr(obj, "report_reviewer", None))
+
+    def get_report_auditor_name(self, obj):
+        return _user_display_name(getattr(obj, "report_auditor", None))
+
+    def _report_file_url(self, f):
+        if not f:
+            return ""
+        request = self.context.get("request")
+        return request.build_absolute_uri(f.url) if request else f.url
+
+    def get_report_file_pdf_url(self, obj):
+        """PDF 槽位地址（2026-10-13：与 Word 并存，互不覆盖）"""
+        return self._report_file_url(obj.report_file_pdf)
     case_notes = serializers.CharField(source="case.notes", read_only=True, default="", allow_blank=True)
     case_note_samples = CaseNoteSampleSerializer(source="case.case_samples", many=True, read_only=True)
     # 报告模块用：报告日期（案例的报告截止）+ 母/父样本的 外部编号/到样日期/采样日期
@@ -1938,14 +1991,17 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             "id", "batch", "case", "case_number", "pt_number", "case_source",
             "mother_sample", "mother_name", "mother_index",
             "mother_id_card", "mother_tube_no", "mother_display",
-            "father_sample", "father_name", "father_index", "father_sample_type",
+            "father_sample", "father_name", "father_index", "father_sample_type", "is_surrogacy",
+            "gender_info",
             "father_id_card", "father_tube_no", "father_display",
             "father_label", "is_cross_batch",
             "mother_source_batch", "father_source_batch",
             "cpi", "cpi_combined", "result", "result_display",
             "note", "report_data",
-            "report_file", "report_file_url", "report_reviewer", "report_reviewer_name",
+            "report_file", "report_file_url", "report_file_pdf_url", "report_pdf_stale",
+            "report_reviewer", "report_reviewer_name",
             "report_auditor", "report_auditor_name", "report_note", "report_version",
+            "has_appendix", "appendix_file_url",
             "report_reviewed_at", "report_audited_at", "report_history",
             "case_notes", "case_note_samples",
             "report_date", "sample_dates",
@@ -1955,6 +2011,17 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         ]
         read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_has_appendix(self, obj):
+        return bool(obj.appendix_file)
+
+    def get_appendix_file_url(self, obj):
+        if not obj.appendix_file:
+            return None
+        try:
+            return obj.appendix_file.url
+        except Exception:      # noqa: BLE001
+            return None
 
     def get_report_file_url(self, obj):
         if obj.report_file:
@@ -1972,6 +2039,23 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
 
     def get_father_sample_type(self, obj):
         return self._get_sample_type(obj.father_sample)
+
+    def get_is_surrogacy(self, obj):
+        """是否代孕（与报告引擎同一口径：risk_warnings 勾选 或 备注以「代孕」开头）"""
+        case = getattr(obj, "case", None)
+        if case is not None and hasattr(case, "is_surrogacy"):
+            return bool(case.is_surrogacy())
+        return False
+
+    def get_gender_info(self, obj):
+        """额外信息（Yes/No）：母亲样本的 gender_info，与报告引擎同一口径。
+
+        2026-10-13：登记页新增该登记项；报告模块显示/编辑它，报告引擎据此决定是否出性别报告。
+        """
+        case = getattr(obj, "case", None)
+        if case is not None and hasattr(case, "mother_gender_info"):
+            return case.mother_gender_info()
+        return ""
 
     def get_case_source(self, obj):
         """来源：改用案例级 Case.origin_country()（优先孕妇样本，其次任一已填来源的样本）"""
@@ -2054,8 +2138,14 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     report_status = serializers.SerializerMethodField()
     report_status_display = serializers.SerializerMethodField()
-    report_reviewer_name = serializers.CharField(source="report_reviewer.username", read_only=True, default=None)
-    report_auditor_name = serializers.CharField(source="report_auditor.username", read_only=True, default=None)
+    report_reviewer_name = serializers.SerializerMethodField()
+    report_auditor_name = serializers.SerializerMethodField()
+
+    def get_report_reviewer_name(self, obj):
+        return _user_display_name(getattr(obj, "report_reviewer", None))
+
+    def get_report_auditor_name(self, obj):
+        return _user_display_name(getattr(obj, "report_auditor", None))
     pair_count = serializers.SerializerMethodField()
     completed_pair_count = serializers.SerializerMethodField()
     reported_pair_count = serializers.SerializerMethodField()
@@ -2087,7 +2177,7 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
             return "COMPLETED"
         pairs = list(obj.pairs.all()) if hasattr(obj, "pairs") else []
         todo = [p for p in pairs if (p.result or "").strip() and not (p.qc_flag or "").strip()]
-        done = [p for p in todo if p.report_file]
+        done = [p for p in todo if p.has_report()]
         return "TO_REVIEW" if len(done) == len(todo) else "PENDING"
 
     def get_report_status(self, obj):
@@ -2107,12 +2197,16 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
         if not hasattr(obj, "pairs"):
             return 0
         return sum(1 for p in obj.pairs.all()
-                   if (p.result or "").strip() and not (p.qc_flag or "").strip() and p.report_file)
+                   if (p.result or "").strip() and not (p.qc_flag or "").strip() and p.has_report())
 
     def get_reported_pair_count(self, obj):
         if not hasattr(obj, 'pairs'):
             return 0
-        return obj.pairs.filter(report_file__isnull=False).exclude(report_file="").count()
+        from django.db.models import Q
+        return obj.pairs.filter(
+            (Q(report_file__isnull=False) & ~Q(report_file=""))
+            | (Q(report_file_pdf__isnull=False) & ~Q(report_file_pdf=""))
+        ).count()
 
     def get_sample_count(self, obj):
         return obj.samples.count() if hasattr(obj, 'samples') else 0
@@ -2122,8 +2216,14 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     report_status = serializers.SerializerMethodField()
     report_status_display = serializers.SerializerMethodField()
-    report_reviewer_name = serializers.CharField(source="report_reviewer.username", read_only=True, default=None)
-    report_auditor_name = serializers.CharField(source="report_auditor.username", read_only=True, default=None)
+    report_reviewer_name = serializers.SerializerMethodField()
+    report_auditor_name = serializers.SerializerMethodField()
+
+    def get_report_reviewer_name(self, obj):
+        return _user_display_name(getattr(obj, "report_reviewer", None))
+
+    def get_report_auditor_name(self, obj):
+        return _user_display_name(getattr(obj, "report_auditor", None))
     pair_count = serializers.SerializerMethodField()
     sample_count = serializers.SerializerMethodField()
     reportable_pair_count = serializers.SerializerMethodField()
@@ -2156,7 +2256,7 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
             return "COMPLETED"
         pairs = list(obj.pairs.all()) if hasattr(obj, "pairs") else []
         todo = [p for p in pairs if (p.result or "").strip() and not (p.qc_flag or "").strip()]
-        done = [p for p in todo if p.report_file]
+        done = [p for p in todo if p.has_report()]
         return "TO_REVIEW" if len(done) == len(todo) else "PENDING"
 
     def get_report_status(self, obj):
@@ -2174,7 +2274,7 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
         if not hasattr(obj, "pairs"):
             return 0
         return sum(1 for p in obj.pairs.all()
-                   if (p.result or "").strip() and not (p.qc_flag or "").strip() and p.report_file)
+                   if (p.result or "").strip() and not (p.qc_flag or "").strip() and p.has_report())
 
     def get_unpaired_mothers(self, obj):
         if not hasattr(obj, 'pairs'):

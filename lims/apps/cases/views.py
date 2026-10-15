@@ -14,6 +14,7 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from .models import Case, CaseSample, WorkflowLog, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample, NipptLibraryBatch, NipptLibrarySample, NipptPoolingBatch, NipptPoolingSample, NipptHybSeqBatch, NipptHybSeqSample, NipptBioinfoBatch, NipptBioinfoSample
 from lims.apps.audit.utils import log_audit
 from .nippt_photos import NipptPhotosMixin, purge_nippt_photos
+from .report_gen import service as report_service
 from .serializers import (
     CaseListSerializer, CaseDetailSerializer, CaseCreateSerializer,
     CaseSampleSerializer, PublicRegistrationSerializer,
@@ -27,6 +28,7 @@ from .serializers import (
 )
 from lims.apps.samples.models import Sample, SampleType
 from lims.apps.organizations.models import Site
+import os
 from datetime import date
 import datetime
 
@@ -43,6 +45,22 @@ def _classify_supplement_kind(text):
     if "SUPOSTO PAI" in t:
         return "FATHER"
     return "DUPLICATE"
+
+
+def _is_sales_scoped(user):
+    """销售账号判定（小程序自助注册）：数据范围限本人登记的案例。
+
+    仅当用户「只」持有 sales 角色且非 staff/superuser 时成立 ——
+    实验室角色（technologist / bioinformatician / site_director / ...）与管理端不受影响。
+    """
+    if not user or not getattr(user, "is_authenticated", False):
+        return False
+    if user.is_superuser or user.is_staff:
+        return False
+    from lims.apps.users.models import UserRole
+
+    roles = set(UserRole.objects.filter(user=user).values_list("role__name", flat=True))
+    return roles == {"sales"}
 
 
 class CaseViewSet(viewsets.ModelViewSet):
@@ -108,6 +126,13 @@ class CaseViewSet(viewsets.ModelViewSet):
             statuses = [s.strip() for s in status_param.split(",") if s.strip()]
             # 按样本级状态过滤（避免 Case 状态与样本状态不一致导致拒收样本泄漏）
             qs = qs.filter(case_samples__sample__status__in=statuses).distinct()
+        # ?case_status= —— 按【案例级】状态过滤（小程序案例列表用）。
+        # 语义区分：?status= 是「样本状态」口径（签收页沿用）；?workflow_status= 是「样本工序阶段」；
+        # 本参数过滤 Case.status，支持逗号多值（如 ?case_status=REGISTERED,RECEIVED）。
+        case_status_param = self.request.query_params.get("case_status", "").strip()
+        if case_status_param:
+            case_statuses = [v.strip() for v in case_status_param.split(",") if v.strip()]
+            qs = qs.filter(status__in=case_statuses)
         # Source/applicant filter
         applicant = self.request.query_params.get("applicant", "").strip()
         if applicant:
@@ -136,6 +161,9 @@ class CaseViewSet(viewsets.ModelViewSet):
             qs = qs.exclude(case_samples__resample_of__isnull=False).distinct()
         if self.request.user.site_id:
             qs = qs.filter(site=self.request.user.site)
+        # 销售账号（小程序自助注册）：只返回本人登记的案例（数据隔离）
+        if _is_sales_scoped(self.request.user):
+            qs = qs.filter(created_by=self.request.user)
         return qs
 
     def get_serializer_class(self):
@@ -146,7 +174,13 @@ class CaseViewSet(viewsets.ModelViewSet):
         return CaseDetailSerializer
 
     def perform_create(self, serializer):
-        case = serializer.save()
+        # 销售自助注册账号登记时，自动补上 sales_person（供 Web 端展示）
+        extra = {}
+        if _is_sales_scoped(self.request.user) and not serializer.validated_data.get(
+            "sales_person"
+        ):
+            extra["sales_person"] = self.request.user.first_name or self.request.user.username
+        case = serializer.save(**extra)
         log_audit(self.request, "CREATE", case, changes={
             "case_number": {"old": "", "new": case.case_number},
             "pt_number": {"old": "", "new": case.pt_number or ""},
@@ -188,6 +222,33 @@ class CaseViewSet(viewsets.ModelViewSet):
         if stage != "REGISTERED":
             return "已进实验（%s）" % self.STAGE_DISPLAY.get(stage, stage)
         return None
+
+    def _sample_matched_reason(self, case, cs):
+        """只判「已与导入样本匹配」这一条锁（外部编号专用）。
+
+        外部编号改动只避开这一条：同案例内已有另一条共享同一编号（导入补样合并过），
+        改了会破坏匹配关系。已进实验/已出报告仍允许改（修正录入错误，用户 2026-10-13）。
+        """
+        ext = (getattr(cs.sample, "external_id", "") or "").strip()
+        if ext and CaseSample.objects.filter(
+            case=case, sample__external_id=ext
+        ).exclude(id=cs.id).exists():
+            return "已与导入样本匹配（同案例共享同一编号）"
+        return None
+
+    def _external_id_target(self, case):
+        """外部编号在界面上是「案例级」展示，实际落在样本上。
+
+        取法必须与案例列表「外部编号」列一致：母亲样本 → 任一有值的样本 → 第一条。
+        """
+        css = list(case.case_samples.select_related("sample").order_by("role", "created_at"))
+        for cs in css:
+            if cs.role == "MOTHER":
+                return cs
+        for cs in css:
+            if (cs.sample.external_id or "").strip():
+                return cs
+        return css[0] if css else None
 
     @action(detail=False, methods=["get"], url_path="report-versions")
     def report_versions(self, request):
@@ -277,9 +338,16 @@ class CaseViewSet(viewsets.ModelViewSet):
                 "lock_reason": self._sample_lock_reason(case, cs) or "",
             })
         case_locked = all(s["locked"] for s in samples) if samples else False
+        # 外部编号（案例级）：写在目标样本上，单独一把更宽松的锁
+        _tgt = self._external_id_target(case)
+        _ext_reason = self._sample_matched_reason(case, _tgt) if _tgt else None
         return Response({
             "case_editable": not case_locked,
             "case_locked_reason": "全部样本均已锁定" if case_locked else "",
+            "external_id": (_tgt.sample.external_id or "") if _tgt else "",
+            "external_id_locked": bool(_ext_reason),
+            "external_id_lock_reason": _ext_reason or "",
+            "external_id_target": (_tgt.sample.sample_id if _tgt else ""),
             "samples": samples,
         })
 
@@ -351,7 +419,23 @@ class CaseViewSet(viewsets.ModelViewSet):
             if str(old) != str(new):
                 case_plan[f] = (old, new)
 
-        if not case_plan and not sample_plan:
+        # 外部编号（案例级展示 → 写入目标样本；只避开"已匹配"锁）
+        ext_plan = None
+        if "external_id" in request.data:
+            _tgt = self._external_id_target(case)
+            if _tgt is None:
+                raise ValidationError({"external_id": "该案例下没有样本，无法写入外部编号"})
+            _reason = self._sample_matched_reason(case, _tgt)
+            if _reason:
+                raise ValidationError({
+                    "external_id": "%s 已锁定（%s），不可修改外部编号" % (_tgt.sample.sample_id, _reason)
+                })
+            _new = (request.data.get("external_id") or "").strip()
+            _old = (_tgt.sample.external_id or "").strip()
+            if _new != _old:
+                ext_plan = (_tgt, _old, _new)
+
+        if not case_plan and not sample_plan and not ext_plan:
             return Response({"updated": 0, "changes": {}, "message": "没有变更"})
 
         # ── 阶段二：写入 ──
@@ -384,6 +468,12 @@ class CaseViewSet(viewsets.ModelViewSet):
                 if cs_updates:
                     cs.save(update_fields=list(cs_updates.keys()) + ["updated_at"])
 
+            if ext_plan:
+                _tgt, _old, _new = ext_plan
+                _tgt.sample.external_id = _new
+                _tgt.sample.save(update_fields=["external_id", "updated_at"])
+                changes["external_id"] = {"old": _old, "new": _new}
+
             changes["edited_by"] = {"old": "", "new": edited_by}
             changes["source"] = {"old": "", "new": "case_manage_edit"}
             log_audit(
@@ -391,7 +481,8 @@ class CaseViewSet(viewsets.ModelViewSet):
                 entity_type="case", entity_repr=case.case_number,
             )
 
-        return Response({"updated": len(case_plan) + sum(len(p) for _, p in sample_plan),
+        return Response({"updated": len(case_plan) + sum(len(p) for _, p in sample_plan)
+                         + (1 if ext_plan else 0),
                          "changes": changes})
 
     def partial_update(self, request, *args, **kwargs):
@@ -1342,8 +1433,9 @@ class CaseViewSet(viewsets.ModelViewSet):
                         arrival_date=now.date(),
                         collection_notes=f"签收补录实收类型（签收人：{received_by_name}）",
                     )
-                    new_cs.test_sample_id = case.generate_test_sample_id(new_cs)
-                    new_cs.save(update_fields=["test_sample_id"])
+                    # 与补样登记同一口径：撞号自动按重采给 _R{n}
+                    case.assign_supplement_test_id(new_cs, save=False)
+                    new_cs.save(update_fields=["test_sample_id", "resample_of", "resample_number"])
                     created.append(new_cs)
 
                 labels = "、".join(
@@ -2309,11 +2401,20 @@ def sync_case_status(case_sample_ids):
 def update_wf(case_sample_ids, stage, action, batch_num="", operator=None):
     from .models import WorkflowLog
     if not case_sample_ids: return
-    CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage=stage)
-    WorkflowLog.objects.bulk_create([
-        WorkflowLog(case_sample_id=cid, stage=stage, action=action, batch_number=batch_num, operator=operator)
-        for cid in case_sample_ids
-    ])
+    # ⚠️ 普通阶段推进只作用于 is_active=True 的样本：
+    # 被重做/重采替代的样本（is_active=False）已经退出主流程，批次重建/重入时
+    # 不应再把它们的阶段重置（曾把 POOLING_FAILED 覆盖成 POOLING，失败模块查不到）。
+    # 失败标记 *_FAILED 例外——照写，保证"哪个模块失败"始终可追溯（用户 2026-10-13）。
+    _qs = CaseSample.objects.filter(id__in=case_sample_ids)
+    if not stage.endswith("_FAILED"):
+        _qs = _qs.filter(is_active=True)
+    _ids = list(_qs.values_list("id", flat=True))
+    if _ids:
+        CaseSample.objects.filter(id__in=_ids).update(workflow_stage=stage)
+        WorkflowLog.objects.bulk_create([
+            WorkflowLog(case_sample_id=cid, stage=stage, action=action, batch_number=batch_num, operator=operator)
+            for cid in _ids
+        ])
     if stage == "COMPLETED":
         for cs in CaseSample.objects.filter(id__in=case_sample_ids).select_related("case"):
             if cs.role == "MOTHER":
@@ -2780,9 +2881,13 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
                           "dna_concentration", "qc_status", "qc_note"]:
                 if field in sd:
                     setattr(sp, field, sd[field])
-            # Allow overriding remaining sample types
+            # 允许手动指定「剩余样本类型」（2026-10-13）：
+            #   显式给列表（含空列表 []）= 实验室人工值 → 原样存 remaining_override
+            #   给 null / 不传        = 交回默认（收到 − 实验用）
+            # 说明：原实现是 `or None`，会把"清空=没有剩余"误判成"用默认"。
             if "remaining_sample_types" in sd:
-                sp.remaining_override = sd["remaining_sample_types"] or None
+                _rv = sd.get("remaining_sample_types")
+                sp.remaining_override = list(_rv) if isinstance(_rv, (list, tuple)) else None
             sp.operator = request.user
             sp.processed_at = timezone.now()
             sp.save()
@@ -3488,6 +3593,221 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             "failed_samples": len(failed_ids),
             "held_samples": len(held_ids),
         })
+    @action(detail=True, methods=["post"], url_path="set-surrogacy")
+    def set_surrogacy(self, request, pk=None):
+        """报告模块直接勾/取消「代孕」（写 Case.risk_warnings，口径同报告引擎）。
+
+        body: {"pair_ids": ["..."], "is_surrogacy": true}
+        注意：代孕是**案例级**属性 → 会作用于该案例的全部配对（防止之前漏写）。
+        """
+        batch = self.get_object()
+        ids = request.data.get("pair_ids") or []
+        val = bool(request.data.get("is_surrogacy"))
+        qs = batch.pairs.select_related("case")
+        if ids:
+            qs = qs.filter(id__in=ids)
+        touched = []
+        for pair in qs:
+            case = pair.case
+            if case is None or str(case.id) in touched:
+                continue
+            rw = [str(x) for x in (case.risk_warnings or [])]
+            has = any(x.strip().lower() == "surrogacy" for x in rw)
+            if val == has:
+                continue                      # 状态没变 → 不写库
+            touched.append(str(case.id))
+            old = list(case.risk_warnings or [])
+            new_rw = rw + ["surrogacy"] if val else [x for x in rw if x.strip().lower() != "surrogacy"]
+            case.risk_warnings = new_rw
+            case.save(update_fields=["risk_warnings", "updated_at"])
+            try:
+                log_audit(request, "UPDATE", case, changes={"risk_warnings": {"old": old, "new": new_rw}})
+            except Exception:
+                pass
+        return Response({"updated_cases": touched, "is_surrogacy": val})
+
+    @action(detail=True, methods=["post"], url_path="set-gender-info")
+    def set_gender_info(self, request, pk=None):
+        """报告模块直接改「额外信息」——案例管理基本信息里显示为 gender 的那一项。
+
+        body: {"pair_ids": ["..."], "gender_info": "Yes" | "No" | ""}
+        存在母亲样本的 gender_info（Yes/No）；案例级属性 → 作用于该案例的全部配对。
+        报告引擎据此决定是否出性别报告（Yes 才出）。
+        """
+        batch = self.get_object()
+        ids = request.data.get("pair_ids") or []
+        raw = str(request.data.get("gender_info") or "").strip()
+        val = raw if raw in ("Yes", "No") else ""          # 只接受 Yes / No / 空
+        qs = batch.pairs.select_related("case")
+        if ids:
+            qs = qs.filter(id__in=ids)
+        touched = []
+        for pair in qs:
+            case = pair.case
+            if case is None or str(case.id) in touched:
+                continue
+            cs = case.case_samples.filter(role="MOTHER").select_related("sample").first()
+            if not cs or not cs.sample_id:
+                continue
+            sp = cs.sample
+            old = (sp.gender_info or "").strip()
+            if old == val:
+                continue                                    # 幂等：没变不写库
+            touched.append(str(case.id))
+            sp.gender_info = val
+            sp.save(update_fields=["gender_info", "updated_at"])
+            try:
+                log_audit(request, "UPDATE", case, changes={"gender_info": {"old": old, "new": val}})
+            except Exception:
+                pass
+        return Response({"updated_cases": touched, "gender_info": val})
+
+    # ══════════════════════════════════════════════════════════════════
+    # 报告生成（2026-10-12）：生信模块上传附表 .last → 报告模块按需生成
+    # ══════════════════════════════════════════════════════════════════
+    @action(detail=True, methods=["post"], url_path="upload-appendices")
+    def upload_appendices(self, request, pk=None):
+        """上传报告附表(.last)：按文件名里的 PT 号 + 父标签匹配本批次配对，存到 pair.appendix_file。"""
+        import os as _os
+        import re as _re
+
+        batch = self.get_object()
+        files = request.FILES.getlist("files")
+        if not files and request.FILES.get("file"):
+            files = [request.FILES["file"]]
+        if not files:
+            raise ValidationError("请选择至少一个 .last 文件")
+        # 只收 .last（2026-10-13）：以前非 .last 也返回 200，只是进 failed 清单，容易让人误以为"传上去了"
+        _bad = [getattr(f, "name", "") or "" for f in files
+                if not (getattr(f, "name", "") or "").lower().endswith(".last")]
+        if _bad:
+            return Response({"error": "只支持 .last 附表文件，请重新选择：%s" % "、".join(_bad[:3])},
+                            status=400)
+
+        # 本批次配对索引：(归一化PT号, 父标签) → [pair]
+        idx = {}
+        for p in batch.pairs.select_related("mother_sample", "father_sample"):
+            ids = list(p.mother_sample.case_sample_ids or []) + list(p.father_sample.case_sample_ids or [])
+            labels = [(p.father_label or "").upper()]
+            for cs in CaseSample.objects.filter(id__in=ids):
+                m = _re.search(r"(PT\s*\d+)", cs.test_sample_id or "", _re.I)
+                if not m:
+                    continue
+                key = (nippt_pt_norm(m.group(1)), labels[0])
+                idx.setdefault(key, [])
+                if p not in idx[key]:
+                    idx[key].append(p)
+
+        matched, failed = [], []
+        for f in files:
+            fname = getattr(f, "name", "") or ""
+            parts = _re.split(r"\.unif", fname, flags=_re.I)
+            h_val = parts[1] if len(parts) > 1 else fname
+            w_val = parts[0] if len(parts) > 1 else ""
+            pt_h, label, _ptw = nippt_pipeline_parse_name(h_val, w_val)
+            if not pt_h:
+                failed.append({"file": fname, "reason": "文件名里解析不出 PT 号"})
+                continue
+            cands = idx.get((nippt_pt_norm(pt_h), (label or "").upper())) or []
+            if not cands:   # 标签对不上时退一步：只看 PT 号
+                cands = [p for k, ps in idx.items() if k[0] == nippt_pt_norm(pt_h) for p in ps]
+            if not cands:
+                failed.append({"file": fname, "reason": "本批次没有匹配的配对（PT=%s 标签=%s）" % (pt_h, label)})
+                continue
+            if len(cands) > 1:
+                failed.append({"file": fname, "reason": "匹配到 %d 个配对（同 PT 多疑父时请在文件名里带 HA/HB）" % len(cands)})
+                continue
+            pair = cands[0]
+            pair.appendix_file.save(_os.path.basename(fname), f, save=True)
+            matched.append({"file": fname, "pair_id": str(pair.id), "pt": pt_h, "label": label,
+                            "case": pair.case.case_number if pair.case else ""})
+        return Response({"matched": len(matched), "failed": len(failed),
+                         "details": matched, "errors": failed})
+
+    def _pair_brief(self, pair):
+        """给前端的结果行：配对的可读标识。"""
+        pt = ""
+        try:
+            ids = list(pair.mother_sample.case_sample_ids or []) or list(pair.father_sample.case_sample_ids or [])
+            cs = CaseSample.objects.filter(id__in=ids).first() if ids else None
+            pt = cs.test_sample_id if cs else ""
+        except Exception:      # noqa: BLE001
+            pass
+        return {"pair_id": str(pair.id), "pt": pt,
+                "case": pair.case.case_number if pair.case else "",
+                "patient": getattr(pair.mother_sample, "patient_name", "") or "",
+                "father_label": pair.father_label or "",
+                "result": pair.result or ""}
+
+    @action(detail=True, methods=["post"], url_path="generate-reports")
+    def generate_reports(self, request, pk=None):
+        """生成报告：body {"pair_ids": [...]}；ids 为空 = 本批次全部可出报告的配对。"""
+        import tempfile as _tempfile
+
+        batch = self.get_object()
+        ids = request.data.get("pair_ids") or request.data.get("ids") or []
+        qs = batch.pairs.select_related("case", "mother_sample", "father_sample")
+        if ids:
+            qs = qs.filter(id__in=ids)
+        out_dir = _tempfile.mkdtemp(prefix="nippt_report_")
+        generated, skipped = [], []
+        for pair in qs:
+            base = self._pair_brief(pair)
+            files, why = report_service.generate_and_save(pair, out_dir, request.user)
+            if files:
+                generated.append(dict(base, files=files))
+            else:
+                skipped.append(dict(base, reason=why))
+        try:
+            log_audit(request, "GENERATE_REPORTS", batch,
+                      {"generated": len(generated), "skipped": len(skipped)})
+        except Exception:      # 审计失败不影响报告生成
+            pass
+        return Response({"batch": batch.batch_number, "generated": generated, "skipped": skipped,
+                         "count": len(generated), "skipped_count": len(skipped)})
+
+    @action(detail=True, methods=["get"], url_path="report-zip")
+    def report_zip(self, request, pk=None):
+        """把本批次已生成的报告打包下载（可选 pair_ids 过滤）。"""
+        import os as _os
+        import tempfile as _tempfile
+        import zipfile as _zipfile
+
+        batch = self.get_object()
+        from django.db.models import Q
+        _has = (Q(report_file__isnull=False) & ~Q(report_file="")) | \
+               (Q(report_file_pdf__isnull=False) & ~Q(report_file_pdf=""))
+        qs = batch.pairs.filter(_has)
+        ids = request.query_params.get("pair_ids", "")
+        if ids:
+            qs = qs.filter(id__in=[x for x in ids.split(",") if x])
+        if not qs.exists():
+            raise ValidationError("本批次还没有已生成的报告")
+        tmp = _tempfile.NamedTemporaryFile(suffix=".zip", delete=False)
+        tmp.close()
+        used = set()
+        with _zipfile.ZipFile(tmp.name, "w", _zipfile.ZIP_DEFLATED) as z:
+            for p in qs:
+                # 2026-10-13：Word / PDF 两个槽位都收（每对有哪份放哪份）
+                for _f in (p.report_file, p.report_file_pdf):
+                    if not _f:
+                        continue
+                    try:
+                        name = _os.path.basename(_f.name)
+                        if name in used:
+                            name = "%s_%s" % (str(p.id)[:8], name)
+                        used.add(name)
+                        with _f.open("rb") as fh:
+                            z.writestr(name, fh.read())
+                    except Exception:     # noqa: BLE001
+                        continue
+        with open(tmp.name, "rb") as fh:
+            data = fh.read()
+        _os.unlink(tmp.name)
+        resp = HttpResponse(data, content_type="application/zip")
+        resp["Content-Disposition"] = 'attachment; filename="nippt_reports_%s.zip"' % batch.batch_number
+        return resp
+
     @action(detail=True, methods=["post"], url_path="set-review")
     def set_review(self, request, pk=None):
         """Reports：复核/审核/报告备注（下拉选人 + 自动记录日期）"""
@@ -3536,7 +3856,7 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="upload-report")
     def upload_report(self, request, pk=None):
-        """Reports：上传/替换某个配对的报告文件（PDF）。
+        """Reports：上传/替换某个配对的报告文件（PDF 或 Word(.docx)）。
 
         multipart/form-data: file=<file>, pair_id=<uuid>, mode=overwrite|keep
         · 未达标（结果未填 或 QC 非 normal）的配对不允许上传报告（前后端两层都拦）
@@ -3556,41 +3876,55 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         f = request.FILES.get("file")
         if not f:
             return Response({"error": "未选择文件"}, status=400)
-        if not str(f.name or "").lower().endswith(".pdf"):
-            return Response({"error": "只支持 PDF 文件"}, status=400)
+        # 2026-10-13：允许 PDF 或 Word(.docx) 两种格式；单文件上限 20MB
+        _ext = os.path.splitext(str(f.name or ""))[1].lower()
+        if _ext not in (".pdf", ".docx"):
+            return Response({"error": "只支持 PDF 或 Word（.docx）文件"}, status=400)
+        if f.size and f.size > 20 * 1024 * 1024:
+            return Response({"error": "文件超过 20MB 上限，请压缩后上传"}, status=400)
 
         mode = (request.data.get("mode") or "overwrite").strip().lower()
         if mode not in ("overwrite", "keep"):
             mode = "overwrite"
-        prev_name = str(pair.report_file.name).rsplit("/", 1)[-1] if pair.report_file else ""
+        # 2026-10-13：按扩展名分流 —— Word 与 PDF 各占一个槽位，互不覆盖
+        slot = "report_file" if _ext == ".docx" else "report_file_pdf"
+        fmt = "word" if _ext == ".docx" else "pdf"
+        cur = getattr(pair, slot)
+        prev_name = str(cur.name).rsplit("/", 1)[-1] if cur else ""
         now = timezone.now()
 
         if mode == "keep" and prev_name:
-            entry = {"action": "keep", "filename": f.name, "prev_filename": prev_name,
+            entry = {"action": "keep", "filename": f.name, "prev_filename": prev_name, "format": fmt,
                      "by": getattr(request.user, "username", ""), "at": now.isoformat(), "size": f.size}
             hist = list(pair.report_history or [])
             hist.append(entry)
             pair.report_history = hist[-50:]
             pair.save(update_fields=["report_history", "updated_at"])
             log_audit(request, "UPDATE", pair,
-                      {"report_file": {"old": prev_name, "new": prev_name,
-                                       "note": f"保留原报告未替换；本次上传 {f.name}"}})
+                      {slot: {"old": prev_name, "new": prev_name,
+                              "note": f"保留原有 {fmt.upper()} 未替换；本次上传 {f.name}"}})
             self._recompute_report_status(batch)
             data = NipptBioinfoPairSerializer(pair, context={"request": request}).data
-            return Response({"message": "已保留原报告（仅记录本次上传）", "mode": "keep", "pair": data})
+            return Response({"message": f"已保留原 {fmt.upper()} 报告（仅记录本次上传）",
+                             "mode": "keep", "format": fmt, "pair": data})
 
         action = "replace" if prev_name else "upload"
-        pair.report_file = f
-        entry = {"action": action, "filename": f.name, "prev_filename": prev_name,
+        setattr(pair, slot, f)
+        fields = [slot, "report_history", "updated_at"]
+        if slot == "report_file_pdf":
+            pair.report_pdf_stale = False        # 新 PDF 上传 → 清除「可能过期」标记
+            fields.append("report_pdf_stale")
+        entry = {"action": action, "filename": f.name, "prev_filename": prev_name, "format": fmt,
                  "by": getattr(request.user, "username", ""), "at": now.isoformat(), "size": f.size}
         hist = list(pair.report_history or [])
         hist.append(entry)
         pair.report_history = hist[-50:]
-        pair.save(update_fields=["report_file", "report_history", "updated_at"])
-        log_audit(request, "UPDATE", pair, {"report_file": {"old": prev_name, "new": f.name}})
+        pair.save(update_fields=fields)
+        log_audit(request, "UPDATE", pair, {slot: {"old": prev_name, "new": f.name}})
         self._recompute_report_status(batch)
         data = NipptBioinfoPairSerializer(pair, context={"request": request}).data
-        return Response({"message": "报告已上传" if action == "upload" else "报告已替换", "mode": mode, "pair": data})
+        return Response({"message": (f"{fmt.upper()} 报告已上传" if action == "upload" else f"{fmt.upper()} 报告已替换"),
+                         "mode": mode, "format": fmt, "pair": data})
 
     @action(detail=True, methods=["post"], url_path="complete-report")
     def complete_report(self, request, pk=None):
@@ -3608,7 +3942,7 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             return Response({"error": "该批次报告已完成"}, status=400)
 
         todo = self._reportable_pairs(batch)
-        missing = [p for p in todo if not p.report_file]
+        missing = [p for p in todo if not p.has_report()]      # 任一格式即算已上传（2026-10-13）
         if missing:
             names = "、".join((p.case.pt_number or p.case.case_number) for p in missing)
             return Response({"error": f"以下配对还未上传报告：{names}"}, status=400)
@@ -3733,24 +4067,38 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         uploaded = request.FILES.get("file")
         if not uploaded:
             return Response({"error": "No file uploaded"}, status=400)
-        # Parse
+        # Parse（2026-10-13 加固：坏文件 / 非 UTF-8 编码 / 老版 .xls 一律 400 友好提示，不再 500）
         rows = []
         fname = uploaded.name.lower()
-        if fname.endswith(".csv"):
-            import csv, io
-            content_bytes = uploaded.read()
-            content_str = content_bytes.decode("utf-8-sig")
-            reader = csv.DictReader(io.StringIO(content_str))
-            rows = list(reader)
-        elif fname.endswith((".xlsx", ".xls")):
-            import openpyxl
-            wb = openpyxl.load_workbook(uploaded, read_only=True)
-            ws = wb.active
-            headers = [str(cell.value or "") for cell in next(ws.iter_rows(min_row=1, max_row=1))]
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                rows.append(dict(zip(headers, [str(v) if v is not None else "" for v in row])))
-        else:
-            return Response({"error": "Unsupported format. Use .csv or .xlsx"}, status=400)
+        try:
+            if fname.endswith(".csv"):
+                import csv, io
+                content_bytes = uploaded.read()
+                content_str = None
+                for _enc in ("utf-8-sig", "gbk", "latin-1"):   # 编码逐级兜底（GBK 的化验单很常见）
+                    try:
+                        content_str = content_bytes.decode(_enc)
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                if content_str is None:
+                    return Response({"error": "CSV 编码无法识别，请另存为 UTF-8 后上传"}, status=400)
+                reader = csv.DictReader(io.StringIO(content_str))
+                rows = list(reader)
+            elif fname.endswith(".xls"):
+                # openpyxl 只支持 .xlsx；老版 .xls 以前会直接 500，这里给出明确指引
+                return Response({"error": "不支持老版 .xls，请用 Excel 另存为 .xlsx 后上传"}, status=400)
+            elif fname.endswith(".xlsx"):
+                import openpyxl
+                wb = openpyxl.load_workbook(uploaded, read_only=True)
+                ws = wb.active
+                headers = [str(cell.value or "") for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    rows.append(dict(zip(headers, [str(v) if v is not None else "" for v in row])))
+            else:
+                return Response({"error": "Unsupported format. Use .csv or .xlsx"}, status=400)
+        except Exception as exc:
+            return Response({"error": "文件无法解析（可能已损坏、被加密或格式不符）：%s" % exc}, status=400)
         # ── 单元格归一化：na / N/A / nan / - / null 等一律视为空（不覆盖原值、不报错）──
         rows = [{k: nippt_cell_norm(v) for k, v in r.items()} for r in rows]
 

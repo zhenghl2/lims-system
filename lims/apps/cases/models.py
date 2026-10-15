@@ -210,6 +210,44 @@ class Case(models.Model):
             tid += f"_T{redo_num}"
         return tid
 
+    def assign_supplement_test_id(self, case_sample, save=True):
+        """补样登记时分配 PT 编号（用户 2026-10-13 确认：补样也要立刻有 PT 号）。
+
+        若与同案例已有活跃样本撞号（母亲已有母亲样本、或疑父同名），
+        自动改按「重采」口径加 _R{n} 后缀，避免两条样本拿到同一个 PT 号
+        （例如两个 PT71890W）。撞号时会顺带写好 resample_of / resample_number。
+
+        返回最终编号。save=False 时只改内存，由调用方自己 save。
+        """
+        from django.db.models import Max
+
+        others = list(
+            self.case_samples.exclude(id=case_sample.id)
+            .filter(is_active=True)
+            .select_related("sample")
+            .order_by("created_at")
+        )
+        candidate = self.generate_test_sample_id(case_sample)
+        if any((c.test_sample_id or "") == candidate for c in others):
+            same = [c for c in others if c.role == case_sample.role]
+            if case_sample.role == "ALLEGED_FATHER":
+                my_name = (case_sample.sample.patient_name or "").strip()
+                same_name = [c for c in same if (c.sample.patient_name or "").strip() == my_name]
+                if same_name:
+                    same = same_name
+            # 原样本优先取「没重采过」的那条
+            origin = next((c for c in same if not c.resample_number), same[0] if same else None)
+            max_n = self.case_samples.filter(resample_number__isnull=False).aggregate(
+                m=Max("resample_number"))["m"] or 0
+            next_n = max_n + 1
+            case_sample.resample_of = origin
+            case_sample.resample_number = next_n
+            candidate = self.generate_test_sample_id(case_sample, resample_num=next_n)
+        case_sample.test_sample_id = candidate
+        if save:
+            case_sample.save(update_fields=["test_sample_id", "resample_of", "resample_number"])
+        return candidate
+
     @property
     def mother_sample(self):
         return self.case_samples.filter(role=CaseSample.Role.MOTHER).first()
@@ -224,6 +262,30 @@ class Case(models.Model):
         if not samples.exists():
             return False
         return all(s.received_at is not None for s in samples)
+
+    def is_surrogacy(self):
+        """是否代孕（报告模板选择用）。
+
+        2026-10-13：登记页「是否代孕」勾选存的是 risk_warnings（JSON 列表），
+        而报告引擎原先只认「备注以代孕开头」→ 勾了却没在备注写代孕的案例会出成普通报告。
+        统一到本方法：**勾选 或 备注开头**，报告引擎与报告模块共用同一口径。
+        """
+        for w in (self.risk_warnings or []):
+            if str(w).strip().lower() == "surrogacy":
+                return True
+        return (self.notes or "")[:2] == "代孕"
+
+    def mother_gender_info(self):
+        """额外信息：母亲样本的 gender_info（Yes/No）。
+
+        2026-10-13：登记页新增「额外信息 是/否」（案例管理基本信息里显示为 gender 的那一项）。
+        报告引擎据此决定是否出性别报告（Yes 才出），报告模块该列也读它 —— 三处同一口径。
+        ⚠️ 底层字段是 samples.gender_info（不是 samples.gender，后者全库为空）。
+        """
+        for cs in self.case_samples.all():
+            if cs.role == "MOTHER" and cs.sample_id:
+                return (cs.sample.gender_info or "").strip()
+        return ""
 
     def origin_country(self):
         """案例级来源(国家)：优先孕妇样本，其次任一已填来源的样本；均无则返回空串。
@@ -1033,6 +1095,16 @@ class NipptBioinfoPair(models.Model):
 
     # ── Reports 模块：报告文件 + 复核/审核（每配对一份报告）──
     report_file = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True)
+    # 2026-10-13：PDF 独立槽位 —— Word 与 PDF 可同时存在，互不覆盖
+    report_file_pdf = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True)
+    report_pdf_stale = models.BooleanField(default=False)   # 重新生成 Word 后旧 PDF 可能过期（只提示不删）
+
+    def has_report(self):
+        """是否有报告（2026-10-13 用户口径：任一格式即算「已上传」）。"""
+        return bool(self.report_file or self.report_file_pdf)
+    # 报告附表：生信产出的位点表(.last)，报告正文的「附表一」大表来自它
+    appendix_file = models.FileField(upload_to="nippt_appendix/%Y%m/", null=True, blank=True,
+                                     verbose_name="位点附表(.last)")
     report_reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     report_auditor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
     report_note = models.TextField(blank=True, default="")

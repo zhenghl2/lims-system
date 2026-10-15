@@ -1,10 +1,10 @@
 // NipptReports.tsx — NIPPT 报告模块：按生信批次组织，配对级报告管理
 import { useState, useEffect, useRef } from "react";
-import { Table, Tag, Spin, Typography, Space, Button, Card, Empty, Select, Input, message, Tooltip, Modal, Popover, Alert } from "antd";
+import { Table, Tag, Spin, Typography, Space, Button, Card, Empty, Select, Input, message, Tooltip, Modal, Popover, Alert, Switch, Dropdown } from "antd";
 import {
   FileTextOutlined, DownloadOutlined, EyeOutlined, UploadOutlined,
   CheckCircleOutlined, ReloadOutlined, HistoryOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, FileAddOutlined,
 } from "@ant-design/icons";
 import api from "../api/client";
 
@@ -30,8 +30,94 @@ export default function NipptReports() {
   const bulkFileRef = useRef<HTMLInputElement>(null);
   const pendingPair = useRef<any>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
+  // ── 生成报告（2026-10-12）──
+  const [genOpen, setGenOpen] = useState(false);
+  const [genBusy, setGenBusy] = useState(false);
+  const [genPicked, setGenPicked] = useState<string[]>([]);
+  const [genResult, setGenResult] = useState<any>(null);
+  const [genRowBusy, setGenRowBusy] = useState<Record<string, boolean>>({});
+  // ── 报告在线预览（2026-10-13，mammoth 把 .docx 转 HTML 弹窗显示）──
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewHtml, setPreviewHtml] = useState("");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewName, setPreviewName] = useState("");
+  const [previewFull, setPreviewFull] = useState(false);          // false=快速（跳过附表/图片）
+  const [previewKind, setPreviewKind] = useState<"docx" | "pdf">("docx");   // PDF 走 iframe
+  const [previewUrl, setPreviewUrl] = useState("");
+  // ── 是否代孕（可编辑：防止登记时漏写；口径=勾选 或 备注以代孕开头）──
+  const [surBusy, setSurBusy] = useState<Record<string, boolean>>({});
+  const [giBusy, setGiBusy] = useState<Record<string, boolean>>({});   // 额外信息列
+  const previewBufRef = useRef<ArrayBuffer | null>(null);         // 缓存 docx，切换模式不重新下载
   const [bulkRows, setBulkRows] = useState<any[]>([]);
   const [bulkBusy, setBulkBusy] = useState(false);
+
+  /** 附表 520 行 + 内嵌图片会让弹窗很卡：快速模式把它们换成提示 */
+  const stripHeavyParts = (html: string) =>
+    html.replace(/<table[\s\S]*?<\/table>/g, (t) =>
+      (t.match(/<tr/g) || []).length > 50
+        ? '<p style="color:#999">（附表已跳过 · 打开右上角开关可显示）</p>' : t);
+
+  const renderPreviewHtml = async (buf: ArrayBuffer, full: boolean) => {
+    // @ts-ignore mammoth 无 TS 类型声明（动态导入，避免拖累首屏）
+    const mammoth: any = await import("mammoth");
+    // 快速模式：不把图片转成 base64（省掉大头），再跳过超大表格
+    const opts = full ? {} : { convertImage: mammoth.images.imgElement(() => ({ src: "" })) };
+    const { value } = await mammoth.convertToHtml({ arrayBuffer: buf }, opts);
+    let html = value || "";
+    if (!full) html = stripHeavyParts(html);
+    return html || "<p>（文档内容为空）</p>";
+  };
+
+  /** 小眼睛 → 拉 docx 用 mammoth 转 HTML 弹窗预览（默认快速模式）；失败提示改用下载 */
+  const previewReport = async (url: string, name: string) => {
+    if (!url) return;
+    setPreviewName(name || "报告预览");
+    setPreviewOpen(true);
+    // PDF：浏览器原生阅读器内嵌（mammoth 只认 docx）
+    const isPdf = /\.pdf(\?|$)/i.test(url) || /\.pdf$/i.test(name || "");
+    if (isPdf) {
+      setPreviewKind("pdf");
+      setPreviewUrl(url);
+      setPreviewHtml("");
+      setPreviewFull(false);
+      setPreviewLoading(false);
+      previewBufRef.current = null;
+      return;
+    }
+    setPreviewKind("docx");
+    setPreviewUrl("");
+    setPreviewHtml("");
+    setPreviewFull(false);
+    setPreviewLoading(true);
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      const buf = await resp.arrayBuffer();
+      previewBufRef.current = buf;
+      setPreviewHtml(await renderPreviewHtml(buf, false));
+    } catch (e: any) {
+      setPreviewHtml(
+        '<p style="color:#ff4d4f">在线预览失败：' + (e?.message || String(e)) +
+        '</p><p>请改用「下载」按钮用 Word 打开。</p>'
+      );
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  /** 切换到完整模式：用缓存的 docx 重新转换（含图片与附表），不重新下载 */
+  const togglePreviewFull = async (v: boolean) => {
+    setPreviewFull(v);
+    if (!previewBufRef.current) return;
+    setPreviewLoading(true);
+    try {
+      setPreviewHtml(await renderPreviewHtml(previewBufRef.current, v));
+    } catch (e: any) {
+      setPreviewHtml('<p style="color:#ff4d4f">转换失败：' + (e?.message || String(e)) + '</p>');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
 
   const loadBatches = async () => {
     try {
@@ -58,6 +144,39 @@ export default function NipptReports() {
     finally { setDetailLoading(false); }
   };
 
+  /** 设置/取消「代孕」标记（写案例 risk_warnings，与报告引擎同一口径） */
+  const setSurrogacy = async (row: any, val: boolean) => {
+    setSurBusy((p) => ({ ...p, [row.id]: true }));
+    try {
+      await api.post(`/cases/bioinfo/${row.batch}/set-surrogacy/`, {
+        pair_ids: [row.id], is_surrogacy: val,
+      });
+      message.success(val ? "已标记为代孕（该案例全部配对生效）" : "已取消代孕标记");
+      await refreshDetail();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || e?.response?.data?.error || "设置失败");
+    } finally {
+      setSurBusy((p) => { const n = { ...p }; delete n[row.id]; return n; });
+    }
+  };
+
+  /** 额外信息（2026-10-13）：= 案例管理基本信息里的 gender 项；案例级 → 全部配对生效 */
+  const setGenderInfo = async (row: any, val: string) => {
+    setGiBusy((p) => ({ ...p, [row.id]: true }));
+    try {
+      await api.post(`/cases/bioinfo/${row.batch}/set-gender-info/`, {
+        pair_ids: [row.id], gender_info: val,
+      });
+      message.success(val ? `额外信息已设为「${val === "Yes" ? "是" : "否"}」（该案例全部配对生效）`
+                          : "额外信息已清空（未填 → 不出性别报告）");
+      await refreshDetail();
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || e?.response?.data?.error || "设置失败");
+    } finally {
+      setGiBusy((p) => { const n = { ...p }; delete n[row.id]; return n; });
+    }
+  };
+
   const refreshDetail = async () => {
     if (!selectedBatch) return;
     try {
@@ -70,20 +189,127 @@ export default function NipptReports() {
 
   // 未达标：结果未填 或 QC 有异常标记
   const notQualified = (p: any) => !p.result || (p.qc_flag || "") !== "";
+
+  /** 打开「生成报告」：默认全选本批次所有可出报告的配对 */
+  const openGenerate = () => {
+    const ok = (selectedBatch?.pairs || []).filter((p: any) => !notQualified(p)).map((p: any) => p.id);
+    setGenPicked(ok); setGenResult(null);
+    if (ok.length === 0) { message.warning("本批次没有可出报告的配对（无结果或 QC 异常）"); return; }
+    setGenOpen(true);
+  };
+
+  const doGenerate = async () => {
+    if (!selectedBatch) return;
+    setGenBusy(true);
+    try {
+      const r = await api.post(`/cases/bioinfo/${selectedBatch.id}/generate-reports/`, { pair_ids: genPicked }, { timeout: 600000 });
+      setGenResult(r.data || null);
+      const n = r.data?.count || 0, sk = r.data?.skipped_count || 0;
+      if (n) message.success(`已生成 ${n} 份报告${sk ? `（${sk} 个跳过）` : ""}`);
+      else message.warning(`没有生成报告${sk ? `（${sk} 个跳过）` : ""}`);
+      refreshDetail();
+    } catch (e: any) {
+      message.error("生成失败：" + (e?.response?.data?.detail || e?.message || ""));
+    } finally { setGenBusy(false); }
+  };
+
+  /** 单个配对生成 */
+  const genOne = async (pairId: string) => {
+    if (!selectedBatch) return;
+    setGenRowBusy((p) => ({ ...p, [pairId]: true }));
+    try {
+      const r = await api.post(`/cases/bioinfo/${selectedBatch.id}/generate-reports/`, { pair_ids: [pairId] }, { timeout: 600000 });
+      const g = (r.data?.generated || []).length, why = r.data?.skipped?.[0]?.reason;
+      if (g) { message.success("报告已生成"); refreshDetail(); }
+      else message.warning("未生成：" + (why || "未知原因"));
+    } catch (e: any) {
+      message.error("生成失败：" + (e?.response?.data?.detail || e?.message || ""));
+    } finally { setGenRowBusy((p) => ({ ...p, [pairId]: false })); }
+  };
+
+  const downloadReportZip = async () => {
+    if (!selectedBatch) return;
+    try {
+      const ids = genResult?.generated?.map((x: any) => x.pair_id) || [];
+      const r = await api.get(`/cases/bioinfo/${selectedBatch.id}/report-zip/`, {
+        params: { pair_ids: ids.join(",") }, responseType: "blob", timeout: 600000 });
+      const url = URL.createObjectURL(new Blob([r.data]));
+      const a = document.createElement("a");
+      a.href = url; a.download = `nippt_reports_${selectedBatch.batch_number}.zip`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+    } catch (e: any) {
+      message.error("打包下载失败：" + (e?.response?.data?.detail || e?.message || ""));
+    }
+  };
+  // M.Conc 百分比显示（2026-10-13 用户要求）：库里存小数比例，0.084 → 8.40%
+  const fmtPct = (v: any) => {
+    if (v === null || v === undefined || v === "") return "—";
+    const n = Number(v);
+    return Number.isFinite(n) ? `${(n * 100).toFixed(2)}%` : String(v);
+  };
+
+  // M.Het / M.Conc 两位小数（2026-10-13 用户要求）；空值仍显示 —
+  const fmt2 = (v: any) => {
+    if (v === null || v === undefined || v === "") return "—";
+    const n = Number(v);
+    return Number.isFinite(n) ? n.toFixed(2) : String(v);
+  };
+
   const badReason = (p: any) => !p.result ? "无结果" : `QC异常：${p.qc_flag_display || p.qc_flag}`;
+
+  // ── 复核人/审核人下拉（2026-10-13 用户确认）：只列有中文名的用户，且只显示中文名 ──
+  const cnName = (u: any) => `${u?.first_name || ""}${u?.last_name || ""}`.trim();
+  const isCnUser = (u: any) => /[\u4e00-\u9fff]/.test(cnName(u));
+  const cnUserOptions = (users || [])
+    .filter(isCnUser)
+    .map((u: any) => ({ label: cnName(u), value: u.id }));
+
+  /** 下拉选项 = 有中文名的用户；**若「当前值」不在名单里**（历史/测试值，如 TestUser 没有汉字被过滤掉），
+   *  把它按真实姓名补进选项。
+   *  ⚠️ 2026-10-14：antd 对不在 options 里的值会「回退显示原始值」——我们的值是 UUID（36 字符），
+   *  在 ~84px 的方框里必然显示不全（用户反馈"审核人/复核人列点开看不全名字"的真因）。 */
+  const cnOptionsWith = (users: any[], curId: any, curName: any) => {
+    if (!curId || cnUserOptions.some((o: any) => o.value === curId)) return cnUserOptions;
+    const u = (users || []).find((x: any) => x.id === curId);
+    // 只放姓名本身：方框只有一列宽，加后缀（如「（历史值）」）会被截断得更厉害
+    const label = String(curName || "").trim() || cnName(u) || u?.username || "（原用户已删除）";
+    return [{ label, value: curId }, ...cnUserOptions];
+  };
 
   // 文件名解析 PT 编号（不区分大小写）：HK_report_TC_PT71739-Y.pdf → "71739"
   const parsePtFromName = (name: string) => {
     const m = String(name || "").match(/PT\s*0*(\d+)/i);
     return m ? String(parseInt(m[1], 10)) : "";
   };
+  /** 文件名里的角色后缀（2026-10-13 修 HA/HB 无法区分）
+   *  PT71694a → HA、PT71694b → HB、PT72123W → W、PT72033H → H */
+  const parseRoleFromName = (name: string) => {
+    const m = String(name || "").match(/PT\s*0*(\d+)\s*([A-Za-z]{1,2})?(?!\d)/i);
+    const t = (m?.[2] || "").toUpperCase();
+    if (!t) return "";
+    if (t === "A") return "HA";
+    if (t === "B") return "HB";
+    return t;
+  };
+  const pairOptionLabel = (p: any) =>
+    `${p.pt_number || ""} ${p.father_label || ""}${p.father_name ? " · " + p.father_name : ""}`.trim();
+
   const normPt = (v: any) => {
     const m = String(v || "").match(/(\d+)/);
     return m ? String(parseInt(m[1], 10)) : "";
   };
   const lastHist = (r: any) => (Array.isArray(r?.report_history) && r.report_history.length)
     ? r.report_history[r.report_history.length - 1] : null;
-  const STATE_LABEL: Record<string, string> = { no_pt: "无PT编号", unmatched: "未匹配", unqualified: "未达标", dup: "重复", bad_type: "非PDF" };
+  const STATE_LABEL: Record<string, string> = { no_pt: "无PT编号", unmatched: "未匹配", unqualified: "未达标", dup: "重复", bad_type: "格式不支持", too_big: "超过20MB" };
+
+  // ── 报告文件校验（2026-10-13：PDF 或 Word(.docx)，单文件 ≤20MB）──
+  const MAX_REPORT_MB = 20;
+  const checkReportFile = (f: File): string => {
+    if (!/\.(pdf|docx)$/i.test(f.name || "")) return "只支持 PDF 或 Word（.docx）文件";
+    if (f.size > MAX_REPORT_MB * 1024 * 1024) return `文件超过 ${MAX_REPORT_MB}MB 上限，请压缩后上传`;
+    return "";
+  };
   const histLine = (h: any) => h
     ? `${h.action === "keep" ? "保留" : h.action === "replace" ? "替换" : "上传"} · ${h.filename}${h.prev_filename ? `（原 ${h.prev_filename}）` : ""} · ${h.by || "-"} · ${fmtDT(h.at)}`
     : "";
@@ -111,11 +337,14 @@ export default function NipptReports() {
     const pair = pendingPair.current;
     pendingPair.current = null;
     if (!f || !pair) return;
-    if (!/\.pdf$/i.test(f.name)) { message.warning("只支持 PDF 文件"); return; }
+    const _bad = checkReportFile(f);
+    if (_bad) { message.warning(_bad); return; }
     const h = lastHist(pair);
-    if (pair.report_file_url) {
+    const _isPdf = /\.pdf$/i.test(f.name || "");
+    const _fmt = _isPdf ? "PDF" : "Word";
+    if (_isPdf ? pair.report_file_pdf_url : pair.report_file_url) {
       Modal.confirm({
-        title: "该配对已有报告",
+        title: `该配对的 ${_fmt} 报告已存在`,
         okText: "覆盖", cancelText: "保留现有",
         content: (
           <div style={{ fontSize: 12, lineHeight: 1.8 }}>
@@ -139,22 +368,64 @@ export default function NipptReports() {
     const files: File[] = Array.from(e.target.files || []);
     if (!files.length) return;
     const pairs = selectedBatch?.pairs || [];
-    const seen: Record<string, number> = {};
     const rows = files.map((f: File) => {
       const pt = parsePtFromName(f.name);
-      const cand = pt ? pairs.find((p: any) => normPt(p.pt_number) === pt) : null;
-      let state = "ok", reason = "";
+      const role = parseRoleFromName(f.name);
+      const found = pt ? pairs.filter((p: any) => normPt(p.pt_number) === pt) : [];
+      let cand: any = null, reason = "";
+      if (found.length === 1) cand = found[0];
+      else if (found.length > 1) {
+        // 同 PT 多配对（一个 case 多个疑父 HA/HB）→ 用文件名角色后缀区分（2026-10-13）
+        const hit = role ? found.filter((p: any) => String(p.father_label || "").toUpperCase() === role) : [];
+        if (hit.length === 1) cand = hit[0];
+        else reason = `该 PT 下有 ${found.length} 个配对（${found.map((p: any) => p.father_label || "?").join("/")}），`
+          + (role ? `文件名后缀「${role}」对不上，` : "文件名没有角色后缀，") + "请在「匹配到」里手工选择";
+      }
+      let state = "ok";
       if (!pt) { state = "no_pt"; reason = "文件名里没有 PT 编号"; }
-      else if (!cand) { state = "unmatched"; reason = `本批次没有 PT${pt} 的配对（库内编号可能不同）`; }
-      else if ((seen[pt] || 0) > 0) { state = "dup"; reason = "与另一个文件解析到同一个 PT"; }
+      else if (!found.length) { state = "unmatched"; reason = `本批次没有 PT${pt} 的配对（库内编号可能不同）`; }
+      else if (!cand) { state = "unmatched"; }
       else if (notQualified(cand)) { state = "unqualified"; reason = `该配对未达标（${badReason(cand)}）`; }
-      else if (!/\.pdf$/i.test(f.name)) { state = "bad_type"; reason = "只支持 PDF 文件"; }
-      if (pt) seen[pt] = (seen[pt] || 0) + 1;
-      return { key: `${f.name}-${Math.random()}`, file: f, pt, pair: cand, state, reason,
-               mode: cand?.report_file_url ? "overwrite" : "overwrite" };
+      else if (checkReportFile(f)) {
+        const why = checkReportFile(f);
+        state = /MB/.test(why) ? "too_big" : "bad_type";
+        reason = why;
+      }
+      return { key: `${f.name}-${Math.random()}`, file: f, pt, role,
+               cands: (pt && found.length) ? found : pairs, pair: cand, state, reason, mode: "overwrite" };
+    });
+    // 判重：同 PT + 同角色 才算重复（HA/HB 两个文件不再互判重复）
+    // 判重：同 PT + 同角色 + 同格式 才算重复（Word/PDF 两份不算，2026-10-13）
+    const _fmtOf = (f: File) => (/\.pdf$/i.test(f.name || "") ? "pdf" : "word");
+    const cnt: Record<string, number> = {};
+    rows.forEach((r: any) => {
+      if (r.pt) { const k = `${r.pt}|${r.role}|${_fmtOf(r.file)}`; cnt[k] = (cnt[k] || 0) + 1; }
+    });
+    rows.forEach((r: any) => {
+      const k = `${r.pt}|${r.role}|${_fmtOf(r.file)}`;
+      if (r.pt && r.state === "ok" && cnt[k] > 1) {
+        r.state = "dup"; r.reason = "与另一个文件解析到同一个 PT、同一角色和同一格式";
+      }
     });
     setBulkRows(rows);
     setBulkOpen(true);
+  };
+
+  /** 手工指定某个文件匹配的配对（HA/HB 同 PT 时的兜底，2026-10-13） */
+  const pickBulkPair = (key: string, pairId: string) => {
+    setBulkRows((rows) => rows.map((r: any) => {
+      if (r.key !== key) return r;
+      const pair = (r.cands || []).find((c: any) => c.id === pairId) || null;
+      let state = "ok", reason = "";
+      if (!r.pt) { state = "no_pt"; reason = "文件名里没有 PT 编号"; }
+      else if (!pair) { state = "unmatched"; reason = "未选择配对"; }
+      else if (notQualified(pair)) { state = "unqualified"; reason = `该配对未达标（${badReason(pair)}）`; }
+      else {
+        const why = checkReportFile(r.file);
+        if (why) { state = /MB/.test(why) ? "too_big" : "bad_type"; reason = why; }
+      }
+      return { ...r, pair, state, reason };
+    }));
   };
 
   const doBulk = async () => {
@@ -229,7 +500,9 @@ export default function NipptReports() {
   // ── 完成批次准入 ──
   const rp = selectedBatch ? (selectedBatch.pairs || []) : [];
   const reportable = rp.filter((p: any) => !notQualified(p));
-  const reportMissing = reportable.filter((p: any) => !p.report_file_url);
+  // 2026-10-13：Word/PDF 任一格式即算已上传
+  const hasAnyReport = (p: any) => !!(p?.report_file_url || p?.report_file_pdf_url);
+  const reportMissing = reportable.filter((p: any) => !hasAnyReport(p));
   const revVal = batRev ?? (selectedBatch?.report_reviewer || undefined);
   const audVal = batAud ?? (selectedBatch?.report_auditor || undefined);
   const uname = (id?: string) => users.find((u: UserItem) => u.id === id)?.username || "—";
@@ -265,15 +538,18 @@ export default function NipptReports() {
   };
 
   const pairColumns = [
-    { title: "Case#", dataIndex: "case_number", key: "cn", width: 150, ellipsis: true, fixed: "left" as const },
-    { title: "PT#", dataIndex: "pt_number", key: "pt", width: 90 },
+    { title: "Case#", dataIndex: "case_number", key: "cn", width: 110, ellipsis: true, fixed: "left" as const,
+      // 19 字符在 110px 下必然截断 → 补 hover Tooltip 看全（2026-10-13 用户要求缩短本列）
+      render: (v: string) => v ? <Tooltip title={v}>{v}</Tooltip> : "—" },
+    { title: "PT#", dataIndex: "pt_number", key: "pt", width: 90, fixed: "left" as const },
     { title: "标签", dataIndex: "father_label", key: "lb", width: 52, render: (v: string) => <Tag style={{ margin: 0 }}>{v}</Tag> },
-    { title: "外部编号", key: "extid", width: 140, ellipsis: true,
+    { title: "外部编号", key: "extid", width: 180, ellipsis: true,
       render: (_: any, r: any) => {
         const v = r.sample_dates?.external_id || r.sample_dates?.mother?.external_id;
         return v ? <Tooltip title={v}>{v}</Tooltip> : "—";
       } },
     { title: "来源", dataIndex: "case_source", key: "src", width: 66, render: (v: string) => v || "—" },
+    { title: "报告版本", dataIndex: "report_version", key: "rvs", width: 84, render: (v: string) => v || "—" },
     { title: "到样日期", key: "arrv", width: 104,
       render: (_: any, r: any) => {
         const m = r.sample_dates?.mother?.receipt_date, f = r.sample_dates?.father?.receipt_date;
@@ -294,21 +570,34 @@ export default function NipptReports() {
       } },
     { title: "报告日期", dataIndex: "report_date", key: "rpd", width: 96,
       render: (v: string) => v ? String(v).slice(0, 10) : "—" },
-    { title: "报告版本", dataIndex: "report_version", key: "rvs", width: 84, render: (v: string) => v || "—" },
     { title: "孕妇 证件/管号", dataIndex: "mother_display", key: "mdisp", width: 170, ellipsis: true,
       render: (v: string) => v || "—" },
     { title: "疑父 证件/管号", dataIndex: "father_display", key: "fdisp", width: 170, ellipsis: true,
       render: (v: string) => v || "—" },
     { title: "Mother", dataIndex: "mother_name", key: "mn", width: 110, ellipsis: true },
     { title: "Father", dataIndex: "father_name", key: "fn", width: 120, ellipsis: true },
-    { title: "M.Het", dataIndex: "mother_het_ratio", key: "mh", width: 68, render: (v: any) => v ?? "—" },
-    { title: "M.Conc", dataIndex: "mother_concentration", key: "mc", width: 72, render: (v: any) => v ?? "—" },
+    { title: "M.Het", dataIndex: "mother_het_ratio", key: "mh", width: 68, render: (v: any) => fmt2(v) },
+    { title: "M.Conc", dataIndex: "mother_concentration", key: "mc", width: 76, render: (v: any) => fmtPct(v) },
     { title: "Result", dataIndex: "result_display", key: "rd", width: 100,
       render: (v: string) => {
         if (!v) return <Tag color="red">未填</Tag>;
         const color = v === "支持" ? "green" : v === "不支持" ? "red" : "orange";
         return <Tag color={color}>{v}</Tag>;
       } },
+    { title: "男性样本类型", dataIndex: "father_sample_type", key: "fst", width: 104,
+      render: (v: string) => v ? <Tag color="blue" style={{ margin: 0 }}>{v}</Tag> : "—" },
+    { title: "是否代孕", dataIndex: "is_surrogacy", key: "sur", width: 92,
+      render: (v: boolean, r: any) => (
+        <Select size="small" style={{ width: 70 }} value={v ? "Y" : "N"} loading={!!surBusy[r.id]}
+          onChange={(nv: string) => setSurrogacy(r, nv === "Y")}
+          options={[{ value: "N", label: "否" }, { value: "Y", label: "是" }]} />
+      ) },
+    { title: "额外信息", dataIndex: "gender_info", key: "gi", width: 92,
+      render: (v: string, r: any) => (
+        <Select size="small" style={{ width: "100%" }} value={v || ""} loading={!!giBusy[r.id]}
+          onChange={(nv: string) => setGenderInfo(r, nv)}
+          options={[{ value: "", label: "未填" }, { value: "Yes", label: "是" }, { value: "No", label: "否" }]} />
+      ) },
     { title: "Note", dataIndex: "note", key: "nt", width: 100, ellipsis: true, render: (v: string) => v || "—" },
     { title: "QC", dataIndex: "qc_flag_display", key: "qc", width: 100,
       render: (v: string) => v ? <Tag color="red">{v}</Tag> : <Tag color="green">✓</Tag> },
@@ -322,9 +611,12 @@ export default function NipptReports() {
             </Tooltip>
           );
         }
-        if (!r.report_file_url) return <Tag color="orange" style={{ margin: 0 }}>⏳ 待上传</Tag>;
+        if (!hasAnyReport(r)) return <Tag color="orange" style={{ margin: 0 }}>⏳ 待上传</Tag>;
         const h = lastHist(r);
-        return <Tooltip title={histLine(h)}><Tag color="green" style={{ margin: 0 }}>✅ 已上传</Tag></Tooltip>;
+        const fmts = [r.report_file_url ? "Word" : "", r.report_file_pdf_url ? "PDF" : ""].filter(Boolean).join(" + ");
+        return <Tooltip title={`${fmts}${r.report_pdf_stale && r.report_file_pdf_url ? "（PDF 可能过期）" : ""}
+${histLine(h)}`}>
+          <Tag color="green" style={{ margin: 0 }}>✅ 已上传</Tag></Tooltip>;
       } },
     // ── 报告文件 + 上传 ──
     { title: "报告", key: "rf", width: 150,
@@ -333,13 +625,37 @@ export default function NipptReports() {
         const hist = Array.isArray(r.report_history) ? r.report_history.slice().reverse() : [];
         return (
           <Space size={4}>
-            {r.report_file_url && (<>
-              <Tooltip title="下载"><a href={r.report_file_url} download><Button size="small" icon={<DownloadOutlined />} /></a></Tooltip>
-              <Tooltip title="预览"><a href={r.report_file_url} target="_blank" rel="noreferrer"><Button size="small" icon={<EyeOutlined />} /></a></Tooltip>
-            </>)}
-            <Tooltip title={r.report_file_url ? "重新上传（可选覆盖/保留）" : "上传报告"}>
+            <Tooltip title="生成该样本报告">
+              <Button size="small" icon={<FileAddOutlined />} loading={!!genRowBusy[r.id]}
+                onClick={() => genOne(r.id)} />
+            </Tooltip>
+            {hasAnyReport(r) && (
+              <Dropdown menu={{ items: [
+                { key: "word", label: <a href={r.report_file_url || undefined}>下载 Word</a>, disabled: !r.report_file_url },
+                { key: "pdf", label: <a href={r.report_file_pdf_url || undefined}>下载 PDF</a>, disabled: !r.report_file_pdf_url },
+                { type: "divider" as const },
+                { key: "zip", label: "打包下载两个", disabled: !(r.report_file_url && r.report_file_pdf_url),
+                  onClick: () => window.open(`/api/v1/cases/bioinfo/${r.batch}/report-zip/?pair_ids=${r.id}`, "_blank") },
+              ] }}>
+                <Tooltip title="下载（可选格式）"><Button size="small" icon={<DownloadOutlined />} /></Tooltip>
+              </Dropdown>
+            )}
+            {hasAnyReport(r) && (
+              <Tooltip title="在线预览">
+                <Button size="small" icon={<EyeOutlined />}
+                  onClick={() => r.report_file_url
+                    ? previewReport(r.report_file_url, String(r.report_file || "").split("/").pop() || "报告预览")
+                    : previewReport(r.report_file_pdf_url, String(r.report_file_pdf || "").split("/").pop() || "报告预览")} />
+              </Tooltip>
+            )}
+            <Tooltip title={hasAnyReport(r) ? "上传报告（按扩展名存入 Word / PDF 槽，同格式可选覆盖/保留）" : "上传报告"}>
               <Button size="small" icon={<UploadOutlined />} onClick={() => pickSingle(r)} />
             </Tooltip>
+            {r.report_pdf_stale && r.report_file_pdf_url && (
+              <Tooltip title="Word 报告已重新生成，这份 PDF 可能是旧版（可重新上传覆盖）">
+                <Tag color="orange" style={{ margin: 0 }}>PDF 可能过期</Tag>
+              </Tooltip>
+            )}
             {hist.length > 0 && (
               <Popover trigger="click" title="报告更新记录" content={
                 <div style={{ maxWidth: 420, fontSize: 12, lineHeight: 1.9 }}>
@@ -352,28 +668,28 @@ export default function NipptReports() {
           </Space>
         );
       } },
-    { title: "复核人", key: "rv", width: 145,
+    { title: "复核人", key: "rv", width: 120,
       render: (_: any, r: any) => notQualified(r) ? (
-        <Select size="small" style={{ width: 125 }} disabled placeholder="未达标·无需复核" />
+        <Select size="small" style={{ width: "100%" }} disabled placeholder="未达标" title="未达标（无结果/QC异常），无需复核" />
       ) : (
         <Space size={2} direction="vertical" style={{ lineHeight: 1.2 }}>
-          <Select size="small" style={{ width: 125 }} placeholder="选择"
+          <Select size="small" style={{ width: "100%" }} placeholder="选择" popupMatchSelectWidth={180}
             value={revSel[r.id] ?? (r.report_reviewer || undefined)}
             onChange={(v) => setRevSel(prev => ({ ...prev, [r.id]: v }))}
-            options={users.map(u => ({ label: u.username, value: u.id }))} showSearch optionFilterProp="label" />
+            options={cnOptionsWith(users, revSel[r.id] ?? r.report_reviewer, r.report_reviewer_name)} showSearch optionFilterProp="label" />
           {r.report_reviewer_name && <Text type="success" style={{ fontSize: 11 }}>✓ {r.report_reviewer_name}</Text>}
         </Space>
       ) },
     { title: "复核日期", dataIndex: "report_reviewed_at", key: "rvd", width: 100, render: fmtDT },
-    { title: "审核人", key: "ad", width: 145,
+    { title: "审核人", key: "ad", width: 120,
       render: (_: any, r: any) => notQualified(r) ? (
-        <Select size="small" style={{ width: 125 }} disabled placeholder="未达标·无需审核" />
+        <Select size="small" style={{ width: "100%" }} disabled placeholder="未达标" title="未达标（无结果/QC异常），无需审核" />
       ) : (
         <Space size={2} direction="vertical" style={{ lineHeight: 1.2 }}>
-          <Select size="small" style={{ width: 125 }} placeholder="选择"
+          <Select size="small" style={{ width: "100%" }} placeholder="选择" popupMatchSelectWidth={180}
             value={audSel[r.id] ?? (r.report_auditor || undefined)}
             onChange={(v) => setAudSel(prev => ({ ...prev, [r.id]: v }))}
-            options={users.map(u => ({ label: u.username, value: u.id }))} showSearch optionFilterProp="label" />
+            options={cnOptionsWith(users, audSel[r.id] ?? r.report_auditor, r.report_auditor_name)} showSearch optionFilterProp="label" />
           {r.report_auditor_name && <Text type="success" style={{ fontSize: 11 }}>✓ {r.report_auditor_name}</Text>}
         </Space>
       ) },
@@ -408,7 +724,7 @@ export default function NipptReports() {
           <Title level={4} style={{ margin: 0 }}>报告管理</Title>
           <Text type="secondary" style={{ fontSize: 12 }}>按生信批次组织 · 共 {batches.length} 个已完成批次</Text>
         </Space>
-        <Button icon={<ReloadOutlined />} onClick={loadBatches}>刷新</Button>
+        <Button icon={<ReloadOutlined />} onClick={loadBatches}>刷新批次列表</Button>
       </div>
 
       <div style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
@@ -461,9 +777,10 @@ export default function NipptReports() {
                 )}
               </Space>
               <Space>
-                <Button icon={<ReloadOutlined />} onClick={refreshDetail}>刷新</Button>
+                <Button icon={<ReloadOutlined />} onClick={refreshDetail}>刷新报告列表</Button>
                 <Button type="primary" icon={<UploadOutlined />}
                   onClick={() => { if (bulkFileRef.current) { bulkFileRef.current.value = ""; bulkFileRef.current.click(); } }}>批量上传报告</Button>
+                <Button type="primary" icon={<FileAddOutlined />} ghost onClick={openGenerate}>生成报告</Button>
               </Space>
             </div>
             <Table
@@ -472,13 +789,90 @@ export default function NipptReports() {
               columns={pairColumns}
               dataSource={selectedBatch.pairs || []}
               pagination={false}
-              scroll={{ x: 2280, y: "calc(100vh - 430px)" }}
+              scroll={{ x: 2320, y: "calc(100vh - 430px)" }}
               onRow={(r: any) => ({
                 style: notQualified(r) ? { background: "#fff2f0" } : {},
               })}
             />
-            <input ref={singleFileRef} type="file" accept=".pdf,application/pdf" style={{ display: "none" }} onChange={onSingleFile} />
-            <input ref={bulkFileRef} type="file" accept=".pdf,application/pdf" multiple style={{ display: "none" }} onChange={onBulkFiles} />
+            <Modal
+              open={previewOpen}
+              title={
+                <Space>
+                  <span>{previewName}</span>
+                  {previewKind === "docx" && (
+                    <Switch size="small" checked={previewFull} onChange={togglePreviewFull}
+                      checkedChildren="含附表/图片" unCheckedChildren="快速预览" />
+                  )}
+                </Space>
+              }
+              onCancel={() => setPreviewOpen(false)}
+              footer={null}
+              width={900}
+              styles={{ body: { maxHeight: "72vh", overflow: "auto", background: "#fff", padding: 20 } }}
+            >
+              {previewLoading
+                ? <div style={{ textAlign: "center", padding: 48 }}><Spin /></div>
+                : previewKind === "pdf"
+                  ? <iframe src={previewUrl} title={previewName}
+                      style={{ width: "100%", height: "72vh", border: 0 }} />
+                  : <div className="nippt-report-preview" dangerouslySetInnerHTML={{ __html: previewHtml }} />}
+            </Modal>
+            <Modal
+              title={<Space><FileAddOutlined /> 生成报告 — <Text code>{selectedBatch.batch_number}</Text></Space>}
+              open={genOpen}
+              width={900}
+              onCancel={() => setGenOpen(false)}
+              footer={
+                <Space>
+                  <Button onClick={() => setGenOpen(false)}>关闭</Button>
+                  {genResult && (genResult.generated || []).length > 0 && (
+                    <Button icon={<DownloadOutlined />} onClick={downloadReportZip}>打包下载</Button>
+                  )}
+                  <Button type="primary" icon={<FileAddOutlined />} loading={genBusy}
+                    disabled={genPicked.length === 0} onClick={doGenerate}>
+                    生成选中的 {genPicked.length} 个
+                  </Button>
+                </Space>
+              }
+            >
+              <Alert type="info" showIcon style={{ marginBottom: 10 }}
+                message={<span style={{ fontSize: 12 }}>报告按「案例的报告版本」自动选模板；结果为空/亲缘临界、或缺少位点附表(.last) 的配对会跳过并给出原因。默认全选。</span>} />
+              <Table
+                size="small" rowKey="id" pagination={false}
+                scroll={{ y: 320 }}
+                dataSource={(selectedBatch?.pairs || []).filter((p: any) => !notQualified(p))}
+                rowSelection={{
+                  selectedRowKeys: genPicked,
+                  onChange: (keys: any) => setGenPicked(keys as string[]),
+                }}
+                columns={[
+                  { title: "PT编号", dataIndex: "pt_number", width: 130 },
+                  { title: "案例", dataIndex: "case_number", width: 170 },
+                  { title: "孕妇", dataIndex: "mother_name", ellipsis: true },
+                  { title: "结果", dataIndex: "result", width: 90,
+                    render: (v: string) => v === "INCLUSION" ? "支持" : v === "EXCLUSION" ? "不支持" : v },
+                  { title: "附表", key: "ap", width: 80,
+                    render: (_: any, r: any) => r.has_appendix ? "✓" : <Text type="danger">缺</Text> },
+                ]}
+              />
+              {genResult && (
+                <div style={{ marginTop: 12 }}>
+                  <Space>
+                    <Text type="success">已生成 {genResult.count} 份</Text>
+                    {genResult.skipped_count > 0 && <Text type="warning">跳过 {genResult.skipped_count} 个</Text>}
+                  </Space>
+                  {(genResult.skipped || []).length > 0 && (
+                    <ul style={{ margin: "6px 0 0 0", paddingLeft: 18, fontSize: 12, color: "#a8071a" }}>
+                      {genResult.skipped.map((x: any, i: number) => (
+                        <li key={i}>{x.pt || x.case}：{x.reason}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+            </Modal>
+            <input ref={singleFileRef} type="file" accept=".pdf,.docx" style={{ display: "none" }} onChange={onSingleFile} />
+            <input ref={bulkFileRef} type="file" accept=".pdf,.docx" multiple style={{ display: "none" }} onChange={onBulkFiles} />
 
             <Modal
               title={<Space><UploadOutlined /> 批量上传报告 — <Text code>{selectedBatch.batch_number}</Text></Space>}
@@ -502,22 +896,39 @@ export default function NipptReports() {
                 columns={[
                   { title: "文件名", dataIndex: "file", key: "fn", ellipsis: true,
                     render: (f: File) => <Text style={{ fontSize: 12 }}>{f.name}</Text> },
-                  { title: "解析 PT", dataIndex: "pt", key: "pt", width: 90,
-                    render: (v: string) => v ? <Text code>PT{v}</Text> : <Text type="secondary">—</Text> },
-                  { title: "匹配到", key: "mt", width: 210,
-                    render: (_: any, r: any) => r.pair
-                      ? <span style={{ fontSize: 12 }}>{r.pair.case_number} <Text type="secondary">（{r.pair.pt_number}）</Text></span>
-                      : <Text type="secondary" style={{ fontSize: 12 }}>—</Text> },
-                  { title: "该配对现状", key: "st2", width: 130,
-                    render: (_: any, r: any) => r.pair
-                      ? (r.pair.report_file_url ? <Tag color="blue">已有报告</Tag> : <Tag color="orange">首次上传</Tag>)
-                      : "—" },
+                  { title: "解析 PT", dataIndex: "pt", key: "pt", width: 118,
+                    render: (v: string, r: any) => v
+                      ? <Space size={4}><Text code>PT{v}</Text>{r.role ? <Tag style={{ margin: 0 }}>{r.role}</Tag> : null}</Space>
+                      : <Text type="secondary">—</Text> },
+                  { title: "匹配到", key: "mt", width: 290,
+                    render: (_: any, r: any) => (
+                      <Select size="small" style={{ width: "100%" }} value={r.pair?.id}
+                        placeholder="请选择配对" showSearch optionFilterProp="label"
+                        onChange={(v: string) => pickBulkPair(r.key, v)}
+                        options={(r.cands || []).map((c: any) => ({ value: c.id, label: pairOptionLabel(c) }))} />
+                    ) },
+                  { title: "该配对现状", key: "st2", width: 160,
+                    render: (_: any, r: any) => {
+                      if (!r.pair) return "—";
+                      const isPdf = /\.pdf$/i.test(r.file?.name || "");
+                      const has = isPdf ? !!r.pair.report_file_pdf_url : !!r.pair.report_file_url;
+                      const other = isPdf ? !!r.pair.report_file_url : !!r.pair.report_file_pdf_url;
+                      const fmt = isPdf ? "PDF" : "Word";
+                      return <Space size={4}>
+                        <Tag color={has ? "blue" : "orange"} style={{ margin: 0 }}>{has ? `已有 ${fmt}` : `${fmt} 首次上传`}</Tag>
+                        {other && <Tag style={{ margin: 0 }}>{isPdf ? "另有 Word" : "另有 PDF"}</Tag>}
+                      </Space>;
+                    } },
                   { title: "有报告时", key: "md", width: 150,
-                    render: (_: any, r: any) => (r.state === "ok" && r.pair?.report_file_url) ? (
-                      <Select size="small" style={{ width: 120 }} value={r.mode}
-                        onChange={(v) => setBulkRows((prev) => prev.map((x: any) => x.key === r.key ? { ...x, mode: v } : x))}
-                        options={[{ value: "overwrite", label: "覆盖" }, { value: "keep", label: "保留现有" }]} />
-                    ) : <Text type="secondary" style={{ fontSize: 11 }}>—</Text> },
+                    render: (_: any, r: any) => {
+                      const isPdf = /\.pdf$/i.test(r.file?.name || "");
+                      const has = r.pair && (isPdf ? r.pair.report_file_pdf_url : r.pair.report_file_url);
+                      return (r.state === "ok" && has) ? (
+                        <Select size="small" style={{ width: 120 }} value={r.mode}
+                          onChange={(v) => setBulkRows((prev) => prev.map((x: any) => x.key === r.key ? { ...x, mode: v } : x))}
+                          options={[{ value: "overwrite", label: "覆盖" }, { value: "keep", label: "保留现有" }]} />
+                      ) : <Text type="secondary" style={{ fontSize: 11 }}>—</Text>;
+                    } },
                   { title: "是否上传", key: "ok", width: 190,
                     render: (_: any, r: any) => r.state === "ok"
                       ? <Tag color="green">将上传</Tag>
@@ -535,17 +946,19 @@ export default function NipptReports() {
               <Space>
                 <Text>复核人：</Text>
                 <Select size="small" style={{ width: 150 }} placeholder="选择复核人" showSearch optionFilterProp="label"
+                  popupMatchSelectWidth={180}
                   value={batRev ?? (selectedBatch.report_reviewer || undefined)}
                   onChange={(v: string) => setBatRev(v)}
-                  options={users.map((u: UserItem) => ({ label: u.username, value: u.id }))} />
+                  options={cnOptionsWith(users, batRev ?? selectedBatch.report_reviewer, (selectedBatch as any).report_reviewer_name)} />
                 {selectedBatch.report_reviewed_at && <Text type="success" style={{ fontSize: 11 }}>✓ {fmtDT(selectedBatch.report_reviewed_at)}</Text>}
               </Space>
               <Space>
                 <Text>审核人：</Text>
                 <Select size="small" style={{ width: 150 }} placeholder="选择审核人" showSearch optionFilterProp="label"
+                  popupMatchSelectWidth={180}
                   value={batAud ?? (selectedBatch.report_auditor || undefined)}
                   onChange={(v: string) => setBatAud(v)}
-                  options={users.map((u: UserItem) => ({ label: u.username, value: u.id }))} />
+                  options={cnOptionsWith(users, batAud ?? selectedBatch.report_auditor, (selectedBatch as any).report_auditor_name)} />
                 {selectedBatch.report_audited_at && <Text type="success" style={{ fontSize: 11 }}>✓ {fmtDT(selectedBatch.report_audited_at)}</Text>}
               </Space>
               <Button type="primary" icon={<CheckCircleOutlined />} disabled={!canComplete} onClick={doComplete}>完成批次</Button>
