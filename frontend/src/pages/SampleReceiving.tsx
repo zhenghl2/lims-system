@@ -5,7 +5,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Table, Button, Tag, Input, Select, Space, Typography, message,
-  Modal, Tabs, Row, Col, Image, Tooltip,
+  Modal, Tabs, Row, Col, Image, Tooltip, Segmented,
 } from "antd";
 import {
   CheckOutlined, CloseOutlined, CameraOutlined, PlusOutlined,
@@ -146,6 +146,9 @@ export default function SampleReceiving() {
   const [data, setData] = useState<CaseSampleRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("pending");
+  /** 排序口径（2026-10-15 用户口径）：默认「最新登记」在最上，方便一眼看到刚登记的；
+   *  「送检单顺序」保留原升序（与巴西送检单表格一致，便于从上往下批量填 PT 编号）。*/
+  const [sortMode, setSortMode] = useState<"newest" | "form">("newest");
   const [tabCounts, setTabCounts] = useState({ pending: 0, received: 0, rejected: 0 });
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
@@ -245,9 +248,13 @@ export default function SampleReceiving() {
     setLoading(true);
     try {
       // 全量拉取一次 → 本地分类（Tab 计数与列表同源，永不失配）
-      // 升序：与巴西送检单（表格）导入顺序一致，便于从上往下批量填写 PT 编号
+      // 排序：默认「最新登记在最上」；「送检单顺序」= 原升序（与巴西送检单表格一致，便于从上往下批量填 PT）
       // receiving=1：只取含签收相关样本的 case（服务端筛选，载荷约降 75%）
-      const params: any = { page_size: 500, ordering: "created_at,case_number", receiving: "1" };
+      const params: any = {
+        page_size: 500,
+        ordering: sortMode === "form" ? "created_at,case_number" : "-created_at,-case_number",
+        receiving: "1",
+      };
       if (search.trim().length >= 2) params.search = search.trim();
       const _r = await (casesApi as any).list(params);
       const cases = _r.data?.results || [];
@@ -325,7 +332,7 @@ export default function SampleReceiving() {
     } finally {
       setLoading(false);
     }
-  }, [activeTab, search, sourceFilter, regTypeFilter, flatCases]);
+  }, [activeTab, search, sourceFilter, regTypeFilter, sortMode, flatCases]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -1013,6 +1020,20 @@ export default function SampleReceiving() {
       <Tabs
         activeKey={activeTab}
         onChange={(k) => { setActiveTab(k); setSelectedRowKeys([]); }}
+        tabBarExtraContent={
+          <Space size={6} style={{ paddingRight: 4 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>排序</Typography.Text>
+            <Segmented
+              size="small"
+              value={sortMode}
+              onChange={(v: any) => setSortMode(v)}
+              options={[
+                { label: "最新登记", value: "newest" },
+                { label: "按送检单顺序", value: "form" },
+              ]}
+            />
+          </Space>
+        }
         items={[
           { key: "pending", label: `待签收（${tabCounts.pending}个）` },
           { key: "received", label: `已签收（${tabCounts.received}个）` },

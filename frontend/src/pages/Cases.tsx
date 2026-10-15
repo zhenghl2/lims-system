@@ -33,6 +33,31 @@ const CASE_EDIT_FIELDS = [
   "registration_type", "is_urgent",
 ] as const;
 
+/** 把 DRF 的校验错误格式化成一句人话（兜底：任何字段名都能显示出来）。
+ *  ⚠️ 2026-10-15 修复：原来只读 case_samples / edited_by / detail 三个键 ——
+ *  凡是别的字段名报错（如 external_id、non_field_errors）都会退化成
+ *  没头没尾的 "AxiosError: Request failed with status code 400"，用户完全看不出原因。 */
+const FIELD_LABELS: Record<string, string> = {
+  external_id: "外部编号", case_samples: "样本", edited_by: "编辑人",
+  non_field_errors: "", detail: "", notes: "备注", expected_completion: "报告截止日期",
+  application_signed: "申请单签字",
+};
+const fmtApiError = (e: any): string => {
+  const d = e?.response?.data;
+  if (!d) return String(e?.message || e);
+  if (typeof d === "string") return d;
+  const flat = (v: any): string =>
+    Array.isArray(v) ? v.map(flat).join("；")
+      : (v && typeof v === "object")
+        ? Object.entries(v).map(([k, x]) => `${FIELD_LABELS[k] ?? k}：${flat(x)}`).join("；")
+        : String(v ?? "");
+  const parts = Object.entries(d).map(([k, v]) => {
+    const lb = FIELD_LABELS[k] ?? k;
+    return lb ? `${lb}：${flat(v)}` : flat(v);
+  }).filter(Boolean);
+  return parts.join(" ｜ ") || String(e?.message || e);
+};
+
 const STATUS_COLORS: Record<string, string> = {
   REGISTERED: "default", RECEIVING: "blue", RECEIVED: "blue",
   PRE_PROCESSING: "orange", EXTRACTION: "gold", LIBRARY_PREP: "purple",
@@ -125,7 +150,7 @@ export default function Cases() {
   useEffect(() => { loadData(page); }, [search, statusFilter, sourceFilter, dateRange, dateType, page, pageSize]);
 
   // 报告版本候选（预设 + 库里已用过的值）
-  useEffect(() => { fetchReportVersions(casesApi).then(setCaseReportVersionOpts).catch(() => {}); }, []);
+  useEffect(() => { fetchReportVersions().then(setCaseReportVersionOpts).catch(() => {}); }, []);
 
   const doRedo = async () => {
     if (!redoTarget) return;
@@ -214,8 +239,7 @@ export default function Cases() {
       setSelectedCase(fresh.data);
       loadData();
     } catch (e: any) {
-      const d = e?.response?.data;
-      message.error("保存失败：" + String(d?.case_samples || d?.edited_by || d?.detail || e));
+      message.error("保存失败：" + fmtApiError(e), 8);
     } finally { setSaving(false); }
   };
 

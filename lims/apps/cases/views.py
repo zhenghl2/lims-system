@@ -427,14 +427,20 @@ class CaseViewSet(viewsets.ModelViewSet):
             _tgt = self._external_id_target(case)
             if _tgt is None:
                 raise ValidationError({"external_id": "该案例下没有样本，无法写入外部编号"})
-            _reason = self._sample_matched_reason(case, _tgt)
-            if _reason:
-                raise ValidationError({
-                    "external_id": "%s 已锁定（%s），不可修改外部编号" % (_tgt.sample.sample_id, _reason)
-                })
             _new = (request.data.get("external_id") or "").strip()
             _old = (_tgt.sample.external_id or "").strip()
+            # ⚠️ 2026-10-15 修复：锁定检查必须放在「值真的变了」**之后**。
+            # 原顺序先查锁定 → 而前端每次保存都会带 external_id（哪怕没改），
+            # 于是只要案例属于「同案例共享同一编号」（导入补样合并过）的受保护情形，
+            # 改任何别的字段都会被误拦成 400（且错误挂在 external_id 键下，
+            # 前端读不到 → 只显示 AxiosError: 400，用户完全看不出原因）。
+            # 本方法注释写的是「外部编号**改动**只避开这一条锁」——没改动就不该拦。
             if _new != _old:
+                _reason = self._sample_matched_reason(case, _tgt)
+                if _reason:
+                    raise ValidationError({
+                        "external_id": "%s 已锁定（%s），不可修改外部编号" % (_tgt.sample.sample_id, _reason)
+                    })
                 ext_plan = (_tgt, _old, _new)
 
         if not case_plan and not sample_plan and not ext_plan:
