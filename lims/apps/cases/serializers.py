@@ -102,6 +102,9 @@ class CaseListSerializer(serializers.ModelSerializer):
             "expected_completion", "workflow_status", "created_at",
             "notes",
             "case_samples",
+            "calculation_method",
+            "twin_type",
+            "application_date",
         ]
 
     def get_status(self, obj):
@@ -230,6 +233,9 @@ class CaseDetailSerializer(serializers.ModelSerializer):
             "case_samples", "site", "created_by",
             "created_at", "updated_at", "mother_name", "can_redo", "case_source",
             "plasma_tube_logs",
+            "calculation_method",
+            "twin_type",
+            "application_date",
         ]
         read_only_fields = [
             "id", "case_number", "pt_number", "registration_token", "created_at", "updated_at",
@@ -350,6 +356,13 @@ class CaseCreateSerializer(serializers.ModelSerializer):
     )
     last_menstrual_period = serializers.DateField(write_only=True, required=False,
                                                    help_text="末次月经")
+    # 2026-10-15：登记页「计算方式」「双胎类型」「申请日期」
+    calculation_method = serializers.CharField(write_only=True, required=False,
+                                                allow_blank=True, default="")
+    twin_type = serializers.CharField(write_only=True, required=False,
+                                      allow_blank=True, default="")
+    application_date = serializers.DateField(write_only=True, required=False,
+                                             allow_null=True)
 
     case_number = serializers.CharField(read_only=True)
     id = serializers.UUIDField(read_only=True)
@@ -369,6 +382,8 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             "external_id", "sample_source", "fedex_no",
             "female_arrival_date", "male_arrival_dates", "gender_info",
             "collection_method", "application_signed", "expected_completion",
+            # 2026-10-15 三端打通：与 Web 端登记页表单项对齐
+            "calculation_method", "twin_type", "application_date",
         ]
 
     def create(self, validated_data):

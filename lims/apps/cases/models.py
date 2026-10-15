@@ -72,6 +72,20 @@ class Case(models.Model):
     risk_warnings = models.JSONField(default=list, blank=True, help_text="影响结果的风险提示")
     registration_type = models.CharField(max_length=20, default="FIRST", choices=[("FIRST","首次检测"),("SUPPLEMENT","补充样本"),("RESAMPLE","重采样本")])
 
+    # ── 孕周计算方式 / 双胎类型 / 申请日期（2026-10-15 三端打通）──
+    # 说明：此前 Web 端登记页有这三项 UI，但后端无对应列，值不会落库；
+    #      小程序补 UI 前必须先有列，否则只是再造三个假字段。
+    calculation_method = models.CharField(
+        max_length=20, blank=True, default="",
+        choices=[("lmp", "末次月经"), ("ultrasound", "B超")],
+        help_text="孕周计算方式: lmp=末次月经, ultrasound=B超")
+    twin_type = models.CharField(
+        max_length=20, blank=True, default="",
+        choices=[("monozygotic", "同卵"), ("dizygotic", "异卵")],
+        help_text="双胎类型（仅 multiple_gestation=True 时有意义）: monozygotic=同卵, dizygotic=异卵")
+    application_date = models.DateField(
+        null=True, blank=True, help_text="申请日期（申请单上的日期，区别于样本采集日期 collection_date）")
+
     # Public registration token
     registration_token = models.CharField(
         max_length=64, unique=True, null=True, blank=True, db_index=True

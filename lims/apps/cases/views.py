@@ -194,6 +194,8 @@ class CaseViewSet(viewsets.ModelViewSet):
         "applicant", "phone", "email", "report_version",
         "collection_method", "application_signed", "expected_completion",
         "risk_warnings", "registration_type", "notes", "is_urgent",
+        # 2026-10-15 三端打通：登记/编辑均可维护这三项
+        "calculation_method", "twin_type", "application_date",
     ]
     # 样本级可编辑字段（实际写入 cs.sample）
     SAMPLE_EDITABLE_FIELDS = ["patient_name", "collection_date"]

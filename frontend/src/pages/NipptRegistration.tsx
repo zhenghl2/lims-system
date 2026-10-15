@@ -213,7 +213,7 @@ export default function NipptRegistration() {
   const [reportVersionOpts, setReportVersionOpts] = useState<string[]>(REPORT_VERSION_PRESETS);
 
   useEffect(() => {
-    fetchReportVersions(casesApi).then(setReportVersionOpts).catch(() => {});
+    fetchReportVersions().then(setReportVersionOpts).catch(() => {});
   }, []);
 
   const fillCaseInfo = (caseData: any) => {
@@ -523,8 +523,13 @@ export default function NipptRegistration() {
           ).filter(Boolean),
           last_menstrual_period: values.last_menstrual_period
             ? dayjs(values.last_menstrual_period).format("YYYY-MM-DD") : undefined,
-          collection_date: values.collection_date
+          // 申请日期：字段名用 application_date（后端 2026-10-15 新增）。
+          // 此前叫 collection_date 但后端不收、会被丢弃并写死 today，导致用户选的日期从未生效。
+          application_date: values.collection_date
             ? dayjs(values.collection_date).format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD"),
+          // 计算方式 / 双胎类型（2026-10-15 三端打通）
+          calculation_method: values.calculation_method || "",
+          twin_type: values.multiple_gestation === true ? (values.twin_type || "") : "",
           notes: values.notes,
           is_urgent: values.is_urgent === true,
           gender_info: values.gender_info || "",          // 额外信息（Yes/No，2026-10-13）
