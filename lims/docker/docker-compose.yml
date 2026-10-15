@@ -18,6 +18,8 @@ services:
       - DJANGO_SECRET_KEY=***
       - DATABASE_URL=postgresql://lims:***@db:5432/lims
       - REDIS_URL=redis://:redis123!@redis:6379/0
+      - WECHAT_APPID=wx1f332c7dc10a777e
+      - WECHAT_SECRET=eb8ec5353b6cb6e7febcfbd254a9d793
     depends_on:
       - db
       - redis

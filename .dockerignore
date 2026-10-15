@@ -1,0 +1,20 @@
+# 构建上下文忽略（运行时靠 bind mount /opt/lims -> /app 提供代码）
+.git
+frontend/node_modules/
+frontend/dist/
+node_modules/
+logs/
+exports/
+backups/
+docs/
+media/
+staticfiles/
+instrument_data/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.log
+celerybeat-schedule
+*.bak*
+*.tmp
