@@ -25,7 +25,9 @@
     "toggleSidebar": "Toggle sidebar",
     "receiving": "Receiving",
     "plasmaSeparation": "Plasma Separation",
-    "labWorkflow": "Lab Workflow"
+    "labWorkflow": "Lab Workflow",
+    "systemSettings": "System Settings",
+    "userManagement": "User Management"
   },
   "auth": {
     "username": "Username",

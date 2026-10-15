@@ -40,6 +40,7 @@ const Bioinformatics  = lazy(() => import("./Bioinformatics"));
 const Quality         = lazy(() => import("./Quality"));
 
 const AuditLog        = lazy(() => import("./AuditLog"));
+const UserManagement  = lazy(() => import("./UserManagement"));
 
 const Notifications   = lazy(() => import("./Notifications"));
 const NiptExtensions  = lazy(() => import("./NiptExtensions"));
@@ -131,6 +132,7 @@ export default function AppRouter() {
         <Route path="/quality"           element={<Protected><Quality /></Protected>} />
 
         <Route path="/audit"             element={<Protected><AuditLog /></Protected>} />
+        <Route path="/user-management" element={<Protected><DashboardLayout><UserManagement /></DashboardLayout></Protected>} />
 
         <Route path="/notifications"     element={<Protected><Notifications /></Protected>} />
 

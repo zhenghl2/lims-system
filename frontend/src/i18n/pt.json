@@ -25,7 +25,9 @@
     "toggleSidebar": "Alternar barra lateral",
     "receiving": "Recebimento",
     "plasmaSeparation": "Separação de Plasma",
-    "labWorkflow": "Fluxo de Laboratório"
+    "labWorkflow": "Fluxo de Laboratório",
+    "systemSettings": "Configurações do Sistema",
+    "userManagement": "Gestão de Usuários"
   },
   "auth": {
     "username": "Nome de usuário",

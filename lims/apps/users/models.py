@@ -83,6 +83,9 @@ class Role(models.Model):
         related_name="roles",
     )
     created_at = models.DateTimeField(auto_now_add=True)
+    # 模块权限：{"模块key": {"view": bool, "edit": bool}}
+    # 清单见 users/role_modules.py；superuser 恒为全权限，不依赖此字段
+    permissions = models.JSONField(default=dict, blank=True, verbose_name="模块权限")
 
     def __str__(self):
         site_name = self.site.code if self.site else "global"

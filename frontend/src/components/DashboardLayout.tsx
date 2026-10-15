@@ -220,6 +220,15 @@ export default function DashboardLayout({ children, header }: Props) {
     { key: "/notifications",  icon: <BellOutlined />,            label: t("nav.notifications") },
     { key: "/extensions",     icon: <AppstoreOutlined />,        label: t("nav.extensions") },
 
+    {
+      key: "system-group",
+      label: t("nav.systemSettings"),
+      type: "group" as const,
+      children: [
+        { key: "/user-management", icon: <TeamOutlined />, label: t("nav.userManagement") },
+      ],
+    },
+
   ], [t]);
 
   const userMenuItems = [

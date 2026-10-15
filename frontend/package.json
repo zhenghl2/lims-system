@@ -16,6 +16,7 @@
     "axios": "^1.7.0",
     "dayjs": "^1.11.13",
     "docx-preview": "^0.4.0",
+    "mammoth": "^1.13.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.26.0",

@@ -25,7 +25,9 @@
     "toggleSidebar": "切换侧边栏",
     "receiving": "样本签收",
     "plasmaSeparation": "血浆分离",
-    "labWorkflow": "实验流程"
+    "labWorkflow": "实验流程",
+    "systemSettings": "系统设置",
+    "userManagement": "用户管理"
   },
   "auth": {
     "username": "用户名",

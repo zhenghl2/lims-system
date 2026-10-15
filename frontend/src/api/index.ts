@@ -71,6 +71,9 @@ export const runsApi = {
     api.get<Pageable<Run>>("/runs/", { params }),
   get: (id: string) => api.get<Run>(`/runs/${id}/`),
   detail: (id: string) => api.get<Run>(`/runs/${id}/run_detail/`),
+  // 大 JSON 按需取（详情接口已不含它们），如 keys=["library_data","pooling_data"]
+  data: (id: string, keys: string[]) =>
+    api.get<Record<string, unknown>>(`/runs/${id}/data/`, { params: { keys: keys.join(",") } }),
   create: (data: Record<string, unknown>) =>
     api.post<Run>("/runs/", data),
   advanceStatus: (id: string, status: string) =>
