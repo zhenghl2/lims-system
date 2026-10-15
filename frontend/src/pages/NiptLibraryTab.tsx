@@ -425,13 +425,34 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   };
 
   // Photo upload handlers
-  const beforeUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => setPhotos(prev => [...prev, e.target?.result as string]);
-    reader.readAsDataURL(file);
+  // 照片改为「文件 + URL」上传（2026-10-13）：
+  // 原先把 base64 内联进 JSON，保存时要重传全部照片（实测单张 3.9MB、合计 15MB+），
+  // 弱网上传 20~40 秒且超过 Django DATA_UPLOAD_MAX_MEMORY_SIZE(2.5MB) → 400「保存失败」。
+  const beforeUpload = async (file: File) => {
+    const hide = message.loading("照片上传中…", 0);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("module", "library");
+      const res = await api.post(`/runs/${batch.id}/photos/`, fd, { timeout: 120000 });
+      setPhotos(prev => [...prev, res.data.url as string]);
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "照片上传失败");
+    } finally {
+      hide();
+    }
     return false;
   };
-  const removePhoto = (uid: string) => setPhotos(prev => prev.filter((_, i) => String(i) !== uid));
+  const removePhoto = async (uid: string) => {
+    const url = photos[Number(uid)];
+    setPhotos(prev => prev.filter((_, i) => String(i) !== uid));
+    // 只删本系统已落盘的文件；历史 base64 / 外链不动
+    const m = typeof url === "string" ? url.match(/\/media\/nipt_workflow\/[^/]+\/[^/]+\/([^/?]+)$/) : null;
+    if (m) {
+      try { await api.delete(`/runs/${batch.id}/photos/`, { params: { module: "library", name: m[1] } }); }
+      catch { /* 文件删不掉不影响保存 */ }
+    }
+  };
 
   const save = async () => {
     const missingIndex = plate.some(row => row.some(cell => cell.vgId && !cell.index));
@@ -800,8 +821,18 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
                           <div style={{ display: "flex", alignItems: "stretch", minHeight: 30 }}>
                             <input
                               type="text"
+                              data-nipt-ix={`${row}_${col}`}
                               value={cell.index}
                               onChange={e => updateIndex(row, col, e.target.value)}
+                              onKeyDown={(e) => {
+                                // 回车 → 本列下一格（列不变）；本列最后一格（H 行）停住不动
+                                // 2026-10-14 用户口径：严格按「本列下一个」，不跨列
+                                if (e.key !== "Enter") return;
+                                e.preventDefault();
+                                if (row >= ROW_LABELS.length - 1) return;
+                                const el = document.querySelector(`[data-nipt-ix="${row + 1}_${col}"]`) as HTMLInputElement | null;
+                                if (el) { el.focus(); el.select(); }
+                              }}
                               style={inputStyle}
                               placeholder="ix"
                             />

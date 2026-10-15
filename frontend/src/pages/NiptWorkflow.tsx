@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Table, Button, Tag, Space, Typography, Modal, Form, Input, message, Popconfirm, Card, Empty, Tabs, Switch } from "antd";
+import { Table, Button, Tag, Space, Typography, Modal, Form, Input, message, Popconfirm, Card, Empty, Tabs, Switch, Spin } from "antd";
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { runsApi, samplesApi } from "../api";
@@ -12,6 +12,15 @@ import DashboardLayout from "../components/DashboardLayout";
 import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
+
+// 各 tab 真正需要的大 JSON（详情接口已不带，进入 tab 时按需拉）——2026-10-13 香港慢链路优化
+const TAB_DATA_KEYS: Record<string, string[]> = {
+  extraction: ["extraction_data"],
+  library: ["library_data", "extraction_data"],
+  pooling: ["library_data", "pooling_data"],
+  sequencing: ["sequencing_data", "pooling_data"],
+  bioinformatics: ["extraction_data", "library_data", "pooling_data", "bioinformatics_data"],
+};
 
 const STATUS_COLOR: Record<string, string> = {
   PLANNED: "default", LIBRARY_PREP: "blue", LIBRARY_POOLING: "geekblue", SEQUENCING: "purple",
@@ -87,6 +96,42 @@ export default function NiptWorkflow() {
     } catch { message.error("Failed to load batch detail"); }
     finally { setDetailLoading(false); }
   }, []);
+
+  // ── 大 JSON 按需加载：仅在当前 tab 需要时取，tab 组件内 batch.xxx_data 无需改动 ──
+  const [tabData, setTabData] = useState<Record<string, any> | null>(null);
+  const [tabDataFor, setTabDataFor] = useState<string>("");
+  const [tabDataLoading, setTabDataLoading] = useState(false);
+
+  const fetchTabData = useCallback(async (id: string, keys: string[]) => {
+    const key = `${id}:${keys.join(",")}`;
+    if (!id || !keys.length) { setTabData(null); setTabDataFor(key); return; }
+    setTabDataLoading(true);
+    try {
+      const res = await runsApi.data(id, keys);
+      setTabData(res.data || {});
+      setTabDataFor(key);
+    } catch { message.error("Failed to load tab data"); setTabData(null); setTabDataFor(""); }
+    finally { setTabDataLoading(false); }
+  }, []);
+
+  const tabKeys = TAB_DATA_KEYS[activeStep] || [];
+  const tabDataKey = selectedBatch?.id ? `${selectedBatch.id}:${tabKeys.join(",")}` : "";
+  const tabDataReady = !selectedBatch?.id || !tabKeys.length || (tabDataFor === tabDataKey);
+  const tabBatch = useMemo(
+    () => (selectedBatch ? { ...selectedBatch, ...(tabDataFor === tabDataKey ? tabData : {}) } : selectedBatch),
+    [selectedBatch, tabData, tabDataFor, tabDataKey]
+  );
+
+  useEffect(() => {
+    if (selectedBatch?.id) fetchTabData(selectedBatch.id, TAB_DATA_KEYS[activeStep] || []);
+  }, [selectedBatch?.id, activeStep, fetchTabData]);
+
+  // tab 保存后：详情 + 当前 tab 的大 JSON 一起刷新
+  const refreshAll = useCallback(() => {
+    if (!selectedBatch?.id) return;
+    fetchDetail(selectedBatch.id);
+    fetchTabData(selectedBatch.id, TAB_DATA_KEYS[activeStep] || []);
+  }, [selectedBatch?.id, activeStep, fetchDetail, fetchTabData]);
 
   const selectBatch = (batch: any) => {
     setSelectedBatch(batch);
@@ -202,19 +247,23 @@ export default function NiptWorkflow() {
   ];
 
   const renderStepForm = () => {
+    // 大 JSON 未就绪先 loading —— 避免 tab 内 useState 初始值吃到空数据
+    if (!tabDataReady || (tabDataLoading && !tabData)) {
+      return <div style={{ padding: 40, textAlign: "center" }}><Spin /></div>;
+    }
     switch (activeStep) {
       case "extraction":
-        return <NiptExtractionTab batch={selectedBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={() => fetchDetail(selectedBatch.id)} />;
+        return <NiptExtractionTab batch={tabBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={refreshAll} />;
       case "library":
-        return <NiptLibraryTab batch={selectedBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={() => fetchDetail(selectedBatch.id)}
+        return <NiptLibraryTab batch={tabBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={refreshAll}
           lastBatchLibData={lastBatchLibData}
         />;
       case "pooling":
-        return <NiptPoolingTab batch={selectedBatch} onRefresh={() => fetchDetail(selectedBatch.id)} />;
+        return <NiptPoolingTab batch={tabBatch} onRefresh={refreshAll} />;
       case "sequencing":
-        return <NiptSequencingTab batch={selectedBatch} onRefresh={() => fetchDetail(selectedBatch.id)} lastBatchSeqData={lastBatchSeqData} />;
+        return <NiptSequencingTab batch={tabBatch} onRefresh={refreshAll} lastBatchSeqData={lastBatchSeqData} />;
       case "bioinformatics":
-        return <NiptBioinformaticsTab batch={selectedBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={() => fetchDetail(selectedBatch.id)} />;
+        return <NiptBioinformaticsTab batch={tabBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={refreshAll} />;
       default:
         return <Empty description={t("nipt.common.selectStep")} />;
     }

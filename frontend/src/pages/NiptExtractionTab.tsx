@@ -180,13 +180,34 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
   };
 
   // Photo upload handlers
-  const beforeUpload = (file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => setPhotos(prev => [...prev, e.target?.result as string]);
-    reader.readAsDataURL(file);
+  // 照片改为「文件 + URL」上传（2026-10-13）：
+  // 原先把 base64 内联进 JSON，保存时要重传全部照片（实测单张 3.9MB、合计 15MB+），
+  // 弱网上传 20~40 秒且超过 Django DATA_UPLOAD_MAX_MEMORY_SIZE(2.5MB) → 400「保存失败」。
+  const beforeUpload = async (file: File) => {
+    const hide = message.loading("照片上传中…", 0);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("module", "extraction");
+      const res = await api.post(`/runs/${batch.id}/photos/`, fd, { timeout: 120000 });
+      setPhotos(prev => [...prev, res.data.url as string]);
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "照片上传失败");
+    } finally {
+      hide();
+    }
     return false;
   };
-  const removePhoto = (uid: string) => setPhotos(prev => prev.filter((_, i) => String(i) !== uid));
+  const removePhoto = async (uid: string) => {
+    const url = photos[Number(uid)];
+    setPhotos(prev => prev.filter((_, i) => String(i) !== uid));
+    // 只删本系统已落盘的文件；历史 base64 / 外链不动
+    const m = typeof url === "string" ? url.match(/\/media\/nipt_workflow\/[^/]+\/[^/]+\/([^/?]+)$/) : null;
+    if (m) {
+      try { await api.delete(`/runs/${batch.id}/photos/`, { params: { module: "extraction", name: m[1] } }); }
+      catch { /* 文件删不掉不影响保存 */ }
+    }
+  };
 
   // Print table only
   const handlePrintTable = () => {
