@@ -1,8 +1,8 @@
 // NipptLibrary.tsx — Library Prep module (NIPT-style table + reagents)
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, Select, InputNumber,
   Space, Popconfirm, Radio, Checkbox, Upload, Image, DatePicker, TimePicker, Form,
-  Popover, Row, Col } from "antd";
+  Popover, Row, Col, Alert } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, CameraOutlined, LoadingOutlined, DownloadOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import { uploadNipptPhoto, deleteNipptPhoto, migrateLegacyNipptPhotos, isRemotePhoto } from "../utils/nipptPhoto";
@@ -58,7 +58,9 @@ const MALE_KITS = [{value:"M-KIT-A",label:"NIPPT Male Library Kit A"},{value:"M-
 const LIB_KITS = [{value:"ND607-C2",label:"VAHTS Universal DNA Library Prep Kit for Illumina V5 (ND607-C2)"},{value:"ND801-02",label:"VAHTS Universal Plus DNA Library Prep Kit V4 (ND801-02)"}];
 const INDEX_KITS = [{value:"N34201",label:"VAHTS Maxi UDI Adapters Set1 (1-96) - Cat#N34201-01"},{value:"N34202",label:"VAHTS Maxi UDI Adapters Set2 (97-192) - Cat#N34202-01"},{value:"N34203",label:"VAHTS Maxi UDI Adapters Set3 (193-288) - Cat#N34203-01"},{value:"N34204",label:"VAHTS Maxi UDI Adapters Set4 (289-384) - Cat#N34204-01"}];
 
-type PlateCell = { vgId: string; index: string; sampleIdx?: number; isQC?: boolean; kind?: string };
+type PlateCell = { vgId: string; index: string; sampleIdx?: number; isQC?: boolean; kind?: string;
+  /** 仅居中合并板用于本板男女计数；kind/sampleIdx 保持与旧版一致（sample_results 的 key 不能变）*/
+  sexKind?: "F" | "M" };
 type PlateGrid = PlateCell[][];
 interface SampleItem { id:string; patient_name:string; role:string; category:string; case_sample_ids:string[]; test_sample_id:string|null; is_qc?:boolean; qc_status:string; qc_note:string; }
 interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; created_at:string; receipt_location?:string; }
@@ -79,10 +81,7 @@ export default function NipptLibrary() {
 
   // ── Region & coords ──
   const [region, setRegion] = useState("XIAMEN");
-  const [femaleStartCoord, setFemaleStartCoord] = useState("");
-  const [maleStartCoord, setMaleStartCoord] = useState("");
-  const [hkFemaleStart, setHkFemaleStart] = useState("");
-  const [hkMaleStart, setHkMaleStart] = useState("");
+  // 起点状态已迁到 xiamenStarts / hkFemaleStarts / hkMaleStarts（每块板各自起点，2026-10-14）
   // 孔板重排基准：记录"进入批次时"的起点/地区值，只有用户真的改了才重排（否则会覆盖拖动的板面）
   const plateBaseRef = useRef<string>("");
 
@@ -141,9 +140,82 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
   // ── Plate data (NIPT-style grid) ──
   const emptyPlate = ():PlateGrid => Array.from({length:8},()=>Array.from({length:12},()=>({vgId:"",index:""})));
-  const [femalePlate, setFemalePlate] = useState<PlateGrid>(emptyPlate());
-  const [malePlate, setMalePlate] = useState<PlateGrid>(emptyPlate());
-  const [xiamenPlate, setXiamenPlate] = useState<PlateGrid>(emptyPlate());
+  // 2026-10-14：超 96 孔自动增板 —— 状态改为「板数组」，每块板有独立起点；最多 4 块（4 套 UDI 试剂盒）
+  const MAX_PLATES = 4;
+  const [femalePlates, setFemalePlates] = useState<PlateGrid[]>([emptyPlate()]);
+  const [malePlates, setMalePlates] = useState<PlateGrid[]>([emptyPlate()]);
+  const [xiamenPlates, setXiamenPlates] = useState<PlateGrid[]>([emptyPlate()]);
+  const [xiamenStarts, setXiamenStarts] = useState<{f:string;m:string}[]>([{f:"",m:""}]);
+  const [hkFemaleStarts, setHkFemaleStarts] = useState<string[]>([""]);
+  const [hkMaleStarts, setHkMaleStarts] = useState<string[]>([""]);
+  const [plateOverflow, setPlateOverflow] = useState(0);   // 超过 4 块板而未显示的样本数
+  // 兼容旧代码：以下 4 个派生量 = 第 1 块板的起点（所有旧用法继续可用）
+  const femaleStartCoord = xiamenStarts[0]?.f || "";
+  const maleStartCoord = xiamenStarts[0]?.m || "";
+  const hkFemaleStart = hkFemaleStarts[0] || "";
+  const hkMaleStart = hkMaleStarts[0] || "";
+  const setFemaleStartCoord = (v:string)=>setXiamenStarts(p=>[{...p[0], f:v}, ...p.slice(1)]);
+  const setMaleStartCoord = (v:string)=>setXiamenStarts(p=>[{...p[0], m:v}, ...p.slice(1)]);
+  const setHkFemaleStart = (v:string)=>setHkFemaleStarts(p=>[v, ...p.slice(1)]);
+  const setHkMaleStart = (v:string)=>setHkMaleStarts(p=>[v, ...p.slice(1)]);
+  /** 每块板的 setter（供 renderNiptPlate 用） */
+  const plateSetter = (scheme:"f"|"m"|"x", k:number) => (updater:any) => {
+    const setAll = scheme==="x" ? setXiamenPlates : scheme==="f" ? setFemalePlates : setMalePlates;
+    setAll((prev:PlateGrid[]) => prev.map((g,i)=> i===k ? (typeof updater==="function" ? updater(g) : updater) : g));
+  };
+  const parsePlateKey = (pk:string) => ({ scheme:(pk[0]||"x") as "f"|"m"|"x", k:parseInt(pk.slice(1)||"0",10)||0 });
+  /** 起点数组按需加长再写。
+   *  ⚠️ 不能写成 prev.map((x,i)=> i===k?…:x)：板数多于数组长度时（如板2 而数组只有 1 个），
+   *  map 根本遍历不到下标 k，用户的输入会被**静默丢弃**（表现为“第 2 块板输入框打不进字”）。 */
+  const padStarts = <T,>(arr:T[], k:number, blank:T):T[] => {
+    const next = arr.slice();
+    while (next.length <= k) next.push(blank);
+    return next;
+  };
+
+  /** Index 归一化：去空格、统一大写、纯数字时 01 与 1 视为同一个（用户选定口径） */
+  const normIndex = (v:any):string => {
+    const t = String(v ?? "").trim().toUpperCase();
+    return /^\d+$/.test(t) ? String(parseInt(t, 10)) : t;
+  };
+
+  /** 跨板 Index 查重：本批次「当前地区」的所有板（空 index 不算重复，另有「填齐」校验把关）
+   *  - dups     ：归一化 index → 出现位置列表（顶部汇总提示用）
+   *  - cellDup  ：`板key:行:列` → 该格重复信息（实时标红用，key 与 plateKey 同构：x0/f1/m2）
+   *  用户口径（2026-10-14）：全批次所有板唯一；归一化比较；只提醒不拦；实时标红 */
+  const indexCheck = useMemo(() => {
+    const occ = new Map<string, {pos:string; vgId:string}[]>();
+    const cells: {key:string; k:string; vgId:string}[] = [];
+    const collect = (scheme:"x"|"f"|"m", arr:PlateGrid[], label:(k:number)=>string) =>
+      arr.forEach((g, ki) => g.forEach((row, r) => row.forEach((cell, c) => {
+        if (!cell?.vgId || !cell.index) return;
+        const k = normIndex(cell.index);
+        if (!k) return;
+        const pos = `${label(ki)}·${ROWS[r]}${c+1}`;
+        const list = occ.get(k) || [];
+        list.push({ pos, vgId: cell.vgId });
+        occ.set(k, list);
+        cells.push({ key: `${scheme}${ki}:${r}:${c}`, k, vgId: cell.vgId });
+      })));
+    if (region === "XIAMEN") collect("x", xiamenPlates, k => `板${k+1}`);
+    else { collect("f", femalePlates, k => `女性板${k+1}`); collect("m", malePlates, k => `男性板${k+1}`); }
+    const dups = new Map<string, {pos:string; vgId:string}[]>();
+    occ.forEach((v, k) => { if (v.length > 1) dups.set(k, v); });
+    const cellDup = new Map<string, {pos:string; vgId:string}[]>();
+    cells.forEach(({ key, k }) => { if (dups.has(k)) cellDup.set(key, dups.get(k)!); });
+    return { dups, cellDup };
+  }, [region, xiamenPlates, femalePlates, malePlates]);
+
+  /** 重复提示文案（保存/完成时用，只提醒不拦） */
+  const dupWarnText = (prefix:string) => {
+    const n = indexCheck.dups.size;
+    if (!n) return "";
+    const brief = Array.from(indexCheck.dups.keys()).slice(0, 8).join("、");
+    return `${prefix}注意：有 ${n} 个重复 Index（${brief}${n > 8 ? "…" : ""}），所有板之间不建议重复（已标黄提示，不影响保存）`;
+  };
+  /** 当前地区全部板（校验/导出用） */
+  const allPlates = ():PlateGrid[] => region==="XIAMEN" ? xiamenPlates
+    : (region==="HONGKONG" ? [...femalePlates, ...malePlates] : femalePlates);
   const [sampleResults, setSampleResults] = useState<Record<string,{status:string;note:string}>>({});
 
   // ── Coord helpers ──
@@ -151,9 +223,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   const indexToCoordTB = (i:number)=>{const c=Math.floor(i/8),r=i%8;return`${ROWS[r]}${c+1}`;};
 
   // ── Build plates ──
-  const buildPlateFromStart = (samples:SampleItem[], startCoord:string, kind:string):PlateGrid => {
+  /** 单块板：从 startIdx 起填，返回 [板, 用掉的样本数] */
+  const fillPlateFromStart = (samples:SampleItem[], startIdx:number, kind:string):[PlateGrid,number] => {
     const p = emptyPlate();
-    const startIdx = startCoord ? coordToIndexTB(startCoord) : 0;
     let idx = 0;
     for (let i = startIdx; i < 96 && idx < samples.length; i++) {
       const coord = indexToCoordTB(i);
@@ -162,12 +234,23 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       p[r][c] = { vgId: samples[idx].test_sample_id || "?", index: "", sampleIdx: idx, isQC: samples[idx].is_qc, kind };
       idx++;
     }
-    return p;
+    return [p, idx];
+  };
+  /** 多块板：按顺序切片，每块板用各自起点；返回 {plates, overflow} */
+  const buildPlatesFromStart = (samples:SampleItem[], starts:string[], kind:string) => {
+    const plates:PlateGrid[] = []; let idx = 0;
+    for (let k = 0; k < MAX_PLATES && idx < samples.length; k++) {
+      const st = (starts[k] || "").trim();
+      const [g, used] = st ? fillPlateFromStart(samples.slice(idx), coordToIndexTB(st), kind)
+                           : fillCenteredPlate(samples.slice(idx), kind);
+      plates.push(g); idx += used;
+    }
+    return { plates: plates.length ? plates : [emptyPlate()], overflow: samples.length - idx };
   };
 
-  const buildCenteredPlate = (samples:SampleItem[], kind:string):PlateGrid => {
+  const fillCenteredPlate = (samples:SampleItem[], kind:string):[PlateGrid,number] => {
     const p = emptyPlate();
-    const total = samples.length;
+    const total = Math.min(samples.length, 96);
     const numCols = Math.min(Math.ceil(total/8),12);
     let startCol = Math.floor((12-numCols)/2);
     if (startCol%2===1) startCol-=1;
@@ -177,23 +260,70 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         p[r][c] = {vgId:samples[idx].test_sample_id||"?",index:"",sampleIdx:idx,isQC:samples[idx].is_qc,kind};
         idx++;
       }
-    return p;
+    return [p, idx];
   };
 
-  const buildXiamenPlateGrid = (female:SampleItem[], male:SampleItem[]):PlateGrid => {
-    const all = [...female, ...male];
-    if(!femaleStartCoord&&!maleStartCoord) return buildCenteredPlate(all, "X");
-    const p = emptyPlate();
-    const fStart = femaleStartCoord?coordToIndexTB(femaleStartCoord):0;
-    const mStart = maleStartCoord?coordToIndexTB(maleStartCoord):0;
-    let fi=0, mi=0;
-    for(let i=0;i<96;i++){
-      const coord = indexToCoordTB(i);
-      if(i>=fStart&&fi<female.length&&(i<mStart||mi>=male.length||!maleStartCoord)){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:female[fi].test_sample_id||"?",index:"",sampleIdx:fi,isQC:female[fi].is_qc,kind:"F"};fi++;}
-      else if(maleStartCoord&&i>=mStart&&mi<male.length){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:male[mi].test_sample_id||"?",index:"",sampleIdx:mi,isQC:male[mi].is_qc,kind:"M"};mi++;}
-      else if(!maleStartCoord&&fi>=female.length&&mi<male.length){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:male[mi].test_sample_id||"?",index:"",sampleIdx:mi,isQC:male[mi].is_qc,kind:"M"};mi++;}
+  /** 厦门合并板：顺序切片多板；每块板用各自的 女起/男起（2026-10-14） */
+  const buildXiamenPlates = (female:SampleItem[], male:SampleItem[], starts:{f:string;m:string}[]) => {
+    const plates:PlateGrid[] = []; let fi=0, mi=0;
+    for (let k = 0; k < MAX_PLATES && (fi < female.length || mi < male.length); k++) {
+      const st = starts[k] || {f:"", m:""};
+      if(!st.f && !st.m && fi===0 && mi===0){
+        // 无起点：整块居中（与旧行为一致，仅第 1 块；后续块各自居中）
+      }
+      const p = emptyPlate();
+      const fStart = st.f ? coordToIndexTB(st.f) : 0;
+      const mStart = st.m ? coordToIndexTB(st.m) : 0;
+      if(!st.f && !st.m){
+        // 居中合并板：严格按旧逻辑（kind="X"、sampleIdx=合并序号）→ sample_results 的 key 不变；
+        // 只额外标 sexKind 供「本板男女数量」显示（2026-10-14）
+        const rest = [...female.slice(fi), ...male.slice(mi)];
+        const p2 = emptyPlate();
+        const total2 = Math.min(rest.length, 96);
+        const numCols = Math.min(Math.ceil(total2/8), 12);
+        let startCol = Math.floor((12-numCols)/2);
+        if (startCol%2===1) startCol-=1;
+        let idx2 = 0;
+        const fRemain = female.length - fi;
+        for (let c=startCol; c<startCol+numCols && idx2<total2; c++)
+          for (let r=0; r<8 && idx2<total2; r++) {
+            p2[r][c] = { vgId: rest[idx2].test_sample_id||"?", index:"", sampleIdx: idx2,
+                         isQC: rest[idx2].is_qc, kind:"X", sexKind: idx2 < fRemain ? "F" : "M" };
+            idx2++;
+          }
+        const usedF = Math.min(idx2, fRemain);
+        fi += usedF; mi += (idx2 - usedF);
+        plates.push(p2);
+        continue;
+      }
+      for(let i=0;i<96;i++){
+        const coord = indexToCoordTB(i);
+        if(i>=fStart&&fi<female.length&&(i<mStart||mi>=male.length||!st.m)){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:female[fi].test_sample_id||"?",index:"",sampleIdx:fi,isQC:female[fi].is_qc,kind:"F"};fi++;}
+        else if(st.m&&i>=mStart&&mi<male.length){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:male[mi].test_sample_id||"?",index:"",sampleIdx:mi,isQC:male[mi].is_qc,kind:"M"};mi++;}
+        else if(!st.m&&fi>=female.length&&mi<male.length){p[ROWS.indexOf(coord[0])][parseInt(coord.slice(1))-1]={vgId:male[mi].test_sample_id||"?",index:"",sampleIdx:mi,isQC:male[mi].is_qc,kind:"M"};mi++;}
+      }
+      plates.push(p);
     }
-    return p;
+    return { plates: plates.length ? plates : [emptyPlate()], overflow: (female.length-fi)+(male.length-mi) };
+  };
+  /** 多板统一入口（按地区） */
+  const rebuildAllPlates = (d:any, startsXm:{f:string;m:string}[], startsF:string[], startsM:string[]) => {
+    const males = maleOrder<SampleItem>(d);
+    if (region === "XIAMEN") {
+      const r = buildXiamenPlates(d.female_samples || [], males, startsXm);
+      setXiamenPlates(prev => r.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
+      setPlateOverflow(r.overflow);
+      // 起点数补齐到板数：只增不减，避免与依赖它的 effect 反复触发
+      setXiamenStarts(p => p.length >= r.plates.length ? p : padStarts(p, r.plates.length-1, {f:"",m:""}));
+    } else {
+      const rf = buildPlatesFromStart(d.female_samples || [], startsF, "F");
+      const rm = buildPlatesFromStart(males, startsM, "M");
+      setFemalePlates(prev => rf.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
+      setMalePlates(prev => rm.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
+      setPlateOverflow(rf.overflow + rm.overflow);
+      setHkFemaleStarts(p => p.length >= rf.plates.length ? p : padStarts(p, rf.plates.length-1, ""));
+      setHkMaleStarts(p => p.length >= rm.plates.length ? p : padStarts(p, rm.plates.length-1, ""));
+    }
   };
 
   // ── Auto-fill index ──
@@ -248,14 +378,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     if (plateBaseRef.current === _key) return;                                  // 与基准一致：保持已保存的板面
     plateBaseRef.current = _key;                                                // 用户改了起点/地区：重排
     const d = selectedBatch;
-    const males = maleOrder<SampleItem>(d);
-    if (region === "XIAMEN") {
-      setXiamenPlate(prev => keepIndex(buildXiamenPlateGrid(d.female_samples || [], males), prev));
-    } else {
-      setFemalePlate(prev => keepIndex(hkFemaleStart ? buildPlateFromStart(d.female_samples || [], hkFemaleStart, "F") : buildCenteredPlate(d.female_samples || [], "F"), prev));
-      setMalePlate(prev => keepIndex(hkMaleStart ? buildPlateFromStart(males, hkMaleStart, "M") : buildCenteredPlate(males, "M"), prev));
-    }
-  }, [femaleStartCoord, maleStartCoord, hkFemaleStart, hkMaleStart, region]);
+    rebuildAllPlates(d, xiamenStarts, hkFemaleStarts, hkMaleStarts);
+  }, [JSON.stringify(xiamenStarts), JSON.stringify(hkFemaleStarts), JSON.stringify(hkMaleStarts), region]);
 
   const fetchDetail = async(id:string)=>{
     setBatchLoading(true);
@@ -300,13 +424,27 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       setTimeM(ld.lib_time_male || (_lbNotDone && !isXmLoad ? _lbT0 : ""));
       setSampleResults(ld.sample_results||{});
       // Restore plate data
-      const fp = ld.female_plate; const mp = ld.male_plate; const xp = ld.xiamen_plate;
-      if(fp&&Array.isArray(fp)) setFemalePlate(fp);
-      else setFemalePlate(hkFemaleStart?buildPlateFromStart(d.female_samples||[],hkFemaleStart,"F"):buildCenteredPlate(d.female_samples||[],"F"));
-      if(mp&&Array.isArray(mp)) setMalePlate(mp);
-      else setMalePlate(hkMaleStart?buildPlateFromStart(maleOrder<SampleItem>(d),hkMaleStart,"M"):buildCenteredPlate(maleOrder<SampleItem>(d),"M"));
-      if(xp&&Array.isArray(xp)) setXiamenPlate(xp);
-      else setXiamenPlate(buildXiamenPlateGrid(d.female_samples||[], maleOrder<SampleItem>(d)));
+      // 2026-10-14：优先读「板数组」；旧批次只有单板键 → 包成 1 块板（零迁移）
+      const _asList = (v:any):PlateGrid[]|null => {
+        if(!Array.isArray(v) || !v.length) return null;
+        if(Array.isArray(v[0]) && Array.isArray(v[0][0])) return v;        // 板数组
+        if(v.length===8 && Array.isArray(v[0])) return [v];                // 单块板
+        return null;
+      };
+      const _xmS = Array.isArray(ld.xiamen_starts) && ld.xiamen_starts.length ? ld.xiamen_starts
+                 : [{f: ld.female_start_coord || "", m: ld.male_start_coord || ""}];
+      const _fS  = Array.isArray(ld.hk_female_starts) && ld.hk_female_starts.length ? ld.hk_female_starts : [ld.hk_female_start || ""];
+      const _mS  = Array.isArray(ld.hk_male_starts) && ld.hk_male_starts.length ? ld.hk_male_starts : [ld.hk_male_start || ""];
+      setXiamenStarts(_xmS); setHkFemaleStarts(_fS); setHkMaleStarts(_mS);
+      const fps = _asList(ld.female_plates) || _asList(ld.female_plate);
+      const mps = _asList(ld.male_plates) || _asList(ld.male_plate);
+      const xps = _asList(ld.xiamen_plates) || _asList(ld.xiamen_plate);
+      if(xps) setXiamenPlates(xps);
+      else { const r = buildXiamenPlates(d.female_samples||[], maleOrder<SampleItem>(d), _xmS); setXiamenPlates(r.plates); setPlateOverflow(r.overflow); }
+      if(fps) setFemalePlates(fps);
+      else setFemalePlates(buildPlatesFromStart(d.female_samples||[], _fS, "F").plates);
+      if(mps) setMalePlates(mps);
+      else setMalePlates(buildPlatesFromStart(maleOrder<SampleItem>(d), _mS, "M").plates);
       libForm.setFieldsValue({
         equipment:ld.equipment||"",pcr_cycles:ld.pcr_cycles??12,cfDNA_volume:ld.cfDNA_volume??undefined,
         elution_volume:ld.elution_volume??undefined,temperature:ld.temperature??undefined,humidity:ld.humidity??undefined,
@@ -416,7 +554,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       photos_female: photosFRef.current, photos_male: photosMRef.current,
       operator_female: joinPersons(operators[sid]), reviewer_female: joinPersons(reviewers[sid]),
       operator_male: joinPersons(operatorsM[sid]), reviewer_male: joinPersons(reviewersM[sid]),
-      female_plate:femalePlate,male_plate:malePlate,xiamen_plate:xiamenPlate,
+      // 2026-10-14：板数组 + 每板起点；旧键保留 = 第 1 块板（兼容）
+      female_plates:femalePlates,male_plates:malePlates,xiamen_plates:xiamenPlates,
+      xiamen_starts:xiamenStarts,hk_female_starts:hkFemaleStarts,hk_male_starts:hkMaleStarts,
+      female_plate:femalePlates[0],male_plate:malePlates[0],xiamen_plate:xiamenPlates[0],
     };
   };
 
@@ -433,9 +574,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     const missing = validateBeforeSave(side);
     if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
     // Validate index
-    const currentPlate = region==="XIAMEN"?xiamenPlate:(region==="HONGKONG"?femalePlate.concat(malePlate):femalePlate);
+    const currentPlate = allPlates().flat();
     const missingIndex = currentPlate.some(row=>row.some(cell=>cell.vgId&&!cell.index));
     if(missingIndex){message.warning("请填写所有 Index");return}
+    // Index 查重：只提醒不拦（用户 2026-10-14 选定），照常保存
+    const _dupSaveMsg = dupWarnText("保存前");
+    if(_dupSaveMsg){ message.warning({ content:_dupSaveMsg, duration:6 }); }
     if(selectedIndexKits.length===0){message.warning("请选择 Index 接头试剂盒");return}
     setSaving(true);
     try{
@@ -453,9 +597,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     const miss = validateBeforeSave("all");
     if (miss.length) { message.warning(`完成前请先：${miss.join("、")}`); return; }
     // ② Index 完整性（与保存要求一致）
-    const curPlate = region==="XIAMEN"?xiamenPlate:(region==="HONGKONG"?femalePlate.concat(malePlate):femalePlate);
+    const curPlate = allPlates().flat();
     const missIdx = curPlate.some(row=>row.some(cell=>cell.vgId&&!cell.index));
     if(missIdx){message.warning("完成前请先：填写所有 Index");return}
+    // Index 查重：只提醒不拦（用户 2026-10-14 选定）
+    const _dupDoneMsg = dupWarnText("完成前");
+    if(_dupDoneMsg){ message.warning({ content:_dupDoneMsg, duration:6 }); }
     if(selectedIndexKits.length===0){message.warning("完成前请先：选择 Index 接头试剂盒");return}
     // ③ 必须保存过 + 无未保存改动（深度对比服务器数据）
     const serverLd = (selectedBatch as any).library_data || {};
@@ -553,11 +700,20 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       const aoa: any[][] = [[`${selectedBatch.batch_number} — 文库构建记录（厦门）`], []];
       aoa.push(...commonReagents());
       aoa.push(...records("", dateF, timeF, femaleLibKit, joinPersons(operators[sid]), joinPersons(reviewers[sid])));
-      const xmStart = [femaleStartCoord && `女起 ${femaleStartCoord}`, maleStartCoord && `男起 ${maleStartCoord}`].filter(Boolean).join("  ");
-      const xmPlate = plateRows(xiamenPlate, `三、96孔板（👩${femSamples.length}+👨${maleSamples.length} 合并板）`, "起始", xmStart);
-      const xmStartRow = aoa.length;
-      aoa.push(...xmPlate.rows);
-      XLSX.utils.book_append_sheet(wb, sheetWithPlate(aoa, xmPlate, xmStartRow), "文库构建");
+      // 2026-10-14：所有板依次列出（板1/板2/…）
+      const xmMerges: any[] = [];
+      let cursor = aoa.length;
+      xiamenPlates.forEach((g,k)=>{
+        const st = xiamenStarts[k] || {f:"",m:""};
+        const xmStart = [st.f && `女起 ${st.f}`, st.m && `男起 ${st.m}`].filter(Boolean).join("  ");
+        const cnt = (kind:string)=> g.flat().filter((c:any)=>c?.vgId && (c.sexKind||c.kind)===kind).length;
+        const blk = plateRows(g, `三、96孔板 板${k+1}${xiamenPlates.length>1?`/共${xiamenPlates.length}块`:""}（👩${cnt("F")}+👨${cnt("M")} 合并板）`, "起始", xmStart);
+        if (k > 0) { aoa.push([]); cursor += 1; }
+        blk.merges.forEach(m=>xmMerges.push({ s:{r:m.s.r+cursor,c:m.s.c}, e:{r:m.e.r+cursor,c:m.e.c} }));
+        aoa.push(...blk.rows);
+        cursor += blk.rows.length;
+      });
+      XLSX.utils.book_append_sheet(wb, sheetWithPlate(aoa, {rows:[], merges:xmMerges}, 0), "文库构建");
     } else {
       // 香港：女性/男性两个 sheet；共用试剂只在「女性」sheet 出现一次
       const build = (isF: boolean) => {
@@ -571,15 +727,21 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
           joinPersons((isF ? operators : operatorsM)[sid]),
           joinPersons((isF ? reviewers : reviewersM)[sid]),
         ));
-        const hkPlate = plateRows(
-          isF ? femalePlate : malePlate,
-          `三、96孔板（${isF ? "👩 女性板" : "👨 男性板"}）`,
-          isF ? "女起" : "男起",
-          isF ? hkFemaleStart : hkMaleStart,
-        );
-        const hkStartRow = aoa.length;
-        aoa.push(...hkPlate.rows);
-        return sheetWithPlate(aoa, hkPlate, hkStartRow);
+        // 2026-10-14：该性别所有板依次列出
+        const list = isF ? femalePlates : malePlates;
+        const starts = isF ? hkFemaleStarts : hkMaleStarts;
+        const hkMerges: any[] = [];
+        let hkCursor = aoa.length;
+        list.forEach((g,k)=>{
+          const st = starts[k] || "";
+          const blk = plateRows(g, `三、96孔板 板${k+1}${list.length>1?`/共${list.length}块`:""}（${isF ? "👩 女性板" : "👨 男性板"}）`,
+                                isF ? "女起" : "男起", st);
+          if (k > 0) { aoa.push([]); hkCursor += 1; }
+          blk.merges.forEach(m=>hkMerges.push({ s:{r:m.s.r+hkCursor,c:m.s.c}, e:{r:m.e.r+hkCursor,c:m.e.c} }));
+          aoa.push(...blk.rows);
+          hkCursor += blk.rows.length;
+        });
+        return sheetWithPlate(aoa, {rows:[], merges:hkMerges}, 0);
       };
       XLSX.utils.book_append_sheet(wb, build(true), "女性");
       XLSX.utils.book_append_sheet(wb, build(false), "男性");
@@ -731,14 +893,20 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   const touchDragRef = useRef<{plate:string;row:number;col:number;x:number;y:number;active:boolean}|null>(null);
   const [dragOverCell, setDragOverCell] = useState<{plate:string;row:number;col:number}|null>(null);
 
-  const swapPlateCells = (plateKey:string, fromR:number, fromC:number, toR:number, toC:number) => {
-    if (fromR===toR && fromC===toC) return;
-    const setter = plateKey==="f"?setFemalePlate : plateKey==="m"?setMalePlate : setXiamenPlate;
-    setter((prev:PlateGrid)=>{
-      const next = prev.map(r=>r.map(c=>({...c})));
-      const a = next[fromR][fromC], b = next[toR][toC];
-      next[fromR][fromC] = {vgId:b.vgId, index:a.index, sampleIdx:b.sampleIdx, isQC:b.isQC};
-      next[toR][toC] = {vgId:a.vgId, index:b.index, sampleIdx:a.sampleIdx, isQC:a.isQC};
+  const swapPlateCells = (fromKey:string, fromR:number, fromC:number, toKey:string, toR:number, toC:number) => {
+    if (fromKey===toKey && fromR===toR && fromC===toC) return;
+    const a = parsePlateKey(fromKey), b = parsePlateKey(toKey);   // plateKey 形如 x0/f1/m2
+    // 跨板只允许「同类板之间」：厦门板↔厦门板、女性板↔女性板、男性板↔男性板
+    if (a.scheme !== b.scheme) return;
+    const setAll = a.scheme==="f"?setFemalePlates : a.scheme==="m"?setMalePlates : setXiamenPlates;
+    setAll((prev:PlateGrid[])=>{
+      const need = a.k===b.k ? [a.k] : [a.k, b.k];
+      if (need.some(i=>!prev[i])) return prev;
+      const next = prev.map((g,gi)=> need.includes(gi) ? g.map(r=>r.map(c=>({...c}))) : g);
+      const A = next[a.k][fromR][fromC], B = next[b.k][toR][toC];
+      // 样本（vgId/sampleIdx/isQC/kind/sexKind…）跟着人走；index 是试剂盒孔位号，留在原孔位
+      next[a.k][fromR][fromC] = { ...B, index: A.index };
+      next[b.k][toR][toC]     = { ...A, index: B.index };
       return next;
     });
   };
@@ -747,13 +915,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   const rebuildPlates = () => {
     if (!selectedBatch) return;
     const d = selectedBatch;
-    const males = maleOrder<SampleItem>(d);
-    if (region === "XIAMEN") {
-      setXiamenPlate(prev => keepIndex(buildXiamenPlateGrid(d.female_samples || [], males), prev));
-    } else {
-      setFemalePlate(prev => keepIndex(hkFemaleStart ? buildPlateFromStart(d.female_samples || [], hkFemaleStart, "F") : buildCenteredPlate(d.female_samples || [], "F"), prev));
-      setMalePlate(prev => keepIndex(hkMaleStart ? buildPlateFromStart(males, hkMaleStart, "M") : buildCenteredPlate(males, "M"), prev));
-    }
+    rebuildAllPlates(d, xiamenStarts, hkFemaleStarts, hkMaleStarts);
     message.success("已按当前样本重排孔板（确认无误后点「保存全部」）");
   };
 
@@ -774,6 +936,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               const passBg = sr?.status==="pass"?"#f6ffed":undefined;
               const baseBg = cell.vgId?"#e8f5e9":"#fafafa";
               const bg = failBg||passBg||baseBg;
+              // Index 查重（实时）：本格重复则标红并提示其他位置
+              const _dupList = indexCheck.cellDup.get(`${plateKey}:${row}:${col}`);
+              const _dupOther = _dupList ? _dupList.filter(x => x.vgId !== cell.vgId).map(x => x.pos).join(" / ") : "";
 
   return (
                 <td key={col}
@@ -781,13 +946,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   draggable={!!cell.vgId && selectedBatch?.status!=="COMPLETED"}
                   onDragStart={(e)=>{ dragSrcRef.current={plate:plateKey,row,col}; try{e.dataTransfer.setData("text/plain","");}catch{} e.dataTransfer.effectAllowed="move"; }}
                   onDragEnd={()=>{ dragSrcRef.current=null; setDragOverCell(null); }}
-                  onDragOver={(e)=>{ const s0=dragSrcRef.current; if(!s0||s0.plate!==plateKey) return; if(s0.row===row&&s0.col===col) return; e.preventDefault(); e.dataTransfer.dropEffect="move"; if(!dragOverCell||dragOverCell.plate!==plateKey||dragOverCell.row!==row||dragOverCell.col!==col) setDragOverCell({plate:plateKey,row,col}); }}
+                  onDragOver={(e)=>{ const s0=dragSrcRef.current; if(!s0) return; if(parsePlateKey(s0.plate).scheme!==parsePlateKey(plateKey).scheme) return; if(s0.plate===plateKey&&s0.row===row&&s0.col===col) return; e.preventDefault(); e.dataTransfer.dropEffect="move"; if(!dragOverCell||dragOverCell.plate!==plateKey||dragOverCell.row!==row||dragOverCell.col!==col) setDragOverCell({plate:plateKey,row,col}); }}
                   onDragLeave={()=>{ setDragOverCell(p=>p&&p.plate===plateKey&&p.row===row&&p.col===col?null:p); }}
-                  onDrop={(e)=>{ e.preventDefault(); const s0=dragSrcRef.current; if(s0&&s0.plate===plateKey) swapPlateCells(plateKey,s0.row,s0.col,row,col); dragSrcRef.current=null; setDragOverCell(null); }}
+                  onDrop={(e)=>{ e.preventDefault(); const s0=dragSrcRef.current; if(s0) swapPlateCells(s0.plate,s0.row,s0.col,plateKey,row,col); dragSrcRef.current=null; setDragOverCell(null); }}
                   onTouchStart={(e)=>{ if(!cell.vgId||selectedBatch?.status==="COMPLETED") return; const t=e.touches[0]; touchDragRef.current={plate:plateKey,row,col,x:t.clientX,y:t.clientY,active:false}; }}
-                  onTouchMove={(e)=>{ const d=touchDragRef.current; if(!d||d.plate!==plateKey) return; const t=e.touches[0]; if(!d.active&&(Math.abs(t.clientX-d.x)>8||Math.abs(t.clientY-d.y)>8)){ d.active=true; dragSrcRef.current={plate:d.plate,row:d.row,col:d.col}; } if(d.active){ e.preventDefault(); const el=document.elementFromPoint(t.clientX,t.clientY) as HTMLElement|null; const cellEl=el?.closest?.("[data-plate-cell]") as HTMLElement|null; if(cellEl){ const pk=cellEl.getAttribute("data-plate-key")||""; const rc=(cellEl.getAttribute("data-plate-cell")||"").split(","); if(pk===plateKey) setDragOverCell({plate:pk,row:parseInt(rc[0]),col:parseInt(rc[1])}); } } }}
-                  onTouchEnd={(e)=>{ const d=touchDragRef.current; touchDragRef.current=null; if(d&&d.active){ dragSrcRef.current=null; const t=e.changedTouches[0]; const el=document.elementFromPoint(t.clientX,t.clientY) as HTMLElement|null; const cellEl=el?.closest?.("[data-plate-cell]") as HTMLElement|null; setDragOverCell(null); if(cellEl){ const pk=cellEl.getAttribute("data-plate-key")||""; const rc=(cellEl.getAttribute("data-plate-cell")||"").split(","); if(pk===d.plate) swapPlateCells(d.plate,d.row,d.col,parseInt(rc[0]),parseInt(rc[1])); } } else { dragSrcRef.current=null; setDragOverCell(null); } }}
-                  style={{...cellStyle,background:bg,cursor:(cell.vgId&&selectedBatch?.status!=="COMPLETED")?"pointer":"default",outline:(dragOverCell&&dragOverCell.plate===plateKey&&dragOverCell.row===row&&dragOverCell.col===col)?"2px dashed #1677ff":undefined,outlineOffset:-2}}>
+                  onTouchMove={(e)=>{ const d=touchDragRef.current; if(!d) return; const t=e.touches[0]; if(!d.active&&(Math.abs(t.clientX-d.x)>8||Math.abs(t.clientY-d.y)>8)){ d.active=true; dragSrcRef.current={plate:d.plate,row:d.row,col:d.col}; } if(d.active){ e.preventDefault(); const el=document.elementFromPoint(t.clientX,t.clientY) as HTMLElement|null; const cellEl=el?.closest?.("[data-plate-cell]") as HTMLElement|null; if(cellEl){ const pk=cellEl.getAttribute("data-plate-key")||""; const rc=(cellEl.getAttribute("data-plate-cell")||"").split(","); if(pk&&parsePlateKey(pk).scheme===parsePlateKey(plateKey).scheme) setDragOverCell({plate:pk,row:parseInt(rc[0]),col:parseInt(rc[1])}); } } }}
+                  onTouchEnd={(e)=>{ const d=touchDragRef.current; touchDragRef.current=null; if(d&&d.active){ dragSrcRef.current=null; const t=e.changedTouches[0]; const el=document.elementFromPoint(t.clientX,t.clientY) as HTMLElement|null; const cellEl=el?.closest?.("[data-plate-cell]") as HTMLElement|null; setDragOverCell(null); if(cellEl){ const pk=cellEl.getAttribute("data-plate-key")||""; const rc=(cellEl.getAttribute("data-plate-cell")||"").split(","); if(pk) swapPlateCells(d.plate,d.row,d.col,pk,parseInt(rc[0]),parseInt(rc[1])); } } else { dragSrcRef.current=null; setDragOverCell(null); } }}
+                  style={{...cellStyle,background:_dupList?"#fff7e6":bg,cursor:(cell.vgId&&selectedBatch?.status!=="COMPLETED")?"pointer":"default",outline:(dragOverCell&&dragOverCell.plate===plateKey&&dragOverCell.row===row&&dragOverCell.col===col)?"2px dashed #1677ff":undefined,outlineOffset:-2}}>
                   <Popover trigger={selectedBatch?.status==="COMPLETED"?[]:"click"} content={
                     <div style={{minWidth:180}}>
                       <Radio.Group value={sr?.status||""} onChange={e=>{const v=e.target.value;setSampleResults((p:any)=>({...p,[String(sKey)]:{status:v,note:v==="fail"?(p[String(sKey)]?.note||""):""}}))}}>
@@ -798,7 +963,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                     </div>
                   }>
                     <div style={{display:"flex",alignItems:"stretch",minHeight:30}}>
-                      <input type="text" data-ix-cell={row+"_"+col} disabled={selectedBatch?.status==="COMPLETED"} value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value)} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); const ni=col*8+row+1; if(ni<96){ const nr=ni%8, nc=Math.floor(ni/8); const root=document.querySelector(`[data-plate-grid="${plateKey}"]`); const el=root?.querySelector(`[data-ix-cell="${nr}_${nc}"]`) as HTMLInputElement|null; if(el){ el.focus(); el.select(); } } } }} style={inputStyle} placeholder="ix"/>
+                      <input type="text" data-ix-cell={row+"_"+col} disabled={selectedBatch?.status==="COMPLETED"} value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value)} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); const ni=col*8+row+1; if(ni<96){ const nr=ni%8, nc=Math.floor(ni/8); const root=document.querySelector(`[data-plate-grid="${plateKey}"]`); const el=root?.querySelector(`[data-ix-cell="${nr}_${nc}"]`) as HTMLInputElement|null; if(el){ el.focus(); el.select(); } } } }} style={_dupList ? {...inputStyle, background:"#ffe58f", color:"#ad4e00", fontWeight:700, boxSizing:"border-box", border:"1px solid #faad14"} : inputStyle}
+                        title={_dupList ? `Index ${cell.index} 重复：与 ${_dupOther} 相同` : undefined} placeholder="ix"/>
                       <div style={{...vgIdStyle}}>{cell.vgId||""}{cell.isQC?<span style={{color:"#13c2c2",fontWeight:600,marginLeft:1}}>QC</span>:null}</div>
                     </div>
                   </Popover>
@@ -894,19 +1060,47 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
             </Card>
 
             {/* Plate(s) */}
+            {indexCheck.dups.size > 0 && (
+              <Alert type="warning" showIcon style={{marginBottom:8}}
+                message={`Index 重复 ${indexCheck.dups.size} 个 —— 所有板之间不建议有重复 Index（仅提示，不影响保存与完成）`}
+                description={
+                  <div style={{fontSize:12, lineHeight:1.9}}>
+                    {Array.from(indexCheck.dups.entries()).map(([k, v]) => (
+                      <div key={k}><Text strong>{`Index ${k}`}</Text>{`：${v.map(x => x.pos).join(" / ")}`}</div>
+                    ))}
+                    <div style={{marginTop:4}}><Text type="secondary">请核对后修改；本提示不阻止「保存」与「完成」。</Text></div>
+                  </div>
+                } />
+            )}
             {region==="XIAMEN"?(
-              <Card size="small" title={<Space>{`🧬 96孔板 — 👩${selectedBatch.female_count}+👨${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`}<Text type="secondary" style={{fontSize:11}}>（按住拖动样本可换位）</Text><Text type="secondary" style={{fontSize:11}}>女起:</Text><Input size="small" style={{width:50}} value={femaleStartCoord} onChange={e=>setFemaleStartCoord(e.target.value.toUpperCase())} placeholder="居中"/><Text type="secondary" style={{fontSize:11}}>男起:</Text><Input size="small" style={{width:50}} value={maleStartCoord} onChange={e=>setMaleStartCoord(e.target.value.toUpperCase())} placeholder="居中"/></Space>}>
-                {renderNiptPlate(xiamenPlate, setXiamenPlate, "x")}
-              </Card>
+              <Space direction="vertical" style={{width:"100%"}}>
+                {xiamenPlates.map((g,k)=>{
+                  const cnt = (kind:string)=> g.flat().filter((c:any)=>c?.vgId && (c.sexKind||c.kind)===kind).length;
+                  const st = xiamenStarts[k] || {f:"",m:""};
+                  return (
+                    <Card key={`x${k}`} size="small" title={<Space>{`🧬 96孔板 板${k+1}${xiamenPlates.length>1?`/共${xiamenPlates.length}块`:""} — 👩${cnt("F")}+👨${cnt("M")} 样本`}<Text type="secondary" style={{fontSize:11}}>（按住拖动样本可换位）</Text><Text type="secondary" style={{fontSize:11}}>女起:</Text><Input size="small" style={{width:50}} value={st.f} onChange={e=>setXiamenStarts(p=>{const n=padStarts(p,k,{f:"",m:""}); n[k]={...n[k],f:e.target.value.toUpperCase()}; return n;})} placeholder="居中"/><Text type="secondary" style={{fontSize:11}}>男起:</Text><Input size="small" style={{width:50}} value={st.m} onChange={e=>setXiamenStarts(p=>{const n=padStarts(p,k,{f:"",m:""}); n[k]={...n[k],m:e.target.value.toUpperCase()}; return n;})} placeholder="居中"/></Space>}>
+                      {renderNiptPlate(g, plateSetter("x", k), `x${k}`)}
+                    </Card>
+                  );
+                })}
+              </Space>
             ):(
               <Space direction="vertical" style={{width:"100%"}}>
-                <Card size="small" title={<Space>{`👩 女性板 — ${selectedBatch.female_count} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkFemaleStart} onChange={e=>setHkFemaleStart(e.target.value.toUpperCase())} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
-                  {renderNiptPlate(femalePlate, setFemalePlate, "f")}
-              </Card>
-                <Card size="small" title={<Space>{`👨 男性板 — ${selectedBatch.male_blood_count+selectedBatch.male_other_count} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkMaleStart} onChange={e=>setHkMaleStart(e.target.value.toUpperCase())} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
-                  {renderNiptPlate(malePlate, setMalePlate, "m")}
-              </Card>
+                {femalePlates.map((g,k)=>(
+                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=e.target.value.toUpperCase(); return n;})} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
+                    {renderNiptPlate(g, plateSetter("f", k), `f${k}`)}
+                  </Card>
+                ))}
+                {malePlates.map((g,k)=>(
+                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=e.target.value.toUpperCase(); return n;})} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
+                    {renderNiptPlate(g, plateSetter("m", k), `m${k}`)}
+                  </Card>
+                ))}
               </Space>
+            )}
+            {plateOverflow > 0 && (
+              <Alert type="warning" showIcon style={{marginTop:8}}
+                message={`样本超出 ${MAX_PLATES} 块板（${MAX_PLATES*96} 孔）容量：还有 ${plateOverflow} 个样本未排入板面，请拆分批次`} />
             )}
 
             {region==="XIAMEN"?renderPhotosPersons("f", true):(<>{renderPhotosPersons("f")}{renderPhotosPersons("m")}</>)}

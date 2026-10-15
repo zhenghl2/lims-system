@@ -1,5 +1,5 @@
 // NipptBioinformatics.tsx — NIPPT Bioinformatics (Pair-based CPI Analysis + QC + Metrics)
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Table, Button, Tag, Modal, message, Typography, InputNumber,
   Space, Popconfirm, Select, Alert, Input, Upload, Tooltip } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, DeleteOutlined,
@@ -106,6 +106,9 @@ export default function NipptBioinformatics() {
   const [manualPairFather, setManualPairFather] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<any>(null);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [appendixModalOpen, setAppendixModalOpen] = useState(false);
+  const [appendixErrors, setAppendixErrors] = useState<any[]>([]);
+  const appendixFileRef = useRef<HTMLInputElement>(null);
 const PERSONS = ["郑海灵","祝兴强","吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 // 生信模块默认操作人/审核人（后端建批次时也会写入，这里兜底显示空批次）
 const DEFAULT_OPERATOR = "郑海灵";
@@ -206,7 +209,30 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     } catch (e: any) { message.error(e.response?.data?.error || "Failed"); }
   };
 
+  /** 附表(.last)上传：按 PT 号匹配本批次配对（与 CSV/xlsx 导入同一入口，按扩展名自动分流） */
+  const uploadAppendices = async (files: File[]) => {
+    if (!selectedBatch) return;
+    try {
+      const fd = new FormData();
+      files.forEach((f) => fd.append("files", f));
+      const r = await api.post(`/cases/bioinfo/${selectedBatch.id}/upload-appendices/`, fd, { timeout: 600000 });
+      const d = r.data || {};
+      if (d.matched && !d.failed) message.success(`附表上传成功：已匹配并保存 ${d.matched} 个`);
+      else if (d.matched && d.failed) message.warning(`附表：成功 ${d.matched} 个，未匹配 ${d.failed} 个`);
+      else if (!d.matched && d.failed) message.error(`附表：${d.failed} 个全部未匹配上，请核对文件名里的 PT 号`);
+      else message.info("没有可处理的文件");
+      if (d.failed) { setAppendixErrors(d.errors || []); setAppendixModalOpen(true); }
+      await fetchDetail(selectedBatch.id);
+    } catch (e: any) {
+      message.error("附表上传失败：" + (e?.response?.data?.detail || e?.message || ""));
+    }
+  };
+
   const handleImport = async (file: File) => {
+    if (/\.last$/i.test(file.name)) {          // ← 附表分流
+      await uploadAppendices([file]);
+      return;
+    }
     if (!selectedBatch) return false;
     const formData = new FormData();
     formData.append("file", file);
@@ -250,8 +276,15 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
   const batchColumns = [
     { title: "Batch #", dataIndex: "batch_number", key: "bn", ellipsis: true },
-    { title: "", dataIndex: "status", key: "st", width: 55,
-      render: (v: string) => <Tag color={v === "COMPLETED" ? "green" : "blue"} style={{ margin: 0 }} /> },
+    { title: "状态", dataIndex: "status", key: "st", width: 100,
+      // 2026-10-14：原来是「无表头 + 无文字」的纯色小横杠（绿=已完成 蓝=未完成），
+      // 实验员看不出来是什么 → 改为「表头 + 文字」，宽度 55→100px（三个汉字实测 42px + antd 开销）
+      render: (_: string, r: BatchItem) => {
+        const done = r?.status === "COMPLETED";
+        return <Tag color={done ? "green" : "blue"} style={{ margin: 0 }}>
+          {r?.status_display || (done ? "已完成" : "处理中")}
+        </Tag>;
+      } },
     { title: "Pairs", dataIndex: "pair_count", key: "pc", width: 42, align: "center" as const },
   ];
 
@@ -261,6 +294,15 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
         : emptyText },
     { title: "PT#", dataIndex: "pt_number", key: "pt", width: 85 },
+    { title: "附表", key: "apx", width: 90, render: (_: any, r: PairItem) => {
+        const anyR = r as any;
+        if (anyR.has_appendix) {
+          return anyR.appendix_file_url
+            ? <Tooltip title="查看 .last"><a href={anyR.appendix_file_url} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>✓ 已传</a></Tooltip>
+            : <Text type="success" style={{ fontSize: 12 }}>✓ 已传</Text>;
+        }
+        return <Text type="danger" style={{ fontSize: 12 }}>缺</Text>;
+      } },
     { title: "来源", dataIndex: "case_source", key: "src2", width: 70, render: (v: string) => <Text style={{fontSize:12}}>{v || "—"}</Text> },
     { title: "备注", key: "cnotes", width: 180, render: (_: any, r: PairItem) => renderCaseNoteTags(r) },
     { title: "Mother", key: "m", width: 130,
@@ -406,12 +448,36 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             extra={<Space>
               <Button icon={<ReloadOutlined />} size="small" loading={batchLoading} onClick={() => fetchDetail(selectedBatch.id)}>Refresh</Button>
               <Button icon={<DownloadOutlined />} size="small" onClick={downloadTemplate}>Template</Button>
-              <Upload accept=".csv,.xlsx" showUploadList={false} beforeUpload={(f) => { handleImport(f as File); return false; }}>
+              <Upload accept=".csv,.xlsx,.last" multiple showUploadList={false}
+                beforeUpload={(f) => { handleImport(f as File); return false; }}>
                 <Button icon={<UploadOutlined />} size="small">Import</Button>
               </Upload>
+              <Tooltip title="上传报告附表（.last）。按文件名里的 PT 号 + HA/HB 后缀自动匹配本批次配对；一次可选多个文件。">
+                <Button icon={<UploadOutlined />} size="small" type="primary" ghost
+                  onClick={() => { if (appendixFileRef.current) { appendixFileRef.current.value = ""; appendixFileRef.current.click(); } }}>
+                  上传附表(.last)
+                </Button>
+              </Tooltip>
+              {(() => {
+                const list = (selectedBatch.pairs || []) as any[];
+                const done = list.filter((p) => p.has_appendix).length;
+                return (
+                  <Tooltip title="已上传附表的配对 / 全部配对">
+                    <Tag color={done === list.length && list.length > 0 ? "green" : done ? "orange" : "red"}
+                      style={{ marginInlineEnd: 0 }}>
+                      附表 {done}/{list.length}
+                    </Tag>
+                  </Tooltip>
+                );
+              })()}
+              <input ref={appendixFileRef} type="file" multiple accept=".last" style={{ display: "none" }}
+                onChange={(e) => {
+                  const fs = Array.from(e.target.files || []);
+                  if (fs.length) uploadAppendices(fs);
+                }} />
               {selectedBatch.status !== "COMPLETED" && <Popconfirm title="Delete?" onConfirm={() => handleDelete(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>}
             </Space>}>
-            <Table dataSource={selectedBatch.pairs || []} columns={pairColumns} rowKey="id" size="small" pagination={false} loading={batchLoading} scroll={{ x: 1840 }} style={{ marginBottom: hasUnpaired ? 12 : 0 }} />
+            <Table dataSource={selectedBatch.pairs || []} columns={pairColumns} rowKey="id" size="small" pagination={false} loading={batchLoading} scroll={{ x: 1910 }} style={{ marginBottom: hasUnpaired ? 12 : 0 }} />
 
             {hasUnpaired && selectedBatch.status !== "COMPLETED" && (
               <Card size="small" title={<Text type="warning">Unpaired Samples ({unpairedRows.length})</Text>} style={{ marginBottom: 12 }}>
@@ -466,6 +532,19 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
           <Text>In-batch: {pendingInfo.pairing_summary.batch_internal_pairs} pairs ({pendingInfo.pairing_summary.batch_internal_cases} cases)</Text><br /><br />
           <Text strong>Or select another:</Text>
           <Select style={{ width: "100%", marginTop: 8 }} value={selectedHsBatch} onChange={setSelectedHsBatch} options={(pendingInfo.all_hybseq_batches || []).map((b: any) => ({ label: b.batch_number, value: b.id }))} /></>) : <Alert type="warning" message="No completed HybSeq batches." />}
+      </Modal>
+
+      {/* 附表未匹配清单 */}
+      <Modal title="附表未匹配清单" open={appendixModalOpen} width={760}
+        onOk={() => setAppendixModalOpen(false)} onCancel={() => setAppendixModalOpen(false)}
+        footer={<Button type="primary" onClick={() => setAppendixModalOpen(false)}>知道了</Button>}>
+        <Alert type="warning" showIcon style={{ marginBottom: 10 }}
+          message={<span style={{ fontSize: 12 }}>文件名里的 PT 号必须能在<b>本批次</b>找到对应配对。请检查：文件名是否含 PT 号、HA/HB 后缀是否与配对一致。</span>} />
+        <Table size="small" pagination={false} rowKey="file" dataSource={appendixErrors}
+          columns={[
+            { title: "文件名", dataIndex: "file", ellipsis: true },
+            { title: "原因", dataIndex: "reason", width: 300 },
+          ]} />
       </Modal>
 
       {/* Import Result Modal */}

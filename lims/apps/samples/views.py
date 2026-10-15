@@ -1,6 +1,6 @@
 """Sample management views."""
 import os
-from datetime import date
+from datetime import date, timedelta
 from django.utils import timezone
 from django.db import transaction
 from rest_framework import viewsets, status, mixins
@@ -80,6 +80,11 @@ class SampleViewSet(viewsets.ModelViewSet):
                 qs = qs.filter(plasma_remaining__gt=int(params["plasma_remaining__gt"]))
             except (ValueError, TypeError):
                 pass
+        # 销售账号（小程序自助注册）：只返回本人登记的样本（与 cases 侧一致的数据隔离）
+        from lims.apps.cases.views import _is_sales_scoped
+
+        if _is_sales_scoped(self.request.user):
+            qs = qs.filter(created_by=self.request.user)
         return qs.select_related("sample_type", "site").prefetch_related("movements", "run_samples")
     def get_serializer_class(self):
         if self.action == "list":
@@ -165,9 +170,11 @@ class SampleViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="upload-image", parser_classes=[MultiPartParser, FormParser])
     def upload_image(self, request, pk=None):
         sample = self.get_object()
-        if "image" not in request.FILES:
+        # 兼容两种字段名：image（Web 端）/ file（微信小程序 wx.uploadFile 默认）
+        image = request.FILES.get("image") or request.FILES.get("file")
+        if image is None:
             return Response({"error": "No image file provided"}, status=status.HTTP_400_BAD_REQUEST)
-        sample.image = request.FILES["image"]
+        sample.image = image
         sample.save(update_fields=["image", "updated_at"])
         return Response({"detail": "Image uploaded", "image": request.build_absolute_uri(sample.image.url) if sample.image else None})
     @action(detail=True, methods=["post"])
@@ -375,10 +382,24 @@ class SampleViewSet(viewsets.ModelViewSet):
 
             # Create samples
             created = []
+            created_ids = []          # 本次导入新建样本 id（用于方案B排序）
             errors = []
             skip = 0
 
-            for i, data in enumerate(extracted):
+            # ── 巴西：在现有顺序规则之上，增加「Basic 先 / Plus 后」分组（2026-10-14 用户）──
+            #   Basic = NIPT、Plus = NIPT_PLUS；其它档位（如 NIPT_FULL）排最后。
+            #   sorted() 是稳定排序 → 同档位内保持解析出来的原顺序（文件名/表格行顺序）。
+            #   说明：patient_id 按 panel 前缀各自计数，不受跨档位顺序影响。
+            if is_brazil and len(extracted) > 1:
+                _panel_rank = {"NIPT": 0, "NIPT_PLUS": 1}
+                to_create = sorted(
+                    extracted,
+                    key=lambda d: _panel_rank.get(str(d.get("panel_code") or "NIPT").strip().upper(), 9),
+                )
+            else:
+                to_create = extracted
+
+            for i, data in enumerate(to_create):
                 # Map test_option to panel_code
                 test_opt = data.get("test_option", "")
                 panel_code = None
@@ -453,6 +474,7 @@ class SampleViewSet(viewsets.ModelViewSet):
                                 performed_by=request.user,
                             )
                         created.append(SampleListSerializer(sample).data)
+                        created_ids.append(str(sample.id))
                     except Exception as save_err:
                         errors.append({
                             "row": i,
@@ -465,6 +487,17 @@ class SampleViewSet(viewsets.ModelViewSet):
                         "patient_name": data.get("patient_name", ""),
                         "errors": serializer.errors,
                     })
+
+            # ── 方案B（用户 2026-10-13）：本次导入内部按文件顺序显示 ──
+            # 列表默认 -created_at（最新在前）；把本批样本时间写成递减，
+            # 文件第一行时间最新 → 列表顶部就是文件第一行，往下与文件一致。
+            # 只动本批新建样本的毫秒级时间：不反向创建、不改模型 ordering、不影响其它列表。
+            if is_brazil and len(created_ids) > 1:
+                _base = timezone.now()
+                for _i, _sid in enumerate(created_ids):
+                    Sample.objects.filter(id=_sid).update(
+                        created_at=_base - timedelta(milliseconds=_i)
+                    )
 
             # Generate Excel export (non-critical)
             excel_path = None

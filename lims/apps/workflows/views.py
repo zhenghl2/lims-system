@@ -16,6 +16,7 @@ from .serializers import (
     SampleRunSerializer, SampleRunCreateSerializer, SampleRunDetailSerializer,
     WorkflowStepSerializer,
 )
+from .nipt_run_photos import NiptRunPhotosMixin, purge_run_photos  # NIPT 实验照片独立上传（2026-10-13）
 
 
 # ── Sample failure sync helper ────────────────────────────────────
@@ -100,7 +101,7 @@ class WorkflowProtocolViewSet(viewsets.ModelViewSet):
         serializer.save(created_by=self.request.user)
 
 
-class SampleRunViewSet(viewsets.ModelViewSet):
+class SampleRunViewSet(NiptRunPhotosMixin, viewsets.ModelViewSet):
     """Manage sequencing runs."""
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, SearchFilter, OrderingFilter]
@@ -308,12 +309,36 @@ class SampleRunViewSet(viewsets.ModelViewSet):
 
         return Response(SampleRunSerializer(run).data, status=201)
 
+    def perform_destroy(self, instance):
+        """删 run 时连带清理其照片目录（文件删失败不阻塞删除）。"""
+        try:
+            purge_run_photos(instance.id)
+        except Exception:
+            pass
+        instance.delete()
+
     @action(detail=True, methods=["get"])
     def run_detail(self, request, pk=None):
         """Get run with all steps and samples."""
         run = self.get_object()
         serializer = SampleRunDetailSerializer(run)
         return Response(serializer.data)
+
+    # 大 JSON 白名单：详情不带它们，改按需取，避免慢链路超时（2026-10-13）
+    RUN_DATA_KEYS = (
+        "extraction_data", "library_data", "pooling_data",
+        "sequencing_data", "bioinformatics_data",
+    )
+
+    @action(detail=True, methods=["get"], url_path="data")
+    def run_data(self, request, pk=None):
+        """GET /runs/{id}/data/?keys=extraction_data,library_data — 只回请求到的大 JSON。"""
+        run = self.get_object()
+        keys = [k.strip() for k in (request.query_params.get("keys") or "").split(",") if k.strip()]
+        invalid = [k for k in keys if k not in self.RUN_DATA_KEYS]
+        if not keys or invalid:
+            return Response({"detail": "invalid keys", "allowed": list(self.RUN_DATA_KEYS)}, status=400)
+        return Response({k: getattr(run, k, None) for k in keys})
 
     @action(detail=True, methods=["post"])
     def update_results(self, request, pk=None):

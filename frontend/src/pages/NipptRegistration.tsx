@@ -527,10 +527,66 @@ export default function NipptRegistration() {
             ? dayjs(values.collection_date).format("YYYY-MM-DD") : dayjs().format("YYYY-MM-DD"),
           notes: values.notes,
           is_urgent: values.is_urgent === true,
+          gender_info: values.gender_info || "",          // 额外信息（Yes/No，2026-10-13）
         };
         const res = await (casesApi as any).create(payload);
         message.success(`Case ${res.data.case_number} created`);
       } else if (regType === "SUPPLEMENT" && selectedCase) {
+        // ── 女性已有 / 男性同名 → 可能是重采误登记，弹窗确认（用户 2026-10-13）──
+        const suppRole = values.supp_role;
+        const suppName = (values.supp_name || "").trim();
+        const existSamples = ((selectedCase as any).case_samples || []).filter(
+          (x: any) => x.is_active !== false
+        );
+        const hit = suppRole === "MOTHER"
+          ? existSamples.find((x: any) => x.role === "MOTHER")
+          : (suppName
+              ? existSamples.find((x: any) => x.role !== "MOTHER"
+                  && (x.patient_name || "").trim() === suppName)
+              : undefined);
+        let resampleDone = false;
+        if (hit) {
+          const isMother = suppRole === "MOTHER";
+          const goResample = await new Promise<boolean>((resolve) => {
+            Modal.confirm({
+              title: "可能是重采误登记",
+              width: 540,
+              content: (
+                <div style={{ fontSize: 13, lineHeight: 1.9 }}>
+                  {isMother ? "该案例已有女性样本" : "该案例已有同名男士样本"}{" "}
+                  <Text strong>{hit.test_sample_id || "（待签收编号）"}</Text>
+                  {((hit as any).sample_status_display || (hit as any).sample_status)
+                    ? <>（{(hit as any).sample_status_display || (hit as any).sample_status}）</> : null}
+                  。<br />
+                  若是同一人重新取样，应登记为 <b>重采</b>
+                  （编号自动变成 <Text code>{hit.test_sample_id ? `${hit.test_sample_id}_R1` : "PTxxxx_R1"}</Text>）。
+                  <br />是否按 <b>重采</b> 登记？
+                </div>
+              ),
+              okText: "按重采登记",
+              cancelText: "仍按补样",
+              onOk: () => resolve(true),
+              onCancel: () => resolve(false),
+            });
+          });
+          if (goResample) {
+            const rr = await (casesApi as any).resample?.(selectedCase.id, {
+              case_sample_id: hit.id,
+              patient_name: hit.patient_name || values.supp_name,
+              sample_source: values.supp_sample_type || ["BLOOD"],
+              arrival_date: values.supp_arrival_date
+                ? dayjs(values.supp_arrival_date).format("YYYY-MM-DD") : undefined,
+              notes: values.supp_notes || "",
+              gestational_age_weeks: isMother ? (values.supp_ga_weeks ?? null) : null,
+              gestational_age_days: isMother ? (values.supp_ga_days ?? null) : null,
+            });
+            message.success(`已按重采登记：${rr.data?.test_sample_id || ""}`);
+            resampleDone = true;
+          }
+        }
+        if (resampleDone) {
+          // 已按重采处理，跳过补样提交；后续统一走表单清理
+        } else {
         // 补充样本：极简表单一键提交
         await (casesApi as any).supplement?.(selectedCase.id, {
           role: values.supp_role,
@@ -546,6 +602,7 @@ export default function NipptRegistration() {
             : values.supp_mg === "FALSE" ? false : null,
         });
         message.success(`补充样本成功`);
+        }
       } else if (regType === "RESAMPLE" && selectedCase && resampleTarget) {
         // 重采样本：新填值 + 到样日期
         const cs = selectedCase.case_samples?.find((s: any) => s.id === resampleTarget);
@@ -936,6 +993,14 @@ export default function NipptRegistration() {
                     ) : null
                   }
                 </Form.Item>
+                {/* 额外信息（2026-10-13）：实为案例管理基本信息里的 gender 项（Yes/No），决定是否出性别报告 */}
+                <Form.Item name="gender_info" label="额外信息" style={{ marginBottom: 0 }}
+                  tooltip="案例管理基本信息里显示为 gender 的那一项（是=Yes／否=No）。选「是」才会出性别报告。">
+                  <Radio.Group size="small">
+                    <Radio value="Yes">是</Radio>
+                    <Radio value="No">否</Radio>
+                  </Radio.Group>
+                </Form.Item>
               </Col>
             </Row>
 
@@ -1062,6 +1127,10 @@ export default function NipptRegistration() {
                       const yes = RISK_LABELS.filter(([k]) => draftSummary.values?.risk?.[k] === true);
                       return yes.length ? yes.map(([, l]) => l).join("、") : "无";
                     })()}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="额外信息" span={1}>
+                    {draftSummary.values?.gender_info === "Yes" ? "是"
+                      : draftSummary.values?.gender_info === "No" ? "否" : "—"}
                   </Descriptions.Item>
                   <Descriptions.Item label="备注" span={2}>{draftSummary.values?.notes || "—"}</Descriptions.Item>
                 </Descriptions>

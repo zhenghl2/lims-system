@@ -165,6 +165,7 @@ export default function Cases() {
       const fm: any = {};
       CASE_EDIT_FIELDS.forEach((f) => { fm[f] = (selectedCase as any)[f] ?? null; });
       fm.notes = (selectedCase as any).notes ?? "";
+      fm.external_id = (st as any).external_id ?? "";   // 外部编号（案例级，写在样本上）
       setEditForm(fm);
       const sm: any = {};
       (st.samples || []).forEach((s: any) => {
@@ -196,6 +197,7 @@ export default function Cases() {
       const payload: any = { edited_by: editedBy.trim() };
       CASE_EDIT_FIELDS.forEach((f) => { payload[f] = editForm[f]; });
       payload.notes = editForm.notes ?? "";
+      payload.external_id = editForm.external_id ?? "";   // 外部编号
       payload.case_samples = Object.keys(editSamples).map((csId) => {
         const s = editSamples[csId];
         const out: any = { id: csId, collection_notes: s.collection_notes ?? "" };
@@ -635,6 +637,21 @@ export default function Cases() {
                         <Text strong style={{ fontSize: 13 }}>✏️ 可编辑字段</Text>
                         <div style={{ marginTop: 8 }}>
                           <Descriptions bordered size="small" column={2}>
+                            <Descriptions.Item label="外部编号" span={2}>
+                              <Space size={6}>
+                                <Input size="small" style={{ width: 240 }} placeholder="客户/机构给的外部编号"
+                                  value={editForm.external_id ?? ""}
+                                  disabled={!!(editState as any)?.external_id_locked}
+                                  onChange={(e) => setEditForm({ ...editForm, external_id: e.target.value })} />
+                                {(editState as any)?.external_id_locked
+                                  ? <Tooltip title={(editState as any)?.external_id_lock_reason}>
+                                      <Tag color="orange" style={{ fontSize: 11 }}>已锁定</Tag>
+                                    </Tooltip>
+                                  : <Text type="secondary" style={{ fontSize: 11 }}>
+                                      写入样本 {(editState as any)?.external_id_target || "-"}
+                                    </Text>}
+                              </Space>
+                            </Descriptions.Item>
                             <Descriptions.Item label="孕周(周)">
                               <InputNumber size="small" min={0} max={45} style={{ width: "100%" }}
                                 value={editForm.gestational_age_weeks}
@@ -831,7 +848,12 @@ export default function Cases() {
                         HYB_SEQ: ["测序", "cyan"], BIOINFO: ["生信", "geekblue"],
                         REPORT_DRAFT: ["报告", "lime"], COMPLETED: ["完成", "green"],
                       };
-                      const [l, c] = mp[st] || [st, "default"];
+                      // 失败阶段显示「模块 FAIL」（用户 2026-10-13）
+                      const _isFail = st.endsWith("_FAILED");
+                      const _baseSt = _isFail ? st.replace(/_FAILED$/, "") : st;
+                      const [l, c] = _isFail
+                        ? [`${(mp[_baseSt] || [_baseSt])[0]} FAIL`, "red"]
+                        : (mp[st] || [st, "default"]);
                       return <Tag color={c} style={{fontSize:11}}>{l}</Tag>;
                     })()}
                     {cs.resample_of && <Badge count={`R${cs.resample_number}`} color="orange" />}
@@ -877,8 +899,12 @@ export default function Cases() {
                 <div style={{ display: "flex", gap: 2, marginBottom: 4 }}>
                   {[..."REGISTERED,RECEIVED,PRE_PROCESSING,EXTRACTION,LIBRARY_PREP,POOLING,HYB_SEQ,BIOINFO,REPORT_DRAFT,COMPLETED".split(",")].map((s: string, i: number) => {
                     const workflowOrder = "REGISTERED,RECEIVED,PRE_PROCESSING,EXTRACTION,LIBRARY_PREP,POOLING,HYB_SEQ,BIOINFO,REPORT_DRAFT,COMPLETED".split(",");
-                    const idx = workflowOrder.indexOf(cs.workflow_stage || "REGISTERED");
+                    const _stRaw = cs.workflow_stage || "REGISTERED";
+                    const _stFailed = _stRaw.endsWith("_FAILED");
+                    // ⚠️ 失败阶段不在 workflowOrder 里，直接 indexOf 会得 -1 → 整条进度条变灰
+                    const idx = workflowOrder.indexOf(_stFailed ? _stRaw.replace(/_FAILED$/, "") : _stRaw);
                     const isActive = i <= idx;
+                    const _failSeg = _stFailed && i === idx;
                     const colorMap: Record<string, string> = {
                       REGISTERED: "#d9d9d9", RECEIVED: "#1677ff", PRE_PROCESSING: "#faad14",
                       EXTRACTION: "#faad14", LIBRARY_PREP: "#722ed1", POOLING: "#722ed1",
@@ -889,6 +915,7 @@ export default function Cases() {
                       <div key={s} style={{
                         flex: 1, height: 6, borderRadius: 3,
                         background: cs.sample_status === "REJECTED" ? "#ff4d4f"
+                          : _failSeg ? "#ff4d4f"
                           : isActive ? colorMap[s] : "#f0f0f0",
                       }} title={SAMPLE_STATUS_DISPLAY[s]} />
                     );
@@ -1142,7 +1169,9 @@ export default function Cases() {
                         <Space size={6}>
                           <Tag color="blue" style={{ fontSize: 11 }}>{SAMPLE_TYPE_LABELS[c.sample_source] || c.sample_source || "?"}</Tag>
                           <Text code style={{ fontSize: 11 }}>{c.test_sample_id || c.sample_id}</Text>
-                          <Text type="secondary" style={{ fontSize: 11 }}>{stageLabels[c.workflow_stage] || c.workflow_stage}</Text>
+                          <Text type="secondary" style={{ fontSize: 11 }}>{(c.workflow_stage || "").endsWith("_FAILED")
+                            ? `${(stageLabels as any)[(c.workflow_stage || "").replace(/_FAILED$/, "")] || (c.workflow_stage || "").replace(/_FAILED$/, "")} FAIL`
+                            : (stageLabels[c.workflow_stage] || c.workflow_stage)}</Text>
                         </Space>
                         <Button size="small" type="primary" ghost onClick={() => doRedoUse(c.id)}>激活</Button>
                       </div>

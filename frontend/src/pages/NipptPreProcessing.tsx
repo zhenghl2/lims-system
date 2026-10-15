@@ -3,13 +3,12 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ConfigProvider, Card, Table, Button, Tag, Tabs, Modal, message, Typography,
   Input, Select, InputNumber, Space, Popconfirm,
-  Checkbox, Divider, Upload, Image, DatePicker, TimePicker,
-} from "antd";
+  Checkbox, Divider, Upload, Image, DatePicker, TimePicker, Tooltip } from "antd";
 import {
   PlusOutlined, ReloadOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined,
   CameraOutlined, LoadingOutlined,
-} from "@ant-design/icons";
+  UndoOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import { uploadNipptPhoto, deleteNipptPhoto, migrateLegacyNipptPhotos, isRemotePhoto } from "../utils/nipptPhoto";
 import dayjs from "dayjs";
@@ -80,6 +79,10 @@ interface PreSample {
   test_sample_id: string | null;
   received_sample_types: string[];
   remaining_sample_types: string[];
+  /** 服务端已有的手动覆盖值（有值=之前人工改过） */
+  remaining_override?: string[] | null;
+  /** 本次是否人工改过「剩余样本类型」：改过才提交 override，否则交回服务端算默认 */
+  remaining_edited?: boolean;
 }
 
 interface BatchItem {
@@ -436,6 +439,9 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       aliquot_tubes: s.aliquot_tubes,
       plasma_volume: s.plasma_volume,
       experiment_sample_type: s.experiment_sample_type,
+      // 人工改过 → 提交实验室选的值（键名必须是 remaining_sample_types，接口认它，会写进 remaining_override）
+      // 没改 → null，服务端按「收到 − 实验用」算默认
+      remaining_sample_types: isRemEdited(s) ? (s.remaining_sample_types || []) : null,
       elution_volume: s.elution_volume,
       dna_concentration: s.dna_concentration,
       qc_status: s.qc_status,
@@ -573,6 +579,31 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     }
   };
 
+  /** 默认「剩余样本类型」= 收到 − 实验用；男性血液选「血液」时血液仍保留（可分 2–3 次实验） */
+  const computeRemaining = (s: { experiment_sample_type?: string; category?: string; received_sample_types?: string[] }) => {
+    const received = (s.received_sample_types || []).filter(Boolean) as string[];
+    const used = s.experiment_sample_type || "";
+    if (!used) return received;
+    if (used === "BLOOD" && s.category === "MALE_BLOOD" && received.includes("BLOOD")) return [...received];
+    return received.filter((t) => t !== used);
+  };
+  /** 该行「剩余」是否为人工值（服务端有 override，或本次已编辑） */
+  const isRemEdited = (s: any) =>
+    typeof s.remaining_edited === "boolean" ? s.remaining_edited : (s.remaining_override != null);
+
+  /** 恢复默认：重算并把人工标记清掉（保存时交回服务端算） */
+  const resetRemaining = (sampleId: string) => {
+    if (!selectedBatch) return;
+    const upd = (samples: PreSample[]) => samples.map((s) => s.id === sampleId
+      ? { ...s, remaining_sample_types: computeRemaining(s), remaining_edited: false } : s);
+    setSelectedBatch({
+      ...selectedBatch,
+      female_samples: upd(selectedBatch.female_samples),
+      male_blood_samples: upd(selectedBatch.male_blood_samples),
+      male_other_samples: upd(selectedBatch.male_other_samples),
+    });
+  };
+
   // ===== Field update =====
   const updateSampleField = (sampleId: string, field: string, value: any) => {
     if (!selectedBatch) return;
@@ -580,17 +611,14 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       samples.map(s => {
         if (s.id !== sampleId) return s;
         const updated = { ...s, [field]: value };
-        // Auto-compute remaining_sample_types when experiment type changes
+        // 实验样本类型变化 → 剩余样本按默认规则重算，并清掉人工标记（用户流程：先填类型→自动出剩余→再人工改）
         if (field === "experiment_sample_type") {
-          const received = s.received_sample_types || [];
-          // 男性血液可分2-3次实验：选"血液"时血液保留在剩余中
-          if (value === "BLOOD" && s.category === "MALE_BLOOD" && received.includes("BLOOD")) {
-            updated.remaining_sample_types = [...received];
-          } else {
-            updated.remaining_sample_types = value
-              ? received.filter((t: string) => t !== value)
-              : received;
-          }
+          updated.remaining_sample_types = computeRemaining(updated);
+          updated.remaining_edited = false;
+        }
+        // 人工改「剩余样本类型」→ 打上标记，保存时提交 remaining_override
+        if (field === "remaining_sample_types") {
+          updated.remaining_edited = true;
         }
         return updated;
       });
@@ -800,13 +828,21 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
           placeholder="选择" options={typeOptionsFor(r)}
           onChange={(val: string) => updateSampleField(r.id, "experiment_sample_type", val)} allowClear />
       ) },
-    { title: "剩余样本类型", dataIndex: "remaining_sample_types", key: "rest", width: 150,
+    { title: "剩余样本类型", dataIndex: "remaining_sample_types", key: "rest", width: 172,
       render: (v: string[], r: PreSample) => (
-        <Select mode="multiple" size="small" value={v || []}
-          style={{ width: 130 }} placeholder="默认"
-          options={typeOptionsFor(r)}
-          onChange={(val: string[]) => updateSampleField(r.id, "remaining_sample_types", val)}
-          allowClear maxTagCount={2} />
+        <Space size={2}>
+          <Select mode="multiple" size="small" value={v || []}
+            style={{ width: 124 }} placeholder="默认"
+            options={typeOptionsFor(r)}
+            onChange={(val: string[]) => updateSampleField(r.id, "remaining_sample_types", val)}
+            allowClear maxTagCount={1} />
+          {isRemEdited(r) && (
+            <Tooltip title="恢复默认（收到 − 实验用）">
+              <Button type="text" size="small" style={{ padding: "0 2px" }}
+                icon={<UndoOutlined />} onClick={() => resetRemaining(r.id)} />
+            </Tooltip>
+          )}
+        </Space>
       ) },
     { title: "QC", dataIndex: "qc_status", key: "qc", width: 80,
       render: (v: string, r: PreSample) => (

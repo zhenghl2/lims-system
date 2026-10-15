@@ -33,6 +33,10 @@ class WorkflowProtocolDetailSerializer(WorkflowProtocolSerializer):
     """Add parsed steps for detailed view."""
     run_count = serializers.SerializerMethodField()
 
+    class Meta(WorkflowProtocolSerializer.Meta):
+        # 声明了 run_count 就必须写进 fields，否则 DRF 实例化直接 AssertionError（2026-10-13 审计发现）
+        fields = WorkflowProtocolSerializer.Meta.fields + ["run_count"]
+
     def get_run_count(self, obj):
         return obj.runs.count()
 
@@ -88,9 +92,10 @@ class SampleRunSerializer(serializers.ModelSerializer):
             "planned_date", "start_date", "end_date",
             "operator", "operator_name", "notes",
             "sample_count", "created_at", "updated_at",
-            "extraction_method", "extraction_data", "region",
-            "library_method", "library_data",
-            "pooling_data", "sequencing_data", "bioinformatics_data",
+            "extraction_method", "region", "library_method",
+            # ⚠️ 大 JSON（extraction_data/library_data/pooling_data/sequencing_data/
+            #    bioinformatics_data）只在详情返回：列表带上它们会让 /runs/ 响应 ~20MB，
+            #    香港等慢链路必超时（2026-10-13）。
         ]
         read_only_fields = ["created_at", "updated_at"]
 
@@ -122,6 +127,8 @@ class SampleRunDetailSerializer(SampleRunSerializer):
     steps = serializers.SerializerMethodField()
 
     class Meta(SampleRunSerializer.Meta):
+        # 大 JSON 不在详情返回：改由 GET /runs/{id}/data/?keys=... 按需取（见 views.run_data）。
+        # 原因：详情一次性带 15MB 会让慢链路（香港）超时；各 tab 只需其中一块（2026-10-13）。
         fields = SampleRunSerializer.Meta.fields + ["run_samples", "steps"]
 
     def get_steps(self, obj):

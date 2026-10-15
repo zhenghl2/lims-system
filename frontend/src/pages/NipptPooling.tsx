@@ -29,7 +29,8 @@ const getDefaultAmount=(category:string,sampleType:string):number=>{
 type PoolRow = { id:string; ptId:string; index:string; sampleType:string; category:string;
   concentration:number|null; elutionVolume:number; yield:number;
   poolingAmount:number; poolingVolume:number; eliminated:boolean; qc:string; mixOverride?:number };
-type PoolGroup = { name:string; rows:PoolRow[]; totalMass:number; totalVol:number; theoryConc:number; dataAmount:number };
+type PoolGroup = { name:string; rows:PoolRow[]; totalMass:number; totalVol:number; theoryConc:number; dataAmount:number;
+  countedCount:number; failedCount:number; totalCount:number; femaleCount:number; maleCount:number };
 interface SampleItem { id:string; patient_name:string; category:string; test_sample_id:string|null; experiment_sample_type?:string; }
 interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; receipt_location?:string; }
 interface BatchDetail extends BatchItem { female_samples:SampleItem[]; male_blood_samples:SampleItem[]; male_other_samples:SampleItem[]; pooling_data:any; }
@@ -164,11 +165,14 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       const groupRows = mixArrays[g];
       // 显示顺序：未完成批次按 PT 编号排（已完成保持原样）；分配顺序 groupRows 不变
       const dispRows = selectedBatch?.status === "COMPLETED" ? groupRows : sortBySexThenPt(groupRows);
-      const fCount = groupRows.filter(r => r.category === "FEMALE_BLOOD").length;
-      const mCount = groupRows.filter(r => r.category !== "FEMALE_BLOOD").length;
+      // QC=FAIL 不参与汇总（与后端 nippt_pool_mix_groups 只取 PASS 的口径一致）
+      const counted = groupRows.filter(r => (r.qc || "") !== "FAIL");
+      const failedCount = groupRows.length - counted.length;
+      const fCount = counted.filter(r => r.category === "FEMALE_BLOOD").length;
+      const mCount = counted.filter(r => r.category !== "FEMALE_BLOOD").length;
       const dataAmt = fCount * 2 + mCount * 1;
-      const totalMass = groupRows.reduce((s, r) => s + r.poolingAmount, 0);
-      const totalVol = groupRows.reduce((s, r) => s + r.poolingVolume, 0);
+      const totalMass = counted.reduce((s, r) => s + (r.poolingAmount || 0), 0);
+      const totalVol = counted.reduce((s, r) => s + (r.poolingVolume || 0), 0);
       result.push({
         name: `mix${g + 1}`,
         rows: dispRows,
@@ -176,6 +180,11 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
         totalVol: Math.round(totalVol * 100) / 100,
         theoryConc: totalVol > 0 ? Math.round(totalMass / totalVol * 100) / 100 : 0,
         dataAmount: dataAmt,
+        countedCount: counted.length,      // 参与计算的样本数
+        failedCount,                      // 未参与（QC FAIL）的样本数
+        totalCount: groupRows.length,     // 该 mix 样本总数
+        femaleCount: fCount,
+        maleCount: mCount,
       });
     }
     return result;
@@ -328,7 +337,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     aoa.push([]);
 
     // 与网页表头一致（11 列）
-    const HEAD = ["#", "PT编号", "Index", "类型", "浓度", "洗脱 μL", "产量 ng", "投入 ng", "体积 μL", "QC", "mix"];
+    const HEAD = ["#", "mix", "PT编号", "Index", "类型", "浓度", "洗脱 μL", "产量 ng", "投入 ng", "体积 μL", "QC"];
 
     groups.forEach((g: any, gi: number) => {
       const elu = groupElutions[gi] ?? globalElutionVol;
@@ -337,6 +346,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       g.rows.forEach((r: any) => {
         aoa.push([
           visualOrder.indexOf(r.id) + 1,
+          g.name,
           r.ptId,
           savedIndexes[r.id] || "",
           SAMPLE_TYPE_LABELS[r.sampleType] || r.sampleType || (r.category.includes("BLOOD") ? "血液" : "—"),
@@ -346,18 +356,16 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
           r.poolingAmount ?? "",
           r.poolingVolume > 0 ? r.poolingVolume.toFixed(2) : "-",
           r.qc || "",
-          g.name,
         ]);
       });
-      // 汇总行（对齐 11 列：6 格 colSpan + 4 项 + 1 空）
-      const nf = g.rows.filter((r: any) => r.category === "FEMALE_BLOOD").length;
-      const nm = g.rows.length - nf;
+      // 汇总行（对齐 11 列：# 空 + mix + 标签占 5 格 + 4 项）
       aoa.push([
-        `📊 ${g.name} 汇总`, "", "", "", "", "",
+        "", g.name,
+        `📊 ${g.name} 汇总（参与计算 ${g.countedCount}/${g.totalCount} 例${g.failedCount ? `，FAIL ${g.failedCount} 例未参与` : "，无 FAIL"}）`, "", "", "", "",
         `投入: ${g.totalMass} ng`,
         `总体积: ${g.totalVol.toFixed(2)} μL`,
         `理论浓度: ${g.theoryConc.toFixed(2)} ng/μL`,
-        `总数据量: ${g.dataAmount}M (${nf}女/${nm}男)`,
+        `总数据量: ${g.dataAmount}M (${g.femaleCount}女/${g.maleCount}男)`,
         "",
       ]);
       aoa.push([]);
@@ -591,9 +599,9 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                 <div style={{overflowX:"auto"}}>
                   <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,tableLayout:"auto"}}>
                     <thead><tr>
-                      <th style={{...th,width:36}}>#</th><th style={{...th,width:90}}>PT编号</th><th style={{...th,width:55}}>Index</th><th style={{...th,width:55}}>类型</th>
+                      <th style={{...th,width:36}}>#</th><th style={{...th,width:95}}>mix</th><th style={{...th,width:90}}>PT编号</th><th style={{...th,width:55}}>Index</th><th style={{...th,width:55}}>类型</th>
                       <th style={{...th,width:85}}>浓度</th><th style={{...th,width:65}}>洗脱 μL</th><th style={{...th,width:70}}>产量 ng</th>
-                      <th style={{...th,width:75}}>投入 ng</th><th style={{...th,width:75}}>体积 μL</th><th style={{...th,width:90}}>QC</th><th style={{...th,width:95}}>mix</th>
+                      <th style={{...th,width:75}}>投入 ng</th><th style={{...th,width:75}}>体积 μL</th><th style={{...th,width:90}}>QC</th>
                     </tr></thead>
                     <tbody>
                       {g.rows.map((r)=>{
@@ -604,15 +612,6 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
   return (
                           <tr key={r.id} style={{background:r.qc==="FAIL"?"#fff1f0":r.eliminated?"#fffbe6":"#e8f5e9"}}>
                             <td style={td}>{vri+1}</td>
-                            <td style={td}><Text strong style={{fontSize:13}}>{r.ptId}</Text></td>
-                            <td style={td}><Input size="small" style={{width:60}} value={savedIndexes[r.id]||""} onChange={e=>setSavedIndexes(p=>({...p,[r.id]:e.target.value}))} placeholder="ix"/></td>
-                            <td style={td}>{stLabel}</td>
-                            <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.concentration} data-pool-cell={vri+"_conc"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(vri,"conc");}}} onChange={v=>updateCell(ri,"concentration",v)} style={{width:70}} placeholder="0"/></td>
-                            <td style={td}><InputNumber size="small" min={0} step={1} value={r.elutionVolume} data-pool-cell={vri+"_elu"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(vri,"elu");}}} onChange={v=>updateCell(ri,"elutionVolume",v)} style={{width:60}}/></td>
-                            <td style={{...td,fontWeight:r.yield>0?600:400,color:r.eliminated?"#faad14":"#333"}}>{r.yield>0?r.yield.toFixed(1):"-"}{r.eliminated&&<Tag color="gold" style={{marginLeft:4,fontSize:10}}>淘汰</Tag>}</td>
-                            <td style={td}><InputNumber size="small" min={0} step={1} value={r.poolingAmount} data-pool-cell={vri+"_amt"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(vri,"amt");}}} onChange={v=>updateCell(ri,"poolingAmount",v)} style={{width:70}}/></td>
-                            <td style={{...td,fontFamily:"monospace"}}>{r.poolingVolume>0?r.poolingVolume.toFixed(2):"-"}</td>
-                            <td style={td}><Select size="small" value={r.qc} onChange={v=>updateCell(ri,"qc",v)} style={{width:90}} options={[{value:"PASS",label:"PASS"},{value:"FAIL",label:"FAIL"}]}/></td>
                             <td style={td}>
                               <Select size="small" value={r.mixOverride ?? (gi + 1)}
                                 style={{width:85}}
@@ -625,16 +624,36 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                                 options={groups.map((_, i) => ({ value: i + 1, label: `mix${i + 1}` }))}
                               />
                             </td>
+                            <td style={td}><Text strong style={{fontSize:13}}>{r.ptId}</Text></td>
+                            <td style={td}><Input size="small" style={{width:60}} value={savedIndexes[r.id]||""} onChange={e=>setSavedIndexes(p=>({...p,[r.id]:e.target.value}))} placeholder="ix"/></td>
+                            <td style={td}>{stLabel}</td>
+                            <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.concentration} data-pool-cell={vri+"_conc"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(vri,"conc");}}} onChange={v=>updateCell(ri,"concentration",v)} style={{width:70}} placeholder="0"/></td>
+                            <td style={td}><InputNumber size="small" min={0} step={1} value={r.elutionVolume} data-pool-cell={vri+"_elu"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(vri,"elu");}}} onChange={v=>updateCell(ri,"elutionVolume",v)} style={{width:60}}/></td>
+                            <td style={{...td,fontWeight:r.yield>0?600:400,color:r.eliminated?"#faad14":"#333"}}>{r.yield>0?r.yield.toFixed(1):"-"}{r.eliminated&&<Tag color="gold" style={{marginLeft:4,fontSize:10}}>淘汰</Tag>}</td>
+                            <td style={td}><InputNumber size="small" min={0} step={1} value={r.poolingAmount} data-pool-cell={vri+"_amt"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(vri,"amt");}}} onChange={v=>updateCell(ri,"poolingAmount",v)} style={{width:70}}/></td>
+                            <td style={{...td,fontFamily:"monospace"}}>{r.poolingVolume>0?r.poolingVolume.toFixed(2):"-"}</td>
+                            <td style={td}><Select size="small" value={r.qc} onChange={v=>updateCell(ri,"qc",v)} style={{width:90}} options={[{value:"PASS",label:"PASS"},{value:"FAIL",label:"FAIL"}]}/>
+                              {r.qc === "FAIL" && <div style={{fontSize:10,color:"#ff4d4f",lineHeight:1.2}}>未参与计算</div>}</td>
                           </tr>
                         );
                       })}
                       {/* Group summary */}
                       <tr style={{background:"#e6f7ff",fontWeight:700}}>
-                        <td style={{...td,textAlign:"left",paddingLeft:12}} colSpan={6}>📊 {g.name} 汇总</td>
+                        <td style={td}></td>
+                        <td style={{...td,fontWeight:700}}>{g.name}</td>
+                        <td style={{...td,textAlign:"left",paddingLeft:12}} colSpan={5}>
+                          📊 {g.name} 汇总
+                          <span style={{marginLeft:10,fontWeight:400,color:"#555"}}>
+                            参与计算 <b>{g.countedCount}</b>/{g.totalCount} 例
+                          </span>
+                          {g.failedCount > 0
+                            ? <Tag color="red" style={{marginLeft:6,fontWeight:400}}>FAIL {g.failedCount} 例未参与</Tag>
+                            : <span style={{marginLeft:6,fontWeight:400,color:"#52c41a"}}>无 FAIL</span>}
+                        </td>
                         <td style={td}>投入: {g.totalMass} ng</td>
                         <td style={td}>总体积: {g.totalVol.toFixed(2)} μL</td>
                         <td style={td}>理论浓度: {g.theoryConc.toFixed(2)} ng/μL</td>
-                        <td style={td}>总数据量: {g.dataAmount}M ({(()=>{const f=g.rows.filter(r=>r.category==="FEMALE_BLOOD").length;const m=g.rows.filter(r=>r.category!=="FEMALE_BLOOD").length;return`${f}×2M+${m}×1M`})()})</td>
+                        <td style={td}>总数据量: {g.dataAmount}M ({g.femaleCount}×2M+{g.maleCount}×1M)</td>
                       </tr>
                     </tbody>
                   </table>

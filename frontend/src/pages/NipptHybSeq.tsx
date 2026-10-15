@@ -1,7 +1,7 @@
 // NipptHybSeq.tsx — Hybridization & Sequencing (NIPT-style + Mix dilution table)
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
-  Space, Popconfirm, Select, Checkbox, Form, DatePicker, TimePicker, Radio, Tooltip } from "antd";
+  Space, Popconfirm, Select, Checkbox, Form, DatePicker, TimePicker, Radio, Tooltip, Alert } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import api from "../api/client";
@@ -196,6 +196,10 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     return {totalInput, totalVol, theoryConc:Math.round(theoryConc*100)/100, water:Math.round(water*100)/100};
   },[mixRows, finalConc]);
 
+  /** 标准行数 = 创建批次时选的 mix 个数；下标 >= 它的行是「新增行」(研发样本) */
+  const baseMixCount = (((selectedBatch as any)?.hyb_seq_data || {}).mix_ids || []).length;
+  const isExtraRow = (i:number) => baseMixCount > 0 && i >= baseMixCount;
+
   const updateMixCell = (i:number, field:string, val:any)=>{
     setMixRows(prev=>{
       const next=[...prev]; const r={...next[i]};
@@ -252,6 +256,28 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     return selectedBatch.status === "COMPLETED" ? raw : sortBySexThenPt(raw as any[]);
   }, [selectedBatch]);
 
+  /** Index 查重（本批次全部行；2026-10-14 用户口径：只提醒不拦，允许保存与完成）
+   *  归一化口径与页面自己查 INDEX_LOOKUP 的尺子一致：数字→补足 3 位（7 与 007 同号，i7/i5 相同）；
+   *  非数字→原文大写。
+   *  ⚠️ 空 index 不参与重复比较：展示层 `s.index || String(i+1)` 会退化成行号，会和真实 index 假撞车；
+   *     空值单独统计提示（会生成错误上传ID）。
+   *  ⚠️ 一个杂交批次会混多个上游 mix，所以必须覆盖本批次全部行，不能只比单个上游。 */
+  const hybIndexCheck = useMemo(() => {
+    const occ = new Map<string, {pt:string; no:number}[]>();
+    let empty = 0;
+    hybRows.forEach((s0:any, i:number) => {
+      const raw = (s0?.index ?? "").toString().trim();
+      if (!raw) { empty++; return; }
+      const key = /^\d+$/.test(raw) ? String(parseInt(raw, 10)).padStart(3, "0") : raw.toUpperCase();
+      const list = occ.get(key) || [];
+      list.push({ pt: s0?.test_sample_id || "-", no: i + 1 });
+      occ.set(key, list);
+    });
+    const dups = new Map<string, {pt:string; no:number}[]>();
+    occ.forEach((v, k) => { if (v.length > 1) dups.set(k, v); });
+    return { dups, empty, total: hybRows.length };
+  }, [hybRows]);
+
   // ── Index 列表 CSV 下载（SampleSheet 格式，参考 NIPT 上机测序）──
   const handleDownloadCsv = () => {
     if (!selectedBatch) return;
@@ -287,6 +313,13 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     // 保存前校验：操作人 + 审核人
     const missing = validateBeforeSave();
     if (missing.length) { message.warning(`保存前请先：${missing.join("、")}`); return; }
+    // Index 查重：只提醒不拦（用户 2026-10-14 选定），照常保存
+    if (hybIndexCheck.dups.size || hybIndexCheck.empty) {
+      const _brief = Array.from(hybIndexCheck.dups.keys()).slice(0, 8).join("、");
+      message.warning({ duration: 6, content:
+        `保存前注意：${hybIndexCheck.dups.size ? `有 ${hybIndexCheck.dups.size} 个重复 Index（${_brief}${hybIndexCheck.dups.size > 8 ? "…" : ""}）` : "Index 无重复"}`
+        + `${hybIndexCheck.empty ? `；另有 ${hybIndexCheck.empty} 个样本未填 Index` : ""}（不影响保存）` });
+    }
     // 一并保存操作人/审核人
     if (!(await savePersons())) { message.error("操作人/审核人保存失败"); return; } setSaving(true);
     try{
@@ -346,6 +379,13 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     if (!seqKit) miss.push("选择测序试剂");
     if (!fv.chip_number) miss.push("填写Chip号");
     if (miss.length) { message.warning(`完成前请先：${miss.join("、")}`); return; }
+    // Index 查重：只提醒不拦（用户 2026-10-14 选定）
+    if (hybIndexCheck.dups.size || hybIndexCheck.empty) {
+      const _brief2 = Array.from(hybIndexCheck.dups.keys()).slice(0, 8).join("、");
+      message.warning({ duration: 6, content:
+        `完成前注意：${hybIndexCheck.dups.size ? `有 ${hybIndexCheck.dups.size} 个重复 Index（${_brief2}${hybIndexCheck.dups.size > 8 ? "…" : ""}）` : "Index 无重复"}`
+        + `${hybIndexCheck.empty ? `；另有 ${hybIndexCheck.empty} 个样本未填 Index` : ""}（不影响完成）` });
+    }
     // ── 未保存改动检测：与服务器最新数据对比，防止完成时丢失未保存修改 ──
     if (await checkUnsaved()) {
       message.warning("有未保存的修改，请先点击保存再完成");
@@ -404,8 +444,13 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                     <tbody>
                       {mixRows.map((r,i)=>(
                         <tr key={i} style={{background:"#e8f5e9"}}>
-                          <td style={td}><Tag color="blue">{r.mix_name}</Tag></td>
-                          <td style={{...td,overflow:"hidden"}}><Tooltip title={r.source||""}><div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.source||"-"}</div></Tooltip></td>
+                          <td style={td}><Tag color="blue">{r.mix_name}</Tag>{isExtraRow(i) && <Tag color="purple" style={{marginInlineStart:4}}>新增</Tag>}</td>
+                          <td style={{...td,overflow:"hidden"}}>{
+                            isExtraRow(i)
+                              ? <Input size="small" value={r.source} placeholder="填写来源/备注"
+                                  onChange={(e)=>updateMixCell(i,"source",e.target.value)} style={{width:"100%"}}/>
+                              : <Tooltip title={r.source||""}><div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.source||"-"}</div></Tooltip>
+                          }</td>
                           <td style={td}><InputNumber size="small" min={0} step={0.001} value={r.library_conc} onChange={v=>updateMixCell(i,"library_conc",v)} style={{width:80}} placeholder="0"/></td>
                           <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.input_amount} onChange={v=>updateMixCell(i,"input_amount",v)} style={{width:60}}/></td>
                           <td style={{...td,fontFamily:"monospace"}}>{r.input_vol>0?r.input_vol.toFixed(2):"-"}</td>
@@ -418,7 +463,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                         <td style={td} colSpan={8}>
                           <Button size="small" type="dashed" onClick={()=>{
                             setMixRows(prev=>[...prev,{mix_name:`mix${prev.length+1}`,source:"",library_conc:null,input_amount:10,input_vol:0,expected_conc:0.8,water_added:0}]);
-                          }} style={{width:"100%"}}>＋ 新增行</Button>
+                          }} style={{width:"100%"}}>＋ 新增行（研发样本·来源可填）</Button>
                         </td>
                       </tr>
                       <tr style={{background:"#fffbe6",fontWeight:600}}>
@@ -531,6 +576,33 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                       })}
                     </tbody>
                   </table>
+                </div>
+                {/* Index 查重（2026-10-14）：只提醒不拦，允许保存与完成 */}
+                <div style={{marginTop:10}}>
+                  {hybIndexCheck.dups.size===0 ? (
+                    <Alert type="success" showIcon
+                      message={`没有重复 Index（共 ${hybIndexCheck.total} 个样本）`} />
+                  ) : (
+                    <Alert type="warning" showIcon
+                      message={`Index 重复 ${hybIndexCheck.dups.size} 个 —— 同号样本的 i7/i5 完全相同，测序下机无法区分（仅提示，不影响保存与完成）`}
+                      description={
+                        <div style={{fontSize:12, lineHeight:1.9}}>
+                          {Array.from(hybIndexCheck.dups.entries()).map(([k, v]) => (
+                            <div key={k}>
+                              <Text strong>{`Index ${k}`}</Text>
+                              {`：第 ${v.map(x => x.no).join(" / ")} 行（样本 ${v.map(x => x.pt).join(" / ")}）`}
+                            </div>
+                          ))}
+                          <div style={{marginTop:4}}>
+                            <Text type="secondary">请核对上游 mix 的 index 分配；本提示不阻止「保存」与「完成」。</Text>
+                          </div>
+                        </div>
+                      } />
+                  )}
+                  {hybIndexCheck.empty > 0 && (
+                    <Alert type="warning" showIcon style={{marginTop:8}}
+                      message={`有 ${hybIndexCheck.empty} 个样本未填 Index —— 上传ID 会退化成行号（如 ${'chip'}_005_PTxxxx），请到上游「汇」模块补填`} />
+                  )}
                 </div>
               </Card>
             )}
