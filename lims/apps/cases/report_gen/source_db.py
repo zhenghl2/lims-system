@@ -83,6 +83,12 @@ def build_row(pair):
     result_cn = {"INCLUSION": "支持", "EXCLUSION": "不支持"}.get(pair.result, "")
     result = result_cn
 
+    # 胎儿浓度 FF = 母亲浓度（生信/报告模块的 M.Conc，库内存 0~1 小数）
+    # 巴西模板必填、泰国等模板 {{FF}}；缺失时渲染器会显示 None / 拒出（2026-10-19）
+    ff = pair.mother_concentration
+    if ff is None and pair.mother_sample is not None:
+        ff = getattr(pair.mother_sample, "concentration", None)
+
     # 胎儿性别：母亲样本的 y_ratio
     from core import fetal_sex_from_y_ratio
     sex = fetal_sex_from_y_ratio(getattr(pair, "mother_y_ratio", None))
@@ -124,7 +130,7 @@ def build_row(pair):
         "来源": case.origin_country() if hasattr(case, "origin_country") else "",
         "sales_department": case.origin_country() if hasattr(case, "origin_country") else "",
         "Agent": case.sales_person,
-        "FF": getattr(ms, "fetal_fraction", None),
+        "FF": ff,   # 胎儿浓度 = M.Conc（母亲浓度）
         "f_DOB": ms.patient_dob if ms else None,
         "m_DOB": fs.patient_dob if fs else None,
         "Date_of_Birth": ms.patient_dob if ms else None,

@@ -495,6 +495,7 @@ export default function NipptRegistration() {
           mother_name: values.mother_name || "",
           mother_dob: values.mother_dob ? dayjs(values.mother_dob).format("YYYY-MM-DD") : undefined,
           father_names: (values.males || []).map((m: any) => m.name).filter(Boolean),
+          father_dobs: (values.males || []).map((m: any) => m.dob ? dayjs(m.dob).format("YYYY-MM-DD") : null),
           father_sample_types: (values.males || []).map((m: any) => m.sample_type || ["BLOOD"]),
           gestational_age_weeks: values.gestational_age_weeks,
           gestational_age_days: values.gestational_age_days,
@@ -828,6 +829,14 @@ export default function NipptRegistration() {
                         style={{ background: "#fafafa", borderRadius: 0 }} />
                     </Form.Item>
                   ) },
+                { title: "出生日期", width: 130,
+                  render: () => (
+                    <Form.Item name="mother_dob" style={{ margin: 0 }}>
+                      <DatePicker size="small" bordered={false} format="YYYY-MM-DD"
+                        placeholder="出生日期"
+                        style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
+                    </Form.Item>
+                  ) },
                 { title: "民族", width: 100,
                   render: () => (
                     <Form.Item name="mother_ethnicity" style={{ margin: 0 }}>
@@ -879,6 +888,14 @@ export default function NipptRegistration() {
                         <Form.Item {...row.field} name={[row.field.name, "name"]} style={{ margin: 0 }}>
                           <Input placeholder="姓名" size="small" bordered={false}
                             style={{ background: "#fafafa", borderRadius: 0 }} />
+                        </Form.Item>
+                      ) },
+                    { title: "", width: 130,
+                      render: (_r: any, row: any) => (
+                        <Form.Item {...row.field} name={[row.field.name, "dob"]} style={{ margin: 0 }}>
+                          <DatePicker size="small" bordered={false} format="YYYY-MM-DD"
+                            placeholder="出生日期"
+                            style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
                         </Form.Item>
                       ) },
                     { title: "", width: 100,

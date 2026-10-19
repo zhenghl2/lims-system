@@ -97,7 +97,9 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
         try:
             ctx["FF"] = "%.2f%%" % (float(ctx["FF"]) * 100)
         except (TypeError, ValueError):
-            pass
+            ctx["FF"] = ""          # 非数字不显示 None
+    else:
+        ctx["FF"] = ""
     date_short = ctx["collection_date"].strftime("%Y%m") if hasattr(ctx.get("collection_date"), "strftime") else ""
 
     # 展示用 ID（多数分支共用）
@@ -106,8 +108,8 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
     ctx["female_id"] = ctx["pt_id"] + "W"
     ctx["male_id"] = ctx["pt_id"] + suffix_upper
     ctx["report_id"] = "VGHK" + date_short + vg_id
-    ctx["f_DOB"] = fmt_date(ctx.get("f_DOB"), "%Y/%m/%d")
-    ctx["m_DOB"] = fmt_date(ctx.get("m_DOB"), "%Y/%m/%d")
+    ctx["f_DOB"] = fmt_date(ctx.get("f_DOB"), "%Y/%m/%d") or ""
+    ctx["m_DOB"] = fmt_date(ctx.get("m_DOB"), "%Y/%m/%d") or ""
 
     # 日期格式
     lang = DATE_LANG_BY_VERSION.get(version)

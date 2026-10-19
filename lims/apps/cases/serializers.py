@@ -331,6 +331,10 @@ class CaseCreateSerializer(serializers.ModelSerializer):
     father_names = serializers.ListField(
         child=serializers.CharField(), write_only=True, required=False, default=list
     )
+    father_dobs = serializers.ListField(
+        child=serializers.DateField(allow_null=True), required=False, default=list,
+        write_only=True, help_text='每个父亲的出生日期，与 father_names 一一对应',
+    )
     father_sample_types = serializers.ListField(
         child=serializers.ListField(
             child=serializers.ChoiceField(choices=CaseSample.SampleSource.choices)
@@ -377,7 +381,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             "risk_warnings", "registration_type",
             "last_menstrual_period",
             "notes", "is_urgent", "expected_completion",
-            "mother_name", "mother_dob", "father_names",
+            "mother_name", "mother_dob", "father_names", "father_dobs",
             "father_sample_types",
             "external_id", "sample_source", "fedex_no",
             "female_arrival_date", "male_arrival_dates", "gender_info",
@@ -395,6 +399,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         mother_dob = validated_data.pop("mother_dob", None)
         father_names = validated_data.pop("father_names", [])
         father_sample_types = validated_data.pop("father_sample_types", [])
+        father_dobs = validated_data.pop("father_dobs", []) or []
         if not mother_name.strip() and not any((n or "").strip() for n in father_names):
             raise serializers.ValidationError("至少需要一个样本：孕妇或疑父（至少填写一个姓名）")
         external_id = validated_data.pop("external_id", "") or ""
@@ -481,6 +486,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         for i, name in enumerate(father_names, 1):
             # 获取该父亲的样本类型列表，默认["BLOOD"]
             types = father_sample_types[i-1] if i-1 < len(father_sample_types) else ["BLOOD"]
+            f_dob = father_dobs[i-1] if i-1 < len(father_dobs) else None
             arrival = male_arrivals[i-1] if i-1 < len(male_arrivals) else None
             for j, st in enumerate(types, 1):
                 father_sample = Sample.objects.create(
@@ -488,6 +494,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
                     sample_type=sample_type,
                     panel=panel,
                     patient_name=name,
+                    patient_dob=f_dob,
                     external_id=father_external_id,
                     sample_source=sample_source,
                     collection_date=today,
