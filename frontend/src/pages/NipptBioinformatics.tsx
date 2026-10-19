@@ -10,9 +10,24 @@ import { REJECTION_REASONS } from "../api/types";
 const { Text, Title } = Typography;
 
 // ── 案例备注（只读，与案例管理「备注」列渲染逻辑完全一致）──
+/** 时间显示统一北京时间（2026-10-16 修正）：接口返回 UTC(ISO, 带 Z)，
+ *  原实现直接切字符串 → 显示的是 UTC，比北京时间少 8 小时。
+ *  现按浏览器本地时区换算，输出格式保持 MM-DD HH:mm 不变。 */
 const fmtDT = (v: string | null | undefined) => {
   if (!v) return "-";
-  return `${v.slice(5, 10)} ${v.slice(11, 16)}`;  // MM-DD HH:mm
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return `${v.slice(5, 10)} ${v.slice(11, 16)}`;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+/** 「最后保存」：接口返回 UTC(ISO, 带 Z) → 按浏览器本地时区换算成北京时间，到分（2026-10-16） */
+const fmtSavedAt = (v?: string | null) => {
+  if (!v) return "—";
+  const d = new Date(v);
+  if (isNaN(d.getTime())) return v.slice(0, 16).replace("T", " ");
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 const rejectionLabel = (reason: string) =>
   reason === "REJECTED" ? "拒收" : (REJECTION_REASONS[reason || ""] || reason || "");
@@ -57,6 +72,9 @@ const renderCaseNoteTags = (r: { case_notes?: string; case_note_samples?: any[] 
 interface BatchItem {
   id: string; batch_number: string; status: string; status_display: string;
   pair_count: number; completed_pair_count: number; sample_count: number; created_at: string;
+  updated_at?: string;
+  /** 来源杂交及测序批次的 Chip 号（新建生信批次时选的那个批次） */
+  hybseq_chip?: string;
 }
 interface PairItem {
   id: string; case_number: string; pt_number: string;
@@ -77,6 +95,7 @@ interface SampleItem {
   index: string; sample_type: string; role: string;
   case_number: string; pt_number: string;
   case_notes?: string; case_note_samples?: any[];
+  qc_flag?: string; qc_note?: string;
 }
 
 const QC_FLAG_OPTIONS = [
@@ -105,6 +124,8 @@ export default function NipptBioinformatics() {
   const [manualPairMother, setManualPairMother] = useState<Record<string, string>>({});
   const [manualPairFather, setManualPairFather] = useState<Record<string, string>>({});
   const [importResult, setImportResult] = useState<any>(null);
+  // 未配对样本的 QC 标记/备注（独立于指标编辑：批次完成后仍可改，2026-10-16）
+  const [sampQc, setSampQc] = useState<Record<string, any>>({});
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [appendixModalOpen, setAppendixModalOpen] = useState(false);
   const [appendixErrors, setAppendixErrors] = useState<any[]>([]);
@@ -154,6 +175,29 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
   const handleSampleEdit = (sampleId: string, field: string, value: any) => {
     setEditingSamples(prev => ({ ...prev, [sampleId]: { ...(prev[sampleId] || {}), [field]: value } }));
+  };
+
+  /** 未配对样本 QC/备注：优先本地乐观值，否则服务器值 */
+  const sampQcVal = (sid: string, field: string, serverVal: any) => {
+    const local = sampQc[sid]?.[field];
+    return local !== undefined ? local : (serverVal ?? "");
+  };
+
+  /** 未配对样本 QC/备注：直接存服务器（批次 COMPLETED 后也可改；已配对样本后端会拒绝） */
+  const handleSampleQcSave = async (sampleId: string, field: string, value: any) => {
+    if (!selectedBatch) return;
+    setSampQc(prev => ({ ...prev, [sampleId]: { ...(prev[sampleId] || {}), [field]: value } }));
+    try {
+      await api.post(`/cases/bioinfo/${selectedBatch.id}/set-sample-qc/`, { sample_id: sampleId, [field]: value });
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "保存失败");
+      setSampQc(prev => {
+        const n = { ...prev };
+        if (n[sampleId]) { delete n[sampleId][field]; if (!Object.keys(n[sampleId]).length) delete n[sampleId]; }
+        return n;
+      });
+      fetchDetail(selectedBatch.id);
+    }
   };
 
   const handlePairEdit = (pairId: string, field: string, value: any) => {
@@ -276,7 +320,9 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
 
   const batchColumns = [
     { title: "Batch #", dataIndex: "batch_number", key: "bn", ellipsis: true },
-    { title: "状态", dataIndex: "status", key: "st", width: 100,
+    { title: "批次", dataIndex: "hybseq_chip", key: "hc", width: 62, align: "center" as const,
+      render: (v: string) => v ? <Text code style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">-</Text> },
+    { title: "状态", dataIndex: "status", key: "st", width: 86,
       // 2026-10-14：原来是「无表头 + 无文字」的纯色小横杠（绿=已完成 蓝=未完成），
       // 实验员看不出来是什么 → 改为「表头 + 文字」，宽度 55→100px（三个汉字实测 42px + antd 开销）
       render: (_: string, r: BatchItem) => {
@@ -285,7 +331,9 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
           {r?.status_display || (done ? "已完成" : "处理中")}
         </Tag>;
       } },
-    { title: "Pairs", dataIndex: "pair_count", key: "pc", width: 42, align: "center" as const },
+    { title: "Pairs", dataIndex: "pair_count", key: "pc", width: 52, align: "center" as const },
+    { title: "Unpaired", dataIndex: "unpaired_count", key: "upc", width: 84, align: "center" as const,
+      render: (v: number) => (v ? <Text type="warning" strong>{v}</Text> : <Text type="secondary">0</Text>) },
   ];
 
   const pairColumns = [
@@ -372,12 +420,16 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
   const unpairedRows: any[] = [];
   for (let i = 0; i < maxUnpaired; i++) unpairedRows.push({ key: `up-${i}`, mother: unpairedMothers[i] || null, father: unpairedFathers[i] || null });
   const hasUnpaired = unpairedRows.length > 0;
+  // 2026-10-16：批次完成后仍显示未配对样本，但为只读（已完成批次保持锁定）
+  const isCompleted = selectedBatch?.status === "COMPLETED";
 
   const emptyText = <Text type="secondary" style={{fontSize:12}}>—</Text>;
 
   const unpairedColumns = [
     { title: "Case#", key: "uc", width: 180, ellipsis: true, render: (_:any,r:any)=>{const s=r.mother||r.father;return s && s.case_number?<Tooltip title={s.case_number}><span style={{ cursor: "default" }}>{s.case_number}</span></Tooltip>:emptyText}},
     { title: "PT#", key: "upt", width: 85, render: (_:any,r:any)=>{const s=r.mother||r.father;return s?<Text>{s.pt_number||"—"}</Text>:emptyText}},
+    // 与配对表等宽对齐：配对表有「附表」列(90px)，未配对样本无附表 → 占位（2026-10-16）
+    { title: "附表", key: "uapx", width: 90, render: () => emptyText },
     { title: "来源", key: "usrc", width: 70, render: () => emptyText },
     { title: "备注", key: "unotes", width: 180, render: (_: any, r: any) => renderCaseNoteTags(r.mother || r.father || {}) },
     { title: "Mother", key: "um", width: 130,
@@ -386,28 +438,37 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       render: (_: any, r: any) => r.father ? <Text>{r.father.patient_name}<Text type="secondary" style={{fontSize:11}}>{r.father.index ? ` (${r.father.index}` : ""}{r.father.sample_type ? `, ${r.father.sample_type})` : r.father.index ? ")" : ""}</Text></Text> : emptyText },
     { title: "", key: "ul", width: 42, render: () => emptyText },
     { title: "", key: "us", width: 55, render: () => emptyText },
-    { title: "M.Layers", key: "uml", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} precision={0} value={sampleField(r.mother, "layers")} onChange={(v) => handleSampleEdit(r.mother.id, "layers", v)} /> : emptyText },
-    { title: "M.Het", key: "umh", width: 65, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={sampleField(r.mother, "het_ratio")} onChange={(v) => handleSampleEdit(r.mother.id, "het_ratio", v)} /> : emptyText },
-    { title: "M.Y", key: "umy", width: 65, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={sampleField(r.mother, "y_ratio")} onChange={(v) => handleSampleEdit(r.mother.id, "y_ratio", v)} /> : emptyText },
-    { title: "M.Conc", key: "umc", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={sampleField(r.mother, "concentration")} onChange={(v) => handleSampleEdit(r.mother.id, "concentration", v)} /> : emptyText },
-    { title: "F.Layers", key: "ufl", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} precision={0} value={sampleField(r.father, "layers")} onChange={(v) => handleSampleEdit(r.father.id, "layers", v)} /> : emptyText },
-    { title: "F.Het", key: "ufh", width: 65, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={sampleField(r.father, "het_ratio")} onChange={(v) => handleSampleEdit(r.father.id, "het_ratio", v)} /> : emptyText },
-    { title: "F.Y", key: "ufy", width: 65, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={sampleField(r.father, "y_ratio")} onChange={(v) => handleSampleEdit(r.father.id, "y_ratio", v)} /> : emptyText },
-    { title: "F.Conc", key: "ufc", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={sampleField(r.father, "concentration")} onChange={(v) => handleSampleEdit(r.father.id, "concentration", v)} /> : emptyText },
+    { title: "M.Layers", key: "uml", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} precision={0} value={sampleField(r.mother, "layers")} onChange={(v) => handleSampleEdit(r.mother.id, "layers", v)} disabled={isCompleted} /> : emptyText },
+    { title: "M.Het", key: "umh", width: 65, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={sampleField(r.mother, "het_ratio")} onChange={(v) => handleSampleEdit(r.mother.id, "het_ratio", v)} disabled={isCompleted} /> : emptyText },
+    { title: "M.Y", key: "umy", width: 65, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={sampleField(r.mother, "y_ratio")} onChange={(v) => handleSampleEdit(r.mother.id, "y_ratio", v)} disabled={isCompleted} /> : emptyText },
+    { title: "M.Conc", key: "umc", width: 70, render: (_: any, r: any) => r.mother ? <InputNumber size="small" style={{width:60}} value={sampleField(r.mother, "concentration")} onChange={(v) => handleSampleEdit(r.mother.id, "concentration", v)} disabled={isCompleted} /> : emptyText },
+    { title: "F.Layers", key: "ufl", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} precision={0} value={sampleField(r.father, "layers")} onChange={(v) => handleSampleEdit(r.father.id, "layers", v)} disabled={isCompleted} /> : emptyText },
+    { title: "F.Het", key: "ufh", width: 65, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={sampleField(r.father, "het_ratio")} onChange={(v) => handleSampleEdit(r.father.id, "het_ratio", v)} disabled={isCompleted} /> : emptyText },
+    { title: "F.Y", key: "ufy", width: 65, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={sampleField(r.father, "y_ratio")} onChange={(v) => handleSampleEdit(r.father.id, "y_ratio", v)} disabled={isCompleted} /> : emptyText },
+    { title: "F.Conc", key: "ufc", width: 70, render: (_: any, r: any) => r.father ? <InputNumber size="small" style={{width:60}} value={sampleField(r.father, "concentration")} onChange={(v) => handleSampleEdit(r.father.id, "concentration", v)} disabled={isCompleted} /> : emptyText },
     { title: "CPI", key: "ucpi", width: 110, render: () => emptyText },
     { title: "Result", key: "ures", width: 135, render: () => emptyText },
-    { title: "Note", key: "unt", width: 120, render: () => emptyText },
+    { title: "Note", key: "unt", width: 120, render: (_: any, r: any) => {
+      const s = r.mother || r.father;
+      if (!s) return emptyText;
+      return <Input size="small" placeholder="Note"
+        value={sampQcVal(s.id, "qc_note", s.qc_note || "")}
+        onChange={(e) => setSampQc(prev => ({ ...prev, [s.id]: { ...(prev[s.id] || {}), qc_note: e.target.value } }))}
+        onBlur={(e) => handleSampleQcSave(s.id, "qc_note", e.target.value)}
+        onPressEnter={(e: any) => handleSampleQcSave(s.id, "qc_note", e.target.value)} />;
+    }},
     { title: "QC", key: "uqc", width: 120, render: (_: any, r: any) => {
       const sid = r.mother?.id || r.father?.id;
       if (!sid) return emptyText;
       const srv = r.mother?.qc_flag ?? r.father?.qc_flag ?? "";
-      const val = editingSamples[sid]?.qc_flag !== undefined ? editingSamples[sid].qc_flag : srv;
+      const val = sampQcVal(sid, "qc_flag", srv);
       return <Select size="small" style={{width:110}} value={val || undefined} allowClear placeholder="Normal"
-        onChange={(v) => handleSampleEdit(sid, "qc_flag", v || "")}
+        onChange={(v) => handleSampleQcSave(sid, "qc_flag", v || "")}
         options={QC_FLAG_OPTIONS.map(o => ({ label: o.label || "Normal", value: o.value }))} />;
     }},
     { title: "", key: "ua", width: 260,
       render: (_: any, r: any) => {
+        if (isCompleted) return emptyText;   // 已完成批次锁定
         if (r.mother && !r.father) {
           const fatherOpts = unpairedFathers.map((f: SampleItem) => ({ label: `${f.patient_name}${f.index ? ` (${f.index})` : ""}${f.sample_type ? `, ${f.sample_type}` : ""}`, value: f.id }));
           return <Space><Select size="small" style={{width:160}} placeholder="Select Father" value={manualPairFather[r.mother.id] || undefined}
@@ -419,7 +480,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             onChange={(v) => setManualPairMother({ ...manualPairMother, [r.father.id]: v })} options={motherOpts} />
             <Button size="small" type="primary" onClick={() => handleManualPair(null, r.father.id)}>Pair</Button></Space>; }
         return null; }},
-  ];
+  ].filter((c: any) => !(isCompleted && c.key === "ua"));   // 完成后无配对操作 → 去掉 260px 空列，与配对表等宽
 
   const totalPairs = selectedBatch?.pair_count || 0;
 
@@ -427,13 +488,13 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     <div style={{ display: "flex", gap: 16, padding: 16, height: "calc(100vh - 80px)" }}>
       {/* LEFT: Batch List */}
       <Card size="small"
-        style={{ width: sidebarCollapsed ? 48 : 380, flexShrink: 0, transition: "width 0.25s", overflow: "hidden", display: "flex", flexDirection: "column" }}
+        style={{ width: sidebarCollapsed ? 48 : 460, flexShrink: 0, transition: "width 0.25s", overflow: "hidden", display: "flex", flexDirection: "column" }}
         title={sidebarCollapsed ? undefined : <Title level={5} style={{margin:0}}>Bioinformatics</Title>}
         extra={<Button type="text" size="small" icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />} onClick={() => setSidebarCollapsed(!sidebarCollapsed)} />}
         bodyStyle={{ padding: sidebarCollapsed ? 4 : 16, flex: 1, overflow: "auto" }}>
         {!sidebarCollapsed && (<>
           <Space style={{ marginBottom: 12 }}><Button type="primary" size="small" icon={<PlusOutlined />} onClick={openCreate}>New Batch</Button><Button size="small" icon={<ReloadOutlined />} onClick={fetchBatches} /></Space>
-          <Table dataSource={batches} columns={batchColumns} rowKey="id" loading={loading} size="small" showHeader={false} pagination={{ pageSize: 20, size: "small" }}
+          <Table dataSource={batches} columns={batchColumns} rowKey="id" loading={loading} size="small" pagination={{ pageSize: 20, size: "small" }}
             onRow={(r: BatchItem) => ({ onClick: () => fetchDetail(r.id), style: { background: selectedBatch?.id === r.id ? "#e6f4ff" : undefined, cursor: "pointer" } })} />
         </>)}
       </Card>
@@ -442,10 +503,15 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       <div style={{ flex: 1, overflow: "auto" }}>
         {selectedBatch ? (
           <Card size="small"
-            title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status === "COMPLETED" ? "green" : "blue"}>{selectedBatch.status_display}</Tag>
+            title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status === "COMPLETED" ? "green" : "blue"}>{selectedBatch.status_display}</Tag><Text type="secondary" style={{ fontSize: 12, marginInlineStart: 8 }}>最后保存：{fmtSavedAt((selectedBatch as any).updated_at)}</Text>
               <Text type="secondary" style={{fontSize:12}}>Pairs: {totalPairs} | CPI: {selectedBatch.pairs?.filter((p:any)=>p.result).length}/{totalPairs}
                 {selectedBatch.bioinfo_data?.cross_batch_count > 0 && ` | Cross: ${selectedBatch.bioinfo_data.cross_batch_count}`}</Text></Space>}
             extra={<Space>
+              <Tooltip title="来源杂交及测序批次（新建本生信批次时选的那个）">
+                <Tag color="geekblue" style={{ marginInlineEnd: 0 }}>
+                  批次 {(selectedBatch as any).hybseq_chip || "-"}
+                </Tag>
+              </Tooltip>
               <Button icon={<ReloadOutlined />} size="small" loading={batchLoading} onClick={() => fetchDetail(selectedBatch.id)}>Refresh</Button>
               <Button icon={<DownloadOutlined />} size="small" onClick={downloadTemplate}>Template</Button>
               <Upload accept=".csv,.xlsx,.last" multiple showUploadList={false}
@@ -479,9 +545,9 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             </Space>}>
             <Table dataSource={selectedBatch.pairs || []} columns={pairColumns} rowKey="id" size="small" pagination={false} loading={batchLoading} scroll={{ x: 1910 }} style={{ marginBottom: hasUnpaired ? 12 : 0 }} />
 
-            {hasUnpaired && selectedBatch.status !== "COMPLETED" && (
+            {hasUnpaired && (
               <Card size="small" title={<Text type="warning">Unpaired Samples ({unpairedRows.length})</Text>} style={{ marginBottom: 12 }}>
-                <Table dataSource={unpairedRows} columns={unpairedColumns} rowKey="key" size="small" pagination={false} />
+                <Table dataSource={unpairedRows} columns={unpairedColumns} rowKey="key" size="small" pagination={false} scroll={{ x: 1910 }} />
               </Card>)}
 
             {selectedBatch.status !== "COMPLETED" && (

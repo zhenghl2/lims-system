@@ -2149,6 +2149,44 @@ class NipptBioinfoSampleSerializer(serializers.ModelSerializer):
         return ""
 
 
+def nippt_hybseq_chip_map(batches):
+    """bioinfo 批次 → 来源杂交测序批次的 Chip 号（一次查询，避免 N+1）。
+
+    来源批次 id 存于 bioinfo_data["source_hybseq_batch_id"]（建生信批次时写入），
+    Chip 号存于 nippt_hybseq_batches.hyb_seq_data["chip_number"]。
+    """
+    ids = set()
+    for b in batches:
+        hid = ((getattr(b, "bioinfo_data", None) or {}).get("source_hybseq_batch_id") or "")
+        if hid:
+            ids.add(str(hid))
+    if not ids:
+        return {}
+    from .models import NipptHybSeqBatch
+    return {str(hb.id): ((hb.hyb_seq_data or {}).get("chip_number") or "")
+            for hb in NipptHybSeqBatch.objects.filter(id__in=ids).only("id", "hyb_seq_data")}
+
+
+def nippt_hybseq_chip_of(serializer, obj):
+    """序列化器 context 做请求级缓存（list 共 1 次查询；detail 1 次）。"""
+    cmap = serializer.context.get("_nippt_hs_chip_map")
+    if cmap is None:
+        # 注意：many=True 时 DRF 会把 child.instance 设成「对象列表」，不是 queryset
+        inst = serializer.instance
+        if isinstance(inst, (list, tuple)):
+            seq = list(inst)
+        elif hasattr(inst, "all"):
+            seq = list(inst.all())
+        elif inst is not None:
+            seq = [inst]
+        else:
+            seq = [obj]
+        cmap = nippt_hybseq_chip_map(seq)
+        serializer.context["_nippt_hs_chip_map"] = cmap
+    hid = ((getattr(obj, "bioinfo_data", None) or {}).get("source_hybseq_batch_id") or "")
+    return cmap.get(str(hid), "") if hid else ""
+
+
 class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     report_status = serializers.SerializerMethodField()
@@ -2167,6 +2205,8 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
     reportable_pair_count = serializers.SerializerMethodField()
     report_uploaded_count = serializers.SerializerMethodField()
     sample_count = serializers.SerializerMethodField()
+    unpaired_count = serializers.SerializerMethodField()
+    hybseq_chip = serializers.SerializerMethodField()
 
     class Meta:
         model = NipptBioinfoBatch
@@ -2175,10 +2215,18 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
             "report_status", "report_status_display", "report_reviewer", "report_reviewer_name",
             "report_auditor", "report_auditor_name", "report_reviewed_at", "report_audited_at",
             "pair_count", "completed_pair_count", "reported_pair_count",
-            "reportable_pair_count", "report_uploaded_count", "sample_count",
+            "reportable_pair_count", "report_uploaded_count", "sample_count", "unpaired_count",
+            "hybseq_chip",
             "created_by", "operator_name", "reviewer", "created_at", "updated_at",
         ]
         read_only_fields = ["id", "batch_number", "created_at", "updated_at"]
+
+    def get_unpaired_count(self, obj):
+        """未配对样本数 = 批内样本 - 已被任意 pair 引用的样本（走预取的 pairs/samples，避免 N+1）"""
+        if not hasattr(obj, "pairs"):
+            return 0
+        paired = {p.mother_sample_id for p in obj.pairs.all()} | {p.father_sample_id for p in obj.pairs.all()}
+        return sum(1 for x in obj.samples.all() if x.id not in paired)
 
     def get_pair_count(self, obj):
         return obj.pairs.count() if hasattr(obj, 'pairs') else 0
@@ -2226,6 +2274,10 @@ class NipptBioinfoBatchListSerializer(serializers.ModelSerializer):
     def get_sample_count(self, obj):
         return obj.samples.count() if hasattr(obj, 'samples') else 0
 
+    def get_hybseq_chip(self, obj):
+        """来源杂交及测序批次的 Chip 号（新建生信批次时选的那个批次）"""
+        return nippt_hybseq_chip_of(self, obj)
+
 
 class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(source="get_status_display", read_only=True)
@@ -2244,6 +2296,7 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
     reportable_pair_count = serializers.SerializerMethodField()
     report_uploaded_count = serializers.SerializerMethodField()
     pairs = NipptBioinfoPairSerializer(many=True, read_only=True)
+    hybseq_chip = serializers.SerializerMethodField()
     unpaired_mothers = serializers.SerializerMethodField()
     unpaired_fathers = serializers.SerializerMethodField()
 
@@ -2253,7 +2306,7 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
             "id", "batch_number", "status", "status_display",
             "report_status", "report_status_display", "report_reviewer", "report_reviewer_name",
             "report_auditor", "report_auditor_name", "report_reviewed_at", "report_audited_at",
-            "bioinfo_data", "pair_count", "sample_count", "reportable_pair_count", "report_uploaded_count",
+            "bioinfo_data", "hybseq_chip", "pair_count", "sample_count", "reportable_pair_count", "report_uploaded_count",
             "pairs", "unpaired_mothers", "unpaired_fathers",
             "created_by", "operator_name", "reviewer", "created_at", "updated_at",
         ]
@@ -2261,6 +2314,10 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
 
     def get_pair_count(self, obj):
         return obj.pairs.count() if hasattr(obj, 'pairs') else 0
+
+    def get_hybseq_chip(self, obj):
+        """来源杂交及测序批次的 Chip 号（新建生信批次时选的那个批次）"""
+        return nippt_hybseq_chip_of(self, obj)
 
     def get_sample_count(self, obj):
         return obj.samples.count() if hasattr(obj, 'samples') else 0
