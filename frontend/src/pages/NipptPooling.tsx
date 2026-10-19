@@ -617,9 +617,17 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                                 style={{width:85}}
                                 onChange={v => {
                                   const target = v ?? (gi + 1);
-                                  setRows(prev => prev.map(rr =>
-                                    rr.id === r.id ? { ...rr, mixOverride: target !== (gi + 1) ? target : undefined } : rr
-                                  ));
+                                  setRows(prev => {
+                                    // 手动改某个样本的 mix 时，先把当前所有行的 mix 归属冻结成显式值，
+                                    // 这样未指派的行不会再被「自动均匀分配」重新洗牌（2026-10-19 用户要求）
+                                    const frozen = new Map<string, number>();
+                                    groups.forEach((g, idx) => g.rows.forEach(rr => frozen.set(rr.id, idx + 1)));
+                                    return prev.map(rr => {
+                                      if (rr.id === r.id) return { ...rr, mixOverride: target };
+                                      const f = frozen.get(rr.id);
+                                      return (f && rr.mixOverride == null) ? { ...rr, mixOverride: f } : rr;
+                                    });
+                                  });
                                 }}
                                 options={groups.map((_, i) => ({ value: i + 1, label: `mix${i + 1}` }))}
                               />
@@ -676,6 +684,11 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                 {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
               </Select>
 
+              <Button size="small" style={{ marginLeft: 12 }}
+                onClick={() => {
+                  setRows(prev => prev.map(rr => ({ ...rr, mixOverride: undefined })));
+                  message.info("已清除手动分配，恢复自动均匀分配（需保存才生效）");
+                }}>重新配平</Button>
               <Button size="small" type="primary" style={{ marginLeft: 16 }} loading={saving}
                 onClick={save}>保存</Button>
             </div>
