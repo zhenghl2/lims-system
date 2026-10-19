@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Table, Button, Tag, Modal, message, Typography, InputNumber,
   Space, Popconfirm, Select, Alert, Input, Upload, Tooltip } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, DeleteOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined, SwapOutlined, LinkOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, LinkOutlined,
   DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import api from "../api/client";
 import { REJECTION_REASONS } from "../api/types";
@@ -82,6 +82,8 @@ interface PairItem {
   father_name: string; father_index: string; father_sample_type: string;
   father_label: string; is_cross_batch: boolean;
   mother_source_batch: string; father_source_batch: string;
+  /** 母/父来源杂交测序批次的 Chip 号（后端 hybseq_chip 同源口径） */
+  mother_source_chip?: string; father_source_chip?: string;
   cpi: number | null; result: string; note: string;
   qc_flag: string; qc_flag_display: string;
   mother_layers: number | null; mother_concentration: number | null;
@@ -363,10 +365,28 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         return <Text>{r.father_name}{parts.length ? <Text type="secondary" style={{fontSize:11}}> ({parts.join(", ")})</Text> : ""}</Text>;
       }},
     { title: "", dataIndex: "father_label", key: "lbl", width: 42, render: (v: string) => <Tag style={{margin:0}}>{v}</Tag> },
-    { title: "", key: "src", width: 55,
-      render: (_: any, r: PairItem) => r.is_cross_batch
-        ? <Tooltip title="跨批次配对"><Tag icon={<SwapOutlined />} color="orange" style={{margin:0}} /></Tooltip>
-        : <Tooltip title={`来源批次: ${r.mother_source_batch || "—"}`}><Tag icon={<LinkOutlined />} color="green" style={{margin:0}}>{r.mother_source_batch?.slice(-6)}</Tag></Tooltip> },
+    { title: "", key: "src", width: 100,
+      render: (_: any, r: PairItem) => {
+        const mb = r.mother_source_batch || "";
+        const fb = r.father_source_batch || "";
+        const mc = r.mother_source_chip || mb.slice(-6);
+        const fc = r.father_source_chip || fb.slice(-6);
+        if (r.is_cross_batch) {
+          return (
+            <Tooltip title={`跨批次配对 — 母：${mb || "—"}（Chip ${r.mother_source_chip || "—"}）／父：${fb || "—"}（Chip ${r.father_source_chip || "—"}）`}>
+              <span style={{ display: "inline-flex", gap: 2 }}>
+                <Tag color="magenta" style={{ margin: 0, padding: "0 4px", fontSize: 11 }}>♀{mc || "—"}</Tag>
+                <Tag color="blue" style={{ margin: 0, padding: "0 4px", fontSize: 11 }}>♂{fc || "—"}</Tag>
+              </span>
+            </Tooltip>
+          );
+        }
+        return (
+          <Tooltip title={`来源批次：${mb || "—"}${r.mother_source_chip ? `（Chip ${r.mother_source_chip}）` : ""}`}>
+            <Tag icon={<LinkOutlined />} color="green" style={{ margin: 0 }}>{mc || "—"}</Tag>
+          </Tooltip>
+        );
+      } },
     // Mother metrics（顺序：Layers → Het → Y → Conc）
     { title: "M.Layers", key: "ml", width: 70, render: (_: any, r: PairItem) => metricInput(r.id, "mother_layers", r.mother_layers) },
     { title: "M.Het", key: "mh", width: 65, render: (_: any, r: PairItem) => metricInput(r.id, "mother_het_ratio", r.mother_het_ratio) },
@@ -543,7 +563,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                 }} />
               {selectedBatch.status !== "COMPLETED" && <Popconfirm title="Delete?" onConfirm={() => handleDelete(selectedBatch.id)}><Button size="small" danger icon={<DeleteOutlined />} /></Popconfirm>}
             </Space>}>
-            <Table dataSource={selectedBatch.pairs || []} columns={pairColumns} rowKey="id" size="small" pagination={false} loading={batchLoading} scroll={{ x: 1910 }} style={{ marginBottom: hasUnpaired ? 12 : 0 }} />
+            <Table dataSource={selectedBatch.pairs || []} columns={pairColumns} rowKey="id" size="small" pagination={false} loading={batchLoading} scroll={{ x: 1955 }} style={{ marginBottom: hasUnpaired ? 12 : 0 }} />
 
             {hasUnpaired && (
               <Card size="small" title={<Text type="warning">Unpaired Samples ({unpairedRows.length})</Text>} style={{ marginBottom: 12 }}>

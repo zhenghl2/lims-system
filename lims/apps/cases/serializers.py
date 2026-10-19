@@ -1889,7 +1889,47 @@ def _user_display_name(u):
     return nm or getattr(u, "username", None)
 
 
+def nippt_chips_by_batch_number(batch_numbers):
+    """杂交测序批次号 → chip 号（一次查询；用于配对行显示母/父来源 chip）。"""
+    bns = {str(b) for b in batch_numbers if b}
+    if not bns:
+        return {}
+    from .models import NipptHybSeqBatch
+    return {hb.batch_number: ((hb.hyb_seq_data or {}).get("chip_number") or "")
+            for hb in NipptHybSeqBatch.objects.filter(batch_number__in=bns).only("batch_number", "hyb_seq_data")}
+
+
+def nippt_pair_chip_map(serializer, obj):
+    """按需累积解析 chip（放进 serializer.context，整个请求共享）。
+
+    ⚠️ 不要依赖 serializer.instance：pairs 是嵌套 many=True 字段时，
+    child 的 instance 恒为 None（DRF 的 ListSerializer 不会回填），
+    用 instance 建缓存会只解析到「第一条 pair」的两个批次 → 其余配对全空。
+    """
+    cmap = serializer.context.setdefault("_nippt_pair_chip_map", {})
+    todo = [b for b in (obj.mother_source_batch or "", obj.father_source_batch or "")
+            if b and b not in cmap]
+    if todo:
+        cmap.update(nippt_chips_by_batch_number(todo))
+        for b in todo:
+            cmap.setdefault(b, "")
+    return cmap
+
+
 class NipptBioinfoPairSerializer(serializers.ModelSerializer):
+    mother_source_chip = serializers.SerializerMethodField()
+    father_source_chip = serializers.SerializerMethodField()
+
+    def get_mother_source_chip(self, obj):
+        """母方来源杂交测序批次（mother_source_batch）的 Chip 号"""
+        bn = getattr(obj, "mother_source_batch", "") or ""
+        return nippt_pair_chip_map(self, obj).get(bn, "") if bn else ""
+
+    def get_father_source_chip(self, obj):
+        """父方来源杂交测序批次（father_source_batch）的 Chip 号"""
+        bn = getattr(obj, "father_source_batch", "") or ""
+        return nippt_pair_chip_map(self, obj).get(bn, "") if bn else ""
+
     mother_name = serializers.CharField(source="mother_sample.patient_name", read_only=True)
     father_name = serializers.CharField(source="father_sample.patient_name", read_only=True)
     mother_index = serializers.SerializerMethodField()
@@ -2011,6 +2051,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             "father_id_card", "father_tube_no", "father_display",
             "father_label", "is_cross_batch",
             "mother_source_batch", "father_source_batch",
+            "mother_source_chip", "father_source_chip",
             "cpi", "cpi_combined", "result", "result_display",
             "note", "report_data",
             "report_file", "report_file_url", "report_file_pdf_url", "report_pdf_stale",
