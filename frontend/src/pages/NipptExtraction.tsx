@@ -4,14 +4,12 @@ import {
   Tooltip,
   ConfigProvider, Card, Table, Button, Tag, Tabs, Modal, message, Typography,
   Input, Select, InputNumber, Space, Popconfirm, Radio,
-  Checkbox, Divider, Upload, Image, DatePicker, TimePicker, Form,
-  Popover,
+  Checkbox, Divider, Upload, Image, DatePicker, TimePicker, Popover,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, CheckOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined,
-  CameraOutlined, LoadingOutlined, DownloadOutlined,
-} from "@ant-design/icons";
+  CameraOutlined, LoadingOutlined, DownloadOutlined, SwapOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import { uploadNipptPhoto, deleteNipptPhoto, migrateLegacyNipptPhotos, isRemotePhoto } from "../utils/nipptPhoto";
 import dayjs from "dayjs";
@@ -127,7 +125,10 @@ export default function NipptExtraction() {
   // ── Extraction data (per-gender) ──
   const [femaleMethod, setFemaleMethod] = useState("");
   const [maleMethod, setMaleMethod] = useState("");
-  const [extForm] = Form.useForm();
+  // 实验记录（设备/试剂盒/批号/有效期/温湿度）——男女各自一套（2026-10-19 解耦）
+  type ReagentInfo = { equipment?: string; kit_type?: any; reagent_lot?: string; reagent_expiry?: any; temperature?: number | null; humidity?: number | null };
+  const [reagentF, setReagentF] = useState<ReagentInfo>({});
+  const [reagentM, setReagentM] = useState<ReagentInfo>({});
   const [stepConfirmations, setStepConfirmations] = useState<Record<string, boolean>>({});
   // 照片（男女独立）
   const [photosF, setPhotosF] = useState<string[]>([]);
@@ -247,11 +248,21 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       setTimeF(fed.extraction_time ?? ed.extraction_time ?? (_exNotDone ? _exT0 : ""));
       setDateM(med.extraction_date ?? (_exNotDone ? _exD0 : ""));
       setTimeM(med.extraction_time ?? (_exNotDone ? _exT0 : ""));
-      extForm.setFieldsValue({
-        equipment: ed.equipment || "", kit_type: ed.kit_type || undefined,
-        reagent_lot: ed.reagent_lot || "",
-        reagent_expiry: ed.reagent_expiry ? dayjs(ed.reagent_expiry) : undefined,
-        temperature: ed.temperature ?? undefined, humidity: ed.humidity ?? undefined,
+      setReagentF({
+        equipment: fed.equipment ?? ed.equipment ?? "",
+        kit_type: fed.kit_type ?? ed.kit_type ?? undefined,
+        reagent_lot: fed.reagent_lot ?? ed.reagent_lot ?? "",
+        reagent_expiry: fed.reagent_expiry ? dayjs(fed.reagent_expiry) : (ed.reagent_expiry ? dayjs(ed.reagent_expiry) : undefined),
+        temperature: fed.temperature ?? ed.temperature ?? null,
+        humidity: fed.humidity ?? ed.humidity ?? null,
+      });
+      setReagentM({
+        equipment: med.equipment ?? ed.equipment ?? "",
+        kit_type: med.kit_type ?? ed.kit_type ?? undefined,
+        reagent_lot: med.reagent_lot ?? ed.reagent_lot ?? "",
+        reagent_expiry: med.reagent_expiry ? dayjs(med.reagent_expiry) : (ed.reagent_expiry ? dayjs(ed.reagent_expiry) : undefined),
+        temperature: med.temperature ?? ed.temperature ?? null,
+        humidity: med.humidity ?? ed.humidity ?? null,
       });
     } catch { message.error("加载批次详情失败"); }
     finally { setBatchLoading(false); }
@@ -379,13 +390,25 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         plate_kit_types: femaleKitTypes, plate_layout: femalePlateLayout,
         magnetic_notes: femaleMagneticNotes.current,
         manual_notes: femaleManualNotes, auto_notes: femaleAutoNotes,
-        extraction_date: dateF || "", extraction_time: timeF || "" },
+        extraction_date: dateF || "", extraction_time: timeF || "",
+        equipment: reagentF.equipment || "", kit_type: reagentF.kit_type || "",
+        reagent_lot: reagentF.reagent_lot || "",
+        reagent_expiry: reagentF.reagent_expiry ? dayjs(reagentF.reagent_expiry).format("YYYY-MM-DD") : "",
+        temperature: reagentF.temperature ?? null, humidity: reagentF.humidity ?? null },
       male: { method: maleMethod, sample_results: maleResults, plate_skip_coords: maleSkipCoords,
         plate_kit_types: maleKitTypes, plate_layout: malePlateLayout,
         magnetic_notes: maleMagneticNotes.current,
         manual_notes: maleManualNotes, auto_notes: maleAutoNotes,
-        extraction_date: dateM || "", extraction_time: timeM || "" },
-      ...extForm.getFieldsValue(),
+        extraction_date: dateM || "", extraction_time: timeM || "",
+        equipment: reagentM.equipment || "", kit_type: reagentM.kit_type || "",
+        reagent_lot: reagentM.reagent_lot || "",
+        reagent_expiry: reagentM.reagent_expiry ? dayjs(reagentM.reagent_expiry).format("YYYY-MM-DD") : "",
+        temperature: reagentM.temperature ?? null, humidity: reagentM.humidity ?? null },
+      // 顶层字段保留女性侧值：旧导出模板/报表仍按顶层读（向后兼容）
+      kit_type: reagentF.kit_type || "", equipment: reagentF.equipment || "",
+      reagent_lot: reagentF.reagent_lot || "",
+      reagent_expiry: reagentF.reagent_expiry ? dayjs(reagentF.reagent_expiry).format("YYYY-MM-DD") : "",
+      temperature: reagentF.temperature ?? undefined, humidity: reagentF.humidity ?? undefined,
       photos_female: photosFRef.current, photos_male: photosMRef.current,
       operator_female: joinPersons(operators[sid]), reviewer_female: joinPersons(reviewers[sid]),
       operator_male: joinPersons(operatorsM[sid]), reviewer_male: joinPersons(reviewersM[sid]),
@@ -937,7 +960,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   const renderExtractionTab = (samples: ExtractionSample[], isFemale: boolean, method: string, setMethod: any,
     skipCoords: any, setSkipCoords: any, kitTypes: any, setKitTypes: any, notesRef: any,
     plateLayout: Record<string, Record<string, string>>, setPlateLayout: any,
-    manualNotes: string, setManualNotes: any, autoNotes: string, setAutoNotes: any) => {
+    manualNotes: string, setManualNotes: any, autoNotes: string, setAutoNotes: any,
+    reagent: ReagentInfo, setReagent: any) => {
 
     const manualHide = method === "MANUAL";
 
@@ -951,35 +975,54 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               <Text strong style={{ marginRight: 12 }}>🧪 提取方法：</Text>
               <Radio.Group value={method} onChange={e => setMethod(e.target.value)} options={EXTRACTION_METHODS} optionType="button" />
             </div>
-            <Form form={extForm}>
-              <div style={{ display: "flex", gap: 8 }}>
-                <Form.Item name="temperature" label="温度(℃)" style={{ marginBottom: 4 }}>
-                  <InputNumber size="small" style={{ width: 80 }} min={0} max={50} />
-                </Form.Item>
-                <Form.Item name="humidity" label="湿度(%)" style={{ marginBottom: 4 }}>
-                  <InputNumber size="small" style={{ width: 80 }} min={0} max={100} />
-                </Form.Item>
+            {/* 实验记录：设备/试剂盒/批号/有效期/温湿度 —— 男女各自独立（2026-10-19） */}
+            <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>温度(℃)</div>
+                <InputNumber size="small" style={{ width: 80 }} min={0} max={50}
+                  value={reagent.temperature as any}
+                  onChange={(v) => setReagent((p: any) => ({ ...p, temperature: v }))} />
               </div>
-              <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-                <Form.Item name="equipment" label="设备" style={{ marginBottom: 4 }}>
-                  <Input size="small" style={{ width: 140 }} placeholder="设备编号" />
-                </Form.Item>
-                <Form.Item name="kit_type" label="试剂盒" style={{ marginBottom: 4 }}>
-                  <Select size="small" style={{ minWidth: 260 }} placeholder="选择" allowClear
-                    options={[
-                      { value: "MAGEN_CFDNA", label: "Magen cfDNA提取试剂盒 (12919w-480)" },
-                      { value: "MAGEN_ROUND", label: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)" },
-                      { value: "MAGEN_CONICAL", label: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)" },
-                    ]} />
-                </Form.Item>
-                <Form.Item name="reagent_lot" label="批号" style={{ marginBottom: 4 }}>
-                  <Input size="small" style={{ width: 110 }} placeholder="批号" />
-                </Form.Item>
-                <Form.Item name="reagent_expiry" label="有效期" style={{ marginBottom: 4 }}>
-                  <DatePicker size="small" style={{ width: 140 }} />
-                </Form.Item>
+              <div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>湿度(%)</div>
+                <InputNumber size="small" style={{ width: 80 }} min={0} max={100}
+                  value={reagent.humidity as any}
+                  onChange={(v) => setReagent((p: any) => ({ ...p, humidity: v }))} />
               </div>
-            </Form>
+              <div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>设备</div>
+                <Input size="small" style={{ width: 140 }} placeholder="设备编号"
+                  value={reagent.equipment || ""}
+                  onChange={(e) => setReagent((p: any) => ({ ...p, equipment: e.target.value }))} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>试剂盒</div>
+                <Select size="small" style={{ minWidth: 260 }} placeholder="选择" allowClear
+                  value={reagent.kit_type || undefined}
+                  onChange={(v) => setReagent((p: any) => ({ ...p, kit_type: v }))}
+                  options={[
+                    { value: "MAGEN_CFDNA", label: "Magen cfDNA提取试剂盒 (12919w-480)" },
+                    { value: "MAGEN_ROUND", label: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)" },
+                    { value: "MAGEN_CONICAL", label: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)" },
+                  ]} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>批号</div>
+                <Input size="small" style={{ width: 110 }} placeholder="批号"
+                  value={reagent.reagent_lot || ""}
+                  onChange={(e) => setReagent((p: any) => ({ ...p, reagent_lot: e.target.value }))} />
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>有效期</div>
+                <DatePicker size="small" style={{ width: 140 }}
+                  value={reagent.reagent_expiry || null}
+                  onChange={(d) => setReagent((p: any) => ({ ...p, reagent_expiry: d }))} />
+              </div>
+              <Button size="small" icon={<SwapOutlined />}
+                onClick={() => setReagent({ ...(isFemale ? reagentM : reagentF) })}>
+                {isFemale ? "同男性侧" : "同女性侧"}
+              </Button>
+            </div>
           </Space>
         </Card>
 
@@ -1081,13 +1124,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   const exportExcel = () => {
     if (!selectedBatch) return;
     const sid = selectedBatch.id;
-    const fv: any = extForm.getFieldsValue();
     const KIT_LABELS: Record<string, string> = {
       MAGEN_CFDNA: "Magen cfDNA提取试剂盒 (12919w-480)",
       MAGEN_ROUND: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)",
       MAGEN_CONICAL: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)",
     };
-    const kitLabel = KIT_LABELS[fv.kit_type as string] || fv.kit_type || "";
+    const kitLabelOf = (r: ReagentInfo) => KIT_LABELS[r.kit_type as string] || r.kit_type || "";
     const methodLabel = (m: string) => EXTRACTION_METHODS.find(x => x.value === m)?.label || m || "—";
     const parseSkip = (str: string) => new Set((str || "").split(",").map((x: string) => x.trim().toUpperCase()).filter((x: string) => /^[A-H](1[0-2]|[1-9])$/.test(x)));
     const buildSheet = (isF: boolean) => {
@@ -1102,6 +1144,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       const skipCoords: any = isF ? femaleSkipCoords : maleSkipCoords;
       const plateLayout: any = isF ? femalePlateLayout : malePlateLayout;
       const kitTypes: any = isF ? femaleKitTypes : maleKitTypes;
+      const rg: ReagentInfo = isF ? reagentF : reagentM;
       const magNotes: any = (isF ? femaleMagneticNotes : maleMagneticNotes).current || {};
       const results: any = isF ? femaleResults : maleResults;
       const aoa: any[][] = [];
@@ -1115,12 +1158,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       aoa.push(["操作人", operator]);
       aoa.push(["审核人", reviewer]);
       aoa.push(["照片数量", photos.length]);
-      aoa.push(["温度(℃)", fv.temperature ?? ""]);
-      aoa.push(["湿度(%)", fv.humidity ?? ""]);
-      aoa.push(["设备", fv.equipment || ""]);
-      aoa.push(["试剂盒", kitLabel]);
-      aoa.push(["批号", fv.reagent_lot || ""]);
-      aoa.push(["有效期", fv.reagent_expiry ? dayjs(fv.reagent_expiry).format("YYYY-MM-DD") : ""]);
+      aoa.push(["温度(℃)", rg.temperature ?? ""]);
+      aoa.push(["湿度(%)", rg.humidity ?? ""]);
+      aoa.push(["设备", rg.equipment || ""]);
+      aoa.push(["试剂盒", kitLabelOf(rg)]);
+      aoa.push(["批号", rg.reagent_lot || ""]);
+      aoa.push(["有效期", rg.reagent_expiry ? dayjs(rg.reagent_expiry).format("YYYY-MM-DD") : ""]);
       if (method === "MANUAL") aoa.push(["备注", isF ? femaleManualNotes : maleManualNotes]);
       if (method === "AUTOMATED") aoa.push(["备注", isF ? femaleAutoNotes : maleAutoNotes]);
       aoa.push([]);
@@ -1292,7 +1335,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                     {renderExtractionTab(selectedBatch.female_samples, true, femaleMethod, setFemaleMethod,
                       femaleSkipCoords, setFemaleSkipCoords, femaleKitTypes, setFemaleKitTypes, femaleMagneticNotes,
                       femalePlateLayout, setFemalePlateLayout,
-                      femaleManualNotes, setFemaleManualNotes, femaleAutoNotes, setFemaleAutoNotes)}
+                      femaleManualNotes, setFemaleManualNotes, femaleAutoNotes, setFemaleAutoNotes,
+                      reagentF, setReagentF)}
                     {renderPhotosPersons("f")}
                   </>
                 ) },
@@ -1302,7 +1346,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                     {renderExtractionTab(maleOrder<ExtractionSample>(selectedBatch), false, maleMethod, setMaleMethod,
                       maleSkipCoords, setMaleSkipCoords, maleKitTypes, setMaleKitTypes, maleMagneticNotes,
                       malePlateLayout, setMalePlateLayout,
-                      maleManualNotes, setMaleManualNotes, maleAutoNotes, setMaleAutoNotes)}
+                      maleManualNotes, setMaleManualNotes, maleAutoNotes, setMaleAutoNotes,
+                      reagentM, setReagentM)}
                     {renderPhotosPersons("m")}
                   </>
                 ) },
