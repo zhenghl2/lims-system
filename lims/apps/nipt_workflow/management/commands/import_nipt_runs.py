@@ -54,21 +54,34 @@ DATA_FIELD = {"NIPT-EXT": "extraction_data", "NIPT-LIB": "library_data",
               "NIPT-BIO": "bioinformatics_data"}
 
 
+def _sig_names(data, key):
+    """从 JSON 的 operator_signature / reviewer_signature 取签名人（单人 dict 或多人 list）。"""
+    v = (data or {}).get(key)
+    if isinstance(v, dict):
+        return (v.get("username") or "").strip()
+    if isinstance(v, list):
+        return ",".join([x.get("username", "").strip() for x in v
+                         if isinstance(x, dict) and x.get("username")])
+    return ""
+
+
 def _meta(step, run, data):
     """从 run 级字段 / JSON 里取该步的展示用 Meta。"""
     region = getattr(run, "region", "") or ""
+    sig = {"operator_name": _sig_names(data, "operator_signature"),
+           "reviewer": _sig_names(data, "reviewer_signature")}
     if step == "extraction":
-        return {"extraction_method": getattr(run, "extraction_method", "") or "", "region": region}
+        return dict({"extraction_method": getattr(run, "extraction_method", "") or "", "region": region}, **sig)
     if step == "library":
-        return {"library_method": getattr(run, "library_method", "") or "", "region": region}
+        return dict({"library_method": getattr(run, "library_method", "") or "", "region": region}, **sig)
     if step == "pooling":
-        return {"pooling_base": (data or {}).get("poolingBase", "") or "", "region": region}
+        return dict({"pooling_base": (data or {}).get("poolingBase", "") or "", "region": region}, **sig)
     if step == "sequencing":
         d = data or {}
-        return {"platform": d.get("platform", "") or "",
-                "instrument": d.get("equipment", "") or "",
-                "chip_type": d.get("chip", "") or "", "region": region}
-    return {"pipeline": (data or {}).get("pipeline", "") or "", "region": region}
+        return dict({"platform": d.get("platform", "") or "",
+                     "instrument": d.get("equipment", "") or "",
+                     "chip_type": d.get("chip", "") or "", "region": region}, **sig)
+    return dict({"pipeline": (data or {}).get("pipeline", "") or "", "region": region}, **sig)
 
 
 class Command(BaseCommand):

@@ -3,7 +3,7 @@ from django.urls import path
 from rest_framework.routers import DefaultRouter
 
 from .views import (NiptBioinformaticsViewSet, NiptExtractionViewSet,
-                    NiptLibraryViewSet, NiptPendingCountsView,
+                    NiptLibraryViewSet, NiptLineageView, NiptPendingCountsView,
                     NiptPoolingViewSet, NiptSequencingViewSet)
 
 router = DefaultRouter()
@@ -13,4 +13,7 @@ router.register(r"pooling", NiptPoolingViewSet, basename="nipt-pooling")
 router.register(r"sequencing", NiptSequencingViewSet, basename="nipt-sequencing")
 router.register(r"bioinformatics", NiptBioinformaticsViewSet, basename="nipt-bioinformatics")
 
-urlpatterns = [path("pending-counts/", NiptPendingCountsView.as_view(), name="nipt-pending-counts")] + router.urls
+urlpatterns = [
+    path("pending-counts/", NiptPendingCountsView.as_view(), name="nipt-pending-counts"),
+    path("lineage/", NiptLineageView.as_view(), name="nipt-lineage"),
+] + router.urls

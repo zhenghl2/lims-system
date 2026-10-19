@@ -308,7 +308,8 @@ class NiptLibraryViewSet(_StepBatchViewSet):
         """待建库：提取批次里 QC 通过、且尚未被任何建库批次引用的提取行（跨批次汇流）。"""
         used = [u for u in NiptLibrarySample.objects.values_list(
             "source_extraction_sample_id", flat=True) if u]
-        return (NiptExtractionSample.objects.filter(qc_status="PASS")
+        return (NiptExtractionSample.objects
+                .filter(qc_status="PASS", batch__status="COMPLETED")   # E：上游批次必须已「完成本步」
                 .exclude(status="FAILED_QC").exclude(id__in=used)
                 .select_related("batch", "sample")
                 .order_by("batch__batch_number", "created_at"))
@@ -382,8 +383,10 @@ class _ChainStepMixin:
 
     def pending_queryset(self):
         used = [u for u in self.sample_model.objects.values_list(self.UPSTREAM_PTR, flat=True) if u]
-        return (self.UPSTREAM_MODEL.objects.exclude(id__in=used)
+        return (self.UPSTREAM_MODEL.objects
+                .exclude(id__in=used)
                 .exclude(status="FAILED_QC")
+                .filter(batch__status="COMPLETED")     # E：上游批次必须已「完成本步」
                 .select_related("batch", "sample")
                 .order_by("batch__batch_number", self.UPSTREAM_ORDER))
 
@@ -488,3 +491,47 @@ class NiptPendingCountsView(APIView):
             "sequencing": n(NiptSequencingViewSet),
             "bioinformatics": n(NiptBioinformaticsViewSet),
         })
+
+
+class NiptLineageView(APIView):
+    """按样本返回实验链（提取→建库→Pooling→测序→生信），供报告页展示追溯信息。
+
+    GET /api/v1/nipt/lineage/?sample_ids=<uuid>,<uuid>
+    → { "<sample_uuid>": {"steps": [{step, batch, status, at, operator, reviewer}, ...]} }
+
+    每一步取该样本**最新**的那一行（重做/多批次时以最后一次为准）。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    STEPS = [
+        ("extraction", NiptExtractionSample),
+        ("library", NiptLibrarySample),
+        ("pooling", NiptPoolingSample),
+        ("sequencing", NiptSequencingSample),
+        ("bioinformatics", NiptBioinformaticsSample),
+    ]
+
+    def get(self, request):
+        raw = request.query_params.get("sample_ids") or ""
+        ids = [x.strip() for x in raw.split(",") if x.strip()][:200]
+        if not ids:
+            return Response({})
+
+        out = {sid: {"steps": []} for sid in ids}
+        for step, M in self.STEPS:
+            latest = {}
+            for row in (M.objects.filter(sample_id__in=ids)
+                        .select_related("batch").order_by("created_at")):
+                latest[str(row.sample_id)] = row
+            for sid, row in latest.items():
+                b = row.batch
+                out[sid]["steps"].append({
+                    "step": step,
+                    "batch": b.batch_number,
+                    "status": b.status,
+                    "at": row.created_at.strftime("%Y-%m-%d %H:%M") if row.created_at else "",
+                    "operator": b.operator_name or "",
+                    "reviewer": b.reviewer or "",
+                })
+        return Response(out)

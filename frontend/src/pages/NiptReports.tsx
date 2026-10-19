@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import {
   Table, Card, Typography, Tag, Button, Modal, Select, Input,
-  Space, message, Descriptions, Dropdown
+  Space, message, Descriptions, Dropdown, Tooltip
 } from "antd";
 import { ReloadOutlined, CheckCircleOutlined, SafetyCertificateOutlined, DownloadOutlined, FileWordOutlined, FilePdfOutlined, EditOutlined } from "@ant-design/icons";
 import { reportsApi } from "../api";
@@ -36,6 +36,85 @@ export default function NiptReports() {
     RELEASED: t("nipt.reports.publishedStatus"),
   };
   const [reports, setReports] = useState<any[]>([]);
+  // D：实验链（提取→建库→Pooling→测序→生信），按样本 id 批量取一次
+  const [lineage, setLineage] = useState<Record<string, any[]>>({});
+  const [chainModal, setChainModal] = useState<{ sample: string; detail: any } | null>(null);
+
+  useEffect(() => {
+    const ids = Array.from(new Set(reports.map((r: any) => r.sample).filter(Boolean))).slice(0, 200);
+    if (!ids.length) { setLineage({}); return; }
+    api.get("/nipt/lineage/", { params: { sample_ids: ids.join(",") } })
+      .then((res: any) => {
+        const map: Record<string, any[]> = {};
+        Object.entries(res.data || {}).forEach(([sid, v]: any) => { map[sid] = v?.steps || []; });
+        setLineage(map);
+      })
+      .catch(() => setLineage({}));
+  }, [reports]);
+
+  const STEP_LABEL: Record<string, string> = {
+    extraction: "提取", library: "建库", pooling: "Pool", sequencing: "测序", bioinformatics: "生信",
+  };
+  const STEP_SHORT: Record<string, string> = {
+    extraction: "提", library: "建", pooling: "P", sequencing: "序", bioinformatics: "信",
+  };
+  const chainOf = (sampleId: string) => {
+    const steps = lineage[sampleId] || [];
+    const byStep: Record<string, any> = {};
+    steps.forEach((x: any) => { byStep[x.step] = x; });
+    const order = ["extraction", "library", "pooling", "sequencing", "bioinformatics"];
+    return order.map((k) => ({ key: k, info: byStep[k] }));
+  };
+  const chainCell = (sampleId: string) => {
+    const chain = chainOf(sampleId);
+    const tags = chain.map(({ key, info }) => {
+      const done = info?.status === "COMPLETED";
+      return (
+        <Tooltip key={key} title={info ? `${STEP_LABEL[key]} ${info.batch}` : `${STEP_LABEL[key]} 未建批次`}>
+          <Tag
+            color={!info ? "default" : done ? "green" : "blue"}
+            style={{ marginInlineEnd: 2, fontSize: 10, padding: "0 4px", opacity: info ? 1 : 0.45 }}
+          >
+            {STEP_SHORT[key]}
+          </Tag>
+        </Tooltip>
+      );
+    });
+    const detail = (
+      <div style={{ fontSize: 12, lineHeight: 1.9 }}>
+        {chain.map(({ key, info }) => (
+          <div key={key}>
+            <b>{STEP_LABEL[key]}</b>{" "}
+            {info ? (
+              <>
+                <Text code style={{ fontSize: 11 }}>{info.batch}</Text>{" "}
+                <Tag color={info.status === "COMPLETED" ? "green" : "blue"} style={{ fontSize: 10 }}>
+                  {info.status === "COMPLETED" ? "已完成" : "进行中"}
+                </Tag>
+                {info.at && <Text type="secondary" style={{ fontSize: 11 }}>{info.at}</Text>}
+                {(info.operator || info.reviewer) && (
+                  <div style={{ color: "#8c8c8c", fontSize: 11 }}>
+                    操作人 {info.operator || "—"}　复核人 {info.reviewer || "—"}
+                  </div>
+                )}
+              </>
+            ) : (
+              <Text type="secondary">未建批次</Text>
+            )}
+          </div>
+        ))}
+      </div>
+    );
+    return (
+      <span
+        style={{ cursor: "pointer" }}
+        onClick={(e) => { e.stopPropagation(); setChainModal({ sample: sampleId, detail }); }}
+        title="点击查看完整实验链"
+      >
+        {tags}
+      </span>
+    );
+  };
   const [loading, setLoading] = useState(false);
   const [reviewModal, setReviewModal] = useState<{ open: boolean; reportId: string }>({ open: false, reportId: "" });
   const [verifyModal, setVerifyModal] = useState<{ open: boolean; reportId: string }>({ open: false, reportId: "" });
@@ -380,7 +459,9 @@ export default function NiptReports() {
       },
     },
     {
-      title: t("nipt.samples.status"), dataIndex: "status", width: 80, fixed: "right" as const,
+      title: "实验链", key: "lineage", width: 118, fixed: "right" as const,
+      render: (_: any, r: any) => (r.sample ? chainCell(r.sample) : "—") },
+    { title: t("nipt.samples.status"), dataIndex: "status", width: 80, fixed: "right" as const,
       render: (v: string) => <Tag color={STATUS_COLOR[v] || "default"}>{STATUS_LABEL_TL[v] || v}</Tag>,
     },
   ];
@@ -562,6 +643,16 @@ export default function NiptReports() {
           style={{ width: 280 }}
           autoFocus
         />
+      </Modal>
+
+      <Modal
+        open={!!chainModal}
+        onCancel={() => setChainModal(null)}
+        footer={null}
+        width={620}
+        title="实验链（按样本追溯）"
+      >
+        {chainModal && chainModal.detail}
       </Modal>
     </div>
   );
