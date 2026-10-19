@@ -3,7 +3,7 @@
     "title": "NGS LIMS",
     "subtitle": "Sistema de Gestão de Informações Laboratoriais"
   },
-  "nav": {
+  "nav": {"niptExtraction": "Extração", "niptLibrary": "Preparo de Biblioteca", "niptPooling": "Pooling", "niptSequencing": "Sequenciamento", "niptBioinformatics": "Bioinformática", 
     "dashboard": "Painel",
     "samples": "Amostras",
     "runs": "Execuções",

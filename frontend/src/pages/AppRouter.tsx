@@ -23,6 +23,9 @@ const NiptReceiving   = lazy(() => import("./NiptReceiving"));
 const NiptPlasmaSep   = lazy(() => import("./NiptPlasmaSeparation"));
 
 const NiptWorkflow    = lazy(() => import("./NiptWorkflow"));
+// 阶段1：NIPT 5 步独立入口（数据仍读 SampleRun）
+const NiptStepBatches = lazy(() => import("./NiptStepBatches"));
+const NiptStepDetail  = lazy(() => import("./NiptStepDetail"));
 const NiptDashboard   = lazy(() => import("./NiptDashboard"));
 const NiptReports     = lazy(() => import("./NiptReports"));
 const Instruments     = lazy(() => import("./Instruments"));
@@ -139,6 +142,10 @@ export default function AppRouter() {
 
 
         <Route path="/workflow"   element={<Protected><NiptWorkflow /></Protected>} />
+
+        {/* 阶段1：5 步独立入口（/nipt/extraction、/nipt/library、/nipt/pooling、/nipt/sequencing、/nipt/bioinformatics） */}
+        <Route path="/nipt/:step" element={<Protected><DashboardLayout><NiptStepBatches /></DashboardLayout></Protected>} />
+        <Route path="/nipt/:step/:batchId" element={<Protected><DashboardLayout><NiptStepDetail /></DashboardLayout></Protected>} />
         <Route path="/dashboard-nipt" element={<Protected><DashboardLayout><NiptDashboard /></DashboardLayout></Protected>} />
         <Route path="/reports-nipt"   element={<Protected><DashboardLayout><NiptReports /></DashboardLayout></Protected>} />
         <Route path="/extensions"     element={<Protected><DashboardLayout><NiptExtensions /></DashboardLayout></Protected>} />

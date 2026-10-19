@@ -173,6 +173,16 @@ export default function DashboardLayout({ children, header }: Props) {
 
     { key: "/workflow",      icon: <ExperimentOutlined />,      label: t("nav.labWorkflow") },
 
+    { key: "/nipt/extraction",     icon: <ExperimentOutlined />, label: t("nav.niptExtraction") },
+
+    { key: "/nipt/library",        icon: <BookOutlined />,       label: t("nav.niptLibrary") },
+
+    { key: "/nipt/pooling",        icon: <AppstoreOutlined />,   label: t("nav.niptPooling") },
+
+    { key: "/nipt/sequencing",     icon: <ToolOutlined />,       label: t("nav.niptSequencing") },
+
+    { key: "/nipt/bioinformatics", icon: <CloudServerOutlined />, label: t("nav.niptBioinformatics") },
+
     { key: "/reports-nipt",   icon: <FileTextOutlined />,      label: t("nav.reports") },
 
     {
