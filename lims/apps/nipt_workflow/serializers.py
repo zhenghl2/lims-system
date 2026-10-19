@@ -109,15 +109,23 @@ class NiptLibraryBatchListSerializer(serializers.ModelSerializer):
     sample_count = serializers.SerializerMethodField()
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     source_extraction_batch_count = serializers.SerializerMethodField()
+    photos_pending = serializers.SerializerMethodField()
 
     class Meta:
         model = NiptLibraryBatch
         fields = ["id", "batch_number", "status", "status_display", "sample_count",
-                  "source_extraction_batch_count",
+                  "source_extraction_batch_count", "photos_pending",
                   "operator_name", "reviewer", "region", "created_at", "updated_at"]
 
     def get_sample_count(self, obj):
         return obj.samples.count()
+
+    def get_photos_pending(self, obj):
+        """已完成但一张实验照片都没有 → 前端显示「📷 待补照片」（只提示，不阻断）。"""
+        if obj.status != "COMPLETED":
+            return False
+        ld = obj.library_data or {}
+        return bool(obj.samples.exists()) and not bool(ld.get("photos") or [])
 
     def get_source_extraction_batch_count(self, obj):
         """来源提取批次数 = 本批次样本指向上游的不同提取批次数（M:N 汇流的直观指标）。"""

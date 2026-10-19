@@ -36,6 +36,9 @@ from .serializers import (CreateExtractionBatchSerializer, CreateLibraryBatchSer
 
 NIPT_PANELS = ("NIPT", "NIPT_PLUS", "NIPT_FULL", "twin_basic")
 
+#: 批次完成后仍允许补改的字段（补照片）；其余字段保持锁定
+PHOTO_ONLY_KEYS = {"photos", "photos_female", "photos_male"}
+
 _LADDER = ["REGISTERED", "RECEIVING", "RECEIVED", "ACCEPTED", "PRE_PROCESSING",
            "PLASMA_SEPARATED", "EXTRACTION", "LIBRARY_PREP", "POOLING", "SEQUENCING",
            "BIOINFORMATICS", "COMPLETED"]
@@ -72,13 +75,16 @@ class _StepBatchViewSet(viewsets.GenericViewSet,
     # ── 保存实验数据（body 与旧 /runs/{id}/save_* 一致）──
     def _save_data(self, request):
         batch = self.get_object()
-        if batch.status == "COMPLETED":
-            return Response({"error": "批次已完成，如需修改请先「撤销完成」"},
-                            status=status.HTTP_400_BAD_REQUEST)
         body = request.data or {}
         payload = body.get(self.DATA_KEY) or {}
         if not isinstance(payload, dict):
             payload = {}
+        if batch.status == "COMPLETED":
+            # 完成后只允许「补照片」：payload 里除照片字段外还有内容就拒绝
+            extra = set(payload.keys()) - PHOTO_ONLY_KEYS
+            if extra:
+                return Response({"error": "批次已完成，仅可补传实验照片；如需修改其他内容请先「撤销完成」"},
+                                status=status.HTTP_400_BAD_REQUEST)
 
         cur = dict(getattr(batch, self.DATA_KEY) or {})
         cur.update(payload)

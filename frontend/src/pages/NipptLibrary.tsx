@@ -1,7 +1,7 @@
 // NipptLibrary.tsx — Library Prep module (NIPT-style table + reagents)
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, Select, InputNumber,
-  Space, Popconfirm, Radio, Checkbox, Upload, Image, DatePicker, TimePicker, Form,
+  Space, Radio, Checkbox, Upload, Image, DatePicker, TimePicker, Form,
   Popover, Row, Col, Alert } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, CameraOutlined, LoadingOutlined, DownloadOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
@@ -63,7 +63,7 @@ type PlateCell = { vgId: string; index: string; sampleIdx?: number; isQC?: boole
   sexKind?: "F" | "M" };
 type PlateGrid = PlateCell[][];
 interface SampleItem { id:string; patient_name:string; role:string; category:string; case_sample_ids:string[]; test_sample_id:string|null; is_qc?:boolean; qc_status:string; qc_note:string; }
-interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; created_at:string; receipt_location?:string; }
+interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; created_at:string; receipt_location?:string; photos_pending?:boolean; }
 interface BatchDetail extends BatchItem { female_samples:SampleItem[]; male_blood_samples:SampleItem[]; male_other_samples:SampleItem[]; library_data:any; }
 
 export default function NipptLibrary() {
@@ -502,11 +502,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
             ? selectedBatch.female_samples.length > 0
             : selectedBatch.male_blood_count + selectedBatch.male_other_count > 0);
       if (!has) return;
-      const ph = s === "f" ? photosFRef.current : photosMRef.current;
+      // 实验照片**不再是保存/完成前提**（2026-10-19）：改为完成时弹窗提醒，可完成后再补传
       const dv = s === "f" ? dateF : dateM;
       const opMap = s === "f" ? operators : operatorsM;
       const rvMap = s === "f" ? reviewers : reviewersM;
-      if (!ph.length) missing.push(`上传${who}实验照片`);
       if (!dv) missing.push(`选择${who}日期`);
       if (!(opMap[selectedBatch.id] || []).length) missing.push(`选择${who}操作人`);
       if (!(rvMap[selectedBatch.id] || []).length) missing.push(`选择${who}审核人`);
@@ -519,6 +518,34 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       if (side === "m" || side === "all") check("m");
     }
     return missing;
+  };
+
+  /** 已完成批次补照片：只写回 photos 字段，不动其他记录 */
+  const persistPhotosOnly = async () => {
+    if (!selectedBatch) return;
+    try {
+      const base: any = (selectedBatch as any).library_data || {};
+      const ld = { ...base, photos_female: photosFRef.current, photos_male: photosMRef.current };
+      await (casesApi as any).saveLibrary(selectedBatch.id, { library_data: ld });
+      flushPhotoDeletes(selectedBatch.id);
+      message.success("照片已保存");
+      fetchDetail(selectedBatch.id);
+    } catch {
+      message.error("照片已上传，但记录未保存，请点「保存」重试");
+    }
+  };
+
+  /** 缺照片提示文案（厦门=合并记录单套；香港=男女各一套） */
+  const photosMissingText = (): string => {
+    if (!selectedBatch) return "";
+    const xiamen = region === "XIAMEN";
+    const hasF = selectedBatch.female_samples.length > 0;
+    const hasM = (selectedBatch.male_blood_count + selectedBatch.male_other_count) > 0;
+    if (xiamen) return (hasF || hasM) && !photosFRef.current.length && !photosMRef.current.length ? "本批次" : "";
+    const miss: string[] = [];
+    if (hasF && !photosFRef.current.length) miss.push("女性");
+    if (hasM && !photosMRef.current.length) miss.push("男性");
+    return miss.join("、");
   };
 
   // 深度规范化（键排序 / 去 undefined）——JSONB 读回时键序会变，对比需先规范化
@@ -591,9 +618,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     finally{setSaving(false)}
   };
 
-  const completeBatch = async()=>{
+  const doCompleteBatch = async()=>{
     if(!selectedBatch)return;
-    // 完成前校验：① 保存要求全满足（照片+日期+操作人+审核人，按地区/侧）
+    // 完成前校验：① 保存要求全满足（日期+操作人+审核人；照片不再强制）
     const miss = validateBeforeSave("all");
     if (miss.length) { message.warning(`完成前请先：${miss.join("、")}`); return; }
     // ② Index 完整性（与保存要求一致）
@@ -609,6 +636,21 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     if (!(serverLd.operator_female || serverLd.operator_male)) { message.warning("完成前请先点击保存"); return; }
     if (JSON.stringify(canon(buildLibraryData())) !== JSON.stringify(canon(serverLd))) { message.warning("有未保存的修改，请先点击保存再完成"); return; }
     try{await(casesApi as any).completeLibrary(selectedBatch.id);message.success("已完成");setSelectedBatch(null);fetchBatches()}catch{message.error("失败")}};
+
+  /** 点「完成批次」：单弹窗确认 —— 缺照片时提示可完成后补传，照片齐全则确认锁定 */
+  const completeBatch = async()=>{
+    if(!selectedBatch)return;
+    const missPh = photosMissingText();
+    Modal.confirm({
+      title: missPh ? "尚未上传实验照片" : "完成批次？",
+      content: missPh
+        ? `${missPh}尚未上传实验照片，确定完成吗？（可完成后再补传）`
+        : "完成后批次将锁定（可撤销）。",
+      okText: missPh ? "确定完成" : "确定",
+      cancelText: missPh ? "返回上传" : "取消",
+      onOk: () => doCompleteBatch(),
+    });
+  };
   // ── 导出 Excel（照 DNA 提取模块的模板；厦门 1 sheet / 香港 女性+男性 2 sheet）──
   const exportExcel = () => {
     if (!selectedBatch) return;
@@ -783,6 +825,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               const url = await uploadNipptPhoto("library", selectedBatch?.id || "", side, dataUrl);
               if (side === "f") setPhotosFSync([...photosFRef.current, url]);
               else setPhotosMSync([...photosMRef.current, url]);
+              // 已完成批次补照片：立即写回，避免刷新后丢失
+              if (selectedBatch?.status === "COMPLETED") persistPhotosOnly();
             } catch {
               message.error("照片上传失败，请重试");
             }
@@ -817,6 +861,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     else setPhotosMSync(list.filter((_, i) => i !== index));
     // 只登记，不立即删文件（见 flushPhotoDeletes 注释）
     if (isRemotePhoto(target)) pendingPhotoDeletes.current.push({ side, url: target });
+    if (selectedBatch?.status === "COMPLETED") persistPhotosOnly();
   };
 
   /** 日期/时间 + 照片 + 操作人/审核人（男女各自一套；merged=厦门：单套不区分男女） */
@@ -840,6 +885,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
           <TimePicker size="small" style={{ width: 100 }} format="HH:mm" value={tv ? dayjs(tv, "HH:mm") : null}
             onChange={(d: any) => (side === "f" ? setTimeF : setTimeM)(d ? d.format("HH:mm") : "")} placeholder="选择时间" />
         </div>
+        {/* 已完成批次仍允许补传/删除照片（只解锁照片区与保存按钮，日期/操作人/审核人保持只读） */}
+        <ConfigProvider componentDisabled={false}>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {ph.map((url, i) => (
             <div key={i} style={{ position: "relative", width: 104, height: 104 }}>
@@ -860,6 +907,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               <CameraOutlined style={{ fontSize: 24, color: "#999" }} /><Text type="secondary" style={{ fontSize: 11 }}>拍照</Text></div>
           </Upload>
         </div>
+        </ConfigProvider>
         <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
           <Text type="secondary">操作人: </Text>
           <Select size="small" mode="multiple" maxTagCount="responsive" placeholder="可选择多个"
@@ -875,7 +923,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
             onChange={(v: string[]) => setRvMap(prev => ({...prev, [selectedBatch.id]: v}))} allowClear>
             {PERSONS.map(p => <Select.Option key={p} value={p}>{p}</Select.Option>)}
           </Select>
-          <Button size="small" type="primary" style={{ marginLeft: 16 }} onClick={() => saveProcessing(side)}>保存</Button>
+          <ConfigProvider componentDisabled={false}>
+            <Button size="small" type="primary" style={{ marginLeft: 16 }} onClick={() => saveProcessing(side)}>保存</Button>
+          </ConfigProvider>
         </div>
       </Card>
     );
@@ -979,7 +1029,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
   const batchColumns = [
     {title:"批次号",dataIndex:"batch_number",width:140,render:(v:string)=><Text code style={{fontSize:12}}>{v}</Text>},
-    {title:"状态",dataIndex:"status",width:60,render:(v:string)=>{const c:Record<string,string>={DRAFT:"default",IN_PROGRESS:"blue",COMPLETED:"green"},l:Record<string,string>={DRAFT:"待处理",IN_PROGRESS:"处理中",COMPLETED:"已完成"};return<Tag color={c[v]||"default"}>{l[v]||v}</Tag>}},
+    {title:"状态",dataIndex:"status",width:76,render:(v:string,r:BatchItem)=>{const c:Record<string,string>={DRAFT:"default",IN_PROGRESS:"blue",COMPLETED:"green"},l:Record<string,string>={DRAFT:"待处理",IN_PROGRESS:"处理中",COMPLETED:"已完成"};return<Space size={4} wrap><Tag color={c[v]||"default"}>{l[v]||v}</Tag>{r.photos_pending&&<Tag color="orange" style={{fontSize:10}}>📷 待补照片</Tag>}</Space>}},
     {title:"样本",width:90,render:(_:any,r:BatchItem)=><Text style={{fontSize:11}}>👩{r.female_count} 👨{r.male_blood_count+r.male_other_count}</Text>},
     {title:"签收地",width:88,render:(_:any,r:BatchItem)=>r.receipt_location?<Tag color={r.receipt_location.includes("/")?"red":"geekblue"} style={{fontSize:11}}>📍{r.receipt_location}</Tag>:<Text type="secondary" style={{fontSize:11}}>—</Text>},
   ];
@@ -999,7 +1049,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       <div style={{flex:1,overflow:"auto"}}>
         {selectedBatch?(
           <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
-          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}{selectedBatch.receipt_location&&<Tag color={selectedBatch.receipt_location.includes("/")?"red":"geekblue"} style={{fontSize:12}}>📍{selectedBatch.receipt_location}{selectedBatch.receipt_location.includes("/")?" ⚠️混地区":""}</Tag>}</Space>}
+          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}{(selectedBatch as any).photos_pending&&<Tag color="orange">📷 待补照片</Tag>}{selectedBatch.receipt_location&&<Tag color={selectedBatch.receipt_location.includes("/")?"red":"geekblue"} style={{fontSize:12}}>📍{selectedBatch.receipt_location}{selectedBatch.receipt_location.includes("/")?" ⚠️混地区":""}</Tag>}</Space>}
             extra={<Space>
               {selectedBatch.status!=="COMPLETED"&&<Button size="small" danger icon={<DeleteOutlined/>} onClick={async()=>{ if(await confirmBatchDelete("library", selectedBatch.id)) await deleteBatch(selectedBatch.id); }}>删除</Button>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
@@ -1007,7 +1057,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               {selectedBatch.status!=="COMPLETED"&&<Button icon={<ReloadOutlined/>} size="small" onClick={rebuildPlates}>按样本重排</Button>}
               {selectedBatch.status!=="COMPLETED"&&<>
                 <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={() => saveProcessing("all")}>保存全部</Button>
-                <Popconfirm title="完成批次？" onConfirm={completeBatch}><Button type="primary" size="small" danger>完成</Button></Popconfirm>
+                <Button type="primary" size="small" danger onClick={completeBatch}>完成</Button>
               </>}
             </Space>}>
             {/* Region */}

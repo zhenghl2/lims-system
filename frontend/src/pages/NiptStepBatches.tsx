@@ -57,6 +57,7 @@ export default function NiptStepBatches() {
         id: b.id, no: b.batch_number, count: b.sample_count,
         status: b.status, status_display: b.status_display,
         extra: b.source_batch_count ?? b.source_extraction_batch_count,
+        photos_pending: b.photos_pending,
         created_at: b.created_at,
       })));
       try {
@@ -122,8 +123,13 @@ export default function NiptStepBatches() {
         </Space>
       ) },
     { title: "样本", dataIndex: "count", key: "c", width: 70, align: "center" as const },
-    { title: "状态", dataIndex: "status", key: "st", width: 90,
-      render: (v: string, r: any) => <Tag color={STATUS_COLOR[v] || "default"}>{r.status_display || STATUS_TEXT[v] || v}</Tag> },
+    { title: "状态", dataIndex: "status", key: "st", width: 150,
+      render: (v: string, r: any) => (
+        <Space size={4} wrap>
+          <Tag color={STATUS_COLOR[v] || "default"}>{r.status_display || STATUS_TEXT[v] || v}</Tag>
+          {r.photos_pending && <Tag color="orange" style={{ fontSize: 10 }}>📷 待补照片</Tag>}
+        </Space>
+      ) },
     { title: "创建时间", dataIndex: "created_at", key: "ca", width: 160,
       render: (v: string) => (v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "—") },
     { title: "", key: "act", width: 110,

@@ -2,7 +2,7 @@
 // 5 个实验组件原样挂载，仅通过 apiBase 换接口地址（默认 "/runs" → 旧页面行为不变）。
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Card, Space, Button, Tag, Spin, Typography, message, Popconfirm } from "antd";
+import { Card, Space, Button, Tag, Spin, Typography, message, Modal } from "antd";
 import { ArrowLeftOutlined, ReloadOutlined, LeftOutlined, RightOutlined, CheckOutlined, UndoOutlined } from "@ant-design/icons";
 import {
   niptExtractionApi, niptLibraryApi, niptPoolingApi, niptSequencingApi, niptBioinformaticsApi,
@@ -55,7 +55,15 @@ export default function NiptStepDetail() {
 
   const samples = useMemo(() => detail?.samples || [], [detail]);
 
-  const completeStep = async () => {
+  /** 建库缺照片提示（只在「完成本步」时提醒；照片可完成后补传） */
+  const photosMissingText = (): string => {
+    if (step !== "library") return "";
+    if (!detail?.samples?.length) return "";
+    const photos = (detail?.library_data || {}).photos;
+    return Array.isArray(photos) && photos.length ? "" : "本批次";
+  };
+
+  const doCompleteStep = async () => {
     if (!api) return;
     setBusy(true);
     try {
@@ -65,6 +73,19 @@ export default function NiptStepDetail() {
     } catch (e: any) {
       message.error(e?.response?.data?.error || "完成失败");
     } finally { setBusy(false); }
+  };
+
+  const completeStep = async () => {
+    const missPh = photosMissingText();
+    Modal.confirm({
+      title: missPh ? "尚未上传实验照片" : "完成本步？",
+      content: missPh
+        ? `${missPh}尚未上传实验照片，确定完成吗？（可完成后再补传）`
+        : "完成本步后该批次锁定（可撤销完成）",
+      okText: missPh ? "确定完成" : "确定",
+      cancelText: missPh ? "返回上传" : "取消",
+      onOk: () => doCompleteStep(),
+    });
   };
 
   const reopenStep = async () => {
@@ -116,6 +137,7 @@ export default function NiptStepDetail() {
           {detail?.status && (
             <Tag color={isCompleted ? "green" : "blue"}>{detail.status_display || detail.status}</Tag>
           )}
+          {detail?.photos_pending && <Tag color="orange">📷 待补照片</Tag>}
           {detail && <Text type="secondary" style={{ fontSize: 12 }}>{samples.length} 个样本</Text>}
         </Space>
       }
@@ -123,9 +145,7 @@ export default function NiptStepDetail() {
         <Space>
           {isCompleted
             ? <Button size="small" icon={<UndoOutlined />} loading={busy} onClick={reopenStep}>撤销完成</Button>
-            : <Popconfirm title="完成本步后该批次锁定（可撤销）" onConfirm={completeStep}>
-                <Button size="small" type="primary" icon={<CheckOutlined />} loading={busy}>完成本步</Button>
-              </Popconfirm>}
+            : <Button size="small" type="primary" icon={<CheckOutlined />} loading={busy} onClick={completeStep}>完成本步</Button>}
           {prevStep && <Button size="small" icon={<LeftOutlined />} onClick={() => navigate(`/nipt/${prevStep}`)}>上一步列表</Button>}
           {nextStep && <Button size="small" onClick={() => navigate(`/nipt/${nextStep}`)}>下一步列表<RightOutlined /></Button>}
           <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={fetchDetail}>刷新</Button>

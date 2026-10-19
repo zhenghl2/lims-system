@@ -428,6 +428,16 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   // 照片改为「文件 + URL」上传（2026-10-13）：
   // 原先把 base64 内联进 JSON，保存时要重传全部照片（实测单张 3.9MB、合计 15MB+），
   // 弱网上传 20~40 秒且超过 Django DATA_UPLOAD_MAX_MEMORY_SIZE(2.5MB) → 400「保存失败」。
+  /** 已完成批次补照片：只写 photos 字段（后端白名单放行），不动其他记录 */
+  const persistPhotosOnly = async (next: string[]) => {
+    try {
+      await api.post(`${apiBase}/${batch.id}/save_library/`, { library_data: { photos: next } });
+      message.success("照片已保存");
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "照片已上传，但记录未保存");
+    }
+  };
+
   const beforeUpload = async (file: File) => {
     const hide = message.loading("照片上传中…", 0);
     try {
@@ -435,7 +445,9 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       fd.append("file", file);
       fd.append("module", "library");
       const res = await api.post(`${apiBase}/${batch.id}/photos/`, fd, { timeout: 120000 });
-      setPhotos(prev => [...prev, res.data.url as string]);
+      const next = [...photos, res.data.url as string];
+      setPhotos(next);
+      if (batch.status === "COMPLETED") persistPhotosOnly(next);
     } catch (e: any) {
       message.error(e?.response?.data?.error || "照片上传失败");
     } finally {
@@ -445,7 +457,9 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   };
   const removePhoto = async (uid: string) => {
     const url = photos[Number(uid)];
-    setPhotos(prev => prev.filter((_, i) => String(i) !== uid));
+    const next = photos.filter((_, i) => String(i) !== uid);
+    setPhotos(next);
+    if (batch.status === "COMPLETED") persistPhotosOnly(next);
     // 只删本系统已落盘的文件；历史 base64 / 外链不动
     const m = typeof url === "string" ? url.match(/\/media\/nipt_workflow\/[^/]+\/[^/]+\/([^/?]+)$/) : null;
     if (m) {
@@ -455,6 +469,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   };
 
   const save = async () => {
+    // 已完成批次记录锁定，只允许补照片
+    if (batch.status === "COMPLETED") { await persistPhotosOnly(photos); return; }
     const missingIndex = plate.some(row => row.some(cell => cell.vgId && !cell.index));
     if (missingIndex) { message.warning("Please fill index"); return; }
     if (selectedKits.length === 0) { message.warning(t("nipt.library.selectReagent") + " " + t("nipt.library.indexKit")); return; }

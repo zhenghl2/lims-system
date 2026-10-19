@@ -1299,9 +1299,11 @@ class NipptLibraryBatchListSerializer(serializers.ModelSerializer):
     male_other_count = serializers.SerializerMethodField()
     receipt_location = serializers.SerializerMethodField()
 
+    photos_pending = serializers.SerializerMethodField()
+
     class Meta:
         model = NipptLibraryBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at", "receipt_location",
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","created_by", "operator_name", "reviewer","created_at","updated_at", "receipt_location", "photos_pending",
         ]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
@@ -1312,8 +1314,45 @@ class NipptLibraryBatchListSerializer(serializers.ModelSerializer):
     def get_receipt_location(self, obj):
         return batch_receipt_location(obj)
 
+    def get_photos_pending(self, obj):
+        return _nippt_library_photos_pending(obj)
+
+
+def _nippt_library_photos_pending(batch):
+    """已完成但缺实验照片 → 前端显示「📷 待补照片」。
+
+    厦门 = 合并记录（单套照片，photos_female/male/legacy 任一有即算有）；
+    香港 = 男女各自一套。只提示、不阻断完成。
+    """
+    if batch.status != "COMPLETED":
+        return False
+    ld = batch.library_data or {}
+    legacy = ld.get("photos") if isinstance(ld.get("photos"), list) else []
+    pf = ld.get("photos_female") if isinstance(ld.get("photos_female"), list) else []
+    pm = ld.get("photos_male") if isinstance(ld.get("photos_male"), list) else []
+    is_xm = (ld.get("region") or "XIAMEN") == "XIAMEN"
+
+    cats = {}
+    for row in batch.samples.all():
+        cats[row.category] = cats.get(row.category, 0) + 1
+    has_f = bool(cats.get("FEMALE_BLOOD"))
+    has_m = bool(cats.get("MALE_BLOOD") or cats.get("MALE_OTHER"))
+
+    if is_xm:
+        return (has_f or has_m) and not (pf or pm or legacy)
+    if has_f and not (pf or legacy):
+        return True
+    if has_m and not (pm or legacy):
+        return True
+    return False
+
 
 class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
+    photos_pending = serializers.SerializerMethodField()
+
+    def get_photos_pending(self, obj):
+        return _nippt_library_photos_pending(obj)
+
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     female_count = serializers.SerializerMethodField()
     male_blood_count = serializers.SerializerMethodField()
@@ -1326,7 +1365,7 @@ class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = NipptLibraryBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","library_data","created_by", "operator_name", "reviewer","created_at","updated_at", "receipt_location",
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","library_data","created_by", "operator_name", "reviewer","created_at","updated_at", "receipt_location", "photos_pending",
         ]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
