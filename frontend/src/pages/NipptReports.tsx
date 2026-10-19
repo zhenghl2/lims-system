@@ -1,12 +1,13 @@
 // NipptReports.tsx — NIPPT 报告模块：按生信批次组织，配对级报告管理
 import { useState, useEffect, useRef } from "react";
-import { Table, Tag, Spin, Typography, Space, Button, Card, Empty, Select, Input, message, Tooltip, Modal, Popover, Alert, Switch, Dropdown } from "antd";
+import { Table, Tag, Spin, Typography, Space, Button, Card, Empty, Select, Input, DatePicker, AutoComplete, message, Tooltip, Modal, Popover, Alert, Switch, Dropdown } from "antd";
 import {
   FileTextOutlined, DownloadOutlined, EyeOutlined, UploadOutlined,
   CheckCircleOutlined, ReloadOutlined, HistoryOutlined,
   MenuFoldOutlined, MenuUnfoldOutlined, FileAddOutlined,
 } from "@ant-design/icons";
 import api from "../api/client";
+import dayjs from "dayjs";
 
 const { Text, Title } = Typography;
 
@@ -23,6 +24,9 @@ export default function NipptReports() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [revSel, setRevSel] = useState<Record<string, string>>({});
+  // 报告版本 / 报告日期 行内编辑（案例级字段）
+  const [rvEdit, setRvEdit] = useState<Record<string, string>>({});
+  const [rvOptions, setRvOptions] = useState<string[]>([]);
   const [audSel, setAudSel] = useState<Record<string, string>>({});
   const [noteEdit, setNoteEdit] = useState<Record<string, string>>({});
   // 报告上传
@@ -177,6 +181,13 @@ export default function NipptReports() {
     }
   };
 
+  // 报告版本候选项（预设 + 库内历史值），来源与登记表单同一接口
+  useEffect(() => {
+    api.get("/cases/report-versions/")
+      .then((r) => setRvOptions(r.data?.options || []))
+      .catch(() => {});
+  }, []);
+
   const refreshDetail = async () => {
     if (!selectedBatch) return;
     try {
@@ -185,7 +196,15 @@ export default function NipptReports() {
     } catch {}
   };
 
-  const fmtDT = (v: string | null | undefined) => v ? `${v.slice(5, 10)} ${v.slice(11, 16)}` : "—";
+  /** 时间统一北京时间（2026-10-16 修正）：接口返回 UTC(ISO, 带 Z)，
+   *  原实现直接切字符串 → 显示 UTC，比北京时间少 8 小时。输出格式保持 MM-DD HH:mm。 */
+  const fmtDT = (v: string | null | undefined) => {
+    if (!v) return "—";
+    const d = new Date(v);
+    if (isNaN(d.getTime())) return `${v.slice(5, 10)} ${v.slice(11, 16)}`;
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
 
   // 未达标：结果未填 或 QC 有异常标记
   const notQualified = (p: any) => !p.result || (p.qc_flag || "") !== "";
@@ -507,6 +526,26 @@ export default function NipptReports() {
   const audVal = batAud ?? (selectedBatch?.report_auditor || undefined);
   const uname = (id?: string) => users.find((u: UserItem) => u.id === id)?.username || "—";
   const doneReport = selectedBatch?.report_status === "COMPLETED";
+  /** 报告版本/报告日期锁定：报告批次已完成，或该配对已审核 */
+  const reportLocked = (r: any) => !!doneReport || !!r?.report_audited_at;
+  /** 报告版本 / 报告日期 行内保存（案例级 → 该案例全部配对生效） */
+  const saveReportInfo = async (row: any, field: "report_version" | "report_date", dateVal?: string) => {
+    const cur = field === "report_version"
+      ? (row.report_version || "")
+      : (row.report_date ? String(row.report_date).slice(0, 10) : "");
+    const val = field === "report_version" ? (rvEdit[row.id] ?? cur) : (dateVal ?? "");
+    if (String(val ?? "").trim() === String(cur ?? "").trim()) return;
+    try {
+      await api.post(`/cases/bioinfo/${row.batch}/set-report-info/`, { pair_ids: [row.id], [field]: val });
+      message.success(field === "report_version"
+        ? "报告版本已保存（该案例全部配对生效）"
+        : "报告日期已保存（该案例全部配对生效）");
+      setRvEdit((p) => { const n = { ...p }; delete n[row.id]; return n; });
+      await refreshDetail();
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "保存失败");
+    }
+  };
   const canComplete = !!selectedBatch && !doneReport && reportMissing.length === 0 && !!revVal && !!audVal;
   const completeHint = !selectedBatch || doneReport ? ""
     : reportMissing.length > 0
@@ -549,7 +588,22 @@ export default function NipptReports() {
         return v ? <Tooltip title={v}>{v}</Tooltip> : "—";
       } },
     { title: "来源", dataIndex: "case_source", key: "src", width: 66, render: (v: string) => v || "—" },
-    { title: "报告版本", dataIndex: "report_version", key: "rvs", width: 84, render: (v: string) => v || "—" },
+    { title: "报告版本", dataIndex: "report_version", key: "rvs", width: 118,
+      render: (v: string, r: any) => {
+        if (reportLocked(r)) return <Text style={{ fontSize: 12 }}>{v || "—"}</Text>;
+        return (
+          <Tooltip title="可搜索 / 直接输入新版本；保存后该案例全部配对生效">
+            <AutoComplete size="small" style={{ width: "100%" }} allowClear
+              value={rvEdit[r.id] ?? (v || "")}
+              placeholder="选择/输入"
+              options={rvOptions.map((o: string) => ({ value: o }))}
+              filterOption={(input: string, opt: any) =>
+                String(opt?.value || "").toLowerCase().includes(String(input).toLowerCase())}
+              onChange={(val: string) => setRvEdit((p) => ({ ...p, [r.id]: val }))}
+              onBlur={() => saveReportInfo(r, "report_version")} />
+          </Tooltip>
+        );
+      } },
     { title: "到样日期", key: "arrv", width: 104,
       render: (_: any, r: any) => {
         const m = r.sample_dates?.mother?.receipt_date, f = r.sample_dates?.father?.receipt_date;
@@ -568,8 +622,17 @@ export default function NipptReports() {
           <div>父 {f ? String(f).slice(0, 10) : "—"}</div>
         </div>;
       } },
-    { title: "报告日期", dataIndex: "report_date", key: "rpd", width: 96,
-      render: (v: string) => v ? String(v).slice(0, 10) : "—" },
+    { title: "报告日期", dataIndex: "report_date", key: "rpd", width: 132,
+      render: (v: string, r: any) => {
+        if (reportLocked(r)) return <Text style={{ fontSize: 12 }}>{v ? String(v).slice(0, 10) : "—"}</Text>;
+        return (
+          <Tooltip title="预计出报告日期（报告模板的「检测日期/预计出报告时间」也取它）；该案例全部配对生效">
+            <DatePicker size="small" style={{ width: "100%" }} format="YYYY-MM-DD" allowClear
+              value={v ? dayjs(String(v).slice(0, 10)) : null}
+              onChange={(d: any) => saveReportInfo(r, "report_date", d ? d.format("YYYY-MM-DD") : "")} />
+          </Tooltip>
+        );
+      } },
     { title: "孕妇 证件/管号", dataIndex: "mother_display", key: "mdisp", width: 170, ellipsis: true,
       render: (v: string) => v || "—" },
     { title: "疑父 证件/管号", dataIndex: "father_display", key: "fdisp", width: 170, ellipsis: true,
@@ -789,7 +852,7 @@ ${histLine(h)}`}>
               columns={pairColumns}
               dataSource={selectedBatch.pairs || []}
               pagination={false}
-              scroll={{ x: 2320, y: "calc(100vh - 430px)" }}
+              scroll={{ x: 2380, y: "calc(100vh - 430px)" }}
               onRow={(r: any) => ({
                 style: notQualified(r) ? { background: "#fff2f0" } : {},
               })}

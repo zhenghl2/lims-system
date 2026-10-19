@@ -1130,14 +1130,16 @@ class CaseViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def latest_pt(self, request):
-        """最新（数字最大）PT 编号：供签收页手编 PT 参考，避免重复。"""
+        """最新（数字最大）PT 编号 + 全部已用编号：供签收页手编 PT 参考，避免位数错/重复。"""
         import re as _re
         latest_pt, latest_num = "", 0
+        existing = set()
         for pt in Case.objects.exclude(pt_number__isnull=True).exclude(pt_number="").values_list("pt_number", flat=True):
             m = _re.search(r"(\d+)", pt or "")
             if not m:
                 continue
             n = int(m.group(1))
+            existing.add(n)                      # 归一化（去前导零）：02260 与 2260 视为同号
             if n > latest_num:
                 latest_num = n
                 latest_pt = pt
@@ -1145,6 +1147,7 @@ class CaseViewSet(viewsets.ModelViewSet):
             "latest_pt": latest_pt,
             "latest_number": latest_num,
             "next_number": latest_num + 1 if latest_num else None,
+            "existing": sorted(existing),        # 供前端查重（只提醒不拦）
         })
 
     @action(detail=True, methods=["post"])
@@ -3525,6 +3528,9 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         if sd:
             batch.bioinfo_data = sd
             batch.save(update_fields=["bioinfo_data", "updated_at"])
+        # 2026-10-16：「最后保存」用 batch.updated_at 呈现。前端只传 {pairs, samples}，
+        # 走的是 .update()（不触发 auto_now）→ 此前批次时间戳几乎不变，必须显式戳一次。
+        batch.save(update_fields=["updated_at"])
         return Response({"message": "Saved", "samples_updated": samples_updated})
 
     @action(detail=True, methods=["post"])
@@ -3601,6 +3607,41 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             "failed_samples": len(failed_ids),
             "held_samples": len(held_ids),
         })
+    @action(detail=True, methods=["post"], url_path="set-sample-qc")
+    def set_sample_qc(self, request, pk=None):
+        """未配对样本的 QC 标记 / 备注（2026-10-16）。
+
+        独立于 save_processing 的原因：
+          · save_processing 在批次 COMPLETED 后整体返回 400，而"没配对的样本也可能要重做/重采"
+            → 操作者需要能在完成后仍补上 QC 标记/备注，以便提前通知实验室。
+          · 作用域限定"未配对样本"：已配对样本的 QC 走配对行（pair.qc_flag）与完成流程。
+        """
+        batch = self.get_object()
+        sid = request.data.get("sample_id")
+        if not sid:
+            return Response({"error": "sample_id required"}, status=400)
+        sp = NipptBioinfoSample.objects.filter(id=sid, batch=batch).first()
+        if not sp:
+            return Response({"error": "sample not found in this batch"}, status=404)
+        if NipptBioinfoPair.objects.filter(batch=batch).filter(
+                Q(mother_sample=sp) | Q(father_sample=sp)).exists():
+            return Response({"error": "该样本已配对，请在配对行上修改"}, status=400)
+        upd = {}
+        if "qc_flag" in request.data:
+            upd["qc_flag"] = (request.data.get("qc_flag") or "").strip()
+        if "qc_note" in request.data:
+            upd["qc_note"] = request.data.get("qc_note") or ""
+        if not upd:
+            return Response({"error": "nothing to update"}, status=400)
+        upd["processed_at"] = timezone.now()
+        NipptBioinfoSample.objects.filter(id=sp.id).update(**upd)
+        batch.save(update_fields=["updated_at"])   # QC/备注也算一次保存 → 刷新「最后保存」
+        return Response({
+            "ok": True, "sample_id": str(sp.id),
+            "qc_flag": upd.get("qc_flag", sp.qc_flag or ""),
+            "qc_note": upd.get("qc_note", sp.qc_note or ""),
+        })
+
     @action(detail=True, methods=["post"], url_path="set-surrogacy")
     def set_surrogacy(self, request, pk=None):
         """报告模块直接勾/取消「代孕」（写 Case.risk_warnings，口径同报告引擎）。
@@ -3633,6 +3674,77 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             except Exception:
                 pass
         return Response({"updated_cases": touched, "is_surrogacy": val})
+
+    @action(detail=True, methods=["post"], url_path="set-report-info")
+    def set_report_info(self, request, pk=None):
+        """报告模块行内编辑：报告版本 / 报告日期。
+
+        body: {"pair_ids": ["..."], "report_version": "巴西", "report_date": "2026-10-19"}
+        - 报告版本 = Case.report_version（同时决定用哪个语种模板生成报告）
+        - 报告日期 = Case.expected_completion（报告模板里的「检测日期/预计出报告时间」也取它）
+        两者都是案例级 → 同一案例的全部配对一起变。
+        锁定：报告批次已完成 / 该配对已审核 → 拒绝。
+        """
+        from datetime import date as _date
+        batch = self.get_object()
+        ids = request.data.get("pair_ids") or []
+        pairs = list(batch.pairs.select_related("case").filter(id__in=ids)) if ids else []
+        if not pairs:
+            return Response({"error": "Pair not found"}, status=404)
+        if batch.report_status == "COMPLETED":
+            return Response({"error": "报告批次已完成，报告版本/报告日期已锁定"}, status=400)
+        audited = [p for p in pairs if p.report_audited_at]
+        if audited:
+            return Response({"error": "配对已审核，报告版本/报告日期已锁定：%s"
+                                      % "、".join((p.case.pt_number or str(p.id)) for p in audited)},
+                            status=400)
+
+        has_ver = "report_version" in request.data
+        has_date = "report_date" in request.data
+        if not (has_ver or has_date):
+            return Response({"error": "没有要更新的字段（report_version / report_date）"}, status=400)
+
+        version = str(request.data.get("report_version") or "").strip()[:50]
+        new_date = None
+        if has_date:
+            raw = str(request.data.get("report_date") or "").strip()
+            if raw:
+                try:
+                    new_date = _date.fromisoformat(raw[:10])
+                except ValueError:
+                    return Response({"error": "报告日期格式应为 YYYY-MM-DD"}, status=400)
+
+        updated = []
+        seen = set()
+        for pair in pairs:
+            case = pair.case
+            if case is None or str(case.id) in seen:
+                continue
+            seen.add(str(case.id))
+            changes = {}
+            if has_ver and (case.report_version or "") != version:
+                changes["report_version"] = {"old": case.report_version or "", "new": version}
+                case.report_version = version
+            if has_date and case.expected_completion != new_date:
+                changes["expected_completion"] = {
+                    "old": str(case.expected_completion or ""),
+                    "new": new_date.isoformat() if new_date else "",
+                }
+                case.expected_completion = new_date
+            if not changes:
+                continue
+            case.save(update_fields=list(changes.keys()) + ["updated_at"])
+            try:
+                log_audit(request, "UPDATE", case, changes=changes)
+            except Exception:
+                pass
+            updated.append(case.case_number)
+
+        return Response({
+            "updated_cases": updated,
+            "report_version": version if has_ver else None,
+            "report_date": (new_date.isoformat() if new_date else "") if has_date else None,
+        })
 
     @action(detail=True, methods=["post"], url_path="set-gender-info")
     def set_gender_info(self, request, pk=None):
@@ -4334,4 +4446,6 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         })
 
     # destroy 由 NipptBatchDeleteMixin 提供
+
+
 
