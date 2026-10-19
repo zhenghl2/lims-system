@@ -141,3 +141,108 @@ class NiptLibrarySample(_StepSample):
         db_table = "nipt_library_samples"
         unique_together = ("batch", "sample")
         ordering = ["created_at"]
+
+
+# ══════════════════════════════════════════════════════════════
+# 阶段 3：Pooling / 测序 / 生信（同样只新增表，上游一律指针式）
+# ══════════════════════════════════════════════════════════════
+
+class NiptPoolingBatch(_StepBatch):
+    """Pooling 批次（NIPT-POOL-YYYYMMDD-NNN），可汇入多个建库批次的样本。"""
+
+    pooling_data = models.JSONField(default=dict, blank=True)
+    pooling_base = models.CharField(max_length=20, blank=True, default="")
+    region = models.CharField(max_length=20, blank=True, default="")
+
+    class Meta:
+        db_table = "nipt_pooling_batches"
+        ordering = ["-created_at"]
+        verbose_name = "NIPT Pooling 批次"
+
+    def __str__(self):
+        return self.batch_number
+
+    @classmethod
+    def generate_batch_number(cls):
+        from django.utils import timezone
+        return cls._next_number("NIPT-POOL-%s-" % timezone.localdate().strftime("%Y%m%d"))
+
+
+class NiptPoolingSample(_StepSample):
+    """Pooling 样本行；source_library_sample_id 指向上游建库行。"""
+
+    batch = models.ForeignKey(NiptPoolingBatch, on_delete=models.CASCADE, related_name="samples")
+    source_library_sample_id = models.UUIDField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        db_table = "nipt_pooling_samples"
+        unique_together = ("batch", "sample")
+        ordering = ["created_at"]
+
+
+class NiptSequencingBatch(_StepBatch):
+    """上机测序批次（NIPT-SEQ-YYYYMMDD-NNN），可汇入多个 Pooling 批次。"""
+
+    sequencing_data = models.JSONField(default=dict, blank=True)
+    platform = models.CharField(max_length=30, blank=True, default="")
+    instrument = models.CharField(max_length=50, blank=True, default="")
+    chip_type = models.CharField(max_length=30, blank=True, default="")
+    region = models.CharField(max_length=20, blank=True, default="")
+
+    class Meta:
+        db_table = "nipt_sequencing_batches"
+        ordering = ["-created_at"]
+        verbose_name = "NIPT 测序批次"
+
+    def __str__(self):
+        return self.batch_number
+
+    @classmethod
+    def generate_batch_number(cls):
+        from django.utils import timezone
+        return cls._next_number("NIPT-SEQ-%s-" % timezone.localdate().strftime("%Y%m%d"))
+
+
+class NiptSequencingSample(_StepSample):
+    """测序样本行；source_pooling_sample_id 指向上游 Pooling 行。"""
+
+    batch = models.ForeignKey(NiptSequencingBatch, on_delete=models.CASCADE, related_name="samples")
+    source_pooling_sample_id = models.UUIDField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        db_table = "nipt_sequencing_samples"
+        unique_together = ("batch", "sample")
+        ordering = ["created_at"]
+
+
+class NiptBioinformaticsBatch(_StepBatch):
+    """生信分析批次（NIPT-BIO-YYYYMMDD-NNN），可汇入多个测序批次。"""
+
+    bioinformatics_data = models.JSONField(default=dict, blank=True)
+    pipeline = models.CharField(max_length=50, blank=True, default="")
+    region = models.CharField(max_length=20, blank=True, default="")
+
+    class Meta:
+        db_table = "nipt_bioinformatics_batches"
+        ordering = ["-created_at"]
+        verbose_name = "NIPT 生信批次"
+
+    def __str__(self):
+        return self.batch_number
+
+    @classmethod
+    def generate_batch_number(cls):
+        from django.utils import timezone
+        return cls._next_number("NIPT-BIO-%s-" % timezone.localdate().strftime("%Y%m%d"))
+
+
+class NiptBioinformaticsSample(_StepSample):
+    """生信样本行；source_sequencing_sample_id 指向上游测序行（报告挂谱系也走这条链）。"""
+
+    batch = models.ForeignKey(NiptBioinformaticsBatch, on_delete=models.CASCADE, related_name="samples")
+    source_sequencing_sample_id = models.UUIDField(null=True, blank=True, db_index=True)
+
+    class Meta:
+        db_table = "nipt_bioinformatics_samples"
+        unique_together = ("batch", "sample")
+        ordering = ["created_at"]

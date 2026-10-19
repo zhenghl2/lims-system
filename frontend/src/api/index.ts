@@ -375,3 +375,23 @@ export const niptLibraryApi = {
   complete: (id: string) => api.post(`/nipt/library/${id}/complete/`),
   reopen: (id: string) => api.post(`/nipt/library/${id}/reopen/`),
 };
+
+// ── NIPT 分步批次（阶段3：Pooling / 测序 / 生信）──
+const _mkNiptStep = (seg: string) => ({
+  list: (params?: any) => api.get(`/nipt/${seg}/`, { params }),
+  detail: (id: string) => api.get(`/nipt/${seg}/${id}/`),
+  pending: () => api.get(`/nipt/${seg}/pending/`),
+  create: (body: any) => api.post(`/nipt/${seg}/`, body),
+  remove: (id: string) => api.delete(`/nipt/${seg}/${id}/`),
+  complete: (id: string) => api.post(`/nipt/${seg}/${id}/complete/`),
+  reopen: (id: string) => api.post(`/nipt/${seg}/${id}/reopen/`),
+});
+
+export const niptPoolingApi = _mkNiptStep("pooling");
+export const niptSequencingApi = _mkNiptStep("sequencing");
+export const niptBioinformaticsApi = _mkNiptStep("bioinformatics");
+
+// 菜单角标：5 步待处理数量（一次取全）
+export const niptPendingApi = {
+  counts: () => api.get("/nipt/pending-counts/"),
+};

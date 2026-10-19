@@ -116,7 +116,7 @@ function getSignStatus(edata:any, role:"operator"|"reviewer") {
   return {signed:true,name:sig.username,time:sig.signed_at||""};
 }
 
-export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData}:Props) {
+export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiBase="/runs"}:Props & { apiBase?: string }) {
   const { t } = useTranslation();
   // Reagent type: English key ↔ Chinese label mapping (backward compat with saved data)
   const reagentKeyToChinese: Record<string, string> = { SEQUENCING: "测序试剂", CHIP_FLOWCELL: "芯片/Flow Cell", WASH_BUFFER: "清洗液", NAOH_DENATURE: "NaOH变性液", OTHER: "其他" };
@@ -245,7 +245,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData}:Pro
         step_confirmations:steps,
         index_samples: indexRows.map(r => ({ vgId: r.vgId, uploadId: r.uploadId, reportCode: r.reportCode })),
       };
-      await api.post(`/runs/${batch.id}/save_sequencing/`,{sequencing_data:seqData});
+      await api.post(`${apiBase}/${batch.id}/save_sequencing/`,{sequencing_data:seqData});
       message.success("上机测序记录已保存");
       onRefresh();
     }catch(e:any){
@@ -360,8 +360,8 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData}:Pro
       {/* Save */}
       <div style={{textAlign:"right",marginBottom:16}}><Button type="primary" onClick={save} loading={saving}>{t("nipt.sequencing.saveRecord")}</Button></div>
 
-      <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/sequencing/sign/`} onDone={()=>{setOpModal(false);onRefresh();}} onCancel={()=>setOpModal(false)}/>
-      <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/sequencing/sign/`} onDone={()=>{setRvModal(false);onRefresh();}} onCancel={()=>setRvModal(false)}/>
+      <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`${apiBase}/${batch.id}/sequencing/sign/`} onDone={()=>{setOpModal(false);onRefresh();}} onCancel={()=>setOpModal(false)}/>
+      <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`${apiBase}/${batch.id}/sequencing/sign/`} onDone={()=>{setRvModal(false);onRefresh();}} onCancel={()=>setRvModal(false)}/>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Table, Button, Tag, Space, Typography, Modal, Form, Input, message, Popconfirm, Card, Empty, Tabs, Switch, Spin } from "antd";
+import { useNavigate } from "react-router-dom";
+import { Table, Button, Tag, Space, Typography, Modal, Form, Input, message, Popconfirm, Card, Empty, Tabs, Switch, Spin, Alert } from "antd";
 import { PlusOutlined, ReloadOutlined, DeleteOutlined, ArrowRightOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { runsApi, samplesApi } from "../api";
@@ -44,6 +45,9 @@ function getStepIndex(status: string): number {
 
 export default function NiptWorkflow() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  // 提取/建库已迁到独立模块（新表）。旧 run 视图只作历史快照，默认只读，防止两边数据分叉。
+  const [legacyUnlock, setLegacyUnlock] = useState(false);
   const STATUS_MAP_TL: Record<string, string> = {
     PLANNED: t("nipt.workflow.statusPlanned"), LIBRARY_PREP: t("nipt.workflow.statusLibraryPrep"),
     LIBRARY_POOLING: t("nipt.workflow.statusPooling"), SEQUENCING: t("nipt.workflow.statusSequencing"),
@@ -253,11 +257,41 @@ export default function NiptWorkflow() {
     }
     switch (activeStep) {
       case "extraction":
-        return <NiptExtractionTab batch={tabBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={refreshAll} />;
-      case "library":
-        return <NiptLibraryTab batch={tabBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={refreshAll}
-          lastBatchLibData={lastBatchLibData}
-        />;
+      case "library": {
+        const isExt = activeStep === "extraction";
+        const inner = isExt
+          ? <NiptExtractionTab batch={tabBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={refreshAll} />
+          : <NiptLibraryTab batch={tabBatch} samples={batchDetail?.run_samples || batchDetail?.samples || []} onRefresh={refreshAll}
+              lastBatchLibData={lastBatchLibData} />;
+        return (
+          <>
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 12 }}
+              message="此页是迁移前的历史快照，默认只读"
+              description={
+                <>
+                  <div>{isExt
+                    ? "提取已改为独立模块（NIPT-EXT 批次 + 待处理队列）。新录入请走左侧「提取」，在这里编辑不会写入新表，会造成两边不一致。"
+                    : "建库已改为独立模块（NIPT-LIB 批次，可汇多个提取批次）。新录入请走左侧「文库构建」，在这里编辑不会写入新表。"}</div>
+                  <Space size={8} style={{ marginTop: 10 }} wrap>
+                    <Button size="small" type="primary" onClick={() => navigate(isExt ? "/nipt/extraction" : "/nipt/library")}>
+                      去{isExt ? "提取" : "文库构建"}模块
+                    </Button>
+                    <Button size="small" onClick={() => setLegacyUnlock(v => !v)}>
+                      {legacyUnlock ? "恢复只读" : "临时解锁（仅打印/对照）"}
+                    </Button>
+                  </Space>
+                </>
+              }
+            />
+            <div style={{ pointerEvents: legacyUnlock ? "auto" : "none", opacity: legacyUnlock ? 1 : 0.85 }}>
+              {inner}
+            </div>
+          </>
+        );
+      }
       case "pooling":
         return <NiptPoolingTab batch={tabBatch} onRefresh={refreshAll} />;
       case "sequencing":

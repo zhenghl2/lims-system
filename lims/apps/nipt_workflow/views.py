@@ -14,17 +14,25 @@ from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from lims.apps.samples.models import Sample
 from lims.apps.workflows.nipt_run_photos import delete_run_photo, store_run_photo
 from lims.apps.workflows.views import SampleRunViewSet
 
-from .models import (NiptExtractionBatch, NiptExtractionSample,
-                     NiptLibraryBatch, NiptLibrarySample)
+from .models import (NiptBioinformaticsBatch, NiptBioinformaticsSample,
+                     NiptExtractionBatch, NiptExtractionSample,
+                     NiptLibraryBatch, NiptLibrarySample,
+                     NiptPoolingBatch, NiptPoolingSample,
+                     NiptSequencingBatch, NiptSequencingSample)
 from .serializers import (CreateExtractionBatchSerializer, CreateLibraryBatchSerializer,
+                          NiptBioinformaticsBatchDetailSerializer, NiptBioinformaticsBatchListSerializer,
                           NiptExtractionBatchDetailSerializer, NiptExtractionBatchListSerializer,
-                          NiptLibraryBatchDetailSerializer, NiptLibraryBatchListSerializer)
+                          NiptLibraryBatchDetailSerializer, NiptLibraryBatchListSerializer,
+                          NiptPoolingBatchDetailSerializer, NiptPoolingBatchListSerializer,
+                          NiptSequencingBatchDetailSerializer, NiptSequencingBatchListSerializer)
 
 NIPT_PANELS = ("NIPT", "NIPT_PLUS", "NIPT_FULL", "twin_basic")
 
@@ -221,14 +229,17 @@ class NiptExtractionViewSet(_StepBatchViewSet):
                 )
         return Response(self.detail_serializer_class(batch).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=False, methods=["get"])
-    def pending(self, request):
+    def pending_queryset(self):
         """待提取：NIPT* 样本，状态在血浆已分离~提取之间，且尚未进入任何提取批次。"""
         used = list(NiptExtractionSample.objects.values_list("sample_id", flat=True))
-        qs = (Sample.objects.filter(panel__code__in=NIPT_PANELS,
-                                    status__in=["PLASMA_SEPARATED", "EXTRACTION"])
-              .exclude(id__in=used).exclude(status="REJECTED")
-              .order_by("receipt_date", "sample_id"))
+        return (Sample.objects.filter(panel__code__in=NIPT_PANELS,
+                                      status__in=["PLASMA_SEPARATED", "EXTRACTION"])
+                .exclude(id__in=used).exclude(status="REJECTED")
+                .order_by("receipt_date", "sample_id"))
+
+    @action(detail=False, methods=["get"])
+    def pending(self, request):
+        qs = self.pending_queryset()
         return Response({"count": qs.count(), "results": [
             {"id": str(s.id), "sample_id": s.sample_id, "patient_name": s.patient_name or "",
              "sample_source": s.sample_source or "", "status": s.status,
@@ -293,15 +304,18 @@ class NiptLibraryViewSet(_StepBatchViewSet):
                 )
         return Response(self.detail_serializer_class(batch).data, status=status.HTTP_201_CREATED)
 
-    @action(detail=False, methods=["get"])
-    def pending(self, request):
+    def pending_queryset(self):
         """待建库：提取批次里 QC 通过、且尚未被任何建库批次引用的提取行（跨批次汇流）。"""
         used = [u for u in NiptLibrarySample.objects.values_list(
             "source_extraction_sample_id", flat=True) if u]
-        qs = (NiptExtractionSample.objects.filter(qc_status="PASS")
-              .exclude(status="FAILED_QC").exclude(id__in=used)
-              .select_related("batch", "sample")
-              .order_by("batch__batch_number", "created_at"))
+        return (NiptExtractionSample.objects.filter(qc_status="PASS")
+                .exclude(status="FAILED_QC").exclude(id__in=used)
+                .select_related("batch", "sample")
+                .order_by("batch__batch_number", "created_at"))
+
+    @action(detail=False, methods=["get"])
+    def pending(self, request):
+        qs = self.pending_queryset()
         return Response({"count": qs.count(), "results": [
             {"extraction_sample_id": str(r.id), "sample_id": str(r.sample_id),
              "sample_code": r.sample.sample_id, "patient_name": r.patient_name,
@@ -317,3 +331,160 @@ class NiptLibraryViewSet(_StepBatchViewSet):
     @action(detail=True, methods=["post"], url_path="library/sign")
     def sign_library(self, request, pk=None):
         return self._sign(request)
+
+
+# ══════════════════════════════════════════════════════════════
+# 阶段 3：Pooling / 测序 / 生信（上游一律按「行」汇流）
+# ══════════════════════════════════════════════════════════════
+
+class _ChainStepMixin:
+    """三步共用的 create / pending：从上游样本行勾选，指针记谱系。"""
+
+    UPSTREAM_MODEL = None         # 上游样本行模型
+    UPSTREAM_PTR = ""             # 本表指向上游的字段名
+    UPSTREAM_ORDER = "created_at" # 待处理的排序
+
+    def create(self, request, *args, **kwargs):
+        ser = CreateLibraryBatchSerializer(data=request.data)   # 结构一致：sample_ids + source_*_ids
+        ser.is_valid(raise_exception=True)
+        sample_ids = list(dict.fromkeys(ser.validated_data["sample_ids"]))
+        want_up = (ser.validated_data.get("source_extraction_sample_ids")
+                   or (request.data or {}).get("source_sample_ids") or [])
+
+        samples = list(Sample.objects.filter(id__in=sample_ids, panel__code__in=NIPT_PANELS))
+        if len(samples) != len(sample_ids):
+            return Response({"error": "部分样本不存在或不属于 NIPT panel"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        ptr = {}
+        if want_up:
+            for row in self.UPSTREAM_MODEL.objects.filter(id__in=want_up):
+                ptr[row.sample_id] = row.id
+        for s in samples:
+            if s.id in ptr:
+                continue
+            row = (self.UPSTREAM_MODEL.objects.filter(sample=s)
+                   .order_by("-created_at").first())
+            ptr[s.id] = row.id if row else None
+
+        with transaction.atomic():
+            batch = self.model.objects.create(
+                batch_number=self.model.generate_batch_number(), status="DRAFT",
+                created_by=request.user if request.user.is_authenticated else None,
+            )
+            for s in samples:
+                self.sample_model.objects.create(
+                    batch=batch, sample=s, patient_name=s.patient_name or "",
+                    sample_source=s.sample_source or "", status="QUEUED", plate_number=1,
+                    **{self.UPSTREAM_PTR: ptr.get(s.id)},
+                )
+        return Response(self.detail_serializer_class(batch).data, status=status.HTTP_201_CREATED)
+
+    def pending_queryset(self):
+        used = [u for u in self.sample_model.objects.values_list(self.UPSTREAM_PTR, flat=True) if u]
+        return (self.UPSTREAM_MODEL.objects.exclude(id__in=used)
+                .exclude(status="FAILED_QC")
+                .select_related("batch", "sample")
+                .order_by("batch__batch_number", self.UPSTREAM_ORDER))
+
+    @action(detail=False, methods=["get"])
+    def pending(self, request):
+        qs = self.pending_queryset()
+        return Response({"count": qs.count(), "results": [
+            {"extraction_sample_id": str(r.id), "sample_id": str(r.sample_id),
+             "sample_code": r.sample.sample_id, "patient_name": r.patient_name,
+             "sample_vg_id": r.sample.vg_id, "source_batch": r.batch.batch_number,
+             "well_position": r.well_position, "qc_status": r.qc_status}
+            for r in qs[:500]]})
+
+
+class NiptPoolingViewSet(_ChainStepMixin, _StepBatchViewSet):
+    """Pooling /api/v1/nipt/pooling/"""
+
+    queryset = NiptPoolingBatch.objects.all()
+    model = NiptPoolingBatch
+    sample_model = NiptPoolingSample
+    list_serializer_class = NiptPoolingBatchListSerializer
+    detail_serializer_class = NiptPoolingBatchDetailSerializer
+    DATA_KEY = "pooling_data"
+    METHOD_KEY = "pooling_base"
+    PHOTO_MODULE = "pooling"
+    COMPLETE_STATUS = "POOLING"
+    UPSTREAM_MODEL = NiptLibrarySample
+    UPSTREAM_PTR = "source_library_sample_id"
+
+    @action(detail=True, methods=["post"], url_path="save_pooling")
+    def save_pooling(self, request, pk=None):
+        return self._save_data(request)
+
+    @action(detail=True, methods=["post"], url_path="pooling/sign")
+    def sign_pooling(self, request, pk=None):
+        return self._sign(request)
+
+
+class NiptSequencingViewSet(_ChainStepMixin, _StepBatchViewSet):
+    """上机测序 /api/v1/nipt/sequencing/"""
+
+    queryset = NiptSequencingBatch.objects.all()
+    model = NiptSequencingBatch
+    sample_model = NiptSequencingSample
+    list_serializer_class = NiptSequencingBatchListSerializer
+    detail_serializer_class = NiptSequencingBatchDetailSerializer
+    DATA_KEY = "sequencing_data"
+    METHOD_KEY = "platform"
+    PHOTO_MODULE = "sequencing"
+    COMPLETE_STATUS = "SEQUENCING"
+    UPSTREAM_MODEL = NiptPoolingSample
+    UPSTREAM_PTR = "source_pooling_sample_id"
+
+    @action(detail=True, methods=["post"], url_path="save_sequencing")
+    def save_sequencing(self, request, pk=None):
+        return self._save_data(request)
+
+    @action(detail=True, methods=["post"], url_path="sequencing/sign")
+    def sign_sequencing(self, request, pk=None):
+        return self._sign(request)
+
+
+class NiptBioinformaticsViewSet(_ChainStepMixin, _StepBatchViewSet):
+    """生信分析 /api/v1/nipt/bioinformatics/"""
+
+    queryset = NiptBioinformaticsBatch.objects.all()
+    model = NiptBioinformaticsBatch
+    sample_model = NiptBioinformaticsSample
+    list_serializer_class = NiptBioinformaticsBatchListSerializer
+    detail_serializer_class = NiptBioinformaticsBatchDetailSerializer
+    DATA_KEY = "bioinformatics_data"
+    METHOD_KEY = "pipeline"
+    PHOTO_MODULE = "bioinformatics"
+    COMPLETE_STATUS = "BIOINFORMATICS"
+    UPSTREAM_MODEL = NiptSequencingSample
+    UPSTREAM_PTR = "source_sequencing_sample_id"
+
+    @action(detail=True, methods=["post"], url_path="save_bioinformatics")
+    def save_bioinformatics(self, request, pk=None):
+        return self._save_data(request)
+
+
+class NiptPendingCountsView(APIView):
+    """菜单角标：一次返回 5 步的待处理数量。
+
+    只数「本次可直接进批次」的行，口径与各步 /pending/ 完全一致（复用同一批 queryset）。
+    """
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        def n(vs):
+            try:
+                return vs().pending_queryset().count()
+            except Exception:
+                return 0
+
+        return Response({
+            "extraction": n(NiptExtractionViewSet),
+            "library": n(NiptLibraryViewSet),
+            "pooling": n(NiptPoolingViewSet),
+            "sequencing": n(NiptSequencingViewSet),
+            "bioinformatics": n(NiptBioinformaticsViewSet),
+        })

@@ -40,7 +40,7 @@ interface SampleRow {
 
 // getSignStatus imported from ../utils/sign
 
-export default function NiptPoolingTab({ batch, onRefresh }: Props) {
+export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: Props & { apiBase?: string }) {
   const { t } = useTranslation();
   const pdata = useMemo(() => batch.pooling_data || {}, [batch.pooling_data]);
   const libraryPlate = useMemo(() => batch.library_data?.library_plate || [], [batch.library_data]);
@@ -210,7 +210,7 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
         eliminated: r.eliminated,
         qc: r.qc || "PASS",
       }));
-      await api.post(`/runs/${batch.id}/save_pooling/`, {
+      await api.post(`${apiBase}/${batch.id}/save_pooling/`, {
         pooling_data: {
           poolingBase,
           globalElutionVol,
@@ -417,11 +417,11 @@ export default function NiptPoolingTab({ batch, onRefresh }: Props) {
       {/* Signer modals */}
       <NiptSignerModal open={opModal} role="operator" roleLabel="操作人" batchId={batch.id}
         currentSigner={opSigner || null}
-        signUrl={`/runs/${batch.id}/pooling/sign/`}
+        signUrl={`${apiBase}/${batch.id}/pooling/sign/`}
         onDone={() => { setOpModal(false); onRefresh(); }} onCancel={() => setOpModal(false)} />
       <NiptSignerModal open={rvModal} role="reviewer" roleLabel="复核人" batchId={batch.id}
         currentSigner={rvSigner || null}
-        signUrl={`/runs/${batch.id}/pooling/sign/`}
+        signUrl={`${apiBase}/${batch.id}/pooling/sign/`}
         onDone={() => { setRvModal(false); onRefresh(); }} onCancel={() => setRvModal(false)} />
     </div>
   );

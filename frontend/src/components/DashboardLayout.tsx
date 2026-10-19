@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 
 
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 
 
 
@@ -77,6 +77,7 @@ import {
 
 
 import { useAuthStore } from "../store/auth";
+import { niptPendingApi } from "../api";
 
 
 
@@ -144,6 +145,30 @@ export default function DashboardLayout({ children, header }: Props) {
 
   const [collapsed, setCollapsed] = useState(false);
 
+  // 5 步待处理数量 → 菜单角标（60 秒自动刷新一次，切页面也会拉一次）
+  const [pendingCounts, setPendingCounts] = useState<Record<string, number>>({});
+  const refreshCounts = useCallback(() => {
+    niptPendingApi.counts()
+      .then((r: any) => setPendingCounts(r.data || {}))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    refreshCounts();
+    const timer = setInterval(refreshCounts, 60000);
+    return () => clearInterval(timer);
+  }, [refreshCounts]);
+
+  /** 菜单标签 + 待处理角标 */
+  const withBadge = (label: string, key: string) => {
+    const n = pendingCounts[key] || 0;
+    return (
+      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+        <span>{label}</span>
+        {n > 0 ? <Badge count={n} size="small" overflowCount={99} /> : null}
+      </span>
+    );
+  };
+
 
 
 
@@ -173,15 +198,15 @@ export default function DashboardLayout({ children, header }: Props) {
 
     { key: "/workflow",      icon: <ExperimentOutlined />,      label: t("nav.labWorkflow") },
 
-    { key: "/nipt/extraction",     icon: <ExperimentOutlined />, label: t("nav.niptExtraction") },
+    { key: "/nipt/extraction",     icon: <ExperimentOutlined />, label: withBadge(t("nav.niptExtraction"), "extraction") },
 
-    { key: "/nipt/library",        icon: <BookOutlined />,       label: t("nav.niptLibrary") },
+    { key: "/nipt/library",        icon: <BookOutlined />,       label: withBadge(t("nav.niptLibrary"), "library") },
 
-    { key: "/nipt/pooling",        icon: <AppstoreOutlined />,   label: t("nav.niptPooling") },
+    { key: "/nipt/pooling",        icon: <AppstoreOutlined />,   label: withBadge(t("nav.niptPooling"), "pooling") },
 
-    { key: "/nipt/sequencing",     icon: <ToolOutlined />,       label: t("nav.niptSequencing") },
+    { key: "/nipt/sequencing",     icon: <ToolOutlined />,       label: withBadge(t("nav.niptSequencing"), "sequencing") },
 
-    { key: "/nipt/bioinformatics", icon: <CloudServerOutlined />, label: t("nav.niptBioinformatics") },
+    { key: "/nipt/bioinformatics", icon: <CloudServerOutlined />, label: withBadge(t("nav.niptBioinformatics"), "bioinformatics") },
 
     { key: "/reports-nipt",   icon: <FileTextOutlined />,      label: t("nav.reports") },
 

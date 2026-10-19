@@ -6,8 +6,11 @@
 """
 from rest_framework import serializers
 
-from .models import (NiptExtractionBatch, NiptExtractionSample,
-                     NiptLibraryBatch, NiptLibrarySample)
+from .models import (NiptBioinformaticsBatch, NiptBioinformaticsSample,
+                     NiptExtractionBatch, NiptExtractionSample,
+                     NiptLibraryBatch, NiptLibrarySample,
+                     NiptPoolingBatch, NiptPoolingSample,
+                     NiptSequencingBatch, NiptSequencingSample)
 
 
 class _StepSampleSerializer(serializers.ModelSerializer):
@@ -162,3 +165,230 @@ class CreateLibraryBatchSerializer(serializers.Serializer):
     source_extraction_sample_ids = serializers.ListField(
         child=serializers.UUIDField(), required=False, default=list)
     notes = serializers.CharField(required=False, allow_blank=True)
+
+
+# ══════════════════════════════════════════════════════════════
+# 阶段 3：Pooling / 测序 / 生信
+# ══════════════════════════════════════════════════════════════
+
+_BASE_SAMPLE_FIELDS = [
+    "id", "batch", "sample",
+    "sample_barcode", "sample_vg_id", "sample_patient_id", "sample_patient_name",
+    "sample_multiple_gestation", "sample_gestational_weeks", "sample_test_option",
+    "sample_status", "sample_plasma_remaining", "sample_retest_flag", "sample_report_code",
+    "sample_pregnancy_history", "sample_diagnosis", "sample_fetal_fraction", "sample_ivf",
+    "is_qc", "well_position", "plate_number", "index_sequence", "index_combo_id",
+    "pool_group", "barcode", "status", "result_summary",
+    "qc_status", "qc_note", "processed_at", "created_at",
+]
+
+
+
+# ── 阶段3 补丁：组件读的是 batch.run_samples + 上游 JSON，批次本体不够 ──
+
+def _merge_upstream_json(model, batch_ids, field):
+    """把多个上游批次的 JSON 合并成一份（dict 字段按 key 累加，其余取首个）。"""
+    out = {}
+    for b in model.objects.filter(id__in=list(batch_ids)).order_by("created_at"):
+        for k, v in (getattr(b, field) or {}).items():
+            if isinstance(v, dict) and isinstance(out.get(k), dict):
+                merged = dict(out[k])
+                merged.update(v)
+                out[k] = merged
+            else:
+                out.setdefault(k, v)
+    return out
+
+
+def _upstream_batch_ids(sample_model, ptr, row_ids):
+    return list(sample_model.objects.filter(id__in=list(row_ids))
+                .values_list("batch_id", flat=True).distinct())
+
+
+class NiptPoolingSampleSerializer(_StepSampleSerializer):
+    class Meta:
+        model = NiptPoolingSample
+        fields = _BASE_SAMPLE_FIELDS + ["source_library_sample_id"]
+        read_only_fields = ["created_at"]
+
+
+class NiptSequencingSampleSerializer(_StepSampleSerializer):
+    class Meta:
+        model = NiptSequencingSample
+        fields = _BASE_SAMPLE_FIELDS + ["source_pooling_sample_id"]
+        read_only_fields = ["created_at"]
+
+
+class NiptBioinformaticsSampleSerializer(_StepSampleSerializer):
+    class Meta:
+        model = NiptBioinformaticsSample
+        fields = _BASE_SAMPLE_FIELDS + ["source_sequencing_sample_id"]
+        read_only_fields = ["created_at"]
+
+
+class _BatchListBase(serializers.ModelSerializer):
+    sample_count = serializers.SerializerMethodField()
+    status_display = serializers.CharField(source="get_status_display", read_only=True)
+
+    def get_sample_count(self, obj):
+        return obj.samples.count()
+
+
+class NiptPoolingBatchListSerializer(_BatchListBase):
+    source_batch_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NiptPoolingBatch
+        fields = ["id", "batch_number", "status", "status_display", "sample_count",
+                  "source_batch_count", "pooling_base", "region", "operator_name",
+                  "reviewer", "created_at", "updated_at"]
+
+    def get_source_batch_count(self, obj):
+        ids = [s.source_library_sample_id for s in obj.samples.all() if s.source_library_sample_id]
+        if not ids:
+            return 0
+        return NiptLibrarySample.objects.filter(id__in=ids).values("batch_id").distinct().count()
+
+
+class NiptPoolingBatchDetailSerializer(NiptPoolingBatchListSerializer):
+    samples = NiptPoolingSampleSerializer(many=True, read_only=True)
+    run_samples = serializers.SerializerMethodField()
+    library_data = serializers.SerializerMethodField()
+
+    class Meta(NiptPoolingBatchListSerializer.Meta):
+        fields = NiptPoolingBatchListSerializer.Meta.fields + [
+            "samples", "run_samples", "pooling_data", "library_data"]
+
+    def get_run_samples(self, obj):
+        return NiptPoolingSampleSerializer(obj.samples.all(), many=True).data
+
+    def get_library_data(self, obj):
+        """本批次样本来自哪些建库批次 → 合并它们的 library_data（板位/浓度靠这个）"""
+        rows = [s.source_library_sample_id for s in obj.samples.all() if s.source_library_sample_id]
+        if not rows:
+            return {}
+        ids = _upstream_batch_ids(NiptLibrarySample, "source_library_sample_id", rows)
+        return _merge_upstream_json(NiptLibraryBatch, ids, "library_data")
+
+
+class NiptSequencingBatchListSerializer(_BatchListBase):
+    source_batch_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NiptSequencingBatch
+        fields = ["id", "batch_number", "status", "status_display", "sample_count",
+                  "source_batch_count", "platform", "instrument", "chip_type", "region",
+                  "operator_name", "reviewer", "created_at", "updated_at"]
+
+    def get_source_batch_count(self, obj):
+        ids = [s.source_pooling_sample_id for s in obj.samples.all() if s.source_pooling_sample_id]
+        if not ids:
+            return 0
+        return NiptPoolingSample.objects.filter(id__in=ids).values("batch_id").distinct().count()
+
+
+class NiptSequencingBatchDetailSerializer(NiptSequencingBatchListSerializer):
+    samples = NiptSequencingSampleSerializer(many=True, read_only=True)
+    run_samples = serializers.SerializerMethodField()
+    pooling_data = serializers.SerializerMethodField()
+    notes = serializers.SerializerMethodField()
+
+    class Meta(NiptSequencingBatchListSerializer.Meta):
+        fields = NiptSequencingBatchListSerializer.Meta.fields + [
+            "samples", "run_samples", "sequencing_data", "pooling_data", "notes"]
+
+    def get_run_samples(self, obj):
+        return NiptSequencingSampleSerializer(obj.samples.all(), many=True).data
+
+    def get_pooling_data(self, obj):
+        rows = [s.source_pooling_sample_id for s in obj.samples.all() if s.source_pooling_sample_id]
+        if not rows:
+            return {}
+        ids = _upstream_batch_ids(NiptPoolingSample, "source_pooling_sample_id", rows)
+        return _merge_upstream_json(NiptPoolingBatch, ids, "pooling_data")
+
+    def get_notes(self, obj):
+        return ""
+
+
+class NiptBioinformaticsBatchListSerializer(_BatchListBase):
+    source_batch_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NiptBioinformaticsBatch
+        fields = ["id", "batch_number", "status", "status_display", "sample_count",
+                  "source_batch_count", "pipeline", "region", "operator_name", "reviewer",
+                  "created_at", "updated_at"]
+
+    def get_source_batch_count(self, obj):
+        ids = [s.source_sequencing_sample_id for s in obj.samples.all() if s.source_sequencing_sample_id]
+        if not ids:
+            return 0
+        return NiptSequencingSample.objects.filter(id__in=ids).values("batch_id").distinct().count()
+
+
+class NiptBioinformaticsBatchDetailSerializer(NiptBioinformaticsBatchListSerializer):
+    samples = NiptBioinformaticsSampleSerializer(many=True, read_only=True)
+    run_samples = serializers.SerializerMethodField()
+    sequencing_data = serializers.SerializerMethodField()
+    pooling_data = serializers.SerializerMethodField()
+    library_data = serializers.SerializerMethodField()
+    extraction_data = serializers.SerializerMethodField()
+
+    class Meta(NiptBioinformaticsBatchListSerializer.Meta):
+        fields = NiptBioinformaticsBatchListSerializer.Meta.fields + [
+            "samples", "run_samples", "bioinformatics_data",
+            "sequencing_data", "pooling_data", "library_data", "extraction_data"]
+
+    def get_run_samples(self, obj):
+        return NiptBioinformaticsSampleSerializer(obj.samples.all(), many=True).data
+
+    # ── 沿指针链往上抓（生信→测序→Pooling→建库→提取）──
+    def _seq_rows(self, obj):
+        return [s.source_sequencing_sample_id for s in obj.samples.all() if s.source_sequencing_sample_id]
+
+    def _pool_rows(self, obj):
+        seq_rows = self._seq_rows(obj)
+        if not seq_rows:
+            return []
+        return [r for r in NiptSequencingSample.objects.filter(id__in=seq_rows)
+                .values_list("source_pooling_sample_id", flat=True) if r]
+
+    def _lib_rows(self, obj):
+        pool_rows = self._pool_rows(obj)
+        if not pool_rows:
+            return []
+        return [r for r in NiptPoolingSample.objects.filter(id__in=pool_rows)
+                .values_list("source_library_sample_id", flat=True) if r]
+
+    def get_sequencing_data(self, obj):
+        rows = self._seq_rows(obj)
+        if not rows:
+            return {}
+        ids = _upstream_batch_ids(NiptSequencingSample, "source_sequencing_sample_id", rows)
+        return _merge_upstream_json(NiptSequencingBatch, ids, "sequencing_data")
+
+    def get_pooling_data(self, obj):
+        rows = self._pool_rows(obj)
+        if not rows:
+            return {}
+        ids = _upstream_batch_ids(NiptPoolingSample, "source_pooling_sample_id", rows)
+        return _merge_upstream_json(NiptPoolingBatch, ids, "pooling_data")
+
+    def get_library_data(self, obj):
+        rows = self._lib_rows(obj)
+        if not rows:
+            return {}
+        ids = _upstream_batch_ids(NiptLibrarySample, "source_library_sample_id", rows)
+        return _merge_upstream_json(NiptLibraryBatch, ids, "library_data")
+
+    def get_extraction_data(self, obj):
+        rows = self._lib_rows(obj)
+        if not rows:
+            return {}
+        ext_rows = [r for r in NiptLibrarySample.objects.filter(id__in=rows)
+                    .values_list("source_extraction_sample_id", flat=True) if r]
+        if not ext_rows:
+            return {}
+        ids = _upstream_batch_ids(NiptExtractionSample, "source_extraction_sample_id", ext_rows)
+        return _merge_upstream_json(NiptExtractionBatch, ids, "extraction_data")

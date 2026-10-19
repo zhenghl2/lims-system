@@ -182,7 +182,7 @@ function EditableCell({ value, onChange, type, options, placeholder, min, max, s
 }
 
 // ── Main Component ─────────────────────────────────────────
-export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Props) {
+export default function NiptBioinformaticsTab({ batch, samples, onRefresh, apiBase = "/runs" }: Props & { apiBase?: string }) {
   const { t } = useTranslation();
   // Exclude samples that failed in previous steps from bioinformatics
   const activeSamples = useMemo(() => {
@@ -241,7 +241,7 @@ export default function NiptBioinformaticsTab({ batch, samples, onRefresh }: Pro
     if (!batch?.id) return;
     setSaving(true);
     try {
-      await api.post(`/runs/${batch.id}/save_bioinformatics/`, {
+      await api.post(`${apiBase}/${batch.id}/save_bioinformatics/`, {
         bioinformatics_data: bioData,
       });
       message.success(t("nipt.bioinformatics.saved"));
