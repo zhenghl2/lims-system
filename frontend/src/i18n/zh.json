@@ -3,7 +3,7 @@
     "title": "NGS LIMS",
     "subtitle": "实验室信息管理系统"
   },
-  "nav": {"niptExtraction": "提取", "niptLibrary": "文库构建", "niptPooling": "Pooling", "niptSequencing": "测序", "niptBioinformatics": "生信分析", 
+  "nav": {"legacyTag": "旧模块", "niptExtraction": "提取", "niptLibrary": "文库构建", "niptPooling": "Pooling", "niptSequencing": "测序", "niptBioinformatics": "生信分析", 
     "dashboard": "仪表盘",
     "samples": "样本",
     "runs": "运行",

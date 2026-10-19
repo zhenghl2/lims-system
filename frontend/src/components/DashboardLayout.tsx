@@ -16,7 +16,7 @@ import { Link, useLocation } from "react-router-dom";
 
 
 
-import { Layout, Menu, Typography, Avatar, Dropdown, Space, theme as antdTheme, Badge } from "antd";
+import { Layout, Menu, Typography, Avatar, Dropdown, Space, theme as antdTheme, Badge, Tag } from "antd";
 
 
 
@@ -196,7 +196,14 @@ export default function DashboardLayout({ children, header }: Props) {
     { key: "/receiving",    icon: <InboxOutlined />,           label: t("nav.receiving") },
     { key: "/plasma-separation", icon: <ExperimentOutlined />, label: t("nav.plasmaSeparation") },
 
-    { key: "/workflow",      icon: <ExperimentOutlined />,      label: t("nav.labWorkflow") },
+    { key: "/workflow",      icon: <ExperimentOutlined />,      label: (
+        <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <span>{t("nav.labWorkflow")}</span>
+          <Tag color="default" style={{ marginInlineEnd: 0, fontSize: 10, lineHeight: "16px", padding: "0 4px" }}>
+            {t("nav.legacyTag")}
+          </Tag>
+        </span>
+      ) },
 
     { key: "/nipt/extraction",     icon: <ExperimentOutlined />, label: withBadge(t("nav.niptExtraction"), "extraction") },
 
