@@ -21,6 +21,7 @@ api_v1_patterns = [
     path("samples/", include("lims.apps.samples.urls", namespace="samples")),
     path("plasma-separation/", include("lims.apps.plasma_separation.urls", namespace="plasma_separation")),
     path("runs/", include("lims.apps.workflows.urls", namespace="workflows")),
+    path("nipt/", include("lims.apps.nipt_workflow.urls")),
     path("reagents/", include("lims.apps.reagents.urls", namespace="reagents")),
     path("instruments/", include("lims.apps.instruments.urls", namespace="instruments")),
     path("qc/", include("lims.apps.qc.urls", namespace="qc")),

@@ -51,6 +51,7 @@ LOCAL_APPS = [
     "lims.apps.organizations",
     "lims.apps.samples",
     "lims.apps.workflows",
+    "lims.apps.nipt_workflow",
     "lims.apps.reagents",
     "lims.apps.instruments",
     "lims.apps.qc",
