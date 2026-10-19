@@ -75,7 +75,7 @@ interface MixItem { id:string; pooling_batch_id:string; pooling_batch_number:str
 }
 interface MixRow { mix_name:string; source:string; library_conc:number|null; input_amount:number; input_vol:number; expected_conc:number; water_added:number; }
 interface SampleItem { id:string; patient_name:string; category:string; test_sample_id:string|null; }
-interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; }
+interface BatchItem { id:string; batch_number:string; status:string; status_display:string; sample_count:number; female_count:number; male_blood_count:number; male_other_count:number; chip_number?:string; }
 interface BatchDetail extends BatchItem { female_samples:SampleItem[]; male_blood_samples:SampleItem[]; male_other_samples:SampleItem[]; hyb_seq_data:any; }
 
 export default function NipptHybSeq() {
@@ -325,7 +325,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     try{
       const sd = buildSd();
       await(casesApi as any).saveHybSeq(selectedBatch.id,{hyb_seq_data:sd});
-      message.success("保存成功"); fetchDetail(selectedBatch.id);
+      message.success("保存成功"); fetchDetail(selectedBatch.id); fetchBatches();
     }catch{message.error("保存失败")}finally{setSaving(false)}
   };
 
@@ -395,17 +395,20 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
   const deleteBatch = async(id:string)=>{try{await(casesApi as any).deleteHybSeqBatch(id);message.success("已删除");setSelectedBatch(null);fetchBatches()}catch(e:any){message.error(e?.response?.data?.detail||"删除失败")}};
 
   const batchColumns=[
-    {title:"批次号",dataIndex:"batch_number",width:140,render:(v:string)=><Text code style={{fontSize:12}}>{v}</Text>},
+    {title:"批次号",dataIndex:"batch_number",width:130,render:(v:string)=><Text code style={{fontSize:12}}>{v}</Text>},
+    {title:"Chip号",dataIndex:"chip_number",width:66,render:(v:string)=>(v?<Text code style={{fontSize:12}}>{v}</Text>:<Text type="secondary" style={{fontSize:11}}>-</Text>)},
     {title:"状态",dataIndex:"status",width:60,render:(v:string)=>{const c:Record<string,string>={DRAFT:"default",IN_PROGRESS:"blue",COMPLETED:"green"},l:Record<string,string>={DRAFT:"待处理",IN_PROGRESS:"处理中",COMPLETED:"已完成"};return<Tag color={c[v]||"default"}>{l[v]||v}</Tag>}},
     {title:"样本",width:100,render:(_:any,r:BatchItem)=><Text style={{fontSize:11}}>👩{r.female_count} 👨{r.male_blood_count+r.male_other_count}</Text>},
   ];
 
   const th:React.CSSProperties={border:"1px solid #bbb",padding:"4px 8px",textAlign:"center",fontWeight:700,background:"#d5e8d4",fontSize:12};
   const td:React.CSSProperties={border:"1px solid #d9d9d9",padding:"4px 6px",textAlign:"center",fontSize:12};
+  /** 建批次时填的 Chip 号（详情接口在 hyb_seq_data 里，列表接口在顶层） */
+  const detailChip = String((selectedBatch as any)?.hyb_seq_data?.chip_number || (selectedBatch as any)?.chip_number || "");
 
   return (
     <div style={{display:"flex",height:"calc(100vh - 140px)",gap:12}}>
-      <Card size="small" style={{width:sidebarCollapsed?50:380,flexShrink:0,transition:"width 0.25s",overflow:"hidden"}}
+      <Card size="small" style={{width:sidebarCollapsed?50:440,flexShrink:0,transition:"width 0.25s",overflow:"hidden"}}
         title={sidebarCollapsed?undefined:"杂交及测序"}
         extra={<Button type="text" size="small" icon={sidebarCollapsed?<MenuUnfoldOutlined/>:<MenuFoldOutlined/>} onClick={()=>setSidebarCollapsed(!sidebarCollapsed)}/>}>
         {!sidebarCollapsed&&(<>
@@ -417,7 +420,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       <div style={{flex:1,overflow:"auto"}}>
         {selectedBatch?(
           <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
-          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}</Space>}
+          <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text>{detailChip&&<Tag color="geekblue">Chip号 {detailChip}</Tag>}<Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}</Space>}
             extra={<Space>
               {selectedBatch.status!=="COMPLETED"&&<Button size="small" danger icon={<DeleteOutlined/>} onClick={async()=>{ if(await confirmBatchDelete("hybseq", selectedBatch.id)) await deleteBatch(selectedBatch.id); }}>删除</Button>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
