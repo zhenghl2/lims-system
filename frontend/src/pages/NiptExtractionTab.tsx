@@ -98,7 +98,7 @@ function SampleCell({ label, sampleIdx, results, onChange, cellStyle, tdProps }:
   );
 }
 
-export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) {
+export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase = "/runs" }: Props & { apiBase?: string }) {
   const { t } = useTranslation();
   const extractionMethods = [
     { value: "MANUAL", label: t("nipt.extraction.manual") },
@@ -189,7 +189,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
       const fd = new FormData();
       fd.append("file", file);
       fd.append("module", "extraction");
-      const res = await api.post(`/runs/${batch.id}/photos/`, fd, { timeout: 120000 });
+      const res = await api.post(`${apiBase}/${batch.id}/photos/`, fd, { timeout: 120000 });
       setPhotos(prev => [...prev, res.data.url as string]);
     } catch (e: any) {
       message.error(e?.response?.data?.error || "照片上传失败");
@@ -204,7 +204,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
     // 只删本系统已落盘的文件；历史 base64 / 外链不动
     const m = typeof url === "string" ? url.match(/\/media\/nipt_workflow\/[^/]+\/[^/]+\/([^/?]+)$/) : null;
     if (m) {
-      try { await api.delete(`/runs/${batch.id}/photos/`, { params: { module: "extraction", name: m[1] } }); }
+      try { await api.delete(`${apiBase}/${batch.id}/photos/`, { params: { module: "extraction", name: m[1] } }); }
       catch { /* 文件删不掉不影响保存 */ }
     }
   };
@@ -261,7 +261,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
           photos,
         },
       };
-      await api.post(`/runs/${batch.id}/save_extraction/`, payload);
+      await api.post(`${apiBase}/${batch.id}/save_extraction/`, payload);
       message.success("核酸提取记录已保存");
       onRefresh();
     } catch (e: any) {
@@ -696,8 +696,8 @@ export default function NiptExtractionTab({ batch, samples, onRefresh }: Props) 
         {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorLabel")}: {opSigner} ✓</Button> : <Button onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorSign")}</Button>}
         {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerLabel")}: {rvSigner} ✓</Button> : <Button onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerSign")}</Button>}
       </Space>
-      <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/extraction/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
-      <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/extraction/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
+      <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`${apiBase}/${batch.id}/extraction/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
+      <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`${apiBase}/${batch.id}/extraction/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
     </div>
   );
 }

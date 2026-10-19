@@ -87,7 +87,7 @@ interface Props {
   lastBatchLibData?: any;
 }
 
-export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLibData }: Props) {
+export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLibData, apiBase = "/runs" }: Props & { apiBase?: string }) {
   const { t } = useTranslation();
   const libraryMethods = [
     { value: "SINGLE_CHANNEL", label: t("nipt.library.singleChannel") },
@@ -434,7 +434,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       const fd = new FormData();
       fd.append("file", file);
       fd.append("module", "library");
-      const res = await api.post(`/runs/${batch.id}/photos/`, fd, { timeout: 120000 });
+      const res = await api.post(`${apiBase}/${batch.id}/photos/`, fd, { timeout: 120000 });
       setPhotos(prev => [...prev, res.data.url as string]);
     } catch (e: any) {
       message.error(e?.response?.data?.error || "照片上传失败");
@@ -449,7 +449,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     // 只删本系统已落盘的文件；历史 base64 / 外链不动
     const m = typeof url === "string" ? url.match(/\/media\/nipt_workflow\/[^/]+\/[^/]+\/([^/?]+)$/) : null;
     if (m) {
-      try { await api.delete(`/runs/${batch.id}/photos/`, { params: { module: "library", name: m[1] } }); }
+      try { await api.delete(`${apiBase}/${batch.id}/photos/`, { params: { module: "library", name: m[1] } }); }
       catch { /* 文件删不掉不影响保存 */ }
     }
   };
@@ -501,7 +501,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
           negative_control: negativeControl,
         },
       };
-      await api.post(`/runs/${batch.id}/save_library/`, payload);
+      await api.post(`${apiBase}/${batch.id}/save_library/`, payload);
       message.success(t("nipt.library.saved"));
       onRefresh();
     } catch (e: any) {
@@ -928,8 +928,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
         <Button type="primary" onClick={save} loading={saving}>{t("nipt.library.saveRecord")}</Button>
       </div>
 
-      <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`/runs/${batch.id}/library/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
-      <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`/runs/${batch.id}/library/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
+      <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`${apiBase}/${batch.id}/library/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
+      <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`${apiBase}/${batch.id}/library/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />
     </div>
   );
 }

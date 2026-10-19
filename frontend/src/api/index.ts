@@ -353,3 +353,25 @@ export const workflowStepsApi = {
 // ============ NIPPT Pre-Processing ============
 
 
+
+
+// ── NIPT 分步批次（阶段2：提取 / 建库，新表 nipt_workflow）──
+export const niptExtractionApi = {
+  list: (params?: any) => api.get("/nipt/extraction/", { params }),
+  detail: (id: string) => api.get(`/nipt/extraction/${id}/`),
+  pending: () => api.get("/nipt/extraction/pending/"),
+  create: (body: any) => api.post("/nipt/extraction/", body),
+  remove: (id: string) => api.delete(`/nipt/extraction/${id}/`),
+  complete: (id: string) => api.post(`/nipt/extraction/${id}/complete/`),
+  reopen: (id: string) => api.post(`/nipt/extraction/${id}/reopen/`),
+};
+
+export const niptLibraryApi = {
+  list: (params?: any) => api.get("/nipt/library/", { params }),
+  detail: (id: string) => api.get(`/nipt/library/${id}/`),
+  pending: () => api.get("/nipt/library/pending/"),
+  create: (body: any) => api.post("/nipt/library/", body),
+  remove: (id: string) => api.delete(`/nipt/library/${id}/`),
+  complete: (id: string) => api.post(`/nipt/library/${id}/complete/`),
+  reopen: (id: string) => api.post(`/nipt/library/${id}/reopen/`),
+};
