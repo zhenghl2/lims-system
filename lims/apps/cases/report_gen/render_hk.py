@@ -33,6 +33,8 @@ TPL_BY_VERSION = {
     "印度": "nippt_in_template.docx",
     "澳洲": "nippt_au_template.docx",
     "澳大利亚": "nippt_au_template.docx",
+    "澳洲版": "nippt_au_template.docx",      # 库里历史写法
+    "印度版英文": "nippt_in_template.docx",   # 库里历史写法
     "加纳": "nippt_Ghana_template.docx",
     "巴西": None,   # 走巴西渲染器
     "国内": None,   # 走国内渲染器
@@ -43,6 +45,8 @@ SEX_BY_VERSION = {
     "英繁": ("Sexagem_Fetal_en_tpl.docx", {"M": "Male", "F": "Female"}, "sex"),
     "英文-美": ("Sexagem_Fetal_us_en_tpl.docx", {"M": "Male", "F": "Female"}, "sex"),
     "印度": ("Sexagem_Fetal_en_tpl.docx", {"M": "Male", "F": "Female"}, "sex"),
+    "印度版英文": ("Sexagem_Fetal_en_tpl.docx", {"M": "Male", "F": "Female"}, "sex"),
+    "澳洲版": ("Sexagem_Fetal_en_tpl.docx", {"M": "Male", "F": "Female"}, "sex"),
     "法语": ("Sexagem_Fetal_fr_tpl.docx", {"M": "masculin", "F": "Féminin"}, "sex_fr"),
     "意大利": ("Sexagem_Fetal_it_tpl.docx", {"M": "Maschio", "F": "Femmina"}, "sex_it"),
     "西班牙": ("Sexagem_Fetal_es_tpl.docx", {"M": "Masculino", "F": "Femenino"}, "sex_es"),
@@ -59,7 +63,8 @@ OUT_PREFIX = {
     "英文": "HK_report_EN_", "英繁": "HK_report_TC_", "泰国": "",
     "法语": "HK_report_FR_", "英文-美": "HK_report_US_", "意大利": "HK_report_IT_",
     "西班牙": "HK_report_ES_", "德语": "HK_report_DE_", "印度": "HK_report_IN_",
-    "澳洲": "HK_report_AU_", "澳大利亚": "HK_report_AU_", "加纳": "HK_report_GHA_",
+    "澳洲": "HK_report_AU_", "澳大利亚": "HK_report_AU_", "澳洲版": "HK_report_AU_",
+    "印度版英文": "HK_report_IN_", "加纳": "HK_report_GHA_",
 }
 NAME_SUFFIX = {"法语": "_swab", "意大利": "_swab", "西班牙": "_swab"}
 
