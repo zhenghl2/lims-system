@@ -200,6 +200,16 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
   const baseMixCount = (((selectedBatch as any)?.hyb_seq_data || {}).mix_ids || []).length;
   const isExtraRow = (i:number) => baseMixCount > 0 && i >= baseMixCount;
 
+  /** Mix 稀释表：回车后聚焦「下一行·同一列」的输入框（表末行不动）。
+   *  id 约定：mix-<列>-<行号>，列：conc=文库浓度 / amount=投入量 / expect=预期浓度 */
+  const focusMixCell = (col:"conc"|"amount"|"expect", i:number)=>{
+    const el = document.getElementById(`mix-${col}-${i}`) as HTMLInputElement | null;
+    if (!el) return;
+    el.focus();
+    // select 放到下一帧，避免 antd InputNumber 内部的 focus 处理把选区重置
+    requestAnimationFrame(()=>{ try { el.select(); } catch {} });
+  };
+
   const updateMixCell = (i:number, field:string, val:any)=>{
     setMixRows(prev=>{
       const next=[...prev]; const r={...next[i]};
@@ -454,7 +464,10 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                                   onChange={(e)=>updateMixCell(i,"source",e.target.value)} style={{width:"100%"}}/>
                               : <Tooltip title={r.source||""}><div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.source||"-"}</div></Tooltip>
                           }</td>
-                          <td style={td}><InputNumber size="small" min={0} step={0.001} value={r.library_conc} onChange={v=>updateMixCell(i,"library_conc",v)} style={{width:80}} placeholder="0"/></td>
+                          <td style={td}><InputNumber id={`mix-conc-${i}`} size="small" min={0} step={0.001} value={r.library_conc}
+                            onChange={v=>updateMixCell(i,"library_conc",v)}
+                            onPressEnter={(e)=>{ e.preventDefault(); focusMixCell("conc", i+1); }}
+                            style={{width:80}} placeholder="0"/></td>
                           <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.input_amount} onChange={v=>updateMixCell(i,"input_amount",v)} style={{width:60}}/></td>
                           <td style={{...td,fontFamily:"monospace"}}>{r.input_vol>0?r.input_vol.toFixed(2):"-"}</td>
                           {i===0?<td style={{...td,background:"#e6f7ff",fontWeight:700}} rowSpan={mixRows.length}>{mixSums.theoryConc.toFixed(2)}</td>:null}
