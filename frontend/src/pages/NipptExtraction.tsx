@@ -278,6 +278,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       const allIds = new Set<string>();
       for (const e of data.entries) for (const id of e.case_sample_ids) allIds.add(id);
       setSelectedKeys(allIds); setPendingSearch(""); setSelectedQC(null); setQcSearch(""); setQcCandidates([]);
+      searchQC("");   // 预载质控候选（可用 PT / 姓名 / case 号搜索）
       const now = new Date();
       const prefix = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(now.getHours()).padStart(2,"0")}`;
       try {
@@ -291,7 +292,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
   const searchQC = async (val: string) => {
     setQcSearch(val);
-    if (!val.trim()) { setQcCandidates([]); return; }
+    // 空关键字也查：打开弹窗先列出全部候选（2026-10-20）
     setQcSearching(true);
     try {
       const r = await (casesApi as any).getQCandidates(val);

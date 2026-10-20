@@ -3038,14 +3038,39 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
 
     @action(detail=False, methods=["get"])
     def qc_candidates(self, request):
-        search = request.query_params.get("search", "")
-        qs = NipptPreProcessingSample.objects.filter(batch__status="COMPLETED", qc_status="PASS", category="FEMALE_BLOOD", aliquot_tubes__gte=1)
+        """质控候选：已完成前处理、QC 通过、还有剩余血浆管的女性样本。
+
+        搜索支持 姓名 / case 编号 / PT 编号（2026-10-20 修：原先用未导入的 models.Q 直接 500，
+        且只看姓名/case，实验室按 PT 搜不到）。
+        """
+        search = (request.query_params.get("search") or "").strip()
+        qs = (NipptPreProcessingSample.objects
+              .filter(batch__status="COMPLETED", qc_status="PASS",
+                      category="FEMALE_BLOOD", aliquot_tubes__gte=1)
+              .select_related("case"))
         if search:
-            qs = qs.filter(models.Q(patient_name__icontains=search) | models.Q(case__case_number__icontains=search))
-        results = [{"id":str(pp.id),"patient_name":pp.patient_name,"case_number":pp.case.case_number,
-            "test_sample_id":CaseSample.objects.filter(id__in=pp.case_sample_ids).first().test_sample_id if pp.case_sample_ids else None,
-            "aliquot_tubes":pp.aliquot_tubes} for pp in qs[:20]]
-        return Response({"results":results})
+            # PT 编号在 CaseSample 上：先按 PT 反查 case_sample，再用 JSON 重叠筛出对应前处理行
+            pt_cs_ids = set(str(x) for x in CaseSample.objects
+                            .filter(test_sample_id__icontains=search)
+                            .values_list("id", flat=True)[:500])
+            cond = Q(patient_name__icontains=search) | Q(case__case_number__icontains=search)
+            if pt_cs_ids:
+                # 注意：qs 带 select_related("case")，再 .only() 会抛 FieldError → 用独立 queryset 扫 id
+                pp_ids = [pk for pk, csids in
+                          NipptPreProcessingSample.objects
+                          .filter(id__in=qs.values_list("id", flat=True))
+                          .values_list("id", "case_sample_ids")
+                          if pt_cs_ids & set(str(c) for c in (csids or []))]
+                qs = qs.filter(cond | Q(id__in=pp_ids))
+            else:
+                qs = qs.filter(cond)
+
+        results = [{"id": str(pp.id), "patient_name": pp.patient_name,
+                    "case_number": pp.case.case_number,
+                    "test_sample_id": (CaseSample.objects.filter(id__in=pp.case_sample_ids)
+                                       .first().test_sample_id if pp.case_sample_ids else None),
+                    "aliquot_tubes": pp.aliquot_tubes} for pp in qs[:20]]
+        return Response({"results": results})
 
     @action(detail=True, methods=["post"])
     def save_processing(self, request, pk=None):
