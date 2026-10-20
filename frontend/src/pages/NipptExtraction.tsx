@@ -113,6 +113,8 @@ export default function NipptExtraction() {
   // ── New batch modal ──
   const [modalOpen, setModalOpen] = useState(false);
   const [pendingData, setPendingData] = useState<any>(null);
+  // 新建批次弹窗：候选样本排序口径 —— "pt"=按 PT 编号（默认）| "case"=按 Case 编号
+  const [pendingSort, setPendingSort] = useState<"pt" | "case">("pt");
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [pendingSearch, setPendingSearch] = useState("");
   const [pendingLoc, setPendingLoc] = useState<string | undefined>(undefined);
@@ -1368,14 +1370,30 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         {pendingData && (<div>
           <div style={{ marginBottom: 12, padding: "8px 12px", background: "#f6ffed", borderRadius: 6 }}>
             <Text strong>批次号：</Text><Text code style={{ fontSize: 16 }}>{batchNumberPreview}</Text><Text type="secondary" style={{ marginLeft: 8 }}>（自动生成）</Text></div>
-          <Space style={{ marginBottom: 8 }} wrap><Input.Search placeholder="搜索姓名/PT号/Case号..." allowClear value={pendingSearch} onChange={(e: any) => setPendingSearch(e.target.value)} style={{ width: 300 }} /><Select placeholder="全部签收地" style={{ width: 140 }} value={pendingLoc} allowClear onChange={(v: string | undefined) => { setPendingLoc(v); setSelectedKeys(new Set()); }} options={LOC_OPTIONS} /></Space>
+          <Space style={{ marginBottom: 8 }} wrap><Input.Search placeholder="搜索姓名/PT号/Case号..." allowClear value={pendingSearch} onChange={(e: any) => setPendingSearch(e.target.value)} style={{ width: 300 }} />
+              <Select size="small" style={{ width: 130 }} value={pendingSort}
+                onChange={(v: "pt" | "case") => setPendingSort(v)}
+                options={[{ value: "pt", label: "按 PT 编号" }, { value: "case", label: "按 Case 编号" }]} />
+              <Select placeholder="全部签收地" style={{ width: 140 }} value={pendingLoc} allowClear onChange={(v: string | undefined) => { setPendingLoc(v); setSelectedKeys(new Set()); }} options={LOC_OPTIONS} /></Space>
           <div style={{ marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <Space><Tag color="magenta">👩 女性: {visCount(true)}</Tag><Tag color="blue">👨 男性: {visCount(false)}</Tag></Space>
             <Space><Button size="small" onClick={() => selectByGender("f")}>👩 全选女性</Button><Button size="small" onClick={() => selectByGender("m")}>👨 全选男性</Button><Button size="small" onClick={() => toggleAll(true)}>全选</Button><Button size="small" onClick={() => toggleAll(false)}>取消全选</Button></Space></div>
           <Divider style={{ margin: "8px 0" }} />
           <div style={{ maxHeight: 300, overflow: "auto", marginBottom: 16 }}>
             {(["FEMALE_BLOOD","MALE_BLOOD","MALE_OTHER"] as const).map(cat => {
-              const entries = pendingData.entries.filter((e: any) => e.category === cat && (!pendingSearch || e.patient_name.includes(pendingSearch) || e.case_number.includes(pendingSearch) || (e.test_sample_id||"").includes(pendingSearch)) && (!pendingLoc || e.receipt_location === pendingLoc));
+              const entries = pendingData.entries
+                .filter((e: any) => e.category === cat && (!pendingSearch || e.patient_name.includes(pendingSearch) || e.case_number.includes(pendingSearch) || (e.test_sample_id||"").includes(pendingSearch)) && (!pendingLoc || e.receipt_location === pendingLoc))
+                // 排序只影响弹窗显示，不影响已创建批次的样本顺序 / 导出 / 后端口径
+                .slice()
+                .sort((a: any, b: any) => {
+                  if (pendingSort === "case") {
+                    return String(a.case_number || "").localeCompare(String(b.case_number || ""), "en", { numeric: true });
+                  }
+                  const ka = ptSortKey(a), kb = ptSortKey(b);
+                  if (ka.len !== kb.len) return ka.len - kb.len;   // 位数优先（PT7210 在 PT72081 之前）
+                  if (ka.num !== kb.num) return ka.num - kb.num;
+                  return ka.s.localeCompare(kb.s, "en", { numeric: true });
+                });
               if (!entries.length) return null;
               const labels: Record<string,string> = {FEMALE_BLOOD:"👩 女性",MALE_BLOOD:"🩸 男性血液",MALE_OTHER:"🧬 男性其他"};
 
