@@ -1388,14 +1388,16 @@ class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
 
 
 class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
-    case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
+    case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True, required=False, default=list)
+    qc_source_ids = serializers.ListField(child=serializers.CharField(), write_only=True, required=False, default=list)
     class Meta:
         model = NipptLibraryBatch
-        fields = ["id","batch_number","status","case_sample_ids"]
+        fields = ["id","batch_number","status","case_sample_ids","qc_source_ids"]
         read_only_fields = ["id","batch_number"]
     def create(self, validated_data):
         request = self.context["request"]
         case_sample_ids = validated_data.pop("case_sample_ids",[])
+        qc_source_ids = validated_data.pop("qc_source_ids", [])
         with transaction.atomic():
             batch_number = NipptLibraryBatch.generate_batch_number()
             batch = NipptLibraryBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
@@ -1424,6 +1426,14 @@ class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
                         case_sample_id=cid, stage="LIBRARY_PREP", action="ENTER",
                         batch_number=batch.batch_number,
                         defaults={"batch_sample_id": str(ls.id), "operator": request.user})
+            # ── QC 行（2026-10-20）：独立成行、带 is_qc、不写 WorkflowLog、不动 case 阶段 ──
+            for _es in NipptExtractionSample.objects.filter(id__in=qc_source_ids, is_qc=True).select_related("case"):
+                NipptLibrarySample.objects.create(
+                    batch=batch, case=_es.case, patient_name=_es.patient_name,
+                    role="MOTHER", category="FEMALE_BLOOD",
+                    case_sample_ids=_es.case_sample_ids or [],
+                    source_extraction_sample_id=_es.id, is_qc=True,
+                )
             # 进入建库批次：更新工作流阶段（失败重处理样本恢复"建库中"显示）
             if case_sample_ids:
                 CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="LIBRARY_PREP")
@@ -1683,14 +1693,16 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
 
 
 class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
-    case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
+    case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True, required=False, default=list)
+    qc_source_ids = serializers.ListField(child=serializers.CharField(), write_only=True, required=False, default=list)
     class Meta:
         model = NipptPoolingBatch
-        fields = ["id","batch_number","status","case_sample_ids"]
+        fields = ["id","batch_number","status","case_sample_ids","qc_source_ids"]
         read_only_fields = ["id","batch_number"]
     def create(self, validated_data):
         request = self.context["request"]
         case_sample_ids = validated_data.pop("case_sample_ids",[])
+        qc_source_ids = validated_data.pop("qc_source_ids", [])
         with transaction.atomic():
             batch_number = NipptPoolingBatch.generate_batch_number()
             batch = NipptPoolingBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
@@ -1721,6 +1733,14 @@ class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
                         case_sample_id=cid, stage="POOLING", action="ENTER",
                         batch_number=batch.batch_number,
                         defaults={"batch_sample_id": str(ps.id), "operator": request.user})
+            # ── QC 行：来自建库批次的质控行，独立成行 ──
+            for _ls in NipptLibrarySample.objects.filter(id__in=qc_source_ids, is_qc=True).select_related("case"):
+                NipptPoolingSample.objects.create(
+                    batch=batch, case=_ls.case, patient_name=_ls.patient_name,
+                    role="MOTHER", category="FEMALE_BLOOD",
+                    case_sample_ids=_ls.case_sample_ids or [],
+                    source_library_sample_id=_ls.id, is_qc=True,
+                )
             # 进入 Pooling 批次：更新工作流阶段（失败重处理样本恢复"Pooling"显示）
             if case_sample_ids:
                 CaseSample.objects.filter(id__in=case_sample_ids).update(workflow_stage="POOLING")
@@ -1887,6 +1907,7 @@ class NipptHybSeqBatchCreateSerializer(serializers.ModelSerializer):
                                 role=ps.role, category=ps.category,
                                 case_sample_ids=ps.case_sample_ids,
                                 source_pooling_sample_id=ps.id,
+                                is_qc=getattr(ps, "is_qc", False),
                             )
                 except (ValueError, NipptPoolingBatch.DoesNotExist):
                     continue
@@ -2509,8 +2530,11 @@ class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
                     category=hs.category,
                     case_sample_ids=hs.case_sample_ids,
                     source_hybseq_sample_id=str(hs.id),
+                    is_qc=getattr(hs, "is_qc", False),
                 )
                 created_sample_map[str(hs.id)] = bs
+                if getattr(hs, "is_qc", False):
+                    continue      # QC 不进配对 → 永远不会出现在报告里
                 role_key = "MOTHER" if hs.role == "MOTHER" else "FATHER"
                 case_samples_map.setdefault(hs.case_id, {"MOTHER": [], "FATHER": []})
                 case_samples_map[hs.case_id][role_key].append(bs)

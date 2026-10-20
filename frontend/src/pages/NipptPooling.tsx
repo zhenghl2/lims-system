@@ -45,6 +45,8 @@ export default function NipptPooling() {
   const [dueSort, setDueSort] = useState(false);  // 新建弹窗：按到期时间排序
   const [pendingData, setPendingData] = useState<any>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  // QC 质控样本单独记录（用上游行 id 建行，避免与母亲样本合并）
+  const [selectedQCSrc, setSelectedQCSrc] = useState<Set<string>>(new Set());
   const [batchNumberPreview, setBatchNumberPreview] = useState("");
   const [saving, setSaving] = useState(false);
   const [pendingLoc, setPendingLoc] = useState<string | undefined>(undefined);
@@ -271,16 +273,16 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
   const toggleAll = (checked: boolean) => {
     if (!pendingData) return;
     if (checked) {
-      const all = new Set<string>();
-      for (const e of visibleEntries()) for (const id of e.case_sample_ids) all.add(id);
-      setSelectedKeys(all);
-    } else setSelectedKeys(new Set());
+      const all = new Set<string>(); const qcAll = new Set<string>();
+      for (const e of visibleEntries()) { if (e.is_qc) qcAll.add(e.qc_source_id); else for (const id of e.case_sample_ids) all.add(id); }
+      setSelectedKeys(all); setSelectedQCSrc(qcAll);
+    } else { setSelectedKeys(new Set()); setSelectedQCSrc(new Set()); }
   };
 
   const openNewBatch = async()=>{
     try{
       const r=await(casesApi as any).pendingPooling();const d=r.data;setPendingData(d);
-      const all=new Set<string>();d.entries.filter((e:any)=>!pendingLoc||e.receipt_location===pendingLoc).forEach((e:any)=>e.case_sample_ids.forEach((id:string)=>all.add(id)));setSelectedKeys(all);
+      const all=new Set<string>();const qcAll=new Set<string>();d.entries.filter((e:any)=>!pendingLoc||e.receipt_location===pendingLoc).forEach((e:any)=>{ if(e.is_qc) qcAll.add(e.qc_source_id); else e.case_sample_ids.forEach((id:string)=>all.add(id)); });setSelectedKeys(all);setSelectedQCSrc(qcAll);
       const now=new Date();const pfx=`${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(now.getHours()).padStart(2,"0")}`;
       try{const br=await(casesApi as any).listPoolingBatches({search:pfx});const c=(br.data?.results||[]).filter((b:any)=>b.batch_number.startsWith(pfx)).length;setBatchNumberPreview(`${pfx}-${String(c+1).padStart(3,"0")}`)}
       catch{setBatchNumberPreview(`${pfx}-001`)}
@@ -289,8 +291,8 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
   };
 
   const createBatch = async()=>{
-    if(selectedKeys.size===0){message.warning("请选择样本");return}
-    try{const r=await(casesApi as any).createPoolingBatch({case_sample_ids:Array.from(selectedKeys)});message.success(`批次 ${r.data.batch_number} 已创建`);setModalOpen(false);fetchBatches()}
+    if(selectedKeys.size===0 && selectedQCSrc.size===0){message.warning("请选择样本");return}
+    try{const r=await(casesApi as any).createPoolingBatch({case_sample_ids:Array.from(selectedKeys), qc_source_ids:Array.from(selectedQCSrc)});message.success(`批次 ${r.data.batch_number} 已创建`);setModalOpen(false);fetchBatches()}
     catch(e:any){message.error(e?.response?.data?.detail||"创建失败")}
   };
 
@@ -714,10 +716,10 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
               const labels:Record<string,string>={FEMALE_BLOOD:"👩 女性",MALE_BLOOD:"🩸 男性血液",MALE_OTHER:"🧬 男性其他"};
 
   return (<div key={cat}><Text strong style={{fontSize:13}}>{labels[cat]} ({entries.length})</Text>
-                {entries.map((e:any)=>{const allIn=e.case_sample_ids.every((id:string)=>selectedKeys.has(id)),someIn=e.case_sample_ids.some((id:string)=>selectedKeys.has(id));
+                {entries.map((e:any)=>{const allIn=e.is_qc?selectedQCSrc.has(e.qc_source_id):e.case_sample_ids.every((id:string)=>selectedKeys.has(id)),someIn=e.is_qc?selectedQCSrc.has(e.qc_source_id):e.case_sample_ids.some((id:string)=>selectedKeys.has(id));
 
-  return (<div key={e.case_sample_ids.join(",")} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
-                    <Checkbox checked={allIn} indeterminate={!allIn&&someIn} onChange={()=>{setSelectedKeys(prev=>{const n=new Set(prev);if(allIn)e.case_sample_ids.forEach((id:string)=>n.delete(id));else e.case_sample_ids.forEach((id:string)=>n.add(id));return n})}}/>
+  return (<div key={e.is_qc ? ("qc_"+e.qc_source_id) : e.case_sample_ids.join(",")} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
+                    <Checkbox checked={allIn} indeterminate={!allIn&&someIn} onChange={()=>{ if(e.is_qc){ setSelectedQCSrc(prev=>{const n=new Set(prev); if(n.has(e.qc_source_id)) n.delete(e.qc_source_id); else n.add(e.qc_source_id); return n;}); return; } setSelectedKeys(prev=>{const n=new Set(prev);if(allIn)e.case_sample_ids.forEach((id:string)=>n.delete(id));else e.case_sample_ids.forEach((id:string)=>n.add(id));return n})}}/>
                     <Text code style={{fontSize:11,width:150,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.case_number}</Text><div style={{width:104,flexShrink:0}}>{e.test_sample_id&&<Tag color="blue" style={{fontSize:11,maxWidth:104,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{e.test_sample_id}</Tag>}</div><Tooltip title={e.patient_name}><div style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:600}}>{e.patient_name}</div></Tooltip>{e.receipt_location&&<Tag color={e.receipt_location==="HONGKONG"?"geekblue":"volcano"} style={{fontSize:10,marginRight:0,flexShrink:0}}>📍{LOC_LABEL[e.receipt_location]||e.receipt_location}</Tag>}<Tooltip title={e.expected_completion||""}><div style={{width:84,flexShrink:0,textAlign:"right",fontSize:11,color:"rgba(0,0,0,0.45)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.expected_completion||""}</div></Tooltip></div>)})}</div>)
             })}
           </div>

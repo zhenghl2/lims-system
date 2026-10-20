@@ -2565,6 +2565,7 @@ def register_redo_samples(case_sample, target_stage, new_cs, operator, sample_so
 def advance_batch(batch, next_stage, operator=None, failed_stage=None):
     passed, failed = [], []
     for s in batch.samples.all():
+        if getattr(s, "is_qc", False): continue      # QC 与 case 无关：不推进任何 case 阶段
         if not s.case_sample_ids: continue
         ids = list(s.case_sample_ids)
         if s.qc_status == "PASS": passed.extend(ids)
@@ -3208,6 +3209,25 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
             g["case_sample_ids"].append(str(cs.id))
             if not g["test_sample_id"]: g["test_sample_id"] = cs.test_sample_id
         entries = list(groups.values())
+
+        # ── QC 分支（2026-10-20）：质控样本单独成行，不参与 case 分组/统计 ──
+        _used_qc = set(x for x in NipptLibrarySample.objects.filter(is_qc=True)
+                       .values_list("source_extraction_sample_id", flat=True) if x)
+        for _es in (NipptExtractionSample.objects
+                    .filter(is_qc=True, batch__status="COMPLETED", qc_status="PASS")
+                    .exclude(id__in=_used_qc).select_related("case")):
+            _tid = None
+            if _es.case_sample_ids:
+                _cs = CaseSample.objects.filter(id=_es.case_sample_ids[0]).first()
+                _tid = _cs.test_sample_id if _cs else None
+            entries.append({
+                "case_id": str(_es.case_id), "case_number": "QC",
+                "patient_name": _es.patient_name, "role": "MOTHER", "category": "FEMALE_BLOOD",
+                "sample_types": [], "case_sample_ids": _es.case_sample_ids or [],
+                "test_sample_id": ((_tid + "-QC") if _tid and not str(_tid).endswith("-QC") else _tid),
+                "receipt_location": "", "dna_concentration": _es.dna_concentration,
+                "extraction_sample_id": str(_es.id), "is_qc": True, "qc_source_id": str(_es.id),
+            })
         return Response({"female_count":sum(1 for e in entries if e["category"]=="FEMALE_BLOOD"),
             "male_blood_count":sum(1 for e in entries if e["category"]=="MALE_BLOOD"),
             "male_other_count":sum(1 for e in entries if e["category"]=="MALE_OTHER"),
@@ -3288,6 +3308,24 @@ class NipptPoolingViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             g["case_sample_ids"].append(str(cs.id))
             if not g["test_sample_id"]: g["test_sample_id"] = cs.test_sample_id
         entries = list(groups.values())
+
+        # ── QC 分支：建库批次里的质控行单独进 Pooling ──
+        _used_qc = set(x for x in NipptPoolingSample.objects.filter(is_qc=True)
+                       .values_list("source_library_sample_id", flat=True) if x)
+        for _ls in (NipptLibrarySample.objects
+                    .filter(is_qc=True, batch__status="COMPLETED", qc_status="PASS")
+                    .exclude(id__in=_used_qc)):
+            _tid = None
+            if _ls.case_sample_ids:
+                _cs = CaseSample.objects.filter(id=_ls.case_sample_ids[0]).first()
+                _tid = _cs.test_sample_id if _cs else None
+            entries.append({
+                "case_id": str(_ls.case_id), "case_number": "QC",
+                "patient_name": _ls.patient_name, "role": "MOTHER", "category": "FEMALE_BLOOD",
+                "sample_types": [], "case_sample_ids": _ls.case_sample_ids or [],
+                "test_sample_id": ((_tid + "-QC") if _tid and not str(_tid).endswith("-QC") else _tid),
+                "receipt_location": "", "is_qc": True, "qc_source_id": str(_ls.id),
+            })
         return Response({"female_count":sum(1 for e in entries if e["category"]=="FEMALE_BLOOD"),
             "male_blood_count":sum(1 for e in entries if e["category"]=="MALE_BLOOD"),
             "male_other_count":sum(1 for e in entries if e["category"]=="MALE_OTHER"),

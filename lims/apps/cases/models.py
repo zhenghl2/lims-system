@@ -775,6 +775,7 @@ class NipptLibrarySample(models.Model):
     pcr_cycles = models.PositiveSmallIntegerField(null=True, blank=True)
     library_concentration = models.FloatField(null=True, blank=True)
 
+    is_qc = models.BooleanField(default=False, db_index=True, help_text="是否质控样本（QC 一路走到生信，但不进报告）")
     qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
         choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
     qc_note = models.TextField(blank=True, default="")
@@ -859,6 +860,7 @@ class NipptPoolingSample(models.Model):
     pooling_volume = models.FloatField(null=True, blank=True)
     pool_barcode = models.CharField(max_length=50, blank=True, default="")
 
+    is_qc = models.BooleanField(default=False, db_index=True, help_text="是否质控样本（QC 一路走到生信，但不进报告）")
     qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
         choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
     qc_note = models.TextField(blank=True, default="")
@@ -942,6 +944,7 @@ class NipptHybSeqSample(models.Model):
     reads_count = models.BigIntegerField(null=True, blank=True)
     q30_score = models.FloatField(null=True, blank=True)
 
+    is_qc = models.BooleanField(default=False, db_index=True, help_text="是否质控样本（QC 一路走到生信，但不进报告）")
     qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
         choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
     qc_note = models.TextField(blank=True, default="")
@@ -1048,6 +1051,7 @@ class NipptBioinfoSample(models.Model):
     het_ratio = models.FloatField(null=True, blank=True, help_text="杂纯比")
     y_ratio = models.FloatField(null=True, blank=True, help_text="Y比例")
 
+    is_qc = models.BooleanField(default=False, db_index=True, help_text="是否质控样本（QC 一路走到生信，但不进报告）")
     qc_status = models.CharField(max_length=20, default="PASS", db_index=True,
         choices=[("PENDING", "待定"), ("PASS", "合格"), ("FAIL", "不合格")])
     qc_note = models.TextField(blank=True, default="")
