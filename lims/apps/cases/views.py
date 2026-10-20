@@ -3110,12 +3110,26 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
 
 
     def nippt_before_delete(self, request, batch):
-        # 提取批次删除：退回被消耗的血浆管数
+        # 提取批次删除：退回被消耗的血浆管数（2026-10-20 起同时补写退回日志，避免审计缺口）
         for sp in batch.samples.all():
-            if sp.source_preprocessing_sample_id:
-                NipptPreProcessingSample.objects.filter(
-                    id=sp.source_preprocessing_sample_id
-                ).update(aliquot_tubes=F("aliquot_tubes") + 1)
+            if not sp.source_preprocessing_sample_id:
+                continue
+            pp = NipptPreProcessingSample.objects.filter(id=sp.source_preprocessing_sample_id).first()
+            if pp is None:
+                continue
+            before = pp.aliquot_tubes
+            NipptPreProcessingSample.objects.filter(id=pp.id).update(aliquot_tubes=F("aliquot_tubes") + 1)
+            try:
+                from .models import NipptPlasmaTubeLog as _TubeLog
+                _TubeLog.objects.create(
+                    case=pp.case,
+                    case_sample_id=((pp.case_sample_ids or [None])[0]),
+                    before_count=before, after_count=before + 1,
+                    reason=("质控退回" if getattr(sp, "is_qc", False) else "提取退回"),
+                    batch_number=batch.batch_number, operator=request.user,
+                )
+            except Exception as _ex:
+                print("[tube-log] revert log failed:", _ex)
         return None
 
     # destroy 由 NipptBatchDeleteMixin 提供（回退到 PRE_PROCESSING）

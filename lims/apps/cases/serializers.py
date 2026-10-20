@@ -1044,13 +1044,19 @@ class NipptExtractionSampleSerializer(serializers.ModelSerializer):
                 return ps.batch.pooling_data.get("indexes", {}).get(str(obj.source_pooling_sample_id), "")
         return ""
     def get_test_sample_id(self, obj):
+        """质控样本统一显示为 PTxxxx-QC（2026-10-20 用户确认口径）。"""
+        tid = None
         if obj.case_sample_ids:
             cs = CaseSample.objects.filter(id=obj.case_sample_ids[0]).first()
             if cs:
-                return cs.test_sample_id
-        return None
+                tid = cs.test_sample_id
+        if tid and getattr(obj, "is_qc", False) and not str(tid).endswith("-QC"):
+            return "%s-QC" % tid
+        return tid
 
     def get_experiment_sample_type(self, obj):
+        if getattr(obj, "experiment_sample_type", ""):
+            return obj.experiment_sample_type
         if obj.source_preprocessing_sample_id:
             pp = NipptPreProcessingSample.objects.filter(id=obj.source_preprocessing_sample_id).first()
             if pp:
@@ -1237,7 +1243,8 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
                 if qc:
                     NipptExtractionSample.objects.create(batch=batch, case=qc.case, patient_name=qc.patient_name+" (QC)",
                         role="MOTHER", category="FEMALE_BLOOD", case_sample_ids=qc.case_sample_ids,
-                        source_preprocessing_sample_id=qc.id, aliquot_tubes=qc.aliquot_tubes, is_qc=True)
+                        source_preprocessing_sample_id=qc.id, aliquot_tubes=qc.aliquot_tubes, is_qc=True,
+                        experiment_sample_type=(qc.experiment_sample_type or ""))
                     NipptPreProcessingSample.objects.filter(id=qc.id).update(aliquot_tubes=F('aliquot_tubes') - 1)
                     NipptPlasmaTubeLog.objects.create(
                         case=qc.case,
