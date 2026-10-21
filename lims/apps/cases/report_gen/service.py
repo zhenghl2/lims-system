@@ -89,6 +89,7 @@ def generate_and_save(pair, out_dir, user=None):
     if not files:
         return [], reason
 
+    sex_saved = False
     main = os.path.join(out_dir, files[0])
     if not os.path.exists(main):
         return [], "渲染产物缺失：%s" % files[0]
@@ -106,9 +107,20 @@ def generate_and_save(pair, out_dir, user=None):
 
     with open(main, "rb") as fh:
         pair.report_file.save(os.path.basename(main), fh, save=False)
+
+    # 2026-10-21：额外报告（性别报告）也要落库 —— 原来只存 files[0]，性别报告被丢掉
+    sex_file = next((f for f in files if "_sex" in str(f)), None)
+    if sex_file:
+        sex_path = sex_file if os.path.isabs(str(sex_file)) else os.path.join(out_dir, str(sex_file))
+        if os.path.exists(sex_path):
+            with open(sex_path, "rb") as fh:
+                pair.report_file_sex.save(os.path.basename(sex_path), fh, save=False)
+            sex_saved = True
     pair.report_history = history[-20:]            # 只留最近 20 条
     # 2026-10-13：重新生成 Word 后，若已有 PDF → 标记可能过期（保留不删，前端提示）
     _fields = ["report_file", "report_history", "updated_at"]
+    if sex_saved:
+        _fields.append("report_file_sex")
     if pair.report_file_pdf:
         pair.report_pdf_stale = True
         _fields.append("report_pdf_stale")

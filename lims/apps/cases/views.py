@@ -4185,8 +4185,13 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         mode = (request.data.get("mode") or "overwrite").strip().lower()
         if mode not in ("overwrite", "keep"):
             mode = "overwrite"
-        # 2026-10-13：按扩展名分流 —— Word 与 PDF 各占一个槽位，互不覆盖
-        slot = "report_file" if _ext == ".docx" else "report_file_pdf"
+        # 2026-10-21：kind=sex → 额外报告（性别报告）独立槽位；其余仍走主报告
+        _kind = (request.data.get("kind") or "main").strip().lower()
+        if _kind == "sex":
+            slot = "report_file_sex" if _ext == ".docx" else "report_file_sex_pdf"
+        else:
+            # 2026-10-13：按扩展名分流 —— Word 与 PDF 各占一个槽位，互不覆盖
+            slot = "report_file" if _ext == ".docx" else "report_file_pdf"
         fmt = "word" if _ext == ".docx" else "pdf"
         cur = getattr(pair, slot)
         prev_name = str(cur.name).rsplit("/", 1)[-1] if cur else ""

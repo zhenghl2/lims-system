@@ -1116,6 +1116,9 @@ class NipptBioinfoPair(models.Model):
     # 2026-10-13：PDF 独立槽位 —— Word 与 PDF 可同时存在，互不覆盖
     report_file_pdf = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True)
     report_pdf_stale = models.BooleanField(default=False)   # 重新生成 Word 后旧 PDF 可能过期（只提示不删）
+    # 2026-10-21：额外报告（胎儿性别报告）—— Word 由生成器产出，PDF 人工上传；与主报告互不影响
+    report_file_sex = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True)
+    report_file_sex_pdf = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True)
 
     def has_report(self):
         """是否有报告（2026-10-13 用户口径：任一格式即算「已上传」）。"""

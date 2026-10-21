@@ -33,6 +33,9 @@ export default function NipptReports() {
   const singleFileRef = useRef<HTMLInputElement>(null);
   const bulkFileRef = useRef<HTMLInputElement>(null);
   const pendingPair = useRef<any>(null);
+  // 2026-10-21：额外报告（性别报告）PDF 上传
+  const sexFileRef = useRef<HTMLInputElement>(null);
+  const pendingSexPair = useRef<any>(null);
   const [bulkOpen, setBulkOpen] = useState(false);
   // ── 生成报告（2026-10-12）──
   const [genOpen, setGenOpen] = useState(false);
@@ -333,10 +336,11 @@ export default function NipptReports() {
     ? `${h.action === "keep" ? "保留" : h.action === "replace" ? "替换" : "上传"} · ${h.filename}${h.prev_filename ? `（原 ${h.prev_filename}）` : ""} · ${h.by || "-"} · ${fmtDT(h.at)}`
     : "";
 
-  const doUpload = async (pair: any, file: File, mode: "overwrite" | "keep") => {
+  const doUpload = async (pair: any, file: File, mode: "overwrite" | "keep", kind: "main" | "sex" = "main") => {
     const fd = new FormData();
     fd.append("pair_id", pair.id);
     fd.append("mode", mode);
+    if (kind === "sex") fd.append("kind", "sex");
     fd.append("file", file);
     try {
       const r = await api.post(`/cases/bioinfo/${selectedBatch.id}/upload-report/`, fd, { timeout: 180000 });
@@ -377,6 +381,34 @@ export default function NipptReports() {
       });
     } else {
       const r = await doUpload(pair, f, "overwrite");
+      r.ok ? message.success(r.msg) : message.error(r.msg);
+      refreshDetail();
+    }
+  };
+
+  // ── 额外报告（性别报告）PDF 上传（Word 由生成器产出）──
+  const pickSexPdf = (pair: any) => {
+    pendingSexPair.current = pair;
+    if (sexFileRef.current) { sexFileRef.current.value = ""; sexFileRef.current.click(); }
+  };
+
+  const onSexFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0];
+    const pair = pendingSexPair.current;
+    pendingSexPair.current = null;
+    if (!f || !pair) return;
+    const _bad = checkReportFile(f);
+    if (_bad) { message.warning(_bad); return; }
+    if (pair.report_file_sex_pdf_url) {
+      Modal.confirm({
+        title: "该配对的性别报告 PDF 已存在",
+        okText: "覆盖", cancelText: "保留现有",
+        content: <div style={{ fontSize: 12 }}>本次文件：<Text code>{f.name}</Text></div>,
+        onOk: async () => { const r = await doUpload(pair, f, "overwrite", "sex"); r.ok ? message.success(r.msg) : message.error(r.msg); refreshDetail(); },
+        onCancel: async () => { const r = await doUpload(pair, f, "keep", "sex"); r.ok ? message.success(r.msg) : message.error(r.msg); refreshDetail(); },
+      });
+    } else {
+      const r = await doUpload(pair, f, "overwrite", "sex");
       r.ok ? message.success(r.msg) : message.error(r.msg);
       refreshDetail();
     }
@@ -735,6 +767,33 @@ ${histLine(h)}`}>
           </Space>
         );
       } },
+    // 2026-10-21：额外报告（胎儿性别报告）—— Word 随主报告生成，PDF 人工上传
+    { title: "额外报告", key: "sexr", width: 128,
+      render: (_: any, r: any) => {
+        const enabled = String(r.gender_info || "").trim() === "Yes";
+        if (!enabled) {
+          return <Tooltip title="「额外信息」不是「是」→ 不出性别报告"><Text type="secondary" style={{ fontSize: 11 }}>未开启</Text></Tooltip>;
+        }
+        if (notQualified(r)) return <Text type="secondary" style={{ fontSize: 11 }}>不可出报告</Text>;
+        return (
+          <Space size={4}>
+            <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>性别</Tag>
+            <Tooltip title={r.report_file_sex_url ? "下载性别报告 Word" : "还没有生成：点主报告列的生成按钮，会一起生成"}>
+              <Button size="small" disabled={!r.report_file_sex_url}
+                onClick={() => r.report_file_sex_url && window.open(r.report_file_sex_url, "_blank")}>W</Button>
+            </Tooltip>
+            {r.report_file_sex_pdf_url ? (
+              <Tooltip title="下载性别报告 PDF">
+                <Button size="small" onClick={() => window.open(r.report_file_sex_pdf_url, "_blank")}>PDF</Button>
+              </Tooltip>
+            ) : (
+              <Tooltip title="上传性别报告 PDF">
+                <Button size="small" icon={<UploadOutlined />} onClick={() => pickSexPdf(r)} />
+              </Tooltip>
+            )}
+          </Space>
+        );
+      } },
     { title: "复核人", key: "rv", width: 120,
       render: (_: any, r: any) => notQualified(r) ? (
         <Select size="small" style={{ width: "100%" }} disabled placeholder="未达标" title="未达标（无结果/QC异常），无需复核" />
@@ -940,6 +999,7 @@ ${histLine(h)}`}>
             </Modal>
             <input ref={singleFileRef} type="file" accept=".pdf,.docx" style={{ display: "none" }} onChange={onSingleFile} />
             <input ref={bulkFileRef} type="file" accept=".pdf,.docx" multiple style={{ display: "none" }} onChange={onBulkFiles} />
+            <input ref={sexFileRef} type="file" accept=".pdf" style={{ display: "none" }} onChange={onSexFile} />
 
             <Modal
               title={<Space><UploadOutlined /> 批量上传报告 — <Text code>{selectedBatch.batch_number}</Text></Space>}

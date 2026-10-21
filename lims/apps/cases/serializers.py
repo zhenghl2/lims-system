@@ -2057,6 +2057,8 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     qc_flag_display = serializers.CharField(source="get_qc_flag_display", read_only=True)
     report_file_url = serializers.SerializerMethodField()
     report_file_pdf_url = serializers.SerializerMethodField()     # 2026-10-13 PDF 槽位
+    report_file_sex_url = serializers.SerializerMethodField()     # 2026-10-21 额外报告（性别）Word
+    report_file_sex_pdf_url = serializers.SerializerMethodField() # 2026-10-21 额外报告（性别）PDF
     report_reviewer_name = serializers.SerializerMethodField()
     report_auditor_name = serializers.SerializerMethodField()
 
@@ -2075,6 +2077,12 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     def get_report_file_pdf_url(self, obj):
         """PDF 槽位地址（2026-10-13：与 Word 并存，互不覆盖）"""
         return self._report_file_url(obj.report_file_pdf)
+
+    def get_report_file_sex_url(self, obj):
+        return self._report_file_url(getattr(obj, "report_file_sex", None))
+
+    def get_report_file_sex_pdf_url(self, obj):
+        return self._report_file_url(getattr(obj, "report_file_sex_pdf", None))
     case_notes = serializers.CharField(source="case.notes", read_only=True, default="", allow_blank=True)
     case_note_samples = CaseNoteSampleSerializer(source="case.case_samples", many=True, read_only=True)
     # 报告模块用：报告日期（案例的报告截止）+ 母/父样本的 外部编号/到样日期/采样日期
@@ -2165,6 +2173,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             "cpi", "cpi_combined", "result", "result_display",
             "note", "report_data",
             "report_file", "report_file_url", "report_file_pdf_url", "report_pdf_stale",
+            "report_file_sex", "report_file_sex_url", "report_file_sex_pdf_url",
             "report_reviewer", "report_reviewer_name",
             "report_auditor", "report_auditor_name", "report_note", "report_version",
             "has_appendix", "appendix_file_url",
