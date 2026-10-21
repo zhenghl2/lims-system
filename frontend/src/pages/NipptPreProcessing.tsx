@@ -1051,7 +1051,12 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
         <div style={{ marginBottom: 12 }}>
           <div style={{ marginBottom: 4 }}><Text type="danger">*</Text> 更正为</div>
           <Select style={{ width: "100%" }} placeholder="选择实际样本类型" value={typeFixNew}
-            onChange={(v) => setTypeFixNew(v)}
+            onChange={(v) => {
+              setTypeFixNew(v);
+              // 2026-10-21：原因默认给模板，按选择的类型自动生成（仍可手动修改）
+              const label = SAMPLE_TYPE_OPTIONS.find(o => o.value === v)?.label || v || "";
+              setTypeFixReason(label ? `登记时未发现，前处理时发现实为${label}` : "");
+            }}
             options={SAMPLE_TYPE_OPTIONS.filter(o => o.value !== typeFixRow?.experiment_sample_type)} />
         </div>
         <div style={{ marginBottom: 8 }}>
