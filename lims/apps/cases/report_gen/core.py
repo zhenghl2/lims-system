@@ -145,7 +145,7 @@ SAMPLE_SOURCE_I18N = {
     "BLOOD":      {"zh": "血液",   "zh-Hant": "血液",     "en": "Blood",          "th": "เลือด",                "pt": "Sangue"},
     "DBS":        {"zh": "血痕",   "zh-Hant": "血痕",     "en": "Blood stain",    "th": "คราบเลือด",             "pt": "Mancha de sangue"},
     "NAIL":       {"zh": "指甲",   "zh-Hant": "指甲",     "en": "Nail",           "th": "เล็บ",                  "pt": "Unha"},
-    "SWAB":       {"zh": "口拭子", "zh-Hant": "口腔拭子", "en": "Buccal swab",    "th": "สำลีเก็บเซลล์ช่องปาก",   "pt": "Swab bucal"},
+    "SWAB":       {"zh": "口拭子", "zh-Hant": "口腔拭子", "en": "Oral swab",      "th": "สำลีเก็บเซลล์ช่องปาก",   "pt": "Swab bucal"},
     "HAIR":       {"zh": "毛发",   "zh-Hant": "毛髮",     "en": "Hair",           "th": "เส้นผม",                "pt": "Cabelo"},
     "TOOTHBRUSH": {"zh": "牙刷",   "zh-Hant": "牙刷",     "en": "Toothbrush",     "th": "แปรงสีฟัน",             "pt": "Escova de dentes"},
     "SEMSTAIN":   {"zh": "精斑",   "zh-Hant": "精斑",     "en": "Semen stain",    "th": "คราบอสุจิ",             "pt": "Mancha de sêmen"},
