@@ -448,7 +448,9 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       const res = await api.post(`${apiBase}/${batch.id}/photos/`, fd, { timeout: 120000 });
       const next = [...photos, res.data.url as string];
       setPhotos(next);
-      if (batch.status === "COMPLETED") persistPhotosOnly(next);
+      // 2026-10-21：上传成功即写进批次数据。原来只在「已完成」批次才落库，
+      // 草稿批次拍照后不保存就完成/换电脑 → 记录里没有照片（文件其实已在服务器上）。
+      await persistPhotosOnly(next);
     } catch (e: any) {
       message.error(e?.response?.data?.error || "照片上传失败");
     } finally {
@@ -460,7 +462,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     const url = photos[Number(uid)];
     const next = photos.filter((_, i) => String(i) !== uid);
     setPhotos(next);
-    if (batch.status === "COMPLETED") persistPhotosOnly(next);
+    // 同上：删除也要立刻落库，避免别的电脑仍看到旧照片
+    await persistPhotosOnly(next);
     // 只删本系统已落盘的文件；历史 base64 / 外链不动
     const m = typeof url === "string" ? url.match(/\/media\/nipt_workflow\/[^/]+\/[^/]+\/([^/?]+)$/) : null;
     if (m) {
