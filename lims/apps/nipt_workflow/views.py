@@ -137,6 +137,10 @@ class _StepBatchViewSet(viewsets.GenericViewSet,
             if upd:
                 type(r).objects.filter(id=r.id).update(processed_at=timezone.now(), **upd)
                 n += 1
+        # 2026-10-21：前端「通过」是默认值、不写进 sample_results，
+        # 这里把仍是空白的行补写 PASS（否则文库待处理要求 PASS 会把样本漏掉）
+        defaulted = batch.samples.filter(qc_status="").update(qc_status="PASS")
+        n += defaulted
         return n
 
     # ── 电子签名（复用 workflows 的签名人/密码校验）──
@@ -245,6 +249,8 @@ class _StepBatchViewSet(viewsets.GenericViewSet,
                     {"error": "还有 %d 个样本未在孔板布局中（无孔位），不能完成" % empty},
                     status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
+            # 2026-10-21：兜底 —— 未判 QC 的样本按「通过」处理（前端 pass 是默认值不落库）
+            batch.samples.filter(qc_status="").update(qc_status="PASS")
             batch.status = "COMPLETED"
             batch.save(update_fields=["status", "updated_at"])
             moved = _advance_sample_status(
