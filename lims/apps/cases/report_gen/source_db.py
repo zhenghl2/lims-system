@@ -93,6 +93,8 @@ def build_row(pair):
     from core import fetal_sex_from_y_ratio
     sex = fetal_sex_from_y_ratio(getattr(pair, "mother_y_ratio", None))
 
+    _report_date = case.expected_completion or _date.today()
+
     row = {
         # 通用
         "报告版本": rv,
@@ -102,6 +104,8 @@ def build_row(pair):
         "vg_id": vg_id,
         "test_id": vg_id,
         "万基编号": vg_id,
+        "mother_test_id": (mother.test_sample_id if mother else "") or "",
+        "father_test_id": (father.test_sample_id if father else "") or "",
         "female_name": ms.patient_name if ms else "",
         "male_name": fs.patient_name if fs else "",
         "female_name2": ms.patient_name if ms else "",
@@ -115,10 +119,12 @@ def build_row(pair):
         "received_date": fs.receipt_date if fs else None,
         "男士到样": fs.receipt_date if fs else None,
         "女士到样": ms.receipt_date if ms else None,
-        # 报告日期 = 生成报告当天（用户 2026-10-12 确认：实验室实际出报告的日子）
-        "report_date": _date.today(),
-        "报告日期": _date.today(),
-        "检测日期": case.expected_completion,  # ✅ 已确认：Case.expected_completion
+        # 报告日期（2026-10-21 用户确认）：统一取「登记/报告模块里可编辑的报告日期」
+        # → Case.expected_completion；为空才回退生成当天。
+        # 中文模板的「检测时间」与「报告日期」、海外模板的 Report Date 都用同一个值。
+        "report_date": _report_date,
+        "报告日期": _report_date,
+        "检测日期": _report_date,
         "预计出报告时间": case.expected_completion,
         "due_date": case.expected_completion,
         "申请人": case.applicant,

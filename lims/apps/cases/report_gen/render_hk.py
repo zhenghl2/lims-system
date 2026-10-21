@@ -108,10 +108,15 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
     date_short = ctx["collection_date"].strftime("%Y%m") if hasattr(ctx.get("collection_date"), "strftime") else ""
 
     # 展示用 ID（多数分支共用）
-    _, suffix_upper = pt_suffix_of(vg_id)   # 已保证以 H 开头：H / HA / HB
+    # 男女样本号直接用各自的 test_sample_id（2026-10-21 修正）：
+    # 原来男样本号是 pt_id + pt_suffix_of(vg_id)，而 vg_id 是母亲号（PT72046W），
+    # pt_suffix_of 会把非 H 开头的前缀补成 "HW" → 报告里出现 PT72046HW。
+    _father_code = str(ctx.get("father_test_id") or "").strip()
+    _mother_code = str(ctx.get("mother_test_id") or "").strip()
+    _, suffix_upper = pt_suffix_of(_father_code or vg_id)
     ctx["pt_suffix_upper"] = suffix_upper
-    ctx["female_id"] = ctx["pt_id"] + "W"
-    ctx["male_id"] = ctx["pt_id"] + suffix_upper
+    ctx["female_id"] = _mother_code or (ctx["pt_id"] + "W")
+    ctx["male_id"] = _father_code or (ctx["pt_id"] + "H")
     ctx["report_id"] = "VGHK" + date_short + vg_id
     ctx["f_DOB"] = fmt_date(ctx.get("f_DOB"), "%Y/%m/%d") or ""
     ctx["m_DOB"] = fmt_date(ctx.get("m_DOB"), "%Y/%m/%d") or ""
