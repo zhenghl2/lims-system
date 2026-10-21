@@ -100,6 +100,10 @@ class _StepBatchViewSet(viewsets.GenericViewSet,
             batch.status = "IN_PROGRESS"
         batch.save()
 
+        # 2026-10-21：保存提取数据时就把孔板布局回写成样本孔位（不必等到完成）
+        if hasattr(batch, "extraction_data"):
+            self._sync_wells_from_plate_layout(batch)
+
         self._apply_sample_results(batch, payload.get("sample_results") or {})
         return Response(self.detail_serializer_class(batch).data)
 
