@@ -119,6 +119,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase =
   );
   const canDrag = batch.status !== "COMPLETED";
   const magneticDragRef = useRef<{ pi: number; well: string } | null>(null);
+  const saveOkRef = useRef(false);   // 保存是否成功（签名前先保存用）
   const [magneticDragOver, setMagneticDragOver] = useState<{ pi: number; well: string } | null>(null);
   const [region, setRegion] = useState(batch.region || "");
   const magneticNotesRef = useRef<Record<string, string>>({});
@@ -234,6 +235,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase =
   };
 
   const save = async () => {
+    saveOkRef.current = false;
     try {
       const vals = await form.validateFields();
       setSaving(true);
@@ -264,11 +266,24 @@ export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase =
       await api.post(`${apiBase}/${batch.id}/save_extraction/`, payload);
       message.success("核酸提取记录已保存");
       onRefresh();
+      saveOkRef.current = true;
     } catch (e: any) {
       if (e?.errorFields) { message.warning("请填写所有必填项"); return; }
       message.error(e?.response?.data?.error || "保存失败");
     } finally { setSaving(false); }
   };
+
+  // 2026-10-21：签名前先保存 —— 否则签完 onRefresh 会把未保存的填写全部冲掉
+  const openSign = async (role: "op" | "rv") => {
+    await save();
+    // 已完成批次记录锁定（save 只补照片），不因未保存拦截签名
+    if (batch.status !== "COMPLETED" && !saveOkRef.current) {
+      message.warning("请先补全必填项并保存成功，再签名");
+      return;
+    }
+    if (role === "op") setOpModal(true); else setRvModal(true);
+  };
+
 
   const { signed: opSigned, name: opSigner } = getSignStatus(edata, "operator");
   const { signed: rvSigned, name: rvSigner } = getSignStatus(edata, "reviewer");
@@ -692,9 +707,9 @@ export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase =
 
       {/* Actions & Signatures */}
       <Space>
-        <Button type="primary" onClick={save} loading={saving}>{t("nipt.extraction.saveRecord")}</Button>
-        {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorLabel")}: {opSigner} ✓</Button> : <Button onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorSign")}</Button>}
-        {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerLabel")}: {rvSigner} ✓</Button> : <Button onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerSign")}</Button>}
+        <Button type="primary" onClick={() => save()} loading={saving}>{t("nipt.extraction.saveRecord")}</Button>
+        {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={() => openSign("op")}>{t("nipt.extraction.operatorLabel")}: {opSigner} ✓</Button> : <Button onClick={() => openSign("op")}>{t("nipt.extraction.operatorSign")}</Button>}
+        {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={() => openSign("rv")}>{t("nipt.extraction.reviewerLabel")}: {rvSigner} ✓</Button> : <Button onClick={() => openSign("rv")}>{t("nipt.extraction.reviewerSign")}</Button>}
       </Space>
       <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`${apiBase}/${batch.id}/extraction/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
       <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`${apiBase}/${batch.id}/extraction/sign/`} onDone={()=>{setRvModal(false);onRefresh()}} onCancel={()=>setRvModal(false)} />

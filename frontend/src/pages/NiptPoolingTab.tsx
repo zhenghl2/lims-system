@@ -133,6 +133,7 @@ export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: 
   const [poolingBase, setPoolingBase] = useState(pdata.poolingBase ?? DEFAULT_POOLING_AMOUNT);
   const [globalElutionVol, setGlobalElutionVol] = useState(pdata.globalElutionVol ?? DEFAULT_ELUTION_VOL);
   const printRef = useRef<HTMLDivElement>(null);
+  const saveOkRef = useRef(false);   // 保存是否成功（签名前先保存用）
   const concRefs = useRef<Record<number, any>>({});
   // Ref to capture latest poolingBase for buildRows without stale closure
   const poolingBaseRef = useRef(poolingBase);
@@ -197,6 +198,7 @@ export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: 
   }, [rows]);
 
   const save = async () => {
+    saveOkRef.current = false;
     try {
       setSaving(true);
       const samples = rows.map(r => ({
@@ -224,12 +226,25 @@ export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: 
       });
       message.success("Pooling 数据已保存");
       onRefresh();
+      saveOkRef.current = true;
     } catch (e: any) {
       message.error(e?.response?.data?.error || "保存失败");
     } finally {
       setSaving(false);
     }
   };
+
+  // 2026-10-21：签名前先保存 —— 否则签完 onRefresh 会把未保存的填写全部冲掉
+  const openSign = async (role: "op" | "rv") => {
+    await save();
+    // 已完成批次记录锁定（save 只补照片），不因未保存拦截签名
+    if (batch.status !== "COMPLETED" && !saveOkRef.current) {
+      message.warning("请先补全必填项并保存成功，再签名");
+      return;
+    }
+    if (role === "op") setOpModal(true); else setRvModal(true);
+  };
+
 
   const print = () => {
     const w = window.open("", "_blank", "width=1200,height=800");
@@ -281,7 +296,7 @@ export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: 
         </div>
         <Space>
           <Button icon={<PrinterOutlined />} onClick={print}>{t("nipt.pooling.print")}</Button>
-          <Button type="primary" onClick={save} loading={saving}>{t("nipt.pooling.saveRecord")}</Button>
+          <Button type="primary" onClick={() => save()} loading={saving}>{t("nipt.pooling.saveRecord")}</Button>
         </Space>
       </div>
 
@@ -296,11 +311,11 @@ export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: 
 
       {/* Signatures */}
       <div style={{ marginBottom: 12, display: "flex", gap: 16 }}>
-        <Button size="small" type={opSigned ? "default" : "primary"} onClick={() => setOpModal(true)}
+        <Button size="small" type={opSigned ? "default" : "primary"} onClick={() => openSign("op")}
           style={opSigned ? { background: "#f6ffed", borderColor: "#b7eb8f", color: "#52c41a" } : {}}>
           {opSigned ? `✓ 操作人: ${opSigner}` : "操作人签名"}
         </Button>
-        <Button size="small" type={rvSigned ? "default" : "primary"} onClick={() => setRvModal(true)}
+        <Button size="small" type={rvSigned ? "default" : "primary"} onClick={() => openSign("rv")}
           style={rvSigned ? { background: "#f6ffed", borderColor: "#b7eb8f", color: "#52c41a" } : {}}>
           {rvSigned ? `✓ 复核人: ${rvSigner}` : "复核人签名"}
         </Button>

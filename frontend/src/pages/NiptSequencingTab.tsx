@@ -132,6 +132,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
   const [opModal,setOpModal]=useState(false);
   const [rvModal,setRvModal]=useState(false);
   const counterRef=useRef(100);
+  const saveOkRef = useRef(false);   // 保存是否成功（签名前先保存用）
   const defaultsFetchedRef=useRef(false);
   useEffect(() => { defaultsFetchedRef.current = false; }, [batch.id]);
   const {signed:opSigned,name:opSigner}=getSignStatus(edata,"operator");
@@ -227,6 +228,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
   const updateReagent=(id:number,field:keyof ReagentRow,value:string)=>{setReagents(prev=>prev.map(r=>r.id===id?{...r,[field]:value}:r));};
 
   const save=async()=>{
+    saveOkRef.current = false;
     try{
       const vals=await form.validateFields();
       setSaving(true);
@@ -248,11 +250,24 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
       await api.post(`${apiBase}/${batch.id}/save_sequencing/`,{sequencing_data:seqData});
       message.success("上机测序记录已保存");
       onRefresh();
+      saveOkRef.current = true;
     }catch(e:any){
       if(e?.errorFields){message.warning("请填写所有必填项");return;}
       message.error(e?.response?.data?.error||"保存失败");
     }finally{setSaving(false);}
   };
+
+  // 2026-10-21：签名前先保存 —— 否则签完 onRefresh 会把未保存的填写全部冲掉
+  const openSign = async (role: "op" | "rv") => {
+    await save();
+    // 已完成批次记录锁定（save 只补照片），不因未保存拦截签名
+    if (batch.status !== "COMPLETED" && !saveOkRef.current) {
+      message.warning("请先补全必填项并保存成功，再签名");
+      return;
+    }
+    if (role === "op") setOpModal(true); else setRvModal(true);
+  };
+
 
   const indexColumns = [
     { title:"编号",dataIndex:"idx",key:"idx",width:50,align:"center" as const },
@@ -352,13 +367,13 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
       {/* Signature */}
       <Card title={t("nipt.library.signature")} size="small" style={{marginBottom:16}}>
         <Space>
-          {opSigned?<Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorLabel")}: {opSigner} ✓</Button>:<Button onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorSign")}</Button>}
-          {rvSigned?<Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerLabel")}: {rvSigner} ✓</Button>:<Button onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerSign")}</Button>}
+          {opSigned?<Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={() => openSign("op")}>{t("nipt.extraction.operatorLabel")}: {opSigner} ✓</Button>:<Button onClick={() => openSign("op")}>{t("nipt.extraction.operatorSign")}</Button>}
+          {rvSigned?<Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={() => openSign("rv")}>{t("nipt.extraction.reviewerLabel")}: {rvSigner} ✓</Button>:<Button onClick={() => openSign("rv")}>{t("nipt.extraction.reviewerSign")}</Button>}
         </Space>
       </Card>
 
       {/* Save */}
-      <div style={{textAlign:"right",marginBottom:16}}><Button type="primary" onClick={save} loading={saving}>{t("nipt.sequencing.saveRecord")}</Button></div>
+      <div style={{textAlign:"right",marginBottom:16}}><Button type="primary" onClick={() => save()} loading={saving}>{t("nipt.sequencing.saveRecord")}</Button></div>
 
       <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`${apiBase}/${batch.id}/sequencing/sign/`} onDone={()=>{setOpModal(false);onRefresh();}} onCancel={()=>setOpModal(false)}/>
       <NiptSignerModal open={rvModal} role="reviewer" roleLabel={t("nipt.extraction.reviewerLabel")} batchId={batch.id} currentSigner={rvSigner||null} signUrl={`${apiBase}/${batch.id}/sequencing/sign/`} onDone={()=>{setRvModal(false);onRefresh();}} onCancel={()=>setRvModal(false)}/>

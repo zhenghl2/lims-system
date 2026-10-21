@@ -123,6 +123,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     setSampleResults((batch.library_data?.sample_results as any) || {});
   }, [sampleResultsKey]);
   const defaultsFetchedRef = useRef(false);
+  const saveOkRef = useRef(false);   // 保存是否成功（签名前先保存用）
   // Reset prefetch flag when batch changes
   useEffect(() => { defaultsFetchedRef.current = false; }, [batch.id]);
   const { signed: opSigned, name: opSigner } = getSignStatus(edata, "operator");
@@ -469,6 +470,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   };
 
   const save = async () => {
+    saveOkRef.current = false;
     // 已完成批次记录锁定，只允许补照片
     if (batch.status === "COMPLETED") { await persistPhotosOnly(photos); return; }
     const missingIndex = plate.some(row => row.some(cell => cell.vgId && !cell.index));
@@ -520,10 +522,22 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       await api.post(`${apiBase}/${batch.id}/save_library/`, payload);
       message.success(t("nipt.library.saved"));
       onRefresh();
+      saveOkRef.current = true;
     } catch (e: any) {
       if (e?.errorFields) { message.warning(t("nipt.extraction.fillRequired")); return; }
       message.error(e?.response?.data?.error || t("nipt.common.saveFailed"));
     } finally { setSaving(false); }
+  };
+
+  // 2026-10-21：签名前先保存 —— 否则签完 onRefresh 会把未保存的填写全部冲掉
+  const openSign = async (role: "op" | "rv") => {
+    await save();
+    // 已完成批次记录锁定（save 只补照片），不因未保存拦截签名
+    if (batch.status !== "COMPLETED" && !saveOkRef.current) {
+      message.warning("请先补全必填项并保存成功，再签名");
+      return;
+    }
+    if (role === "op") setOpModal(true); else setRvModal(true);
   };
 
   // Reagent row helper
@@ -934,14 +948,14 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       {/* Signature */}
       <Card title={t("nipt.library.signature")} size="small" style={{ marginBottom: 16 }}>
         <Space>
-          {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorLabel")}: {opSigner} ✓</Button> : <Button onClick={()=>setOpModal(true)}>{t("nipt.extraction.operatorSign")}</Button>}
-          {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerLabel")}: {rvSigner} ✓</Button> : <Button onClick={()=>setRvModal(true)}>{t("nipt.extraction.reviewerSign")}</Button>}
+          {opSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={() => openSign("op")}>{t("nipt.extraction.operatorLabel")}: {opSigner} ✓</Button> : <Button onClick={() => openSign("op")}>{t("nipt.extraction.operatorSign")}</Button>}
+          {rvSigned ? <Button style={{color:"#52c41a",borderColor:"#52c41a"}} onClick={() => openSign("rv")}>{t("nipt.extraction.reviewerLabel")}: {rvSigner} ✓</Button> : <Button onClick={() => openSign("rv")}>{t("nipt.extraction.reviewerSign")}</Button>}
         </Space>
       </Card>
 
       {/* Save */}
       <div style={{ textAlign: "right", marginBottom: 16 }}>
-        <Button type="primary" onClick={save} loading={saving}>{t("nipt.library.saveRecord")}</Button>
+        <Button type="primary" onClick={() => save()} loading={saving}>{t("nipt.library.saveRecord")}</Button>
       </div>
 
       <NiptSignerModal open={opModal} role="operator" roleLabel={t("nipt.extraction.operatorLabel")} batchId={batch.id} currentSigner={opSigner||null} signUrl={`${apiBase}/${batch.id}/library/sign/`} onDone={()=>{setOpModal(false);onRefresh()}} onCancel={()=>setOpModal(false)} />
