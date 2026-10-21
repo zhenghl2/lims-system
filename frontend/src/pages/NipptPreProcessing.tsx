@@ -35,12 +35,19 @@ const SAMPLE_TYPE_OPTIONS = [
 
 /** 实验/剩余样本类型的可选项：只能从该样本「收到样本类型」里选（母亲也是血液，同样受限）。
  *  收到类型为空（旧数据）时回退全量，避免下拉为空无法操作。 */
-const typeOptionsFor = (r: { received_sample_types?: string[] }) => {
+const typeOptionsFor = (r: { received_sample_types?: string[]; experiment_sample_type?: string }) => {
   const received = (r.received_sample_types || []).filter(Boolean);
   if (!received.length) return SAMPLE_TYPE_OPTIONS;
   const opts = SAMPLE_TYPE_OPTIONS.filter(o => received.includes(o.value));
   // 兼容：选项里没有的（历史/新类型）也列出，避免值无法显示
   received.forEach(t => { if (!opts.find(o => o.value === t)) opts.push({ value: t, label: t }); });
+  // 2026-10-21：当前「实验样本类型」也要在选项里 —— 更正后的类型可能不在收到类型中，
+  // 否则下拉会直接显示原始代码（如 SEMSTAIN）而不是中文名。
+  const cur = (r.experiment_sample_type || "").trim();
+  if (cur && !opts.find(o => o.value === cur)) {
+    const known = SAMPLE_TYPE_OPTIONS.find(o => o.value === cur);
+    opts.push(known || { value: cur, label: cur });
+  }
   return opts;
 };
 

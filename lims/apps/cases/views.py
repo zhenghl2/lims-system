@@ -2977,7 +2977,10 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
             sp.operator = request.user
             sp.save(update_fields=["experiment_sample_type", "category", "aliquot_tubes",
                                    "plasma_volume", "remaining_override", "operator"])
-            if cs_ids:
+            # 2026-10-21 修正：只在该前处理行只对应「一个」样本时才同步实收类型。
+            # 一个前处理行可能聚合同一人的多管/多种类型（如 血液+精液+牙刷+口拭子），
+            # 原来一次性把所有实收类型都改成新类型，等于抹掉签收记录的其它类型。
+            if len(cs_ids) == 1:
                 CaseSample.objects.filter(id__in=cs_ids).update(actual_sample_type=new_type)
 
             log_audit(request, "UPDATE", sp, changes={
@@ -2990,10 +2993,13 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
                 "stage": "PRE_PROCESSING",
             })
             for cs in CaseSample.objects.filter(id__in=cs_ids):
+                _synced = len(cs_ids) == 1
                 log_audit(request, "UPDATE", cs, changes={
-                    "actual_sample_type": {"old": cs_before.get(str(cs.id), ""), "new": new_type},
+                    "actual_sample_type": {"old": cs_before.get(str(cs.id), ""),
+                                           "new": new_type if _synced else cs_before.get(str(cs.id), "")},
                     "reason": reason,
-                    "note": "前处理阶段更正样本类型（登记值保留）",
+                    "note": ("前处理阶段更正样本类型（登记值保留）" if _synced
+                             else "前处理阶段更正实验样本类型；该行含多种实收类型，实收类型保持不变"),
                     "batch_number": batch.batch_number,
                 })
                 WorkflowLog.objects.create(
