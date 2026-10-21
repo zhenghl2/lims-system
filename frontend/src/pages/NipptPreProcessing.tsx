@@ -10,6 +10,7 @@ import {
   CameraOutlined, LoadingOutlined,
   UndoOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
+import apiClient from "../api/client";
 import { uploadNipptPhoto, deleteNipptPhoto, migrateLegacyNipptPhotos, isRemotePhoto } from "../utils/nipptPhoto";
 import dayjs from "dayjs";
 import { confirmBatchDelete } from "../utils/batchDelete";
@@ -269,6 +270,41 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
   };
   const clearPpDraft = (batchId: string) => {
     try { const d = loadPpDraft(); delete d[batchId]; sessionStorage.setItem(PP_DRAFT_KEY, JSON.stringify(d)); } catch { /* ignore */ }
+  };
+
+  // ── 样本类型更正（签收未发现、前处理才发现时使用；仅男性样本）──
+  const [typeFixOpen, setTypeFixOpen] = useState(false);
+  const [typeFixRow, setTypeFixRow] = useState<PreSample | null>(null);
+  const [typeFixNew, setTypeFixNew] = useState<string | undefined>(undefined);
+  const [typeFixReason, setTypeFixReason] = useState("");
+  const [typeFixSaving, setTypeFixSaving] = useState(false);
+
+  const openTypeFix = (row: PreSample) => {
+    setTypeFixRow(row);
+    setTypeFixNew(undefined);
+    setTypeFixReason("");
+    setTypeFixOpen(true);
+  };
+
+  const submitTypeFix = async () => {
+    if (!selectedBatch || !typeFixRow) return;
+    if (!typeFixNew) { message.warning("请选择更正后的样本类型"); return; }
+    if ((typeFixReason || "").trim().length < 5) { message.warning("请填写更正原因（至少 5 个字）"); return; }
+    setTypeFixSaving(true);
+    try {
+      await apiClient.post(`/cases/preprocessing/${selectedBatch.id}/correct-sample-type/`, {
+        sample_id: typeFixRow.id,
+        new_type: typeFixNew,
+        reason: typeFixReason.trim(),
+      });
+      message.success("已更正样本类型，并记录审计日志");
+      setTypeFixOpen(false);
+      await fetchDetail(selectedBatch.id);
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || "更正失败，请稍后重试");
+    } finally {
+      setTypeFixSaving(false);
+    }
   };
 
   const fetchDetail = async (id: string) => {
@@ -824,9 +860,19 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       ) },
     { title: "实验样本类型", dataIndex: "experiment_sample_type", key: "est", width: 130,
       render: (v: string, r: PreSample) => (
-        <Select size="small" value={v || undefined} style={{ width: 100 }}
-          placeholder="选择" options={typeOptionsFor(r)}
-          onChange={(val: string) => updateSampleField(r.id, "experiment_sample_type", val)} allowClear />
+        <Space size={4}>
+          <Select size="small" value={v || undefined} style={{ width: 100 }}
+            placeholder="选择" options={typeOptionsFor(r)}
+            onChange={(val: string) => updateSampleField(r.id, "experiment_sample_type", val)} allowClear />
+          {r.role !== "MOTHER" && (
+            <ConfigProvider componentDisabled={false}>
+              <Tooltip title="签收未发现、前处理才发现类型不对时，用它更正（会写审计）">
+                <Button type="link" size="small" style={{ padding: 0, fontSize: 12 }}
+                  onClick={() => openTypeFix(r)}>更正</Button>
+              </Tooltip>
+            </ConfigProvider>
+          )}
+        </Space>
       ) },
     { title: "剩余样本类型", dataIndex: "remaining_sample_types", key: "rest", width: 172,
       render: (v: string[], r: PreSample) => (
@@ -985,6 +1031,40 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       </div>
 
       {/* New Batch Modal */}
+      <Modal
+        title="更正样本类型"
+        open={typeFixOpen}
+        onCancel={() => setTypeFixOpen(false)}
+        onOk={submitTypeFix}
+        confirmLoading={typeFixSaving}
+        okText="确认更正"
+        cancelText="取消"
+        width={460}
+        destroyOnClose>
+        <div style={{ marginBottom: 12 }}>
+          <Text type="secondary">样本：</Text>
+          <Text strong>{typeFixRow?.patient_name || "—"}</Text>
+          <Text type="secondary" style={{ marginLeft: 8 }}>
+            当前：{SAMPLE_TYPE_OPTIONS.find(o => o.value === typeFixRow?.experiment_sample_type)?.label || typeFixRow?.experiment_sample_type || "—"}
+          </Text>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <div style={{ marginBottom: 4 }}><Text type="danger">*</Text> 更正为</div>
+          <Select style={{ width: "100%" }} placeholder="选择实际样本类型" value={typeFixNew}
+            onChange={(v) => setTypeFixNew(v)}
+            options={SAMPLE_TYPE_OPTIONS.filter(o => o.value !== typeFixRow?.experiment_sample_type)} />
+        </div>
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ marginBottom: 4 }}><Text type="danger">*</Text> 更正原因（至少 5 个字，会写入审计日志）</div>
+          <Input.TextArea rows={3} value={typeFixReason} onChange={(e) => setTypeFixReason(e.target.value)}
+            placeholder="例如：签收时未发现，前处理拆包发现实为口拭" maxLength={200} showCount />
+        </div>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          更正后将同步：前处理分类（血液/其他）、血浆管数、样本的实收类型，并写审计日志与操作流水。
+          已进入提取的样本不允许更正。
+        </Text>
+      </Modal>
+
       <Modal title="新建前处理批次" open={modalOpen} onOk={createBatch}
         onCancel={() => setModalOpen(false)} width={700}
         okText={`创建批次 (${selectedKeys.size}个样本)`}>

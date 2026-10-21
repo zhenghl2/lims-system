@@ -2914,6 +2914,104 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
         return Response(NipptPreProcessingBatchDetailSerializer(batch).data)
 
     @action(detail=True, methods=["post"])
+    def correct_sample_type(self, request, pk=None):
+        """前处理阶段更正样本类型（签收未发现、前处理才发现时使用）。
+
+        规则（2026-10-21）：
+        - 仅男性样本；女性样本类型固定为血液，不开放更正
+        - 该样本已进入提取 → 禁止更正（避免与提取历史错位）
+        - 批次已完成也允许，但必须填写原因
+        - 联动：重算 category（BLOOD→MALE_BLOOD，否则 MALE_OTHER）、管数/血浆量；
+                同步 CaseSample.actual_sample_type（登记值 sample_source 保留）
+        - 留痕：审计日志（预处理样本 + CaseSample）+ WorkflowLog 操作流水
+        """
+        from django.db import transaction as _tx
+        from .models import NipptExtractionSample, WorkflowLog
+
+        batch = self.get_object()
+        sample_id = (request.data.get("sample_id") or "").strip()
+        new_type = (request.data.get("new_type") or "").strip().upper()
+        reason = (request.data.get("reason") or "").strip()
+        if not sample_id or not new_type:
+            raise ValidationError("缺少 sample_id 或 new_type")
+        if len(reason) < 5:
+            raise ValidationError("请填写更正原因（至少 5 个字），便于追溯")
+
+        sp = batch.samples.filter(id=sample_id).first()
+        if not sp:
+            raise ValidationError("该样本不属于本批次")
+        if sp.category == "FEMALE_BLOOD" or sp.role == "MOTHER":
+            raise ValidationError("女性样本类型固定为血液，不支持在前处理更正")
+
+        VALID = {"BLOOD", "DBS", "SWAB", "HAIR", "NAIL", "SEMEN", "TOOTHBRUSH",
+                 "CIGARETTE", "BOTTLE", "BEARD", "FLOSS", "SEMSTAIN", "GUM"}
+        if new_type not in VALID:
+            raise ValidationError(f"不支持的样本类型：{new_type}")
+
+        old_type = (sp.experiment_sample_type or "").strip()
+        if new_type == old_type:
+            raise ValidationError("新类型与当前类型相同，无需更正")
+
+        cs_ids = [str(x) for x in (sp.case_sample_ids or [])]
+        if cs_ids and NipptExtractionSample.objects.filter(case_sample_ids__overlap=cs_ids).exists():
+            raise ValidationError("该样本已进入提取，不能在前处理更正类型；请先处理对应提取批次")
+
+        new_cat = "MALE_BLOOD" if new_type == "BLOOD" else "MALE_OTHER"
+        new_tubes = 2 if new_type == "BLOOD" else 0
+        new_plasma = 30.0 if new_type == "BLOOD" else None
+        old_snapshot = {
+            "experiment_sample_type": old_type,
+            "category": sp.category,
+            "aliquot_tubes": sp.aliquot_tubes,
+            "plasma_volume": sp.plasma_volume,
+        }
+        cs_before = {str(cs.id): (cs.actual_sample_type or "")
+                     for cs in CaseSample.objects.filter(id__in=cs_ids)}
+
+        with _tx.atomic():
+            sp.experiment_sample_type = new_type
+            sp.category = new_cat
+            sp.aliquot_tubes = new_tubes
+            sp.plasma_volume = new_plasma
+            sp.remaining_override = None      # 类型变更后剩余口径交回默认计算
+            sp.operator = request.user
+            sp.save(update_fields=["experiment_sample_type", "category", "aliquot_tubes",
+                                   "plasma_volume", "remaining_override", "operator"])
+            if cs_ids:
+                CaseSample.objects.filter(id__in=cs_ids).update(actual_sample_type=new_type)
+
+            log_audit(request, "UPDATE", sp, changes={
+                "experiment_sample_type": {"old": old_snapshot["experiment_sample_type"], "new": new_type},
+                "category": {"old": old_snapshot["category"], "new": new_cat},
+                "aliquot_tubes": {"old": old_snapshot["aliquot_tubes"], "new": new_tubes},
+                "plasma_volume": {"old": old_snapshot["plasma_volume"], "new": new_plasma},
+                "reason": reason,
+                "batch_number": batch.batch_number,
+                "stage": "PRE_PROCESSING",
+            })
+            for cs in CaseSample.objects.filter(id__in=cs_ids):
+                log_audit(request, "UPDATE", cs, changes={
+                    "actual_sample_type": {"old": cs_before.get(str(cs.id), ""), "new": new_type},
+                    "reason": reason,
+                    "note": "前处理阶段更正样本类型（登记值保留）",
+                    "batch_number": batch.batch_number,
+                })
+                WorkflowLog.objects.create(
+                    case_sample=cs, stage="PRE_PROCESSING", action="TYPE_CHANGED",
+                    batch_number=batch.batch_number, batch_sample_id=str(sp.id),
+                    operator=request.user,
+                    note=f"样本类型更正：{old_type or '—'} → {new_type}（{reason}）",
+                )
+
+        return Response({
+            "message": "已更正样本类型",
+            "sample_id": str(sp.id),
+            "old": old_snapshot,
+            "new": {"experiment_sample_type": new_type, "category": new_cat,
+                    "aliquot_tubes": new_tubes, "plasma_volume": new_plasma},
+        })
+
+    @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         """Mark batch as complete. PASS samples advance to lab workflow."""
         from django.db import transaction
