@@ -501,7 +501,7 @@ export default function NipptReports() {
   };
 
   const batchColumns = [
-    { title: "批次号", dataIndex: "batch_number", key: "bn", width: 150,
+    { title: "批次号", dataIndex: "batch_number", key: "bn", width: 138,
       render: (v: string, r: any) => (
         <div style={{ lineHeight: 1.35 }}>
           <Text code style={{ fontSize: 12 }}>{v}</Text>
@@ -510,6 +510,10 @@ export default function NipptReports() {
           </div>
         </div>
       ) },
+    { title: "Chip", dataIndex: "hybseq_chip", key: "chip", width: 62, align: "center" as const,
+      render: (v: string) => v
+        ? <Tooltip title={`测序 Chip ${v}`}><Tag color="blue" style={{ margin: 0, fontSize: 11 }}>{v}</Tag></Tooltip>
+        : <Text type="secondary" style={{ fontSize: 12 }}>—</Text> },
     { title: "状态", dataIndex: "report_status", key: "rs", width: 76, render: (v: string) => reportTag(v) },
     { title: "进度", key: "rp", width: 62, align: "center" as const,
       render: (_: any, r: any) => <Text style={{ fontSize: 12 }}>{r.report_uploaded_count ?? 0}/{r.reportable_pair_count ?? 0}</Text> },
@@ -799,7 +803,7 @@ ${histLine(h)}`}>
             icon={sidebarCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={() => setSidebarCollapsed(!sidebarCollapsed)} />}
           style={{
-            width: sidebarCollapsed ? 48 : 400, flexShrink: 0,
+            width: sidebarCollapsed ? 48 : 470, flexShrink: 0,
             transition: "width 0.25s", overflow: "hidden",
           }}
           bodyStyle={{ padding: 0, maxHeight: "calc(100vh - 230px)", overflowY: "auto" }}>
