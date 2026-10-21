@@ -1671,6 +1671,24 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
             extract_any(ld.get("xiamen_plates") or ld.get("xiamen_plate"))
             extract_any(ld.get("female_plates") or ld.get("female_plate"))
             extract_any(ld.get("male_plates") or ld.get("male_plate"))
+            # ── 合并行的孔位别名（2026-10-21）──
+            # 同一建库行可能携带多个 case_sample（如母亲主样本 + 补送样本，PT 号不同）。
+            # 孔位是按当时显示的 PT 号登记的，若 Pooling 行显示的是另一个 PT，索引会查不到。
+            # 这里把「该行任一 PT 的孔位」也挂到显示用的 PT 上，避免出现空 Index / × 提示。
+            try:
+                for _sp in obj.samples.all():
+                    if not _sp.case_sample_ids or not _sp.source_library_sample_id:
+                        continue
+                    _css = list(CaseSample.objects.filter(id__in=_sp.case_sample_ids))
+                    _pts = [c.test_sample_id for c in _css if c.test_sample_id]
+                    if not _pts:
+                        continue
+                    _hit = next((index_map[p] for p in _pts if index_map.get(p)), "")
+                    if _hit:
+                        for p in _pts:
+                            index_map.setdefault(p, _hit)
+            except Exception:
+                pass
         return index_map
 
     def get_library_plate(self, obj):
@@ -1690,6 +1708,15 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
 
     def get_receipt_location(self, obj):
         return batch_receipt_location(obj)
+
+
+def _is_sup_case_sample(case_sample_id):
+    """补送样本（samples.sample_id 含 -SUP-）→ True；用于让主样本排在 case_sample_ids 前面。"""
+    try:
+        cs = CaseSample.objects.select_related("sample").filter(id=case_sample_id).first()
+        return bool(cs and "-SUP-" in (cs.sample.sample_id or ""))
+    except Exception:
+        return False
 
 
 class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
@@ -1713,15 +1740,24 @@ class NipptPoolingBatchCreateSerializer(serializers.ModelSerializer):
                 if ls.case_sample_ids:
                     for cid in ls.case_sample_ids: ls_map[cid] = ls
             groups = {}
+            _cat_of = {}
             for cs in css:
                 if cs.role == "MOTHER": cat = "FEMALE_BLOOD"
                 elif cs.effective_sample_type == "BLOOD": cat = "MALE_BLOOD"
                 else: cat = "MALE_OTHER"
-                # 分组键带上 PT 号：重做样本(_T1)必须与原始样本拆成两行，否则会被合并成一行
-                key = (str(cs.case_id), cs.sample.patient_name, cat, cs.test_sample_id or "")
+                # 2026-10-21：按「来源建库行」分组 —— 建库阶段把同一人同类别的多个样本合并成一行时，
+                # Pooling 必须也是 1 行（否则同一份建库产物被拆成多行、重复 Pooling）。
+                # 仅在没有建库行时回退按 (case, 姓名, 类别, PT) 分组。
+                _ls = ls_map.get(str(cs.id))
+                key = ("LS", str(_ls.id)) if _ls else ("CS", str(cs.case_id), cs.sample.patient_name, cat, cs.test_sample_id or "")
+                _cat_of[key] = (cs.case, cs.sample.patient_name, cat, cs.role)
                 if key not in groups: groups[key] = {"case":cs.case,"ids":[],"role":cs.role}
                 groups[key]["ids"].append(str(cs.id))
-            for (_,name,cat,_pt), gdata in groups.items():
+            # 主样本排前（-SUP- 补送样本排后）：详情/索引按 case_sample_ids[0] 取 PT 号
+            for g in groups.values():
+                g["ids"].sort(key=lambda cid: (1 if _is_sup_case_sample(cid) else 0, cid))
+            for key, gdata in groups.items():
+                _c, name, cat, _r = _cat_of[key]
                 ls = None
                 for cid in gdata["ids"]:
                     if cid in ls_map: ls = ls_map[cid]; break
