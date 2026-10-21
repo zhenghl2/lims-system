@@ -396,6 +396,28 @@ export default function NiptPlasmaSeparation() {
                 </Upload>
               }
             >
+              {/* 2026-10-21：照片区域支持从访达 / 微信直接拖入（Card 不透传 DOM 事件，所以包一层 div） */}
+              <div
+                onDragOver={(e: any) => {
+                  if (batchDetail.status === "COMPLETED") return;
+                  if (Array.from(e.dataTransfer?.types || []).includes("Files")) {
+                    e.preventDefault();
+                    e.currentTarget.style.outline = "2px dashed #1677ff";
+                    e.currentTarget.style.outlineOffset = "-2px";
+                  }
+                }}
+                onDragLeave={(e: any) => { e.currentTarget.style.outline = ""; }}
+                onDrop={(e: any) => {
+                  e.currentTarget.style.outline = "";
+                  if (batchDetail.status === "COMPLETED") return;
+                  const files = Array.from(e.dataTransfer?.files || []) as File[];
+                  const imgs = files.filter((f: File) => (f.type || "").startsWith("image/"));
+                  if (!imgs.length) return;
+                  e.preventDefault(); e.stopPropagation();
+                  imgs.forEach((f: File) => handlePhotoUpload(f));
+                }}
+                style={{ minHeight: 90, borderRadius: 4, padding: 2 }}
+              >
               {batchDetail.photos?.length > 0 ? (
                 <Image.PreviewGroup>
                   <Space wrap>
@@ -413,6 +435,7 @@ export default function NiptPlasmaSeparation() {
               ) : (
                 <Text type="secondary">{t("nipt.plasmaSeparation.noPhotos")}</Text>
               )}
+              </div>
             </Card>
 
             {/* Samples with QC */}

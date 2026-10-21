@@ -5,7 +5,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Table, Button, Tag, Input, Select, Space, Typography, message,
-  Modal, Tabs, Row, Col, Image, Tooltip, Segmented,
+  Modal, Tabs, Row, Col, Image, Tooltip, Segmented, Alert,
 } from "antd";
 import {
   CheckOutlined, CloseOutlined, CameraOutlined, PlusOutlined,
@@ -15,6 +15,15 @@ import { casesApi } from "../api";
 import dayjs from "dayjs";
 
 const { Text } = Typography;
+
+// PT 警告关闭状态（按案例记住：「已核对，不再提示这些案例」；新出现的案例仍会提醒）
+const PT_WARN_DISMISS_KEY = "nippt_pt_warn_dismissed_v1";
+const loadPtWarnDismissed = (): string[] => {
+  try { return JSON.parse(localStorage.getItem(PT_WARN_DISMISS_KEY) || "[]"); } catch { return []; }
+};
+const savePtWarnDismissed = (ids: string[]) => {
+  try { localStorage.setItem(PT_WARN_DISMISS_KEY, JSON.stringify(ids)); } catch { /* ignore */ }
+};
 
 const SAMPLE_TYPE_OPTIONS = [
   { value: "BLOOD",      label: "血液" },
@@ -90,6 +99,7 @@ interface CaseSampleRow {
   status: string;
   image: string | null;
   ptBase: string;
+  ptBaseOriginal: string;   // 载入时的原始值：用于「只校验本次改动」
   received: boolean;
   receivedAt: string;
   receivedByName: string;
@@ -152,7 +162,8 @@ export default function SampleReceiving() {
   const [tabCounts, setTabCounts] = useState({ pending: 0, received: 0, rejected: 0 });
   const [search, setSearch] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
-  const [latestPt, setLatestPt] = useState<{ pt: string; next: number | null } | null>(null);
+  const [latestPt, setLatestPt] = useState<{ pt: string; next: number | null; existing: number[] } | null>(null);
+  const [ptWarnDismissed, setPtWarnDismissed] = useState<string[]>(() => loadPtWarnDismissed());
   const [regTypeFilter, setRegTypeFilter] = useState("");
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
 
@@ -233,6 +244,7 @@ export default function SampleReceiving() {
           workflowStage: cs.workflow_stage || "",
           image: cs.receipt_photo_url || null,
           ptBase: c.pt_number ? c.pt_number.replace(/^PT/i, "") : "",
+          ptBaseOriginal: c.pt_number ? c.pt_number.replace(/^PT/i, "") : "",
           received: cs.received_at != null,
           receivedAt: cs.received_at || "",
           receivedByName: cs.received_by_name || "",
@@ -260,7 +272,11 @@ export default function SampleReceiving() {
       const cases = _r.data?.results || [];
       // 最新 PT 编号（手编参考，独立轻接口）
       (casesApi as any).latestPt().then((lr: any) => {
-        setLatestPt({ pt: lr.data?.latest_pt || "", next: lr.data?.next_number ?? null });
+        setLatestPt({
+          pt: lr.data?.latest_pt || "",
+          next: lr.data?.next_number ?? null,
+          existing: Array.isArray(lr.data?.existing) ? lr.data.existing : [],
+        });
       }).catch(() => {});
       let filtered = cases;
       if (sourceFilter) {
@@ -413,6 +429,25 @@ export default function SampleReceiving() {
     if (selectedRowKeys.length === 0) { setBatchPerson(undefined); setBatchLocation(undefined); }
   }, [selectedRowKeys]);
 
+  // --- PT 编号校验（2026-10-15 口径：只提醒不拦）---
+  // 手输 PT 易漏前导 7（PT2260 应为 PT72260；正常是 PT + 5 位且以 7 开头）。
+  // 三条规则与页面「最新 PT」提示同口径：位数不一致 / 比最新小 / 该号已存在。
+  const checkPtBase = (raw: string, original?: string): string | null => {
+    const v = (raw || "").replace(/\D/g, "");
+    if (!v) return null;                                // 空值交给「请先填写 PT 编号」
+    const orig = (original || "").replace(/\D/g, "");
+    if (orig && v === orig) return null;                // 本次没改动（存量已填的号）→ 不校验：存量不管
+    const latestDigits = (latestPt?.pt || "").replace(/^PT/i, "").replace(/\D/g, "");
+    if (!latestDigits) return null;                     // 取不到最新号时不校验，避免误报
+    if (v.length !== latestDigits.length)
+      return `位数不对：最新是 ${latestDigits.length} 位（${latestDigits}），你填了 ${v.length} 位`;
+    // 查重必须排除本案例自己原来的号，否则「自己的号」会被判成重复
+    if ((latestPt?.existing || []).includes(Number(v)) && Number(v) !== Number(orig))
+      return `PT${v} 已存在（重复）`;
+    if (Number(v) < Number(latestDigits)) return `比最新 PT${latestDigits} 小`;
+    return null;
+  };
+
   // --- 签收前置校验：PT 编号 + 图片（Case 级） ---
   const validateBeforeReceipt = (row: CaseSampleRow): string | null => {
     if (!receiptPersons[row.key]) return "请先选择签收人";
@@ -430,6 +465,10 @@ export default function SampleReceiving() {
       if (preErr) {
         message.error(preErr);
         return;
+      }
+      const ptWarn = checkPtBase(row.ptBase, row.ptBaseOriginal);
+      if (ptWarn) {
+        message.warning({ content: `PT 编号可能填错：${ptWarn}（若确认无误可继续）`, duration: 6 });
       }
       const payload: any = { sample_id: row.sampleUuid, condition };
       if (row.ptBase) payload.pt_number = "PT" + row.ptBase;
@@ -478,6 +517,16 @@ export default function SampleReceiving() {
       const more = problems.length > 3 ? `；…等共 ${problems.length} 个问题` : "";
       message.error({ content: `以下样本无法签收 —— ${shown}${more}`, duration: 6 });
       return;
+    }
+    const ptWarns: string[] = [];
+    for (const row of selected) {
+      const w = checkPtBase(row.ptBase, row.ptBaseOriginal);
+      if (w) ptWarns.push(`PT${row.ptBase}（${row.testSampleId || row.patientName || "?"}）：${w}`);
+    }
+    if (ptWarns.length) {
+      const shown = ptWarns.slice(0, 3).join("；");
+      const more = ptWarns.length > 3 ? `；…等共 ${ptWarns.length} 个` : "";
+      message.warning({ content: `以下 PT 编号可能填错（仍继续签收）：${shown}${more}`, duration: 8 });
     }
     // ── ② 执行签收：失败带具体原因 ──
     let okCount = 0;
@@ -541,6 +590,22 @@ export default function SampleReceiving() {
     let ptNum = parseInt(batchPtStart) || 1;
     const drafts: Record<string, string> = {};
 
+    // PT 校验（只提醒不拦）：起始位数 / 是否小于最新 / 生成号是否已存在
+    {
+      const startDigits = batchPtStart.replace(/\D/g, "");
+      const latestDigits = (latestPt?.pt || "").replace(/^PT/i, "").replace(/\D/g, "");
+      const warns: string[] = [];
+      if (latestDigits && startDigits.length !== latestDigits.length)
+        warns.push(`起始数位数不对：最新是 ${latestDigits.length} 位（${latestDigits}），你填了 ${startDigits.length} 位`);
+      if (latestDigits && Number(startDigits) < Number(latestDigits)) warns.push(`比最新 PT${latestDigits} 小`);
+      const gen: number[] = [];
+      for (let i = 0; i < caseGroups.size; i++) gen.push(Number(startDigits) + i);
+      const dup = gen.filter((n) => (latestPt?.existing || []).includes(n));
+      if (dup.length)
+        warns.push(`生成号已存在：${dup.slice(0, 5).map((n) => "PT" + String(n).padStart(Math.max(5, startDigits.length), "0")).join("、")}`);
+      if (warns.length) message.warning({ content: `请注意：${warns.join("；")}（仍已填入，可修改后再签收）`, duration: 8 });
+    }
+
     setData((prev) => {
       const updated = [...prev];
       for (const [caseId, rows] of caseGroups) {
@@ -576,6 +641,32 @@ export default function SampleReceiving() {
   const handlePhotoClick = (row: CaseSampleRow) => {
     pendingPhoto.current = { caseId: row.caseId, csId: row.csId };
     fileInputRef.current?.click();
+  };
+
+  // 2026-10-21：支持把图片直接拖到样本行上（访达 / 微信拖拽）
+  const uploadPhotoFor = async (row: CaseSampleRow, file: File) => {
+    if (!file || !(file.type || "").startsWith("image/")) return;
+    setUploadingPhoto(row.csId);
+    const prevPending = pendingPhoto.current;
+    pendingPhoto.current = { caseId: row.caseId, csId: row.csId };
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      formData.append("case_sample_id", row.csId);
+      const uploadRes = await (casesApi as any).uploadReceiptPhoto(row.caseId, formData);
+      message.success("照片已上传");
+      const photoUrl = uploadRes.data?.receipt_photo_url;
+      setData((prev) =>
+        prev.map((r) => (r.caseId === row.caseId
+          ? { ...r, image: r.csId === row.csId ? photoUrl || null : r.image, caseHasPhoto: true }
+          : r))
+      );
+    } catch {
+      message.error("上传失败");
+    } finally {
+      setUploadingPhoto(null);
+      pendingPhoto.current = prevPending;
+    }
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -726,17 +817,28 @@ export default function SampleReceiving() {
     },
     {
       title: "PT编号", dataIndex: "testSampleId", key: "pt", width: 180,
-      render: (v: string, r: CaseSampleRow) => (
-        <Input
-          size="small"
-          value={r.ptBase}
-          placeholder="输入数字"
-          onChange={(e) => handlePtChange(r.key, e.target.value.replace(/\D/g, ""))}
-          style={{ width: 135, fontFamily: "monospace" }}
-          addonBefore="PT"
-          addonAfter={<Text type="secondary" style={{ fontSize: 11 }}>{v ? v.replace("PT" + r.ptBase, "") : ""}</Text>}
-        />
-      ),
+      render: (v: string, r: CaseSampleRow) => {
+        const ptWarn = checkPtBase(r.ptBase, r.ptBaseOriginal);
+        return (
+          <div>
+            <Input
+              size="small"
+              value={r.ptBase}
+              placeholder="输入数字"
+              status={ptWarn ? "error" : undefined}
+              onChange={(e) => handlePtChange(r.key, e.target.value.replace(/\D/g, ""))}
+              style={{ width: 135, fontFamily: "monospace" }}
+              addonBefore="PT"
+              addonAfter={<Text type="secondary" style={{ fontSize: 11 }}>{v ? v.replace("PT" + r.ptBase, "") : ""}</Text>}
+            />
+            {ptWarn && (
+              <div title={ptWarn} style={{ color: "#cf1322", fontSize: 11, lineHeight: "14px", marginTop: 2, maxWidth: 176, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                ⚠ {ptWarn}
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: "证件号", dataIndex: "idCard", key: "idc", width: 130, ellipsis: true,
@@ -1016,6 +1118,34 @@ export default function SampleReceiving() {
         </div>
       )}
 
+      {/* PT 编号疑似填错汇总（只提醒不拦；按案例去重） */}
+      {(() => {
+        const badMap = new Map<string, CaseSampleRow>();
+        data.forEach((r) => {
+          if (ptWarnDismissed.includes(r.caseId)) return;      // 已关闭提示的案例不再计入
+          if (checkPtBase(r.ptBase, r.ptBaseOriginal)) badMap.set(r.caseId, r);
+        });
+        const bad = Array.from(badMap.values());
+        if (!bad.length) return null;
+        return (
+          <Alert
+            type="warning" showIcon closable style={{ marginBottom: 6 }}
+            onClose={() => {
+              const ids = Array.from(new Set([...ptWarnDismissed, ...bad.map((r) => r.caseId)]));
+              setPtWarnDismissed(ids); savePtWarnDismissed(ids);
+              message.info("已关闭这些案例的提示（新出现的仍会提醒）");
+            }}
+            message={`有 ${bad.length} 个案例的 PT 编号可能填错（仍可签收，请核对）`}
+            description={
+              <span style={{ fontSize: 12 }}>
+                {bad.slice(0, 6).map((r) => `PT${r.ptBase}（${r.testSampleId || r.patientName}）：${checkPtBase(r.ptBase, r.ptBaseOriginal)}`).join("；")}
+                {bad.length > 6 ? `；…等共 ${bad.length} 个` : ""}
+              </span>
+            }
+          />
+        );
+      })()}
+
       {/* Tabs */}
       <Tabs
         activeKey={activeTab}
@@ -1059,7 +1189,29 @@ export default function SampleReceiving() {
           const idx = data.indexOf(r);
           const nextRow = data[idx + 1];
           const isCaseBoundary = nextRow && r.caseId !== nextRow.caseId;
-          return isCaseBoundary ? { className: "case-boundary-row" } : {};
+          const base = isCaseBoundary ? { className: "case-boundary-row" } : {};
+          // 2026-10-21：整行作为照片拖拽目标 —— 拖到哪一行就传到那一行的样本
+          return {
+            ...base,
+            onDragOver: (e: any) => {
+              if (Array.from(e.dataTransfer?.types || []).includes("Files")) {
+                e.preventDefault();
+                e.currentTarget.style.outline = "2px dashed #1677ff";
+                e.currentTarget.style.outlineOffset = "-2px";
+              }
+            },
+            onDragLeave: (e: any) => {
+              e.currentTarget.style.outline = "";
+            },
+            onDrop: (e: any) => {
+              e.currentTarget.style.outline = "";
+              const f = e.dataTransfer?.files?.[0];
+              if (!f) return;
+              e.preventDefault();
+              e.stopPropagation();
+              uploadPhotoFor(r, f);
+            },
+          };
         }}
         rowSelection={activeTab === "pending" ? {
           selectedRowKeys,

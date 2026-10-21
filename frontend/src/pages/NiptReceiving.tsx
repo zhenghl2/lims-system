@@ -126,7 +126,42 @@ export default function NiptReceiving() {
     try {
       if (!vgIdInput.trim()) { message.warning("Please enter VG ID"); setReceiveLoading(false); return; }
       if (!receiverName) { message.warning(t("nipt.receiving.receiverRequired")); setReceiveLoading(false); return; }
-      await samplesApi.accept(receiveTarget.id, { receiver_name: receiverName, vg_id: vgIdInput.trim() });
+      try {
+        await samplesApi.accept(receiveTarget.id, { receiver_name: receiverName, vg_id: vgIdInput.trim() });
+      } catch (e: any) {
+        const d = e?.response?.data;
+        // 重号（2026-10-15）：HN 编号已存在 → 询问是否继续（继续则自动加 R1/R2 并标记重采）
+        if (e?.response?.status === 409 && d?.duplicate) {
+          const ex = d.existing || {};
+          const _tgt = receiveTarget, _rn = receiverName, _vg = vgIdInput.trim();
+          Modal.confirm({
+            title: "HN 编号重复",
+            width: 470,
+            content: (
+              <div style={{ fontSize: 13 }}>
+                <p><Text strong>{d.message || "HN 编号重复"}</Text></p>
+                <p style={{ marginBottom: 4 }}>
+                  已有样本：<Text code>{ex.sample_id || "-"}</Text> {ex.patient_name || ""}（HN {ex.vg_id || "-"}）
+                </p>
+                <p style={{ color: "#d46b08", marginBottom: 0 }}>
+                  继续将保存为 <Text code>{_vg}R1</Text>（已有则顺延 R2）并标记为「重采」样本。
+                </p>
+              </div>
+            ),
+            okText: "继续（存为 R1/R2）", cancelText: "取消",
+            onOk: async () => {
+              const res: any = await samplesApi.accept(_tgt.id, { receiver_name: _rn, vg_id: _vg, allow_duplicates: true });
+              const nv = res?.data?.vg_id;
+              message.success(`已签收（重采${nv ? "，编号 " + nv : ""}）`);
+              setReceiveModalOpen(false);
+              fetchData();
+              fetchTabCounts();
+            },
+          });
+          return;
+        }
+        throw e;
+      }
       message.success(`Sample ${receiveTarget.sample_id} received`);
       setReceiveModalOpen(false);
       fetchData();
@@ -174,17 +209,61 @@ export default function NiptReceiving() {
 
     setBatchLoading(true);
     let success = 0;
+    const dups: { item: any; d: any }[] = [];
+    const failed: string[] = [];
     for (const item of filled) {
       try {
         const payload: Record<string, unknown> = { vg_id: item.vg_id.trim() };
         if (item.receiver_name.trim()) payload.received_by_name = item.receiver_name.trim();
         await api.patch(`/samples/${item.id}/`, payload);
         success++;
-      } catch { /* skip */ }
+      } catch (e: any) {
+        const d = e?.response?.data;
+        if (e?.response?.status === 409 && d?.duplicate) dups.push({ item, d });
+        else failed.push(item.sample_id || item.id);
+      }
     }
     setBatchLoading(false);
     setBatchVgModal(false);
-    message.success(t("nipt.receiving.vgIdSaved").replace("{count}", String(success)));
+    if (failed.length) message.error(`${failed.length} 条保存失败：${failed.slice(0, 3).join("、")}${failed.length > 3 ? "…" : ""}`);
+    if (success) message.success(t("nipt.receiving.vgIdSaved").replace("{count}", String(success)));
+    // 重号（2026-10-15）：列出重复项，由操作者决定是否继续（继续则自动加 R1/R2 并标记重采）
+    if (dups.length) {
+      Modal.confirm({
+        title: `有 ${dups.length} 条 HN 编号重复`,
+        width: 540,
+        content: (
+          <div style={{ fontSize: 13 }}>
+            <p style={{ marginBottom: 6 }}>这些编号已存在，<Text strong>默认已跳过</Text>。要继续录入吗？</p>
+            <ul style={{ paddingLeft: 18, marginBottom: 6 }}>
+              {dups.slice(0, 8).map((x, i) => (
+                <li key={i}>
+                  <Text code>{x.item.vg_id}</Text>（{x.item.sample_id}）→ 已有 {x.d?.existing?.sample_id || "-"} {x.d?.existing?.patient_name || ""}
+                </li>
+              ))}
+            </ul>
+            {dups.length > 8 && <p>…等共 {dups.length} 条</p>}
+            <p style={{ color: "#d46b08", marginBottom: 0 }}>继续将自动加 <Text code>R1/R2</Text> 并标记为「重采」样本。</p>
+          </div>
+        ),
+        okText: "继续（加 R1/R2）", cancelText: "保持跳过",
+        onOk: async () => {
+          let ok = 0; const news: string[] = [];
+          for (const x of dups) {
+            try {
+              const payload: Record<string, unknown> = { vg_id: x.item.vg_id.trim(), allow_duplicates: true };
+              if (x.item.receiver_name.trim()) payload.received_by_name = x.item.receiver_name.trim();
+              const rr: any = await api.patch(`/samples/${x.item.id}/`, payload);
+              ok++;
+              if (rr?.data?.vg_id) news.push(rr.data.vg_id);
+            } catch { /* skip */ }
+          }
+          message.success(`已录入 ${ok} 条重采${news.length ? "：" + news.slice(0, 5).join("、") : ""}`);
+          fetchData();
+          fetchTabCounts();
+        },
+      });
+    }
     setSelectedRowKeys([]);
     fetchData();
     fetchTabCounts();
@@ -216,6 +295,16 @@ export default function NiptReceiving() {
       if (err?.errorFields) return;
       message.error("Reject failed");
     }
+  };
+
+  // 2026-10-21：支持把图片直接拖到样本行上
+  const uploadPhotoFor = async (sample: any, file: File) => {
+    if (!file || !(file.type || "").startsWith("image/")) return;
+    try {
+      await samplesApi.uploadImage(sample.id, file);
+      message.success("Photo uploaded");
+      fetchData();
+    } catch { message.error("Upload failed"); }
   };
 
   const handlePhotoUpload = (sample: any) => {
@@ -332,6 +421,24 @@ export default function NiptReceiving() {
         pagination={{ pageSize: 50, showSizeChanger: true, showTotal: t => `Total ${t}` }}
         scroll={{ x: 1200 }}
         size="middle"
+        // 2026-10-21：整行作为照片拖拽目标 —— 拖到哪一行就传到那一行的样本
+        onRow={(r: any) => ({
+          onDragOver: (e: any) => {
+            if (Array.from(e.dataTransfer?.types || []).includes("Files")) {
+              e.preventDefault();
+              e.currentTarget.style.outline = "2px dashed #1677ff";
+              e.currentTarget.style.outlineOffset = "-2px";
+            }
+          },
+          onDragLeave: (e: any) => { e.currentTarget.style.outline = ""; },
+          onDrop: (e: any) => {
+            e.currentTarget.style.outline = "";
+            const f = e.dataTransfer?.files?.[0];
+            if (!f) return;
+            e.preventDefault(); e.stopPropagation();
+            uploadPhotoFor(r, f);
+          },
+        })}
       />
 
       <input type="file" ref={fileInputRef} accept="image/*" capture="environment" style={{ display: "none" }} />
