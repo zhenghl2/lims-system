@@ -6,6 +6,7 @@ import NiptSignerModal from "./NiptSignerModal";
 import { getSampleBadge, calcPoolingAmount } from "../utils/badge";
 import { getSignStatus } from "../utils/sign";
 import { useTranslation } from "../i18n/useTranslation";
+import { registerTabSaver } from "../utils/niptTabSave";
 
 const { Text } = Typography;
 
@@ -232,7 +233,15 @@ export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: 
     } finally {
       setSaving(false);
     }
-  };
+  }
+  // 2026-10-21：把本页保存注册给「完成本步」（避免未保存的填写在完成时丢失）
+  const saveFnRef = useRef(save);
+  saveFnRef.current = save;
+  useEffect(() => {
+    registerTabSaver(async () => { await saveFnRef.current(); return saveOkRef.current; });
+    return () => registerTabSaver(null);
+  }, []);
+;
 
   // 2026-10-21：签名前先保存 —— 否则签完 onRefresh 会把未保存的填写全部冲掉
   const openSign = async (role: "op" | "rv") => {

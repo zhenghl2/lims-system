@@ -8,6 +8,7 @@ import {
   niptExtractionApi, niptLibraryApi, niptPoolingApi, niptSequencingApi, niptBioinformaticsApi,
 } from "../api";
 import { NIPT_STEP_META } from "./NiptStepBatches";
+import { runTabSave } from "../utils/niptTabSave";
 
 import NiptExtractionTab from "./NiptExtractionTab";
 import NiptLibraryTab from "./NiptLibraryTab";
@@ -67,6 +68,9 @@ export default function NiptStepDetail() {
     if (!api) return;
     setBusy(true);
     try {
+      // 2026-10-21：先保存当前页签的填写，再提交完成（否则未保存的记录会丢）
+      const ok = await runTabSave();
+      if (!ok) { message.warning("请先补全必填项并保存成功，再完成本步"); return; }
       await api.complete(batchId);
       message.success("本步已完成");
       fetchDetail();

@@ -7,6 +7,7 @@ import NiptSignerModal from "./NiptSignerModal";
 import { getSignStatus } from "../utils/sign";
 import { useTranslation } from "../i18n/useTranslation";
 import { ROW_LABELS, COL_COUNT, REGIONS, STEPS, getVgId } from "../utils/constants";
+import { registerTabSaver } from "../utils/niptTabSave";
 
 // ── Library prep methods ──
 // REGIONS imported from ../utils/constants
@@ -530,7 +531,34 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       if (e?.errorFields) { message.warning(t("nipt.extraction.fillRequired")); return; }
       message.error(e?.response?.data?.error || t("nipt.common.saveFailed"));
     } finally { setSaving(false); }
-  };
+  }
+  // 2026-10-21：把本页保存注册给「完成本步」（避免未保存的填写在完成时丢失）
+  const saveFnRef = useRef(save);
+  saveFnRef.current = save;
+  useEffect(() => {
+    registerTabSaver(async () => { await saveFnRef.current(); return saveOkRef.current; });
+    return () => registerTabSaver(null);
+  }, []);
+
+  // 2026-10-21：Index / 排板改动自动保存（防抖 800ms）—— 原来只存在内存，换台电脑看不到
+  const autoSaveTimer = useRef<any>(null);
+  const lastPlateJson = useRef<string>("");
+  useEffect(() => {
+    const plateData = plate.map(r => r.map(c => ({ index: c.index, vgId: c.vgId })));
+    const json = JSON.stringify(plateData);
+    if (json === lastPlateJson.current) return;
+    if (!lastPlateJson.current) { lastPlateJson.current = json; return; }   // 首次加载不触发
+    if (batch.status === "COMPLETED") return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(async () => {
+      try {
+        await api.post(`${apiBase}/${batch.id}/save_library/`, { library_data: { library_plate: plateData } });
+        lastPlateJson.current = json;
+      } catch { /* 静默失败：仍可手动保存 */ }
+    }, 800);
+    return () => { if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current); };
+  }, [plate]);
+;
 
   // 2026-10-21：签名前先保存 —— 否则签完 onRefresh 会把未保存的填写全部冲掉
   const openSign = async (role: "op" | "rv") => {
