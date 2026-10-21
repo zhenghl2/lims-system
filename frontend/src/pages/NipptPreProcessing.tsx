@@ -283,6 +283,7 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
   const [typeFixOpen, setTypeFixOpen] = useState(false);
   const [typeFixRow, setTypeFixRow] = useState<PreSample | null>(null);
   const [typeFixNew, setTypeFixNew] = useState<string | undefined>(undefined);
+  const [typeFixOld, setTypeFixOld] = useState<string | undefined>(undefined);   // 被更正的「收到类型」
   const [typeFixReason, setTypeFixReason] = useState("");
   const [typeFixSaving, setTypeFixSaving] = useState(false);
 
@@ -290,6 +291,10 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     setTypeFixRow(row);
     setTypeFixNew(undefined);
     setTypeFixReason("");
+    // 被更正的收到类型：优先用当前实验类型；单类型行直接锁定；多类型行让用户选
+    const rec = (row.received_sample_types || []).filter(Boolean);
+    const cur = (row.experiment_sample_type || "").trim();
+    setTypeFixOld(cur && rec.includes(cur) ? cur : (rec.length === 1 ? rec[0] : undefined));
     setTypeFixOpen(true);
   };
 
@@ -297,11 +302,14 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
     if (!selectedBatch || !typeFixRow) return;
     if (!typeFixNew) { message.warning("请选择更正后的样本类型"); return; }
     if ((typeFixReason || "").trim().length < 5) { message.warning("请填写更正原因（至少 5 个字）"); return; }
+    const _rec = (typeFixRow.received_sample_types || []).filter(Boolean);
+    if (_rec.length > 1 && !typeFixOld) { message.warning("请选择被更正的收到样本类型（决定剩余样本如何扣减）"); return; }
     setTypeFixSaving(true);
     try {
       await apiClient.post(`/cases/preprocessing/${selectedBatch.id}/correct-sample-type/`, {
         sample_id: typeFixRow.id,
         new_type: typeFixNew,
+        old_type: typeFixOld || undefined,
         reason: typeFixReason.trim(),
       });
       message.success("已更正样本类型，并记录审计日志");
@@ -1055,6 +1063,16 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
             当前：{SAMPLE_TYPE_OPTIONS.find(o => o.value === typeFixRow?.experiment_sample_type)?.label || typeFixRow?.experiment_sample_type || "—"}
           </Text>
         </div>
+        {((typeFixRow?.received_sample_types || []).filter(Boolean).length > 1) && (
+          <div style={{ marginBottom: 12 }}>
+            <div style={{ marginBottom: 4 }}><Text type="danger">*</Text> 被更正的收到样本类型（剩余将扣减这一种）</div>
+            <Select style={{ width: "100%" }} placeholder="选择被替换的类型" value={typeFixOld}
+              onChange={(v) => setTypeFixOld(v)}
+              options={(typeFixRow?.received_sample_types || []).filter(Boolean).map((t: string) => ({
+                value: t, label: SAMPLE_TYPE_OPTIONS.find(o => o.value === t)?.label || t,
+              }))} />
+          </div>
+        )}
         <div style={{ marginBottom: 12 }}>
           <div style={{ marginBottom: 4 }}><Text type="danger">*</Text> 更正为</div>
           <Select style={{ width: "100%" }} placeholder="选择实际样本类型" value={typeFixNew}

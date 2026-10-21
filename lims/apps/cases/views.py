@@ -2931,6 +2931,7 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
         batch = self.get_object()
         sample_id = (request.data.get("sample_id") or "").strip()
         new_type = (request.data.get("new_type") or "").strip().upper()
+        old_type_in = (request.data.get("old_type") or "").strip().upper()
         reason = (request.data.get("reason") or "").strip()
         if not sample_id or not new_type:
             raise ValidationError("缺少 sample_id 或 new_type")
@@ -2956,6 +2957,22 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
         if cs_ids and NipptExtractionSample.objects.filter(case_sample_ids__overlap=cs_ids).exists():
             raise ValidationError("该样本已进入提取，不能在前处理更正类型；请先处理对应提取批次")
 
+        # 被替换的「收到类型」：多类型行由前端指定；单类型行默认就是那一种
+        _received = [t for t in (sp.received_sample_types or []) if t]
+        replaced = old_type_in or (old_type if old_type in _received else "")
+        if not replaced and len(_received) == 1:
+            replaced = _received[0]
+        if old_type_in and _received and old_type_in not in _received:
+            raise ValidationError(f"被更正的样本类型 {old_type_in} 不在该样本的收到类型中")
+
+        # 剩余样本 = 收到类型 − 被更正的那一种（不再按「实验类型」硬减，避免精斑不在收到列表时剩余不减）
+        _remaining = []
+        for t in _received:
+            if t == replaced:
+                continue
+            if t not in _remaining:
+                _remaining.append(t)
+
         new_cat = "MALE_BLOOD" if new_type == "BLOOD" else "MALE_OTHER"
         new_tubes = 2 if new_type == "BLOOD" else 0
         new_plasma = 30.0 if new_type == "BLOOD" else None
@@ -2973,15 +2990,22 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
             sp.category = new_cat
             sp.aliquot_tubes = new_tubes
             sp.plasma_volume = new_plasma
-            sp.remaining_override = None      # 类型变更后剩余口径交回默认计算
+            # 剩余口径显式落库：收到类型里去掉被更正的那一种
+            sp.remaining_override = _remaining
             sp.operator = request.user
             sp.save(update_fields=["experiment_sample_type", "category", "aliquot_tubes",
                                    "plasma_volume", "remaining_override", "operator"])
-            # 2026-10-21 修正：只在该前处理行只对应「一个」样本时才同步实收类型。
-            # 一个前处理行可能聚合同一人的多管/多种类型（如 血液+精液+牙刷+口拭子），
-            # 原来一次性把所有实收类型都改成新类型，等于抹掉签收记录的其它类型。
-            if len(cs_ids) == 1:
-                CaseSample.objects.filter(id__in=cs_ids).update(actual_sample_type=new_type)
+            # 2026-10-21：只把「被更正的那一种」实收类型改掉，其余类型保留。
+            # 一条前处理行可能聚合同一人多管/多种类型；按 effective_sample_type == replaced 精确定位。
+            _target_cs = []
+            for _cs in CaseSample.objects.filter(id__in=cs_ids):
+                if replaced and (_cs.effective_sample_type or "").upper() == replaced:
+                    _target_cs.append(_cs)
+                elif not replaced and len(cs_ids) == 1:
+                    _target_cs.append(_cs)
+            for _cs in _target_cs:
+                _cs.actual_sample_type = new_type
+                _cs.save(update_fields=["actual_sample_type"])
 
             log_audit(request, "UPDATE", sp, changes={
                 "experiment_sample_type": {"old": old_snapshot["experiment_sample_type"], "new": new_type},
@@ -2993,13 +3017,13 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
                 "stage": "PRE_PROCESSING",
             })
             for cs in CaseSample.objects.filter(id__in=cs_ids):
-                _synced = len(cs_ids) == 1
+                _hit = cs in _target_cs
                 log_audit(request, "UPDATE", cs, changes={
                     "actual_sample_type": {"old": cs_before.get(str(cs.id), ""),
-                                           "new": new_type if _synced else cs_before.get(str(cs.id), "")},
+                                           "new": new_type if _hit else cs_before.get(str(cs.id), "")},
                     "reason": reason,
-                    "note": ("前处理阶段更正样本类型（登记值保留）" if _synced
-                             else "前处理阶段更正实验样本类型；该行含多种实收类型，实收类型保持不变"),
+                    "note": (f"前处理阶段更正样本类型：{replaced or '—'} → {new_type}" if _hit
+                             else "该行含多种实收类型，本类型未更正，保持原值"),
                     "batch_number": batch.batch_number,
                 })
                 WorkflowLog.objects.create(
@@ -3014,7 +3038,8 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
             "sample_id": str(sp.id),
             "old": old_snapshot,
             "new": {"experiment_sample_type": new_type, "category": new_cat,
-                    "aliquot_tubes": new_tubes, "plasma_volume": new_plasma},
+                    "aliquot_tubes": new_tubes, "plasma_volume": new_plasma,
+                    "replaced": replaced, "remaining_sample_types": _remaining},
         })
 
     @action(detail=True, methods=["post"])
