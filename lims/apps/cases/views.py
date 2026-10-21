@@ -2913,7 +2913,7 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
 
         return Response(NipptPreProcessingBatchDetailSerializer(batch).data)
 
-    @action(detail=True, methods=["post"])
+    @action(detail=True, methods=["post"], url_path="correct-sample-type")
     def correct_sample_type(self, request, pk=None):
         """前处理阶段更正样本类型（签收未发现、前处理才发现时使用）。
 
