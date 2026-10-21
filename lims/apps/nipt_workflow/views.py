@@ -179,15 +179,67 @@ class _StepBatchViewSet(viewsets.GenericViewSet,
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     # ── 完成 / 撤销完成 ──
+    def _sync_wells_from_plate_layout(self, batch):
+        """把磁棒法孔板布局（extraction_data.plate_layout）回写到样本孔位。
+
+        2026-10-21：新提取页的排板结果只存 JSON（{"0": {"A7": "HN10176", ...}}），
+        从不写 NiptExtractionSample.well_position，导致完成校验永远报「未排板」。
+        这里按 vg_id / barcode 匹配回写，返回更新条数。
+        """
+        data = getattr(batch, "extraction_data", None) or {}
+        layout = data.get("plate_layout") or {}
+        if not isinstance(layout, dict) or not layout:
+            return 0
+        wanted = {}
+        for pidx, wells in layout.items():
+            if not isinstance(wells, dict):
+                continue
+            try:
+                plate_no = int(pidx) + 1
+            except (TypeError, ValueError):
+                plate_no = 1
+            for well, code in wells.items():
+                code = str(code or "").strip()
+                if not well or not code:
+                    continue
+                wanted[code] = (str(well).strip().upper(), plate_no)
+        if not wanted:
+            return 0
+        updated = 0
+        for sp in batch.samples.select_related("sample"):
+            keys = [(getattr(sp.sample, "vg_id", "") or "").strip(), (sp.barcode or "").strip()]
+            hit = next((wanted[k] for k in keys if k and k in wanted), None)
+            if not hit:
+                continue
+            well, plate_no = hit
+            if sp.well_position != well or sp.plate_number != plate_no:
+                sp.well_position = well
+                sp.plate_number = plate_no
+                sp.save(update_fields=["well_position", "plate_number"])
+                updated += 1
+        return updated
+
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         batch = self.get_object()
         if batch.status == "COMPLETED":
             return Response(self.detail_serializer_class(batch).data)
-        empty = batch.samples.filter(well_position="").count()
-        if empty:
-            return Response({"error": "还有 %d 个样本未排板（无孔位），不能完成" % empty},
-                            status=status.HTTP_400_BAD_REQUEST)
+
+        # 提取：先把孔板布局回写成样本孔位（新流程不再手填 well_position）
+        has_layout = False
+        if hasattr(batch, "extraction_data"):
+            layout = ((batch.extraction_data or {}).get("plate_layout") or {})
+            has_layout = isinstance(layout, dict) and bool(layout)
+            if has_layout:
+                self._sync_wells_from_plate_layout(batch)
+
+        # 只有提取步骤需要排板；文库/Pooling/测序/生信不再受孔位限制
+        if getattr(self, "COMPLETE_STATUS", "") == "EXTRACTION":
+            empty = batch.samples.filter(well_position="").count()
+            if empty and has_layout:
+                return Response(
+                    {"error": "还有 %d 个样本未在孔板布局中（无孔位），不能完成" % empty},
+                    status=status.HTTP_400_BAD_REQUEST)
         with transaction.atomic():
             batch.status = "COMPLETED"
             batch.save(update_fields=["status", "updated_at"])
