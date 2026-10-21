@@ -278,7 +278,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       const allIds = new Set<string>();
       for (const e of data.entries) for (const id of e.case_sample_ids) allIds.add(id);
       setSelectedKeys(allIds); setPendingSearch(""); setSelectedQC(null); setQcSearch(""); setQcCandidates([]);
-      searchQC("");   // 预载质控候选（可用 PT / 姓名 / case 号搜索）
+      // 2026-10-21：不再预载质控候选列表（太长）；改为输入关键字才搜索
       const now = new Date();
       const prefix = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}-${String(now.getHours()).padStart(2,"0")}`;
       try {
@@ -292,10 +292,11 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
   const searchQC = async (val: string) => {
     setQcSearch(val);
-    // 空关键字也查：打开弹窗先列出全部候选（2026-10-20）
+    // 2026-10-21：只有输入关键字才查询；清空即收起列表（原先空关键字会拉全部候选，列表太长）
+    if (!val.trim()) { setQcCandidates([]); setQcSearching(false); return; }
     setQcSearching(true);
     try {
-      const r = await (casesApi as any).getQCandidates(val);
+      const r = await (casesApi as any).getQCandidates(val.trim());
       setQcCandidates(r.data?.results || []);
     } catch { setQcCandidates([]); }
     finally { setQcSearching(false); }
@@ -1411,8 +1412,16 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
           <Divider style={{ margin: "8px 0" }} />
           <div style={{ padding: "8px 12px", background: "#fffbe6", borderRadius: 6 }}>
             <Text strong>🔬 添加质控样本（可选）</Text>
-            <Input.Search placeholder="搜索已完成前处理的女性样本..." allowClear value={qcSearch} onChange={(e: any) => searchQC(e.target.value)} loading={qcSearching} style={{ marginTop: 8, marginBottom: 8 }} />
-            {qcCandidates.length > 0 && (<div style={{ marginBottom: 8 }}>{qcCandidates.map(qc => (
+            <Input.Search placeholder="输入 PT 编号 / 姓名 / case 编号搜索质控样本" allowClear
+              value={qcSearch} onChange={(e: any) => searchQC(e.target.value)} onSearch={(v: string) => searchQC(v)}
+              loading={qcSearching} style={{ marginTop: 8, marginBottom: 8 }} />
+            {!qcSearch.trim() && !selectedQC && (
+              <Text type="secondary" style={{ fontSize: 12 }}>按需搜索：输入 PT 编号（如 PT1618W）、姓名或 case 编号后再选择</Text>
+            )}
+            {qcSearch.trim() && !qcSearching && qcCandidates.length === 0 && (
+              <Text type="secondary" style={{ fontSize: 12 }}>没有匹配的质控候选（需已完成前处理且还有剩余血浆管）</Text>
+            )}
+            {qcSearch.trim() && qcCandidates.length > 0 && (<div style={{ marginBottom: 8 }}>{qcCandidates.map(qc => (
               <div key={qc.id} style={{ padding: "4px 8px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8 }}>
                 <Radio checked={selectedQC?.id === qc.id} onChange={() => setSelectedQC(qc)} />
                 <Text code style={{ fontSize: 11 }}>{qc.case_number}</Text>{qc.test_sample_id && <Tag color="blue">{qc.test_sample_id}</Tag>}
