@@ -92,8 +92,17 @@ export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: 
         }
       }
     }
-    // Exclude library-failed samples
-    return list.filter(ps => !libFailVgIds.has(ps.vgId));
+    // 2026-10-21：只保留「本批次实际加入」的样本。
+    // 建库孔板里可能还有没被加进本批次的样本（如本批只挑 7 个、板上有 9 个），
+    // 原来直接遍历孔板 → 没加入的样本也会出现在 Pooling 表格里并被一起保存。
+    const allowedVgIds = new Set<string>();
+    for (const rs of runSamples) {
+      const key = rs.sample_vg_id || rs.sample_barcode || rs.vg_id || rs.sample_id || "";
+      if (key) allowedVgIds.add(String(key));
+    }
+    return list
+      .filter(ps => !libFailVgIds.has(ps.vgId))
+      .filter(ps => allowedVgIds.size === 0 || allowedVgIds.has(ps.vgId));   // 无 run_samples（历史批次）时不过滤
   }, [libraryPlate, batch.run_samples, libFailVgIds]);
 
   // Build sample rows with saved data or defaults (matched by vgId, not position)
