@@ -2993,7 +2993,11 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
     def pending(self, request):
         from .models import NipptExtractionBatch, NipptExtractionSample
         passed_ids = set()
-        for pp in NipptPreProcessingSample.objects.filter(batch__status="COMPLETED", qc_status="PASS", aliquot_tubes__gte=1):
+        # 男性非血液（口拭/指甲/毛发…）没有血浆管，管数常为 0，不能按血浆管数过滤掉
+        _pp_qs = (NipptPreProcessingSample.objects
+                  .filter(batch__status="COMPLETED", qc_status="PASS")
+                  .filter(Q(aliquot_tubes__gte=1) | Q(category="MALE_OTHER")))
+        for pp in _pp_qs:
             if not pp.case_sample_ids:
                 continue
             exp_type = pp.experiment_sample_type or ""
