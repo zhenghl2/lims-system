@@ -18,6 +18,7 @@ import {
 import { casesApi } from "../api";
 import { REPORT_VERSION_PRESETS, fetchReportVersions } from "../utils/reportVersions";
 import dayjs from "dayjs";
+import SmartDateInput from "../components/SmartDateInput";
 
 const { Text } = Typography;
 
@@ -832,9 +833,8 @@ export default function NipptRegistration() {
                 { title: "出生日期", width: 130,
                   render: () => (
                     <Form.Item name="mother_dob" style={{ margin: 0 }}>
-                      <DatePicker size="small" bordered={false} format="YYYY-MM-DD"
-                        placeholder="出生日期"
-                        style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
+                      {/* 2026-10-21：可直接输入 14.01.2005 / 27 Feb 1997，右侧日历仍可点选 */}
+                      <SmartDateInput size="small" bordered={false} />
                     </Form.Item>
                   ) },
                 { title: "民族", width: 100,
@@ -893,9 +893,8 @@ export default function NipptRegistration() {
                     { title: "", width: 130,
                       render: (_r: any, row: any) => (
                         <Form.Item {...row.field} name={[row.field.name, "dob"]} style={{ margin: 0 }}>
-                          <DatePicker size="small" bordered={false} format="YYYY-MM-DD"
-                            placeholder="出生日期"
-                            style={{ background: "#fafafa", width: "100%", borderRadius: 0 }} />
+                          {/* 2026-10-21：同母亲，支持手输识别 */}
+                          <SmartDateInput size="small" bordered={false} />
                         </Form.Item>
                       ) },
                     { title: "", width: 100,
