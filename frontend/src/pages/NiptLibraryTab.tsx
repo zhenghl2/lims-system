@@ -473,7 +473,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     }
   };
 
-  const save = async () => {
+  const save = async (opts?: { refresh?: boolean }) => {
     saveOkRef.current = false;
     // 已完成批次记录锁定，只允许补照片
     if (batch.status === "COMPLETED") { await persistPhotosOnly(photos); return; }
@@ -525,7 +525,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       };
       await api.post(`${apiBase}/${batch.id}/save_library/`, payload);
       message.success(t("nipt.library.saved"));
-      onRefresh();
+      if (opts?.refresh !== false) onRefresh();
       saveOkRef.current = true;
     } catch (e: any) {
       if (e?.errorFields) { message.warning(t("nipt.extraction.fillRequired")); return; }
@@ -562,7 +562,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
 
   // 2026-10-21：签名前先保存 —— 否则签完 onRefresh 会把未保存的填写全部冲掉
   const openSign = async (role: "op" | "rv") => {
-    await save();
+    await save({ refresh: false });
     // 已完成批次记录锁定（save 只补照片），不因未保存拦截签名
     if (batch.status !== "COMPLETED" && !saveOkRef.current) {
       message.warning("请先补全必填项并保存成功，再签名");

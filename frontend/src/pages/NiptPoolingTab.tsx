@@ -207,7 +207,7 @@ export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: 
     };
   }, [rows]);
 
-  const save = async () => {
+  const save = async (opts?: { refresh?: boolean }) => {
     saveOkRef.current = false;
     try {
       setSaving(true);
@@ -235,7 +235,7 @@ export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: 
         },
       });
       message.success("Pooling 数据已保存");
-      onRefresh();
+      if (opts?.refresh !== false) onRefresh();
       saveOkRef.current = true;
     } catch (e: any) {
       message.error(e?.response?.data?.error || "保存失败");
@@ -250,11 +250,10 @@ export default function NiptPoolingTab({ batch, onRefresh, apiBase = "/runs" }: 
     registerTabSaver(async () => { await saveFnRef.current(); return saveOkRef.current; });
     return () => registerTabSaver(null);
   }, []);
-;
 
   // 2026-10-21：签名前先保存 —— 否则签完 onRefresh 会把未保存的填写全部冲掉
   const openSign = async (role: "op" | "rv") => {
-    await save();
+    await save({ refresh: false });
     // 已完成批次记录锁定（save 只补照片），不因未保存拦截签名
     if (batch.status !== "COMPLETED" && !saveOkRef.current) {
       message.warning("请先补全必填项并保存成功，再签名");
