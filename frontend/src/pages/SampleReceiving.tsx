@@ -816,21 +816,28 @@ export default function SampleReceiving() {
           : <Text type="secondary">-</Text>,
     },
     {
-      title: "PT编号", dataIndex: "testSampleId", key: "pt", width: 180,
+      title: "PT编号", dataIndex: "testSampleId", key: "pt", width: 215,
       render: (v: string, r: CaseSampleRow) => {
         const ptWarn = checkPtBase(r.ptBase, r.ptBaseOriginal);
+        // 2026-10-21：后缀（重采/重做 W、W_R1…）原来塞在输入框 addonAfter 里，
+        // 后缀一长就把数字挤得显示不全；改为后缀独立成标签显示在输入框右侧。
+        const ptSuffix = v ? String(v).replace("PT" + r.ptBase, "") : "";
         return (
           <div>
-            <Input
-              size="small"
-              value={r.ptBase}
-              placeholder="输入数字"
-              status={ptWarn ? "error" : undefined}
-              onChange={(e) => handlePtChange(r.key, e.target.value.replace(/\D/g, ""))}
-              style={{ width: 135, fontFamily: "monospace" }}
-              addonBefore="PT"
-              addonAfter={<Text type="secondary" style={{ fontSize: 11 }}>{v ? v.replace("PT" + r.ptBase, "") : ""}</Text>}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <Input
+                size="small"
+                value={r.ptBase}
+                placeholder="输入数字"
+                status={ptWarn ? "error" : undefined}
+                onChange={(e) => handlePtChange(r.key, e.target.value.replace(/\D/g, ""))}
+                style={{ width: 140, fontFamily: "monospace" }}
+                addonBefore="PT"
+              />
+              {ptSuffix ? (
+                <Tag color="blue" style={{ marginInlineEnd: 0, fontSize: 11, lineHeight: "18px" }}>{ptSuffix}</Tag>
+              ) : null}
+            </div>
             {ptWarn && (
               <div title={ptWarn} style={{ color: "#cf1322", fontSize: 11, lineHeight: "14px", marginTop: 2, maxWidth: 176, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 ⚠ {ptWarn}
