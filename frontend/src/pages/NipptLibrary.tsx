@@ -1171,12 +1171,19 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
             <Button size="small" onClick={() => toggleAll(true)}>全选</Button>
             <Button size="small" onClick={() => toggleAll(false)}>取消全选</Button></Space>
           <div style={{maxHeight:350,overflow:"auto"}}>
-            {(["FEMALE_BLOOD","MALE_BLOOD","MALE_OTHER"] as const).map(cat=>{
-              const entries = pendingData.entries.filter((e:any)=>e.category===cat && (!pendingLoc || e.receipt_location === pendingLoc));
+            {/* 2026-10-26：男性不再分「血液 / 其他」，合并为一个男性分组；组内按 PT 编号排序 */}
+            {([["FEMALE_BLOOD"],["MALE_BLOOD","MALE_OTHER"]] as string[][]).map((cats, gi)=>{
+              const entries = pendingData.entries
+                .filter((e:any)=>cats.includes(e.category) && (!pendingLoc || e.receipt_location === pendingLoc))
+                .sort((a:any,b:any)=>{
+                  const ka = String(a.test_sample_id || a.case_number || "￿");
+                  const kb = String(b.test_sample_id || b.case_number || "￿");
+                  return ka.localeCompare(kb, undefined, { numeric: true });
+                });
               if(!entries.length)return null;
-              const labels:Record<string,string>={FEMALE_BLOOD:"👩 女性",MALE_BLOOD:"🩸 男性血液",MALE_OTHER:"🧬 男性其他"};
+              const label = gi === 0 ? "👩 女性" : "👨 男性";
 
-  return (<div key={cat} style={{marginBottom:8}}><Text strong style={{fontSize:13}}>{labels[cat]} ({entries.length})</Text>
+  return (<div key={gi} style={{marginBottom:8}}><Text strong style={{fontSize:13}}>{label} ({entries.length})</Text>
                 {entries.map((e:any)=>{const allIn=e.is_qc?selectedQCSrc.has(e.qc_source_id):e.case_sample_ids.every((id:string)=>selectedKeys.has(id)),someIn=e.is_qc?selectedQCSrc.has(e.qc_source_id):e.case_sample_ids.some((id:string)=>selectedKeys.has(id));
 
   return (<div key={e.is_qc ? ("qc_"+e.qc_source_id) : e.case_sample_ids.join(",")} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
