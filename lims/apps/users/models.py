@@ -40,6 +40,13 @@ class User(AbstractBaseUser, PermissionsMixin):
         related_name="users",
     )
     phone = models.CharField(max_length=30, blank=True)
+    # 2026-10-26：销售账号数据范围扩展。
+    # 纯 sales 账号默认只看自己创建的案例；填了这里的「外部编号」后，
+    # 只要案例下有样本的 external_id 命中其中之一，也对本人可见（逗号分隔）。
+    sales_extra_scope = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="销售可见范围扩展：命中的样本外部编号，逗号分隔（如：王荔春）",
+    )
     locale = models.CharField(max_length=10, default="en")
     timezone = models.CharField(max_length=50, default="UTC")
     mfa_secret = models.CharField(max_length=255, blank=True, default="")

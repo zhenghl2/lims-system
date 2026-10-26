@@ -159,11 +159,20 @@ class CaseViewSet(viewsets.ModelViewSet):
             qs = qs.filter(case_samples__resample_of__isnull=False).distinct()
         elif has_resample == "false":
             qs = qs.exclude(case_samples__resample_of__isnull=False).distinct()
-        if self.request.user.site_id:
+        # 站点隔离：仅对实验室/机构账号生效。销售账号的数据范围由下方 created_by /
+        # sales_extra_scope 规则决定（导入案例 site 多为空，不能再被站点过滤挡掉）。
+        if self.request.user.site_id and not _is_sales_scoped(self.request.user):
             qs = qs.filter(site=self.request.user.site)
-        # 销售账号（小程序自助注册）：只返回本人登记的案例（数据隔离）
+        # 销售账号（小程序自助注册）：只返回本人登记的案例（数据隔离）。
+        # 2026-10-26：User.sales_extra_scope 配置了外部编号时，样本 external_id 命中的案例也可见
+        # （例如王荔春名下样本：外部编号填「王荔春」的案例）。
         if _is_sales_scoped(self.request.user):
-            qs = qs.filter(created_by=self.request.user)
+            from django.db.models import Q as _Q
+            cond = _Q(created_by=self.request.user)
+            _extra = [x.strip() for x in (getattr(self.request.user, "sales_extra_scope", "") or "").split(",") if x.strip()]
+            if _extra:
+                cond |= _Q(case_samples__sample__external_id__in=_extra)
+            qs = qs.filter(cond).distinct()
         return qs
 
     def get_serializer_class(self):
@@ -271,6 +280,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         设计：不改工序模块、不冗余写库 —— 读取时从各工序样本表实时聚合，
         天然带「工序名 + 时间 + 操作人」，工序备注改了自动同步。
         """
+        from lims.core.timefmt import bj
         case = self.get_object()
         cs_list = list(case.case_samples.select_related("sample").all())
         id2label = {}
@@ -311,7 +321,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                     "stage": label,
                     "sample_ids": id2label[hits[0]] if len(hits) == 1 else "%d 个样本" % len(hits),
                     "note": note,
-                    "time": rec.processed_at.strftime("%Y-%m-%d %H:%M") if getattr(rec, "processed_at", None) else "",
+                    "time": bj(rec.processed_at, "%Y-%m-%d %H:%M") if getattr(rec, "processed_at", None) else "",
                     "operator": (
                         getattr(op, "real_name", None)
                         or (op.get_full_name() if hasattr(op, "get_full_name") else None)
@@ -1701,6 +1711,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         """返回 Case 下每个 CaseSample 的实验历史."""
         from collections import defaultdict
         from .models import WorkflowLog
+        from lims.core.timefmt import bj
         case = self.get_object()
         logs = WorkflowLog.objects.filter(
             case_sample__case=case
@@ -1716,7 +1727,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                 "test_sample_id": cs.test_sample_id or "",
                 "stages": [{
                     "stage": "RECEIVED", "action": cs.receipt_condition or "签收",
-                    "timestamp": str(cs.received_at), "batch_number": "",
+                    "timestamp": bj(cs.received_at), "batch_number": "",
                     "pt_number": cs.test_sample_id or cs.case.pt_number or "",
                     "receipt_photo_url": cs.receipt_photo.url if cs.receipt_photo else "",
                     "received_by": cs.received_by_name or (cs.received_by.username if cs.received_by else ""),
@@ -1737,17 +1748,17 @@ class CaseViewSet(viewsets.ModelViewSet):
             if key in merged:
                 rec = merged[key]
                 rec["count"] += 1
-                rec["last_ts"] = str(log.created_at)
+                rec["last_ts"] = bj(log.created_at)
             else:
                 extra = self._stage_extras(log)
                 rec = {
                     "count": 1,
-                    "first_ts": str(log.created_at),
-                    "last_ts": str(log.created_at),
+                    "first_ts": bj(log.created_at),
+                    "last_ts": bj(log.created_at),
                     "entry": {
                         "stage": log.stage, "action": log.action,
                         "batch_number": bn,
-                        "timestamp": str(log.created_at),
+                        "timestamp": bj(log.created_at),
                         **extra,
                     },
                 }
@@ -2419,6 +2430,10 @@ def update_wf(case_sample_ids, stage, action, batch_num="", operator=None):
     _qs = CaseSample.objects.filter(id__in=case_sample_ids)
     if not stage.endswith("_FAILED"):
         _qs = _qs.filter(is_active=True)
+        # 2026-10-16：已失败(*)的阶段不得被普通推进/回退覆盖（否则"哪个模块失败"不可追溯，
+        # 曾出现 POOLING_FAILED 被后续 POOLING ENTER / 批次删除回退覆盖成 LIBRARY_PREP）。
+        # 例外：reactivated=True —— 用其他样本重做激活的，允许重新走流程。
+        _qs = _qs.exclude(workflow_stage__endswith="_FAILED", reactivated=False)
     _ids = list(_qs.values_list("id", flat=True))
     if _ids:
         CaseSample.objects.filter(id__in=_ids).update(workflow_stage=stage)
@@ -3417,7 +3432,9 @@ class NipptPoolingViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             for sp in b.samples.all():
                 if not sp.case_sample_ids: continue
                 if b.status in ("DRAFT","IN_PROGRESS"): excluded_ids.update(sp.case_sample_ids)
-                elif b.status=="COMPLETED" and sp.qc_status=="PASS": excluded_ids.update(sp.case_sample_ids)
+                # 2026-10-16（用户口径）：已完成批次里的样本，无论 PASS/FAIL 都算"这一轮做过了"。
+                # FAIL 的要重做/重采（会生成 _R2/_R5/HB 等新样本行），旧行不应再回候选。
+                elif b.status=="COMPLETED": excluded_ids.update(sp.case_sample_ids)
         valid_ids = passed_ids - excluded_ids
         if not valid_ids:
             return Response({"female_count":0,"male_blood_count":0,"male_other_count":0,"total_pending":0,"entries":[]})
