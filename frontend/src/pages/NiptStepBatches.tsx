@@ -145,8 +145,9 @@ export default function NiptStepBatches() {
   if (!meta || !api) return <Card><Text type="danger">未知步骤：{step}</Text></Card>;
 
   // 2026-10-26：新建批次待处理列表统一增加 VG ID 列（提取 / 建库 / Pooling / 测序）
+  // 纯文本显示（不要 code 小方框）
   const vgCol = { title: "VG ID", dataIndex: "vg", key: "cvg", width: 120,
-    render: (v: string) => v ? <Text code style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">-</Text> };
+    render: (v: string) => v ? <span style={{ fontFamily: "monospace", fontSize: 12 }}>{v}</span> : <Text type="secondary">-</Text> };
   const pendingCols = step === "extraction"
     ? [
         { title: "样本编号", dataIndex: "code", key: "c1", width: 170 },
