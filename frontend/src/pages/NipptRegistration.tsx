@@ -119,7 +119,8 @@ const SIGNED_LABEL: Record<string, string> = { YES: "是", NO: "否", WECHAT: "�
 const RISK_LABELS: [string, string][] = [
   ["transfusion", "异体输血(一年内)"], ["transplant", "骨髓/器官移植(一年内)"],
   ["immunotherapy", "免疫/干细胞治疗(一个月内)"], ["miscarriage", "流产史(三个月内)"],
-  ["reduction", "减胎"], ["surrogacy", "代孕"], ["ivf", "试管婴儿"], ["week5", "孕期已满5周"],
+  ["reduction", "减胎"], ["surrogacy", "代孕"], ["ivf", "试管婴儿"],
+  ["week5_under", "孕期未满5周"], ["week5", "孕期已满5周（旧记录）"],
 ];
 
 export default function NipptRegistration() {
@@ -1043,7 +1044,7 @@ export default function NipptRegistration() {
                 { key: "reduction", label: "是否减胎" },
                 { key: "surrogacy", label: "是否代孕" },
                 { key: "ivf", label: "是否试管婴儿" },
-                { key: "week5", label: "是否孕期已满5周" },
+                { key: "week5_under", label: "是否孕期未满5周" },
               ].map((q, idx) => (
                 <Col key={q.key} xs={24} sm={12}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>

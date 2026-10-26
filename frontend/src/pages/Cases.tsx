@@ -73,13 +73,18 @@ const STATUS_DISPLAY: Record<string, string> = {
   REPORTED: "已报告", HAS_FAILURE: "有失败", HAS_RESAMPLE: "有重采", REJECTED: "已拒收",
 };
 
+/** 时间统一北京时间（2026-10-16 修正）：接口返回 UTC(ISO, 带 Z)，
+ *  原实现直接切字符串 → 显示 UTC，比北京时间少 8 小时；凌晨数据日期还可能差一天。
+ *  改用 dayjs 按本地时区换算（与本文件 439 行现成写法一致）；非法值退回原行为。 */
 const fmtDate = (v: string | null | undefined) => {
   if (!v) return "-";
-  return v.slice(0, 10);
+  const d = dayjs(v);
+  return d.isValid() ? d.format("YYYY-MM-DD") : v.slice(0, 10);
 };
 const fmtDT = (v: string | null | undefined) => {
   if (!v) return "-";
-  return `${v.slice(5, 10)} ${v.slice(11, 16)}`;  // MM-DD HH:mm
+  const d = dayjs(v);
+  return d.isValid() ? d.format("MM-DD HH:mm") : `${v.slice(5, 10)} ${v.slice(11, 16)}`;
 };
 const rejectionLabel = (reason: string) =>
   reason === "REJECTED" ? "拒收" : (REJECTION_REASONS[reason || ""] || reason || "");
@@ -654,6 +659,36 @@ export default function Cases() {
                         <Descriptions.Item key={k} label={k} span={1}>{show(v)}</Descriptions.Item>
                       ))}
                       <Descriptions.Item label="备注" span={2}>{show((selectedCase as any).notes)}</Descriptions.Item>
+
+                      {/* 2026-10-26：登记时的「风险提示」搬进基本信息；勾选「是」的项标红 */}
+                      <Descriptions.Item label="风险提示" span={2}>
+                        {(() => {
+                          const RISK: [string, string][] = [
+                            ["transfusion", "异体输血(1年内)"],
+                            ["transplant", "骨髓/器官移植(1年内)"],
+                            ["immunotherapy", "免疫/干细胞治疗(1月内)"],
+                            ["miscarriage", "流产史(3月内)"],
+                            ["reduction", "减胎"],
+                            ["surrogacy", "代孕"],
+                            ["ivf", "试管婴儿"],
+                            ["week5_under", "孕期未满5周"],
+                          ];
+                          const rw: string[] = ((selectedCase as any).risk_warnings || []) as string[];
+                          const yes = RISK.filter(([k]) => rw.includes(k));
+                          const legacy = rw.filter(k => k === "week5");
+                          if (!yes.length && !legacy.length) return <Text type="secondary">无</Text>;
+                          return (
+                            <Space size={4} wrap>
+                              {yes.map(([k, l]) => (
+                                <Tag key={k} color="red" style={{ fontWeight: 700, marginInlineEnd: 0 }}>{l}</Tag>
+                              ))}
+                              {legacy.length > 0 && (
+                                <Tag color="default" style={{ color: "#8c8c8c", marginInlineEnd: 0 }}>孕期已满5周（旧记录）</Tag>
+                              )}
+                            </Space>
+                          );
+                        })()}
+                      </Descriptions.Item>
                     </Descriptions>
 
                     {editMode && (
