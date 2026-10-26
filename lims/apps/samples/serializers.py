@@ -46,6 +46,17 @@ class SampleSerializer(serializers.ModelSerializer):
             "site", "site_id", "created_by", "created_at", "updated_at", "is_deleted",
             "image",
             "movements_count",
+            "id_card",
+            "physician",
+            "test_option",
+            "report_code",
+            "send_report_id",
+            "pregnancy_history",
+            "clinical_diagnosis",
+            "fedex_no",
+            "gestational_weeks",
+            "multiple_gestation",
+            "ivf_status",
         ]
         read_only_fields = ["sample_id", "image", "transport_time_days", "status", "site", "created_by", "movements_count"]
 
@@ -65,9 +76,26 @@ class SampleSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
     def _generate_barcode(self):
+        """SMP-YYYYMMDD-NNNN（按已有编号 max+1）。
+
+        勿用 count()+1：删过任意一条样本后 count 会变小，下一条必然撞上
+        已存在的编号 -> UniqueViolation on samples_barcode_key -> HTTP 500。
+        """
         today = datetime.date.today().strftime("%Y%m%d")
-        count = Sample.objects.filter(sample_id__startswith=f"SMP-{today}").count() + 1
-        return f"SMP-{today}-{count:04d}"
+        prefix = f"SMP-{today}-"
+        last = (
+            Sample.objects.filter(sample_id__startswith=prefix)
+            .order_by("-sample_id")
+            .values_list("sample_id", flat=True)
+            .first()
+        )
+        seq = 1
+        if last:
+            try:
+                seq = int(last.rsplit("-", 1)[-1]) + 1
+            except (ValueError, IndexError):
+                seq = Sample.objects.filter(sample_id__startswith=prefix).count() + 1
+        return f"{prefix}{seq:04d}"
 
     def _get_default_site(self):
         """Get first available site for users without site assignment (e.g. super admins)."""
@@ -231,9 +259,26 @@ class SampleReceiveSerializer(serializers.ModelSerializer):
         return Sample.objects.create(sample_type_id=sample_type_id, **validated_data)
 
     def _generate_barcode(self):
+        """SMP-YYYYMMDD-NNNN（按已有编号 max+1）。
+
+        勿用 count()+1：删过任意一条样本后 count 会变小，下一条必然撞上
+        已存在的编号 -> UniqueViolation on samples_barcode_key -> HTTP 500。
+        """
         today = datetime.date.today().strftime("%Y%m%d")
-        count = Sample.objects.filter(sample_id__startswith=f"SMP-{today}").count() + 1
-        return f"SMP-{today}-{count:04d}"
+        prefix = f"SMP-{today}-"
+        last = (
+            Sample.objects.filter(sample_id__startswith=prefix)
+            .order_by("-sample_id")
+            .values_list("sample_id", flat=True)
+            .first()
+        )
+        seq = 1
+        if last:
+            try:
+                seq = int(last.rsplit("-", 1)[-1]) + 1
+            except (ValueError, IndexError):
+                seq = Sample.objects.filter(sample_id__startswith=prefix).count() + 1
+        return f"{prefix}{seq:04d}"
 
     def _get_default_site(self):
         from lims.apps.organizations.models import Site
