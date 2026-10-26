@@ -310,6 +310,7 @@ class NiptExtractionViewSet(_StepBatchViewSet):
         qs = self.pending_queryset()
         return Response({"count": qs.count(), "results": [
             {"id": str(s.id), "sample_id": s.sample_id, "patient_name": s.patient_name or "",
+             "vg_id": s.vg_id or "",                       # 2026-10-26 新建批次显示 VG ID
              "sample_source": s.sample_source or "", "status": s.status,
              "plasma_remaining": s.plasma_remaining,
              "receipt_date": str(s.receipt_date or "")}

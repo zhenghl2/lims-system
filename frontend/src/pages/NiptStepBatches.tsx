@@ -78,6 +78,7 @@ export default function NiptStepBatches() {
     key: r.extraction_sample_id || r.id,
     sampleId: r.sample_id || r.id,
     code: r.sample_code || r.sample_id,
+    vg: r.sample_vg_id || r.vg_id || "",
     name: r.patient_name,
     source: r.source_batch || r.sample_source || "",
     pos: r.well_position || "",
@@ -143,15 +144,20 @@ export default function NiptStepBatches() {
 
   if (!meta || !api) return <Card><Text type="danger">未知步骤：{step}</Text></Card>;
 
+  // 2026-10-26：新建批次待处理列表统一增加 VG ID 列（提取 / 建库 / Pooling / 测序）
+  const vgCol = { title: "VG ID", dataIndex: "vg", key: "cvg", width: 120,
+    render: (v: string) => v ? <Text code style={{ fontSize: 12 }}>{v}</Text> : <Text type="secondary">-</Text> };
   const pendingCols = step === "extraction"
     ? [
         { title: "样本编号", dataIndex: "code", key: "c1", width: 170 },
+        vgCol,
         { title: "姓名", dataIndex: "name", key: "c2", ellipsis: true },
         { title: "来源", dataIndex: "source", key: "c3", width: 150, ellipsis: true },
         { title: "血浆(管)", dataIndex: "plasma", key: "c4", width: 80, align: "center" as const },
       ]
     : [
         { title: "样本编号", dataIndex: "code", key: "c1", width: 170 },
+        vgCol,
         { title: "姓名", dataIndex: "name", key: "c2", ellipsis: true },
         { title: "上游批次", dataIndex: "source", key: "c3", width: 200,
           render: (v: string) => <Text code>{v}</Text> },
