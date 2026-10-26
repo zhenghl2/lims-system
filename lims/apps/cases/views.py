@@ -423,6 +423,13 @@ class CaseViewSet(viewsets.ModelViewSet):
                 continue
             new = request.data.get(f)
             old = getattr(case, f)
+            # 风险提示是列表，按集合比较，顺序不同不算变更
+            if f == "risk_warnings":
+                _nl = [str(x) for x in (new or [])]
+                _ol = [str(x) for x in (old or [])]
+                if sorted(_nl) != sorted(_ol):
+                    case_plan[f] = (_ol, _nl)
+                continue
             # 空字符串归一（数值/布尔字段除外）
             if isinstance(new, str):
                 new = new.strip()

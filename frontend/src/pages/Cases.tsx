@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import dayjs from "dayjs";
 import { AutoComplete,
-  Card, Table, Tag, Typography, Button, Input, Select, Space, Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse, Descriptions, Modal, Timeline, Tooltip, Image, Spin, Empty, InputNumber, Switch, Alert } from "antd";
+  Card, Table, Tag, Typography, Button, Input, Select, Space, Progress, Drawer, message, Badge, Popconfirm, DatePicker, Collapse, Descriptions, Modal, Timeline, Tooltip, Image, Spin, Empty, InputNumber, Switch, Alert, Radio } from "antd";
 import {
   EyeOutlined, LinkOutlined, RedoOutlined,
   CloseCircleOutlined, DeleteOutlined,
@@ -30,8 +30,20 @@ const CASE_EDIT_FIELDS = [
   "clinic_name", "clinic_contact", "sales_person",
   "applicant", "phone", "email", "report_version",
   "collection_method", "application_signed", "expected_completion",
-  "registration_type", "is_urgent",
+  "registration_type", "is_urgent", "risk_warnings",
 ] as const;
+
+// 2026-10-26：风险提示项（与登记页同一口径；week5 为历史键，仅展示）
+const RISK_EDIT_ITEMS: [string, string][] = [
+  ["transfusion", "是否接受过异体输血（一年内）"],
+  ["transplant", "是否做过骨髓或器官移植（一年内）"],
+  ["immunotherapy", "是否做过免疫治疗/干细胞治疗等引入外源DNA的治疗（一个月内）"],
+  ["miscarriage", "是否有流产史（三个月内）"],
+  ["reduction", "是否减胎"],
+  ["surrogacy", "是否代孕"],
+  ["ivf", "是否试管婴儿"],
+  ["week5_under", "是否孕期未满5周"],
+];
 
 /** 把 DRF 的校验错误格式化成一句人话（兜底：任何字段名都能显示出来）。
  *  ⚠️ 2026-10-15 修复：原来只读 case_samples / edited_by / detail 三个键 ——
@@ -726,6 +738,32 @@ export default function Cases() {
                                 value={editForm.multiple_gestation === null || editForm.multiple_gestation === undefined ? undefined : (editForm.multiple_gestation ? "true" : "false")}
                                 onChange={(v) => setEditForm({ ...editForm, multiple_gestation: v === undefined ? null : v === "true" })}
                                 options={[{ value: "false", label: "单胎" }, { value: "true", label: "双胎" }]} />
+                            </Descriptions.Item>
+                            <Descriptions.Item label="风险提示" span={2}>
+                              <Space direction="vertical" size={4} style={{ width: "100%" }}>
+                                {RISK_EDIT_ITEMS.map(([k, l]) => {
+                                  const cur: string[] = Array.isArray(editForm.risk_warnings) ? editForm.risk_warnings : [];
+                                  return (
+                                    <div key={k} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                      <Text style={{ flex: 1, fontSize: 12 }}>{l}</Text>
+                                      <Radio.Group size="small" value={cur.includes(k)}
+                                        onChange={(e: any) => {
+                                          const set = new Set(cur);
+                                          if (e.target.value) set.add(k); else set.delete(k);
+                                          setEditForm({ ...editForm, risk_warnings: Array.from(set) });
+                                        }}>
+                                        <Radio value={true}>是</Radio>
+                                        <Radio value={false}>否</Radio>
+                                      </Radio.Group>
+                                    </div>
+                                  );
+                                })}
+                                {Array.isArray(editForm.risk_warnings) && editForm.risk_warnings.includes("week5") && (
+                                  <Text type="secondary" style={{ fontSize: 11 }}>
+                                    历史记录：孕期已满5周（旧口径，不支持修改）
+                                  </Text>
+                                )}
+                              </Space>
                             </Descriptions.Item>
                             <Descriptions.Item label="采集方式">
                               <Select size="small" allowClear style={{ width: "100%" }}
