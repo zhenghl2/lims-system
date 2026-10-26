@@ -88,6 +88,7 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "ivf", title: "IVF", dataIndex: "ivf_status", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="purple">IVF</Tag> : "No" },
   { key: "preg_history", title: "Preg. History", dataIndex: "pregnancy_history", visible: true, width: 100, render: (_v: string, r: any) => r.pregnancy_history || r.clinical_diagnosis || "-" },
   { key: "diagnosis", title: "Diagnosis", dataIndex: "clinical_diagnosis", visible: true, width: 130, render: (v: string) => v || "-" },
+  { key: "extra_info", title: "额外信息", dataIndex: "extra_info", visible: true, width: 160, ellipsis: true, render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : "-" },
   { key: "registration_time", title: "Registration Time", dataIndex: "created_at", visible: true, width: 150, render: (v: string) => v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "-" },
   { key: "image", title: "Image", dataIndex: "image", visible: true, width: 70, render: (v: string) => v ? <Image src={v} width={50} height={50} style={{ objectFit: "cover", borderRadius: 4 }} preview /> : "-" },
   { key: "fedex", title: "FedEx No.", dataIndex: "fedex_no", visible: true, width: 120, render: (v: string) => v || "-" },
@@ -331,6 +332,7 @@ export default function NiptSamples() {
     ivf_status: values.ivf_status || false,
     pregnancy_history: values.pregnancy_history || "",
     clinical_diagnosis: values.clinical_diagnosis || "",
+    extra_info: values.extra_info || "",
     fedex_no: values.fedex_no || "",
     price: values.price || "",
     sinal: values.sinal || "",
@@ -339,6 +341,50 @@ export default function NiptSamples() {
     report_due_date: values.report_due_date || "",
     recollected_from_vg_id: values.recollected_from_vg_id || "",
   });
+
+  // 导入遇到重号：列出明细，由操作者决定「继续录入（重采）」或「保持跳过」
+  const askImportDuplicates = (dups: any[], files: File[], source: string, fedex: string) => {
+    if (!dups?.length) return;
+    const preview = dups.slice(0, 8);
+    Modal.confirm({
+      title: `发现 ${dups.length} 条编号重复`,
+      width: 560,
+      content: (
+        <div style={{ fontSize: 13 }}>
+          <p style={{ marginBottom: 6 }}>以下编号已存在，<Text strong>默认跳过</Text>。要继续录入吗？</p>
+          <ul style={{ paddingLeft: 18, marginBottom: 6 }}>
+            {preview.map((d: any, i: number) => (
+              <li key={i}>
+                <Text code>{d.external_id}</Text>（{d.patient_name || "-"}）→ 已有 {d.existing?.sample_id || "-"} {d.existing?.patient_name || ""}
+              </li>
+            ))}
+          </ul>
+          {dups.length > preview.length && <p>…等共 {dups.length} 条</p>}
+          <p style={{ color: "#d46b08", marginBottom: 0 }}>继续录入的将标记为「重采」样本（收样填 HN 编号时自动加 R1/R2）。</p>
+        </div>
+      ),
+      okText: "继续录入（重采）",
+      cancelText: "保持跳过",
+      onOk: async () => {
+        try {
+          const fd = new FormData();
+          fd.append("source", source);
+          if (fedex.trim()) fd.append("fedex_no", fedex.trim());
+          fd.append("allow_duplicates", "true");
+          // 只补录用户选择继续的那几条（按外部编号），避免把第一遍已建好的再建一遍
+          fd.append("force_external_ids", JSON.stringify(dups.map((x: any) => x.external_id).filter(Boolean)));
+          files.forEach((f: File) => fd.append("files", f));
+          const res = await samplesApi.registerFromPdf(fd);
+          const dd: any = res.data || {};
+          message.success(`已按重采录入 ${dd.created_count ?? 0} 条`);
+          setImportResult(dd); setResultModalOpen(true);
+          fetchData();
+        } catch (err: any) {
+          message.error(String(err?.response?.data?.error || err?.message || "继续录入失败"));
+        }
+      },
+    });
+  };
 
   const handleFileImport = async () => {
     if (fileList.length === 0) return;
@@ -349,6 +395,7 @@ export default function NiptSamples() {
       if (fedexNo.trim()) formData.append("fedex_no", fedexNo.trim());
       fileList.forEach((f: File) => formData.append("files", f));
       const result = await samplesApi.registerFromPdf(formData);
+      const _filesSnapshot = [...fileList];   // 供「继续录入（重采）」重发
       setImportResult(result.data);
       setResultModalOpen(true);
       setFileModalOpen(false);
@@ -358,6 +405,9 @@ export default function NiptSamples() {
       message.success(`Imported ${result.data.created_count} samples`);
       if (result.data.skipped_rows?.length > 0) {
         message.info(`已跳过 ${result.data.skipped_rows.length} 行 NIPPT（亲子样本，请在 NIPPT 登记页导入）`);
+      }
+      if (result.data.duplicates?.length > 0) {
+        askImportDuplicates(result.data.duplicates, _filesSnapshot, fileSource, fedexNo);
       }
       // Trigger Excel download if provided
       if (result.data.excel_b64) {
@@ -386,6 +436,10 @@ export default function NiptSamples() {
         if (detail.skipped_duplicates > 0) {
           message.warning(`${detail.skipped_duplicates} duplicates skipped`);
         }
+      } else if (detail.duplicates?.length > 0) {
+        // 整个文件都是重号（服务端 400）：同样给「继续录入」的选择
+        message.warning(`发现 ${detail.duplicates.length} 条编号重复`);
+        askImportDuplicates(detail.duplicates, [...fileList], fileSource, fedexNo);
       } else if (detail.skipped_duplicates > 0) {
         message.warning(
           `无新样本：${detail.skipped_duplicates} 条已存在（重复跳过）`
@@ -403,13 +457,48 @@ export default function NiptSamples() {
     }
   };
 
+  // 重号询问（2026-10-15）：不阻断、先提醒，由操作者决定是否继续录入为「重采」样本
+  const confirmDuplicate = (d: any, onContinue: () => Promise<void>) => {
+    const ex = d?.existing || {};
+    Modal.confirm({
+      title: "编号重复",
+      width: 480,
+      content: (
+        <div style={{ fontSize: 13 }}>
+          <p><Text strong>{d?.message || "编号重复"}</Text></p>
+          <p style={{ marginBottom: 4 }}>已有样本：<Text code>{ex.sample_id || "-"}</Text> {ex.patient_name || ""}</p>
+          <p style={{ marginBottom: 4 }}>来源：{ex.sample_source || "-"}｜档位：{ex.test_option || "-"}｜登记时间：{ex.created_at || "-"}</p>
+          <p style={{ color: "#d46b08", marginBottom: 0 }}>
+            是否仍要录入？继续将标记为「重采」样本（收样填 HN 编号时自动加 R1/R2 区分）。
+          </p>
+        </div>
+      ),
+      okText: "继续录入（重采）",
+      cancelText: "取消",
+      onOk: async () => { await onContinue(); },
+    });
+  };
+
   const handleRegister = async () => {
     try {
       const values = await form.validateFields();
       await samplesApi.create(buildPayload(values));
       message.success("Registered");
       setModalOpen(false); form.resetFields(); fetchData();
-    } catch (e: any) { if (e?.errorFields) return; message.error(t("nipt.common.failed")); }
+    } catch (e: any) {
+      if (e?.errorFields) return;
+      const d = e?.response?.data;
+      if (e?.response?.status === 409 && d?.duplicate) {
+        confirmDuplicate(d, async () => {
+          const values = form.getFieldsValue();
+          await samplesApi.create({ ...buildPayload(values), allow_duplicates: true });
+          message.success("已按重采录入");
+          setModalOpen(false); form.resetFields(); fetchData();
+        });
+        return;
+      }
+      message.error(t("nipt.common.failed"));
+    }
   };
 
   // Parse one CSV line handling quotes
@@ -620,6 +709,9 @@ export default function NiptSamples() {
             <Form.Item name="ivf_status" label={t("nipt.samples.ivfLabel")} valuePropName="checked"><Switch /></Form.Item>
             <Form.Item name="pregnancy_history" label={t("nipt.samples.pregHistoryLabel")}><Input placeholder={t("nipt.samples.gpPlaceholder")} style={{ width: 120 }} /></Form.Item>
             <Form.Item name="clinical_diagnosis" label={t("nipt.samples.diagnosisLabel")}><Input style={{ width: 200 }} /></Form.Item>
+            <Form.Item name="extra_info" label="额外信息" style={{ flexBasis: "100%" }}>
+              <TextArea rows={2} placeholder="补充说明（会记录到列表的「额外信息」列）" maxLength={500} showCount />
+            </Form.Item>
             <Form.Item name="fedex_no" label={t("nipt.samples.fedexLabel")}><Input style={{ width: 160 }} /></Form.Item>
           </Space>
         </Form>

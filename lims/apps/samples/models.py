@@ -79,6 +79,10 @@ class Sample(models.Model):
     multiple_gestation = models.BooleanField(default=False, help_text="Multiple gestation (twins etc.)")
     fetal_fraction = models.FloatField(null=True, blank=True, help_text="Fetal fraction percentage")
     clinical_diagnosis = models.TextField(blank=True, default="", help_text="Clinical diagnosis / adverse pregnancy history")
+    extra_info = models.TextField(
+        blank=True, default="",
+        help_text="额外信息（NIPT 登记时填写的补充说明，原样记录）",
+    )
 
     report_code = models.CharField(max_length=50, blank=True, default="", help_text="Report code from external lab (Thai/Brazil)")
     send_report_id = models.CharField(max_length=50, blank=True, default="", help_text="Send report ID")
