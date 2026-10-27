@@ -371,6 +371,16 @@ class NiptLibraryViewSet(_StepBatchViewSet):
                     sample_source=s.sample_source or "", status="QUEUED", plate_number=1,
                     source_extraction_sample_id=upstream.get(s.id),
                 )
+            # 2026-10-27：region 从上游提取批次自动继承（全部同区时才填），避免建库批次 region 空白
+            regions = set(
+                NiptExtractionBatch.objects.filter(id__in=[
+                    es.batch_id for es in NiptExtractionSample.objects.filter(
+                        id__in=[u for u in upstream.values() if u])
+                ]).exclude(region="").values_list("region", flat=True)
+            )
+            if len(regions) == 1:
+                batch.region = regions.pop()
+                batch.save(update_fields=["region"])
         return Response(self.detail_serializer_class(batch).data, status=status.HTTP_201_CREATED)
 
     def pending_queryset(self):

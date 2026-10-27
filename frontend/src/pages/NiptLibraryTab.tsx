@@ -491,6 +491,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       );
       const payload = {
         library_method: method,
+        region,                       // 2026-10-27：Region 属于批次字段，必须随保存提交
         library_data: {
           lib_date: vals.lib_date?.format("YYYY-MM-DD"),
           lib_time: vals.lib_time,
@@ -647,7 +648,19 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
         </Col>
         <Col span={8}>
           <Form.Item label="Region" required>
-            <Select options={REGIONS} value={region || undefined} onChange={setRegion} placeholder={t("nipt.library.selectRegion")} />
+            <Select options={REGIONS} value={region || undefined}
+              onChange={async (v: string) => {
+                const prev = region;
+                setRegion(v);
+                try {
+                  await api.post(`${apiBase}/${batch.id}/save_library/`, { region: v });
+                  message.success("Region 已保存");
+                } catch (e: any) {
+                  setRegion(prev);
+                  message.error(e?.response?.data?.error || "Region 保存失败", 6);
+                }
+              }}
+              placeholder={t("nipt.library.selectRegion")} />
           </Form.Item>
         </Col>
         <Col span={8} style={{ display: "flex", alignItems: "center", paddingTop: 6 }}>
