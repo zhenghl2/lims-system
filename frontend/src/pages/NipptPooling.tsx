@@ -487,7 +487,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
           <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
           <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text><Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}{selectedBatch.receipt_location&&<Tag color={selectedBatch.receipt_location.includes("/")?"red":"geekblue"} style={{fontSize:12}}>📍{selectedBatch.receipt_location}{selectedBatch.receipt_location.includes("/")?" ⚠️混地区":""}</Tag>}</Space>}
             extra={<Space>
-              {selectedBatch.status!=="COMPLETED"&&<Button size="small" danger icon={<DeleteOutlined/>} onClick={async()=>{ if(await confirmBatchDelete("pooling", selectedBatch.id)) await deleteBatch(selectedBatch.id); }}>删除</Button>}
+              {<ConfigProvider componentDisabled={false}><Button size="small" danger icon={<DeleteOutlined/>} onClick={async()=>{ const r = await confirmBatchDelete("pooling", selectedBatch.id, async () => { fetchBatches(); setSelectedBatch(null as any); }); if (r.ok) await deleteBatch(selectedBatch.id); }}>删除</Button></ConfigProvider>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               <Button disabled={false} icon={<DownloadOutlined/>} size="small" onClick={exportExcel}
                 title={hasSaved ? "" : "请先保存后再导出"}>导出Excel</Button>

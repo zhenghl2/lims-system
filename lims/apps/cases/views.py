@@ -2753,6 +2753,120 @@ class NipptBatchDeleteMixin:
             "blocked": [],
         })
 
+    # ── 管理员强制删除（已完成批次）─────────────────────────────
+    def _force_backup(self, batch):
+        """把批次、样本行、受影响 case_sample / case 的当前值落成 JSON 备份，返回路径。"""
+        import json as _json, os as _os, datetime as _dt
+        from django.conf import settings as _settings
+        ts = _dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        # 备份落在宿主机可见的 bind mount 上（容器 /app ↔ 宿主 /opt/lims），
+        # 放 /root 会随容器重建丢失；/opt/lims/backups/force_delete 直接可查
+        base = "/app/backups/force_delete"
+        if not _os.path.isdir("/app/backups"):
+            _os.makedirs("/app/backups", exist_ok=True)
+        _os.makedirs(base, exist_ok=True)
+        path = _os.path.join(base, "%s_%s.json" % (batch.batch_number, ts))
+        cs_ids = self._nippt_case_sample_ids(batch)
+        css = list(CaseSample.objects.filter(id__in=cs_ids).select_related("case"))
+        data = {
+            "batch_number": batch.batch_number,
+            "stage": self.nippt_stage,
+            "batch": {f.name: str(getattr(batch, f.name)) for f in batch._meta.fields},
+            "samples": [{f.name: str(getattr(sp, f.name)) for f in sp._meta.fields}
+                        for sp in batch.samples.all()],
+            "case_samples": {str(cs.id): {"test_sample_id": cs.test_sample_id,
+                                          "workflow_stage": cs.workflow_stage,
+                                          "case_number": cs.case.case_number} for cs in css},
+            "cases": {str(cs.case_id): {"case_number": cs.case.case_number, "status": cs.case.status} for cs in css},
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            _json.dump(data, f, ensure_ascii=False, indent=2)
+        return path
+
+    @action(detail=True, methods=["post"], url_path="force-delete")
+    def force_delete(self, request, pk=None):
+        """管理员强制删除批次：必填原因 + 二次确认（前端）+ 自动备份 + 审计。
+
+        与普通 destroy 的区别：允许删除 COMPLETED 批次；下游引用仍然拦截。
+        """
+        from django.db import transaction as _tx
+        from ..audit.utils import log_audit
+        from lims.apps.samples.models import Sample as _Sample
+
+        user = request.user
+        if not (getattr(user, "is_staff", False) or getattr(user, "is_superuser", False)):
+            return Response({"detail": "仅管理员可强制删除批次"}, status=403)
+        reason = (request.data.get("reason") or "").strip()
+        if len(reason) < 5:
+            return Response({"detail": "请填写删除原因（至少 5 个字）"}, status=400)
+
+        batch = self.get_object()
+        stage = self.nippt_stage
+        to_stage = self.nippt_revert_to or NIPPT_STAGE_BEFORE.get(stage) or "RECEIVED"
+        blocked = self.nippt_blocked_by_downstream(batch, stage)
+        if blocked:
+            detail = "该批次已被下游批次使用，请先删除下游批次：%s" % "、".join(
+                "%s（%d 个样本）" % (bn, n) for bn, n in blocked)
+            return Response({"detail": detail, "blocked": [{"batch_number": b, "count": n} for b, n in blocked]},
+                            status=400)
+
+        bn = batch.batch_number
+        cs_ids = self._nippt_case_sample_ids(batch)
+        backup = self._force_backup(batch)
+        reverted = []
+
+        with _tx.atomic():
+            err = self.nippt_before_delete(request, batch)
+            if err is not None:
+                return err
+            if to_stage:
+                reverted = self.nippt_revert_stage(batch, stage, to_stage, request) or []
+
+            # 前处理批次：物理样本状态同步回退（PRE_PROCESSED → RECEIVED）
+            if to_stage == "RECEIVED" or stage in (None, "", "PRE_PROCESSING"):
+                sids = list(CaseSample.objects.filter(id__in=cs_ids).values_list("sample_id", flat=True))
+                if sids:
+                    _Sample.objects.filter(id__in=sids, status="PRE_PROCESSED").update(status="RECEIVED")
+
+            log_audit(request, "DELETE", batch, changes={
+                "batch_number": {"old": bn, "new": None},
+                "stage": {"old": stage, "new": None},
+                "forced": {"old": False, "new": True},
+                "reason": {"old": "", "new": reason},
+                "backup": {"old": "", "new": backup},
+                "reverted_samples": {"old": None, "new": len(reverted)},
+                "revert_to": {"old": None, "new": to_stage},
+                "status_before": {"old": batch.status, "new": None},
+            }, entity_type="nipptpreprocessingbatch" if stage in (None, "", "PRE_PROCESSING") else "batch",
+               entity_repr=bn)
+
+            ns = self._nippt_photos_ns()
+            if ns:
+                try:
+                    purge_nippt_photos(ns, batch.id)
+                except Exception as _ex:
+                    print("[photos] purge failed:", _ex)
+            batch.delete()
+
+            # 仍被其它同阶段批次引用的样本 → 恢复到原阶段（多批次共用样本场景）
+            if stage in (None, "", "PRE_PROCESSING"):
+                still = set()
+                for sp in NipptPreProcessingSample.objects.filter(case_sample_ids__overlap=cs_ids):
+                    still.update(sp.case_sample_ids or [])
+                keep = [i for i in cs_ids if i in still]
+                if keep:
+                    CaseSample.objects.filter(id__in=keep).update(workflow_stage="PRE_PROCESSING")
+                    _Sample.objects.filter(id__in=CaseSample.objects.filter(id__in=keep).values_list("sample_id", flat=True))                         .update(status="PRE_PROCESSED")
+                    reverted = [i for i in reverted if i not in keep]
+
+        return Response({
+            "message": "已强制删除批次 %s" % bn,
+            "reverted": len(reverted),
+            "to_stage": to_stage,
+            "to_stage_label": NIPPT_STAGE_LABEL.get(to_stage, to_stage),
+            "backup": backup,
+        })
+
     # ── 删除预览（前端确认框用）──
     @action(detail=True, methods=["get"], url_path="delete_preview")
     def delete_preview(self, request, pk=None):
@@ -2765,6 +2879,8 @@ class NipptBatchDeleteMixin:
             "batch_number": batch.batch_number,
             "status": batch.status,
             "can_delete": batch.status != "COMPLETED" and not blocked,
+            "can_force": (bool(getattr(request.user, "is_staff", False) or getattr(request.user, "is_superuser", False))
+                          and not blocked),
             "completed": batch.status == "COMPLETED",
             "stage": stage or "",
             "stage_label": NIPPT_STAGE_LABEL.get(stage or "", stage or ""),

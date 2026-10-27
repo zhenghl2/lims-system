@@ -192,9 +192,13 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     const totalInput = mixRows.reduce((s,r)=>s+(r.input_amount??0),0);
     const totalVol = mixRows.reduce((s,r)=>s+(r.input_vol??0),0);
     const theoryConc = totalVol>0?totalInput/totalVol:0;
-    const water = (theoryConc/finalConc-1)*totalVol;
-    return {totalInput, totalVol, theoryConc:Math.round(theoryConc*100)/100, water:Math.round(water*100)/100};
-  },[mixRows, finalConc]);
+    // 2026-10-16 口径变更：加水量按「预期浓度」倒推（全表统一，取第一行的预期浓度）。
+    // 「最终检测浓度」仅保留记录/备查，不再参与计算。
+    const expectedConc = Number((mixRows[0] as any)?.expected_conc ?? 0.8) || 0;
+    const water = (expectedConc>0 && totalVol>0) ? (theoryConc/expectedConc-1)*totalVol : 0;
+    return {totalInput, totalVol, theoryConc:Math.round(theoryConc*100)/100,
+            expectedConc, water:Math.round(water*100)/100};
+  },[mixRows]);
 
   /** 标准行数 = 创建批次时选的 mix 个数；下标 >= 它的行是「新增行」(研发样本) */
   const baseMixCount = (((selectedBatch as any)?.hyb_seq_data || {}).mix_ids || []).length;
@@ -432,7 +436,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
           <ConfigProvider componentDisabled={selectedBatch.status === "COMPLETED"}>
           <Card size="small" title={<Space><Text strong>{selectedBatch.batch_number}</Text>{detailChip&&<Tag color="geekblue">Chip号 {detailChip}</Tag>}<Tag color={selectedBatch.status==="COMPLETED"?"green":selectedBatch.status==="IN_PROGRESS"?"blue":"default"}>{selectedBatch.status_display}</Tag>{selectedBatch.status==="COMPLETED"&&<Tag color="default">🔒 只读</Tag>}</Space>}
             extra={<Space>
-              {selectedBatch.status!=="COMPLETED"&&<Button size="small" danger icon={<DeleteOutlined/>} onClick={async()=>{ if(await confirmBatchDelete("hybseq", selectedBatch.id)) await deleteBatch(selectedBatch.id); }}>删除</Button>}
+              {<ConfigProvider componentDisabled={false}><Button size="small" danger icon={<DeleteOutlined/>} onClick={async()=>{ const r = await confirmBatchDelete("hybseq", selectedBatch.id, async () => { fetchBatches(); setSelectedBatch(null as any); }); if (r.ok) await deleteBatch(selectedBatch.id); }}>删除</Button></ConfigProvider>}
               <Button disabled={false} icon={<ReloadOutlined/>} size="small" loading={batchLoading} onClick={()=>fetchDetail(selectedBatch.id)}>刷新</Button>
               {selectedBatch.status!=="COMPLETED"&&<>
                 <Button type="primary" icon={<CheckOutlined/>} size="small" loading={saving} onClick={save}>保存</Button>
@@ -484,7 +488,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                       </tr>
                       <tr style={{background:"#fffbe6",fontWeight:600}}>
                         <td style={td} colSpan={6}>最终检测浓度: <InputNumber size="small" min={0} step={0.001} value={finalConc} onChange={v=>v!==null&&setFinalConc(v)} style={{width:80}}/></td>
-                        <td style={td} colSpan={2}>总投入: {mixSums.totalInput.toFixed(2)} ng | 总体积: {mixSums.totalVol.toFixed(2)} μL</td>
+                        <td style={td} colSpan={2}>总投入: {mixSums.totalInput.toFixed(2)} ng | 总体积: {mixSums.totalVol.toFixed(2)} μL | 加水量按预期浓度 {mixSums.expectedConc ? mixSums.expectedConc : "-"}</td>
                       </tr>
                     </tbody>
                   </table>

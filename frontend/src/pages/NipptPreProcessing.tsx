@@ -997,11 +997,22 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
                   onClick={saveMaleSamples} loading={batchLoading}>💾 保存男性</Button>
               </>)}
               {selectedBatch.status !== "COMPLETED" && (<>
-                <Button type="primary" size="small" danger onClick={async () => { if (await confirmBatchDelete("preprocessing", selectedBatch.id)) await deleteBatch(selectedBatch.id, selectedBatch.batch_number); }}>删除批次</Button>
+                <Button type="primary" size="small" danger onClick={async () => { const r = await confirmBatchDelete("preprocessing", selectedBatch.id, async () => { await fetchBatches(); setSelectedBatch(null as any); }); if (r.ok) await deleteBatch(selectedBatch.id, selectedBatch.batch_number); }}>删除批次</Button>
                 <Popconfirm title="确定完成该批次？合格样本将进入后续实验" onConfirm={completeBatch}>
                   <Button type="primary" size="small">完成批次</Button>
                 </Popconfirm>
               </>)}
+              {/* 2026-10-27：已完成批次 → 管理员可强制删除（需原因 + 输批次号二次确认） */}
+              {selectedBatch.status === "COMPLETED" && (
+                <ConfigProvider componentDisabled={false}>
+                <Button danger size="small" onClick={async () => {
+                  const r = await confirmBatchDelete("preprocessing", selectedBatch.id, async () => {
+                    await fetchBatches(); setSelectedBatch(null as any);
+                  });
+                  if (r.ok) await deleteBatch(selectedBatch.id, selectedBatch.batch_number);
+                }}>强制删除</Button>
+                </ConfigProvider>
+              )}
             </Space>
           }>
             <Tabs activeKey={activeTab} onChange={setActiveTab} items={[
