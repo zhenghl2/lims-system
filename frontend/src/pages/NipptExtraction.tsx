@@ -1,6 +1,7 @@
 // NipptExtraction.tsx — DNA Extraction module (refactored: NIPT-style 3 methods)
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
+  Alert,
   Tooltip,
   ConfigProvider, Card, Table, Button, Tag, Tabs, Modal, message, Typography,
   Input, Select, InputNumber, Space, Popconfirm, Radio,
@@ -787,9 +788,20 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     const canDrag = selectedBatch?.status !== "COMPLETED";
     const plates: { cells: { row: number; col: number; sampleIdx: number }[] }[] = [];
     let si = 0, pi = 0;
+    // 2026-10-28：跳过孔位若把本板的上样孔（1列 / 7列）全部占满，视为无效配置，
+    // 否则 cells 一直是 0 → 整个磁棒板不渲染（表现为「磁棒法没有 plate 表」）。
+    const badSkipPlates: number[] = [];
     while (si < samples.length) {
       const skips = skipCoords[pi] || "";
-      const skipSet = new Set(skips.split(",").map((s: string) => s.trim().toUpperCase()).filter((s: string) => /^[A-H](1[0-2]|[1-9])$/.test(s)));
+      let skipSet = new Set(
+        skips.split(",").map((s: string) => s.trim().toUpperCase())
+          .filter((s: string) => /^[A-H](1[0-2]|[1-9])$/.test(s))
+      );
+      const loadWells = [...ROWS_8.map(r => `${r}1`), ...ROWS_8.map(r => `${r}7`)];
+      if (loadWells.every(w => skipSet.has(w))) {
+        skipSet = new Set();
+        badSkipPlates.push(pi);
+      }
       const cells: { row: number; col: number; sampleIdx: number }[] = [];
       for (let r = 0; r < 8; r++) { if (!skipSet.has(`${ROWS_8[r]}1`) && si < samples.length) cells.push({ row: r, col: 1, sampleIdx: si++ }); }
       for (let r = 0; r < 8; r++) { if (!skipSet.has(`${ROWS_8[r]}7`) && si < samples.length) cells.push({ row: r, col: 7, sampleIdx: si++ }); }
@@ -889,6 +901,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
   return (
       <div>
+        {badSkipPlates.length > 0 && (
+          <Alert type="warning" showIcon style={{ marginBottom: 8 }}
+            message={`跳过孔位把 ${badSkipPlates.map(p => `P${p + 1}`).join("、")} 的上样孔全部占满了，已按常规排布显示；请检查「跳过孔位」设置`} />
+        )}
         {plates.map((plate, pIdx) => {
           const skips = skipCoords[pIdx] || "";
           const skipSet = new Set(skips.split(",").map((s: string) => s.trim().toUpperCase()).filter((s: string) => /^[A-H](1[0-2]|[1-9])$/.test(s)));
