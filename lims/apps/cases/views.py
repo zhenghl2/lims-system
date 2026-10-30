@@ -3985,24 +3985,95 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         # 2026-10-16：「最后保存」用 batch.updated_at 呈现。前端只传 {pairs, samples}，
         # 走的是 .update()（不触发 auto_now）→ 此前批次时间戳几乎不变，必须显式戳一次。
         batch.save(update_fields=["updated_at"])
+        post_flow = {"to_report": 0, "to_failed": 0, "to_hold": 0}
         if completed and post_changes:
+            # ── 完成后改 Result / QC → 重新判定这对样本的流程阶段，并同步案例状态 ──
+            #   合格（有结果 且 无 QC）→ 报告阶段 REPORT_DRAFT
+            #   不合格 → 按 QC 判侧：男性* → 疑父失败、母亲回生信等待；女性*/胎儿* → 反之；无 QC → 双方失败
+            #   反向也生效：原本在报告阶段的配对改成不合格 → 退回 BIOINFO_FAILED
+            from .models import WorkflowLog, sync_case_status_for_samples
+            MALE_FLAGS = {"MALE_LOW_LAYERS", "MALE_CONTAM"}
+            FEMALE_FLAGS = {"FEMALE_LOW_LAYERS", "FEMALE_CONTAM", "FETAL_LOW_CONC"}
+            passed_ids, failed_ids, held_ids = [], [], []
+            audit_items = []
             for pair, diff in post_changes:
+                pair = (NipptBioinfoPair.objects.filter(id=pair.id)
+                        .select_related("mother_sample", "father_sample", "case").first())
+                if pair is None:
+                    continue
+                m_smp, f_smp = pair.mother_sample, pair.father_sample
+                m_ids = [str(x) for x in (m_smp.case_sample_ids or [])]
+                f_ids = [str(x) for x in (f_smp.case_sample_ids or [])]
+                qc = (pair.qc_flag or "").strip()
+                ok = bool((pair.result or "").strip()) and not qc
+                if ok:
+                    passed_ids += m_ids + f_ids
+                    NipptBioinfoSample.objects.filter(
+                        id__in=[m_smp.id, f_smp.id]).update(qc_status="PASS")
+                    new_stage = "REPORT_DRAFT"
+                else:
+                    if qc in MALE_FLAGS:
+                        fail_ids, hold_ids = f_ids, m_ids
+                    elif qc in FEMALE_FLAGS:
+                        fail_ids, hold_ids = m_ids, f_ids
+                    else:
+                        fail_ids, hold_ids = m_ids + f_ids, []
+                    failed_ids += fail_ids
+                    held_ids += hold_ids
+                    NipptBioinfoSample.objects.filter(id=m_smp.id).update(
+                        qc_status="FAIL" if (m_ids and m_ids[0] in fail_ids) else "PASS")
+                    NipptBioinfoSample.objects.filter(id=f_smp.id).update(
+                        qc_status="FAIL" if (f_ids and f_ids[0] in fail_ids) else "PASS")
+                    new_stage = "BIOINFO_FAILED" if fail_ids else "BIOINFO"
+                audit_items.append((pair, diff, new_stage))
+
+            if passed_ids or failed_ids or held_ids:
+                with transaction.atomic():
+                    # 直接落阶段 + 写工作流日志，不用 update_wf：
+                    # update_wf 会拦「_FAILED 不得覆盖」，而这里的修改本质就是对失败结论的更正，
+                    # 否则 BIOINFO_FAILED 的样本永远回不到报告阶段。
+                    for ids, stage, act in (
+                        (passed_ids, "REPORT_DRAFT", "COMPLETE"),
+                        (failed_ids, "BIOINFO_FAILED", "FAIL"),
+                        (held_ids, "BIOINFO", "HOLD"),
+                    ):
+                        ids = [str(x) for x in ids]
+                        if not ids:
+                            continue
+                        touched = list(CaseSample.objects.filter(id__in=ids, is_active=True)
+                                       .values_list("id", flat=True))
+                        if not touched:
+                            continue
+                        CaseSample.objects.filter(id__in=touched).update(workflow_stage=stage)
+                        WorkflowLog.objects.bulk_create([
+                            WorkflowLog(case_sample_id=cid, stage=stage, action=act,
+                                        batch_number=batch.batch_number, operator=request.user)
+                            for cid in touched
+                        ])
+                    sync_case_status_for_samples(
+                        list({str(x) for x in (passed_ids + failed_ids + held_ids)}))
+                post_flow = {"to_report": len(passed_ids),
+                             "to_failed": len(failed_ids),
+                             "to_hold": len(held_ids)}
+
+            for pair, diff, new_stage in audit_items:
                 try:
                     payload = dict(diff)
+                    payload["配对"] = {"old": "", "new": "%s / %s" % (
+                        getattr(pair.case, "case_number", ""),
+                        getattr(pair.case, "pt_number", "") or "")}
+                    payload["样本阶段"] = {"old": "", "new": new_stage}
                     payload["operator_name"] = {"old": "", "new": post_operator}
                     payload["reason"] = {"old": "", "new": post_reason}
                     payload["来源"] = {"old": "", "new": "生信完成后修改"}
-                    log_audit(
-                        request, "UPDATE", pair, changes=payload,
-                        entity_type="nippt_bioinfo_pair",
-                        entity_repr="%s/%s" % (batch.batch_number,
-                                               getattr(pair.case, "case_number", "") or pair.id),
-                    )
+                    # 记到「案例」实体上 → 案例管理 → 修改/审计历史 里能直接看到
+                    log_audit(request, "UPDATE", pair.case, changes=payload,
+                              entity_type="case", entity_repr=pair.case.case_number)
                 except Exception as _ex:      # noqa: BLE001
                     print("[bioinfo] post-complete audit failed:", _ex)
         return Response({"message": "Saved", "samples_updated": samples_updated,
                          "qc_only": completed, "ignored_fields": ignored_fields,
-                         "changed_pairs": len(post_changes)})
+                         "changed_pairs": len(post_changes), "flow": post_flow})
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):

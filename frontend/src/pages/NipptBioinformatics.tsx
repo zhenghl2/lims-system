@@ -280,7 +280,15 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         pairs, samples, operator_name: postPerson, reason: postReason.trim(),
       });
       const d = res.data || {};
-      message.success(`修改已保存（${d.changed_pairs ?? 0} 个配对），并记入审计历史`, 6);
+      const f = d.flow || {};
+      const parts: string[] = [];
+      if (f.to_report) parts.push(`${f.to_report} 个样本进入报告阶段`);
+      if (f.to_failed) parts.push(`${f.to_failed} 个样本退回生信失败`);
+      if (f.to_hold) parts.push(`${f.to_hold} 个样本留在生信等待`);
+      message.success(
+        `修改已保存（${d.changed_pairs ?? 0} 个配对）${parts.length ? "：" + parts.join("，") : ""}，已记入审计历史`,
+        8,
+      );
       setPostOpen(false);
       setEditingPairs({}); setEditingSamples({}); fetchDetail(selectedBatch.id);
     } catch (e: any) {
