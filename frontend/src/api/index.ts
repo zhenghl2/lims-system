@@ -252,6 +252,8 @@ export const casesApi = {
 
   listLibraryBatches: (params?: Record<string, unknown>) => api.get("/cases/library/", { params }),
   getLibraryBatch: (id: string) => api.get(`/cases/library/${id}/`),
+  // 2026-10-30：按提取板列顺序列出本建库批次样本（含 SKIP 孔位），供「提取顺序填入」
+  libraryExtractionOrder: (id: string) => api.get(`/cases/library/${id}/extraction-order/`),
   createLibraryBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/library/", data),
   pendingLibrary: () => api.get("/cases/library/pending/"),
   // ⚠️ 文库保存的请求体内联了 base64 照片（可达数 MB），跨境/慢网上传常超过默认 30s

@@ -59,6 +59,8 @@ const LIB_KITS = [{value:"ND607-C2",label:"VAHTS Universal DNA Library Prep Kit 
 const INDEX_KITS = [{value:"N34201",label:"VAHTS Maxi UDI Adapters Set1 (1-96) - Cat#N34201-01"},{value:"N34202",label:"VAHTS Maxi UDI Adapters Set2 (97-192) - Cat#N34202-01"},{value:"N34203",label:"VAHTS Maxi UDI Adapters Set3 (193-288) - Cat#N34203-01"},{value:"N34204",label:"VAHTS Maxi UDI Adapters Set4 (289-384) - Cat#N34204-01"}];
 
 type PlateCell = { vgId: string; index: string; sampleIdx?: number; isQC?: boolean; kind?: string;
+  /** 「提取顺序填入」保留的 SKIP 孔位：占位但无样本，不可拖动、不计样本数 */
+  skip?: boolean;
   /** 仅居中合并板用于本板男女计数；kind/sampleIdx 保持与旧版一致（sample_results 的 key 不能变）*/
   sexKind?: "F" | "M" };
 type PlateGrid = PlateCell[][];
@@ -144,6 +146,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   const emptyPlate = ():PlateGrid => Array.from({length:8},()=>Array.from({length:12},()=>({vgId:"",index:""})));
   // 2026-10-14：超 96 孔自动增板 —— 状态改为「板数组」，每块板有独立起点；最多 4 块（4 套 UDI 试剂盒）
   const MAX_PLATES = 4;
+  // 2026-10-30：填板方式 —— pt=按 PT 顺序居中（默认）｜extraction=按提取板列顺序（保留 SKIP）
+  const [fillMode, setFillMode] = useState<"pt" | "extraction">("pt");
+  const [extOrder, setExtOrder] = useState<any>(null);
+  const [extLoading, setExtLoading] = useState(false);
   const [femalePlates, setFemalePlates] = useState<PlateGrid[]>([emptyPlate()]);
   const [malePlates, setMalePlates] = useState<PlateGrid[]>([emptyPlate()]);
   const [xiamenPlates, setXiamenPlates] = useState<PlateGrid[]>([emptyPlate()]);
@@ -265,6 +271,51 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     return [p, idx];
   };
 
+  /**
+   * 2026-10-30「提取顺序填入」：把提取板的每一个「列」整列搬到建库板的一列。
+   * · 列内 A→H 行位不变，SKIP 孔保留为空位
+   * · 起始输入填 1~12 = 起始列号；留空 = 按本板列数居中
+   * · 超过 12 列自动接下一块板（下一块板可用它自己的起始列）
+   */
+  const buildPlatesFromExtraction = (columns: any[], starts: string[], kind: string,
+                                     idxById: Record<string, number>) => {
+    const colNum = (v: string) => {
+      const n = parseInt(String(v || "").replace(/[^0-9]/g, ""), 10);
+      return Number.isFinite(n) && n >= 1 && n <= 12 ? n - 1 : null;
+    };
+    const plates: PlateGrid[] = [];
+    let ci = 0, p = 0;
+    while (ci < columns.length && p < MAX_PLATES) {
+      const st = colNum(starts[p] || "");
+      const remain = columns.length - ci;
+      const startCol = st !== null ? st : Math.max(0, Math.floor((12 - Math.min(remain, 12)) / 2));
+      const g = emptyPlate();
+      let used = 0;
+      for (let c = startCol; c < 12 && ci < columns.length; c++) {
+        const col = columns[ci] || {};
+        const cells = col.cells || [];
+        for (let r = 0; r < 8; r++) {
+          const cell = cells[r] || {};
+          if (cell.sample) {
+            g[r][c] = {
+              vgId: cell.sample.test_sample_id || "?",
+              index: "",
+              sampleIdx: idxById[cell.sample.id],
+              isQC: !!cell.sample.is_qc,
+              kind,
+            };
+          } else if (cell.skip) {
+            g[r][c] = { vgId: "", index: "", skip: true, kind };
+          }
+        }
+        ci++; used++;
+      }
+      if (!used) break;
+      plates.push(g); p++;
+    }
+    return { plates: plates.length ? plates : [emptyPlate()], overflow: columns.length - ci };
+  };
+
   /** 厦门合并板：顺序切片多板；每块板用各自的 女起/男起（2026-10-14） */
   const buildXiamenPlates = (female:SampleItem[], male:SampleItem[], starts:{f:string;m:string}[]) => {
     const plates:PlateGrid[] = []; let fi=0, mi=0;
@@ -309,14 +360,30 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     return { plates: plates.length ? plates : [emptyPlate()], overflow: (female.length-fi)+(male.length-mi) };
   };
   /** 多板统一入口（按地区） */
-  const rebuildAllPlates = (d:any, startsXm:{f:string;m:string}[], startsF:string[], startsM:string[]) => {
+  const rebuildAllPlates = (d:any, startsXm:{f:string;m:string}[], startsF:string[], startsM:string[],
+                            modeOverride?: "pt" | "extraction", orderOverride?: any) => {
     const males = maleOrder<SampleItem>(d);
+    const mode = modeOverride || fillMode;
+    const order = orderOverride || extOrder;
     if (region === "XIAMEN") {
       const r = buildXiamenPlates(d.female_samples || [], males, startsXm);
       setXiamenPlates(prev => r.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
       setPlateOverflow(r.overflow);
       // 起点数补齐到板数：只增不减，避免与依赖它的 effect 反复触发
       setXiamenStarts(p => p.length >= r.plates.length ? p : padStarts(p, r.plates.length-1, {f:"",m:""}));
+    } else if (mode === "extraction" && order) {
+      // 提取顺序：按提取板列 → 建库板列（保留 SKIP）
+      const fIdx: Record<string, number> = {};
+      (d.female_samples || []).forEach((x: any, i: number) => { if (x?.id) fIdx[x.id] = i; });
+      const mIdx: Record<string, number> = {};
+      males.forEach((x: any, i: number) => { if (x?.id) mIdx[x.id] = i; });
+      const rf = buildPlatesFromExtraction(order?.female?.columns || [], startsF, "F", fIdx);
+      const rm = buildPlatesFromExtraction(order?.male?.columns || [], startsM, "M", mIdx);
+      setFemalePlates(prev => rf.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
+      setMalePlates(prev => rm.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
+      setPlateOverflow(rf.overflow + rm.overflow);
+      setHkFemaleStarts(p => p.length >= rf.plates.length ? p : padStarts(p, rf.plates.length-1, ""));
+      setHkMaleStarts(p => p.length >= rm.plates.length ? p : padStarts(p, rm.plates.length-1, ""));
     } else {
       const rf = buildPlatesFromStart(d.female_samples || [], startsF, "F");
       const rm = buildPlatesFromStart(males, startsM, "M");
@@ -388,6 +455,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     try{
       const r = await(casesApi as any).getLibraryBatch(id);
       const d=r.data;setSelectedBatch(d);plateBaseRef.current="";
+      setFillMode("pt"); setExtOrder(null);   // 换批次：回到默认排列
       const ld=d.library_data||{};
       setRegion(ld.region||"XIAMEN");setFemaleStartCoord(ld.female_start_coord||"");setMaleStartCoord(ld.male_start_coord||"");
       setHkFemaleStart(ld.hk_female_start||"");setHkMaleStart(ld.hk_male_start||"");
@@ -963,6 +1031,47 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     });
   };
 
+  /** 2026-10-30：切换「提取顺序填入」——取提取板列顺序后立即重排；再点一次恢复按 PT 顺序 */
+  const toggleExtractionFill = async () => {
+    if (!selectedBatch) return;
+    if (fillMode === "extraction") {
+      setFillMode("pt");
+      setExtOrder(null);
+      rebuildAllPlates(selectedBatch, xiamenStarts, hkFemaleStarts, hkMaleStarts, "pt", null);
+      message.success("已恢复按 PT 顺序排列（起始输入回到孔位坐标，如 A3）");
+      return;
+    }
+    setExtLoading(true);
+    try {
+      const r = await (casesApi as any).libraryExtractionOrder(selectedBatch.id);
+      const d = r.data || {};
+      const fN = d?.female?.columns?.length || 0;
+      const mN = d?.male?.columns?.length || 0;
+      if (!fN && !mN) {
+        message.warning("本批次样本在提取板里没有找到排列数据（提取批次可能未保存板面）");
+        return;
+      }
+      setExtOrder(d);
+      setFillMode("extraction");
+      // 原来的起始值是孔位坐标（如 A1），在「起始列」语义下会被读成第 1 列 → 先清空，按列数居中
+      const cleanStarts = (arr: string[]) => arr.map(v => /^[0-9]{1,2}$/.test(String(v || "").trim()) ? v : "");
+      const fStarts = cleanStarts(hkFemaleStarts);
+      const mStarts = cleanStarts(hkMaleStarts);
+      setHkFemaleStarts(fStarts); setHkMaleStarts(mStarts);
+      rebuildAllPlates(selectedBatch, xiamenStarts, fStarts, mStarts, "extraction", d);
+      const batches = (d.batches || []).join("、");
+      message.success(`已按提取顺序排列：女性 ${fN} 列 / 男性 ${mN} 列（保留 SKIP）${batches ? "；提取批次 " + batches : ""}`, 6);
+      if ((d.missing || []).length) {
+        message.warning(`有 ${d.missing.length} 个样本找不到提取板位置，未排入板面：` +
+          d.missing.slice(0, 3).map((x: any) => `${x.test_sample_id || ""} ${x.patient_name}`).join("、"), 8);
+      }
+    } catch (e: any) {
+      message.error(e?.response?.data?.detail || "读取提取顺序失败");
+    } finally {
+      setExtLoading(false);
+    }
+  };
+
   /** 按当前样本列表重建孔板（用于清理含旧样本的陈旧板面；Index 按 vgId 保留） */
   const rebuildPlates = () => {
     if (!selectedBatch) return;
@@ -986,7 +1095,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               const sr = sKey ? (sampleResults[sKey] ?? sampleResults[String(sIdx)]) : undefined;
               const failBg = sr?.status==="fail"?"#fff1f0":undefined;
               const passBg = sr?.status==="pass"?"#f6ffed":undefined;
-              const baseBg = cell.vgId?"#e8f5e9":"#fafafa";
+              const baseBg = cell.skip ? "#fff7e6" : cell.vgId?"#e8f5e9":"#fafafa";
               const bg = failBg||passBg||baseBg;
               // Index 查重（实时）：本格重复则标红并提示其他位置
               const _dupList = indexCheck.cellDup.get(`${plateKey}:${row}:${col}`);
@@ -1005,7 +1114,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   onTouchMove={(e)=>{ const d=touchDragRef.current; if(!d) return; const t=e.touches[0]; if(!d.active&&(Math.abs(t.clientX-d.x)>8||Math.abs(t.clientY-d.y)>8)){ d.active=true; dragSrcRef.current={plate:d.plate,row:d.row,col:d.col}; } if(d.active){ e.preventDefault(); const el=document.elementFromPoint(t.clientX,t.clientY) as HTMLElement|null; const cellEl=el?.closest?.("[data-plate-cell]") as HTMLElement|null; if(cellEl){ const pk=cellEl.getAttribute("data-plate-key")||""; const rc=(cellEl.getAttribute("data-plate-cell")||"").split(","); if(pk&&parsePlateKey(pk).scheme===parsePlateKey(plateKey).scheme) setDragOverCell({plate:pk,row:parseInt(rc[0]),col:parseInt(rc[1])}); } } }}
                   onTouchEnd={(e)=>{ const d=touchDragRef.current; touchDragRef.current=null; if(d&&d.active){ dragSrcRef.current=null; const t=e.changedTouches[0]; const el=document.elementFromPoint(t.clientX,t.clientY) as HTMLElement|null; const cellEl=el?.closest?.("[data-plate-cell]") as HTMLElement|null; setDragOverCell(null); if(cellEl){ const pk=cellEl.getAttribute("data-plate-key")||""; const rc=(cellEl.getAttribute("data-plate-cell")||"").split(","); if(pk) swapPlateCells(d.plate,d.row,d.col,pk,parseInt(rc[0]),parseInt(rc[1])); } } else { dragSrcRef.current=null; setDragOverCell(null); } }}
                   style={{...cellStyle,background:_dupList?"#fff7e6":bg,cursor:(cell.vgId&&selectedBatch?.status!=="COMPLETED")?"pointer":"default",outline:(dragOverCell&&dragOverCell.plate===plateKey&&dragOverCell.row===row&&dragOverCell.col===col)?"2px dashed #1677ff":undefined,outlineOffset:-2}}>
-                  <Popover trigger={selectedBatch?.status==="COMPLETED"?[]:"click"} content={
+                  <Popover trigger={(selectedBatch?.status==="COMPLETED"||cell.skip)?[]:"click"} content={
                     <div style={{minWidth:180}}>
                       <Radio.Group value={sr?.status||""} onChange={e=>{const v=e.target.value;setSampleResults((p:any)=>({...p,[String(sKey)]:{status:v,note:v==="fail"?(p[String(sKey)]?.note||""):""}}))}}>
                         <Radio value="pass" style={{color:"#52c41a"}}>Pass</Radio>
@@ -1014,11 +1123,15 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                       {sr?.status==="fail"&&<TextArea size="small" rows={2} placeholder="失败原因..." value={sr?.note||""} onChange={e=>setSampleResults((p:any)=>({...p,[String(sKey)]:{status:"fail",note:e.target.value}}))} style={{marginTop:8}}/>}
                     </div>
                   }>
+                    {cell.skip ? (
+                      <div style={{minHeight:30,lineHeight:"30px",textAlign:"center",fontSize:10,color:"#d48806",fontWeight:600}}>SKIP</div>
+                    ) : (
                     <div style={{display:"flex",alignItems:"stretch",minHeight:30}}>
                       <input type="text" data-ix-cell={row+"_"+col} disabled={selectedBatch?.status==="COMPLETED"} value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value)} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); const ni=col*8+row+1; if(ni<96){ const nr=ni%8, nc=Math.floor(ni/8); const root=document.querySelector(`[data-plate-grid="${plateKey}"]`); const el=root?.querySelector(`[data-ix-cell="${nr}_${nc}"]`) as HTMLInputElement|null; if(el){ el.focus(); el.select(); } } } }} style={_dupList ? {...inputStyle, background:"#ffe58f", color:"#ad4e00", fontWeight:700, boxSizing:"border-box", border:"1px solid #faad14"} : inputStyle}
                         title={_dupList ? `Index ${cell.index} 重复：与 ${_dupOther} 相同` : undefined} placeholder="ix"/>
                       <div style={{...vgIdStyle}}>{cell.vgId||""}{cell.isQC?<span style={{color:"#13c2c2",fontWeight:600,marginLeft:1}}>QC</span>:null}</div>
                     </div>
+                    )}
                   </Popover>
                 </td>
               );
@@ -1138,13 +1251,37 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               </Space>
             ):(
               <Space direction="vertical" style={{width:"100%"}}>
+                {/* 2026-10-30：按提取板列顺序填入（香港女性/男性板通用；保留 SKIP 孔位） */}
+                <Space size={8} wrap>
+                  <Button
+                    size="small"
+                    type={fillMode === "extraction" ? "primary" : "default"}
+                    loading={extLoading}
+                    onClick={toggleExtractionFill}
+                  >
+                    🧪 提取顺序填入
+                  </Button>
+                  {fillMode === "extraction" && (
+                    <>
+                      <Button size="small" onClick={toggleExtractionFill}>恢复按 PT 顺序</Button>
+                      <Text type="secondary" style={{ fontSize: 11 }}>
+                        已按提取板「一列 → 一列」排列（SKIP 孔保留）；「起始列」填 1–12，留空=居中
+                      </Text>
+                      {!!(extOrder?.female?.columns?.length || extOrder?.male?.columns?.length) && (
+                        <Tag color="blue" style={{ fontSize: 11 }}>
+                          提取批次 {(extOrder?.batches || []).join("、") || "—"}
+                        </Tag>
+                      )}
+                    </>
+                  )}
+                </Space>
                 {femalePlates.map((g,k)=>(
-                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=e.target.value.toUpperCase(); return n;})} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
+                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillMode==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillMode==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillMode==="extraction"?"1-12":"居中"}/></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
                     {renderNiptPlate(g, plateSetter("f", k), `f${k}`)}
                   </Card>
                 ))}
                 {malePlates.map((g,k)=>(
-                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>起始:</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=e.target.value.toUpperCase(); return n;})} placeholder="居中"/></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
+                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillMode==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillMode==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillMode==="extraction"?"1-12":"居中"}/></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
                     {renderNiptPlate(g, plateSetter("m", k), `m${k}`)}
                   </Card>
                 ))}

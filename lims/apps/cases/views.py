@@ -3439,6 +3439,18 @@ from .serializers import (
     NipptHybSeqBatchCreateSerializer, NipptHybSeqSampleSerializer,
 )
 
+def _lib_tsid(ls):
+    """建库样本的 test_sample_id：取 case_sample_ids 第一条的 CaseSample.test_sample_id。"""
+    try:
+        if ls.case_sample_ids:
+            cs = CaseSample.objects.filter(id=ls.case_sample_ids[0]).first()
+            if cs:
+                return cs.test_sample_id or ""
+    except Exception:
+        pass
+    return ""
+
+
 class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.ModelViewSet):
     nippt_stage = "LIBRARY_PREP"
 
@@ -3522,6 +3534,139 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
             "male_blood_count":sum(1 for e in entries if e["category"]=="MALE_BLOOD"),
             "male_other_count":sum(1 for e in entries if e["category"]=="MALE_OTHER"),
             "total_pending":len(entries),"entries":entries})
+
+    @action(detail=True, methods=["get"], url_path="extraction-order")
+    def extraction_order(self, request, pk=None):
+        """按提取板的物理顺序列出本建库批次的样本（供「提取顺序填入」用）。
+
+        只读，不改任何数据。规则与提取模块 buildMagneticPlates 一致：
+        · 磁棒法：每块板只用 1 列、7 列（各 8 行 A-H），plate_skip_coords 里的孔为 SKIP
+        · 手工法等其他：A1..H1、A2..H2 … 列优先
+        · 提取批次之间按 created_at 先后；批次内 plate_layout（拖过位置）优先，否则按规则排
+        · 整列没有有效样本（全是 SKIP / 不在本建库批次）→ 不占一列（用户 2026-10-30 确认）
+        返回 { female: {columns:[{plate,col,cells:[{well,sample(s)|skip|empty}]}], ...}, male: {...},
+               missing: [本批次样本但找不到提取记录的] }
+        """
+        ROWS8 = ["A", "B", "C", "D", "E", "F", "G", "H"]
+        batch = self.get_object()
+        lib_samples = list(batch.samples.select_related("case").all())
+
+        # 建库样本 → 提取样本
+        es_ids = [str(x.source_extraction_sample_id) for x in lib_samples
+                  if x.source_extraction_sample_id]
+        es_map = {str(e.id): e for e in NipptExtractionSample.objects.filter(id__in=es_ids)}
+        lib_by_es = {}
+        for ls in lib_samples:
+            if ls.source_extraction_sample_id and str(ls.source_extraction_sample_id) in es_map:
+                lib_by_es[str(ls.source_extraction_sample_id)] = ls
+        missing = [{"sample_id": str(ls.id), "test_sample_id": _lib_tsid(ls),
+                    "patient_name": ls.patient_name, "category": ls.category}
+                   for ls in lib_samples
+                   if not ls.source_extraction_sample_id
+                   or str(ls.source_extraction_sample_id) not in es_map]
+
+        # 按提取批次分组（时间先后）
+        ex_batches = {}
+        for e in es_map.values():
+            ex_batches.setdefault(str(e.batch_id), []).append(e)
+        ordered_batches = sorted(
+            NipptExtractionBatch.objects.filter(id__in=list(ex_batches.keys())),
+            key=lambda b: (b.created_at, b.batch_number),
+        )
+
+        out = {"female": {"columns": []}, "male": {"columns": []}, "missing": missing,
+               "batches": [b.batch_number for b in ordered_batches]}
+
+        for ex_b in ordered_batches:
+            ed = ex_b.extraction_data or {}
+            es_list = sorted(ex_batches[str(ex_b.id)], key=lambda e: (e.created_at, e.patient_name))
+            for side in ("female", "male"):
+                side_es = [e for e in es_list
+                           if (e.category == "FEMALE_BLOOD") == (side == "female")]
+                if not side_es:
+                    continue
+                sec = ed.get(side) or {}
+                method = (sec.get("method") or "").upper()
+                layout = sec.get("plate_layout") or {}
+                skip_raw = sec.get("plate_skip_coords") or {}
+                skip_sets = {}
+                for pk_, sv in skip_raw.items():
+                    try:
+                        pidx = int(pk_)
+                    except (TypeError, ValueError):
+                        continue
+                    skip_sets[pidx] = {str(w).strip().upper() for w in str(sv or "").split(",")
+                                       if str(w).strip()}
+                magnetic = method in ("MAGNETIC_ROD", "")   # 空=旧数据，按磁棒口径（两列）
+                plate_cols = (1, 7) if magnetic else tuple(range(1, 13))
+
+                # ① plate_layout 优先：仅当它覆盖的样本集合与本批次该侧完全一致
+                well_map = {}
+                plate_count = 0
+                lay_ids = {str(v) for m in layout.values() for v in (m or {}).values() if v}
+                cur_ids = {str(e.id) for e in side_es}
+                if lay_ids and lay_ids == cur_ids:
+                    for pkey, m in layout.items():
+                        try:
+                            pidx = int(pkey)
+                        except (TypeError, ValueError):
+                            continue
+                        for well, sid in (m or {}).items():
+                            if sid:
+                                well_map[(pidx, str(well).upper())] = str(sid)
+                        plate_count = max(plate_count, pidx + 1)
+                else:
+                    # ② 规则排列
+                    i, pidx = 0, 0
+                    while i < len(side_es) and pidx < 96:
+                        placed = False
+                        for c in plate_cols:
+                            for r in ROWS8:
+                                well = "%s%d" % (r, c)
+                                if well in skip_sets.get(pidx, set()):
+                                    continue
+                                if i < len(side_es):
+                                    well_map[(pidx, well)] = str(side_es[i].id)
+                                    i += 1
+                                    placed = True
+                        if not placed:
+                            break
+                        pidx += 1
+                    plate_count = pidx
+
+                # ③ 转成列序列（列内 A..H），整列无有效样本则不占位
+                for pidx in range(max(plate_count, 0)):
+                    for c in plate_cols:
+                        cells = []
+                        has = False
+                        for r in ROWS8:
+                            well = "%s%d" % (r, c)
+                            sid = well_map.get((pidx, well))
+                            ls = lib_by_es.get(sid) if sid else None
+                            if ls is not None:
+                                cells.append({"well": well, "sample": {
+                                    "id": str(ls.id),
+                                    "test_sample_id": _lib_tsid(ls),
+                                    "patient_name": ls.patient_name,
+                                    "is_qc": bool(ls.is_qc),
+                                    "category": ls.category,
+                                }})
+                                has = True
+                            elif well in skip_sets.get(pidx, set()):
+                                cells.append({"well": well, "skip": True})
+                            else:
+                                cells.append({"well": well, "empty": True})
+                        if has:
+                            out[side]["columns"].append({
+                                "batch": ex_b.batch_number,
+                                "plate": pidx + 1,
+                                "col": c,
+                                "cells": cells,
+                            })
+
+        for side in ("female", "male"):
+            out[side]["total_columns"] = len(out[side]["columns"])
+        return Response(out)
 
     @action(detail=True, methods=["post"])
     def save_processing(self, request, pk=None):
