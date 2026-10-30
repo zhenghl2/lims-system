@@ -3888,8 +3888,14 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         # 原来这里直接返回 400，前端 QC 改完保存必然失败（页面上连 Save 按钮都不显示）。
         # 已完成时只写 qc_flag / note / qc_note，其它实验指标与 bioinfo_data 一律忽略。
         completed = batch.status == "COMPLETED"
+        # 2026-10-30：已完成批次允许改 Result / Note / QC，但必须提交「人员 + 原因」并写审计
+        post_operator = (request.data.get("operator_name") or "").strip()
+        post_reason = (request.data.get("reason") or "").strip()
+        if completed and not (post_operator and post_reason):
+            return Response({"error": "已完成批次修改必须填写「人员」和「原因」"}, status=400)
         ignored_fields = 0
         qc_touched = []
+        post_changes = []          # [(pair, {field: {old,new}})] → 写审计
         pairs_data = request.data.get("pairs", [])
         METRIC_FIELDS = [
             "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
@@ -3899,16 +3905,34 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             pair_id = pd.get("id")
             if not pair_id: continue
             if completed:
+                pair = NipptBioinfoPair.objects.filter(id=pair_id, batch=batch).select_related("case").first()
+                if pair is None:
+                    continue
                 upd = {}
                 if "qc_flag" in pd:
                     upd["qc_flag"] = pd.get("qc_flag") or ""
                 if "note" in pd:
                     upd["note"] = pd.get("note") or ""
-                ignored_fields += len([k for k in pd if k not in ("id", "qc_flag", "note")])
+                if "result" in pd:
+                    rv = pd.get("result") or ""
+                    upd["result"] = rv
+                    upd["cpi"] = NIPPT_CPI_BY_RESULT.get(rv)      # 与正常保存同口径派生
+                # 完成后的实验指标（Layers/Het/Y/Conc）与 report_data 不允许改
+                ignored_fields += len([k for k in pd
+                                       if k not in ("id", "qc_flag", "note", "result")])
                 if upd:
+                    diff = {}
+                    for k, v in upd.items():
+                        if k == "cpi":
+                            continue
+                        old = getattr(pair, k, "") or ""
+                        if str(old) != str(v or ""):
+                            diff[k] = {"old": str(old), "new": str(v or "")}
                     upd["updated_at"] = timezone.now()
                     if NipptBioinfoPair.objects.filter(id=pair_id, batch=batch).update(**upd):
                         qc_touched.append(str(pair_id))
+                        if diff:
+                            post_changes.append((pair, diff))
                 continue
             result_val = pd.get("result", "") or ""
             updates = {
@@ -3961,15 +3985,24 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         # 2026-10-16：「最后保存」用 batch.updated_at 呈现。前端只传 {pairs, samples}，
         # 走的是 .update()（不触发 auto_now）→ 此前批次时间戳几乎不变，必须显式戳一次。
         batch.save(update_fields=["updated_at"])
-        if completed and qc_touched:
-            try:
-                log_audit(request, "UPDATE", batch, changes={
-                    "qc_after_complete": {"count": len(qc_touched), "pairs": qc_touched[:30]},
-                }, entity_type="nippt_bioinfo_batch", entity_repr=batch.batch_number)
-            except Exception as _ex:      # noqa: BLE001
-                print("[bioinfo] qc audit failed:", _ex)
+        if completed and post_changes:
+            for pair, diff in post_changes:
+                try:
+                    payload = dict(diff)
+                    payload["operator_name"] = {"old": "", "new": post_operator}
+                    payload["reason"] = {"old": "", "new": post_reason}
+                    payload["来源"] = {"old": "", "new": "生信完成后修改"}
+                    log_audit(
+                        request, "UPDATE", pair, changes=payload,
+                        entity_type="nippt_bioinfo_pair",
+                        entity_repr="%s/%s" % (batch.batch_number,
+                                               getattr(pair.case, "case_number", "") or pair.id),
+                    )
+                except Exception as _ex:      # noqa: BLE001
+                    print("[bioinfo] post-complete audit failed:", _ex)
         return Response({"message": "Saved", "samples_updated": samples_updated,
-                         "qc_only": completed, "ignored_fields": ignored_fields})
+                         "qc_only": completed, "ignored_fields": ignored_fields,
+                         "changed_pairs": len(post_changes)})
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):

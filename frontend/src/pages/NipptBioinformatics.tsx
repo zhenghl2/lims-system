@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { Card, Table, Button, Tag, Modal, message, Typography, InputNumber,
   Space, Popconfirm, Select, Alert, Input, Upload, Tooltip } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, DeleteOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined, LinkOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, LinkOutlined, EditOutlined,
   DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import api from "../api/client";
 import { REJECTION_REASONS } from "../api/types";
@@ -121,6 +121,10 @@ export default function NipptBioinformatics() {
   const [pendingLoading, setPendingLoading] = useState(false);
   const [selectedHsBatch, setSelectedHsBatch] = useState<string>("");
   const [saving, setSaving] = useState(false);
+  // 2026-10-30：已完成批次的修改需要「人员 + 原因」，弹窗确认并写审计
+  const [postOpen, setPostOpen] = useState(false);
+  const [postPerson, setPostPerson] = useState<string>("");
+  const [postReason, setPostReason] = useState<string>("");
   const [editingPairs, setEditingPairs] = useState<Record<string, any>>({});
   const [editingSamples, setEditingSamples] = useState<Record<string, any>>({});
   const [manualPairMother, setManualPairMother] = useState<Record<string, string>>({});
@@ -206,28 +210,84 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     setEditingPairs(prev => ({ ...prev, [pairId]: { ...(prev[pairId] || {}), [field]: value } }));
   };
 
+  // 已完成批次可改字段：Result / Note / QC（实验指标锁定）
+  const RESULT_TEXT: Record<string, string> = {
+    INCLUSION: "支持", EXCLUSION: "不支持", INCONCLUSIVE: "临界", "": "无结果",
+  };
+  const QC_TEXT: Record<string, string> = Object.fromEntries(
+    QC_FLAG_OPTIONS.map((o) => [o.value, o.label || "Normal"]),
+  );
+  const buildPostDiff = () => {
+    const rows: { pair: any; field: string; label: string; oldV: string; newV: string }[] = [];
+    const pairs = (selectedBatch?.pairs || []) as any[];
+    for (const pid of Object.keys(editingPairs)) {
+      const p = pairs.find((x) => x.id === pid);
+      if (!p) continue;
+      const ed = editingPairs[pid] || {};
+      if (ed.result !== undefined) {
+        const ov = p.result ?? "", nv = ed.result ?? "";
+        if (ov !== nv) rows.push({ pair: p, field: "result", label: "Result",
+          oldV: RESULT_TEXT[ov] ?? ov, newV: RESULT_TEXT[nv] ?? nv });
+      }
+      if (ed.note !== undefined) {
+        const ov = p.note ?? "", nv = ed.note ?? "";
+        if ((ov || "") !== (nv || "")) rows.push({ pair: p, field: "note", label: "备注",
+          oldV: ov || "（空）", newV: nv || "（空）" });
+      }
+      if (ed.qc_flag !== undefined) {
+        const ov = p.qc_flag ?? "", nv = ed.qc_flag ?? "";
+        if ((ov || "") !== (nv || "")) rows.push({ pair: p, field: "qc_flag", label: "QC",
+          oldV: QC_TEXT[ov] ?? (ov || "Normal"), newV: QC_TEXT[nv] ?? (nv || "Normal") });
+      }
+    }
+    return rows;
+  };
+
   const handleSave = async () => {
     if (!selectedBatch) return;
     const pairIds = Object.keys(editingPairs);
     if (pairIds.length === 0) { message.info("No changes"); return; }
+    // 已完成批次：先弹「改动清单 + 人员 + 原因」，确认后再提交
+    if (selectedBatch.status === "COMPLETED") {
+      if (!buildPostDiff().length) { message.info("没有实际改动"); return; }
+      setPostPerson(operators[selectedBatch.id] || (selectedBatch as any).operator_name || DEFAULT_OPERATOR);
+      setPostReason("");
+      setPostOpen(true);
+      return;
+    }
     setSaving(true);
     try {
       const pairs = pairIds.map(id => ({ id, ...editingPairs[id] }));
       const sampleIds = Object.keys(editingSamples);
       const samples = sampleIds.map(id => ({ id, ...editingSamples[id] }));
-      const res = await api.post(`/cases/bioinfo/${selectedBatch.id}/save_processing/`, { pairs, samples });
-      const d = res.data || {};
-      if (d.qc_only) {
-        message.success("QC 已保存（批次已完成，仅 QC 标记 / 备注可修改）");
-        if (d.ignored_fields) {
-          message.warning(`有 ${d.ignored_fields} 项实验数据未保存：批次已完成，指标/结果不可再改`, 6);
-        }
-      } else {
-        message.success("Saved");
-      }
+      await api.post(`/cases/bioinfo/${selectedBatch.id}/save_processing/`, { pairs, samples });
+      message.success("Saved");
       setEditingPairs({}); setEditingSamples({}); fetchDetail(selectedBatch.id);
     } catch (e: any) { message.error(e.response?.data?.error || "Save failed"); }
     setSaving(false);
+  };
+
+  /** 已完成批次：带 人员 + 原因 提交修改（后端写审计：每个配对的 旧值→新值） */
+  const doSavePostEdit = async () => {
+    if (!selectedBatch) return;
+    if (!postPerson) { message.error("请选择人员"); return; }
+    if (postReason.trim().length < 2) { message.error("请填写修改原因（至少 2 个字）"); return; }
+    setSaving(true);
+    try {
+      const pairs = Object.keys(editingPairs).map(id => ({ id, ...editingPairs[id] }));
+      const samples = Object.keys(editingSamples).map(id => ({ id, ...editingSamples[id] }));
+      const res = await api.post(`/cases/bioinfo/${selectedBatch.id}/save_processing/`, {
+        pairs, samples, operator_name: postPerson, reason: postReason.trim(),
+      });
+      const d = res.data || {};
+      message.success(`修改已保存（${d.changed_pairs ?? 0} 个配对），并记入审计历史`, 6);
+      setPostOpen(false);
+      setEditingPairs({}); setEditingSamples({}); fetchDetail(selectedBatch.id);
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "保存失败");
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleComplete = async () => {
@@ -326,6 +386,7 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
     <InputNumber size="small" style={{ width: 60 }}
       precision={field.endsWith("layers") ? 0 : undefined}
       value={editingPairs[pairId]?.[field] !== undefined ? editingPairs[pairId][field] : v}
+      disabled={selectedBatch?.status === "COMPLETED"}   // 完成后指标锁定（Result/Note/QC 可改）
       onChange={(val) => handlePairEdit(pairId, field, val)} />
   );
 
@@ -587,9 +648,9 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             {selectedBatch.status === "COMPLETED" && (
               <Space style={{ marginTop: 16 }} align="center">
                 <Alert type="success" message="Batch completed" showIcon />
-                {/* 2026-10-30：完成后 QC 标记/备注仍需可补记（污染、层数低…），单独给保存入口 */}
-                <Button type="primary" icon={<CheckOutlined />} loading={saving} onClick={handleSave}>保存 QC / 备注</Button>
-                <Text type="secondary" style={{ fontSize: 12 }}>已完成批次只能修改 QC 标记与备注，实验指标不可再改</Text>
+                {/* 2026-10-30：完成后允许改 Result / 备注 / QC，保存时必须填「人员 + 原因」并写审计 */}
+                <Button type="primary" icon={<EditOutlined />} loading={saving} onClick={handleSave}>修改并保存</Button>
+                <Text type="secondary" style={{ fontSize: 12 }}>已完成批次可修改 Result / 备注 / QC（实验指标锁定）；保存时需填写人员与原因，并记入审计历史</Text>
               </Space>)}
             <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
               <Text type="secondary">操作人: </Text>
@@ -698,6 +759,71 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
             <Alert type="warning" showIcon message={`${importResult.warnings.length} 条提示`} style={{marginTop:12}} />
             <ul style={{maxHeight:160,overflow:"auto",marginTop:8}}>{importResult.warnings.map((w:string,i:number) => <li key={i} style={{fontSize:12}}>{w}</li>)}</ul></>)}
         </>)}
+      </Modal>
+
+      {/* 已完成批次修改：改动清单（旧值→新值）+ 人员 + 原因 → 写审计 */}
+      <Modal
+        title={<Space><EditOutlined style={{ color: "#faad14" }} /><span>已完成批次修改 — 请确认改动并填写人员与原因</span></Space>}
+        open={postOpen}
+        onCancel={() => setPostOpen(false)}
+        onOk={doSavePostEdit}
+        confirmLoading={saving}
+        okText="确认保存并记录审计"
+        cancelText="取消"
+        okButtonProps={{ disabled: !postPerson || postReason.trim().length < 2 }}
+        width={760}
+        destroyOnClose
+      >
+        <Space direction="vertical" size={12} style={{ width: "100%" }}>
+          <Alert type="warning" showIcon
+            message="本批次已完成，修改会记入审计历史（谁、何时、原因、每个配对的旧值→新值）"
+            description="可修改：Result / 备注 / QC 标记；实验指标（Layers·Het·Y·Conc）在完成后锁定。" />
+          <div style={{ maxHeight: 260, overflow: "auto", border: "1px solid #f0f0f0", borderRadius: 4 }}>
+            <Table
+              size="small"
+              pagination={false}
+              dataSource={buildPostDiff()}
+              rowKey={(r: any) => `${r.pair.id}-${r.field}`}
+              columns={[
+                { title: "Case#", dataIndex: ["pair", "case_number"], width: 170, ellipsis: true },
+                { title: "PT#", dataIndex: ["pair", "pt_number"], width: 85 },
+                { title: "字段", dataIndex: "label", width: 70 },
+                { title: "原值", dataIndex: "oldV", width: 150, ellipsis: true,
+                  render: (v: string) => <Text delete type="secondary">{v}</Text> },
+                { title: "新值", dataIndex: "newV", width: 150, ellipsis: true,
+                  render: (v: string) => <Text strong style={{ color: "#1677ff" }}>{v}</Text> },
+              ]}
+            />
+          </div>
+          <div>
+            <Text strong style={{ display: "block", marginBottom: 6 }}>
+              修改人员 <Text type="danger">*</Text>
+            </Text>
+            <Select
+              style={{ width: 220 }}
+              placeholder="选择人员"
+              value={postPerson || undefined}
+              onChange={(v) => setPostPerson(v)}
+              options={PERSONS.map((p) => ({ label: p, value: p }))}
+            />
+            <Text type="secondary" style={{ marginLeft: 12, fontSize: 12 }}>
+              登录账号（admin）也会记入审计
+            </Text>
+          </div>
+          <div>
+            <Text strong style={{ display: "block", marginBottom: 6 }}>
+              修改原因 <Text type="danger">*</Text>
+            </Text>
+            <Input.TextArea
+              rows={3}
+              placeholder="例如：原始结果判读错误，按重新分析后的结果更正（说明依据，至少 2 个字）"
+              value={postReason}
+              onChange={(e) => setPostReason(e.target.value)}
+              maxLength={200}
+              showCount
+            />
+          </div>
+        </Space>
       </Modal>
 
     </div>
