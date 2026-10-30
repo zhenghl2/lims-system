@@ -9,6 +9,36 @@ import {
 import api from "../api/client";
 import dayjs from "dayjs";
 
+/**
+ * 2026-10-30 性能：密集表格里每行常驻 antd 控件（AutoComplete/Select）成本很高
+ * （86 行 = 400+ Select / 600+ input，首屏 ~3s）。用本组件平时只渲染文字，
+ * 点一下才挂载真正的编辑控件，行数再多首屏也快。
+ */
+function ClickToEdit({ text, children, placeholder, width, hint }: {
+  text?: any;
+  children: (close: () => void) => any;
+  placeholder?: string;
+  width?: number;
+  hint?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  if (editing) return <div style={{ width }}>{children(() => setEditing(false))}</div>;
+  return (
+    <div
+      onClick={(e) => { e.stopPropagation(); setEditing(true); }}
+      title={hint || "点击修改"}
+      style={{
+        width, cursor: "text", fontSize: 12, lineHeight: "20px", minHeight: 22,
+        padding: "1px 4px", borderRadius: 2, background: "#fafafa",
+        borderBottom: "1px dashed #dcdcdc", overflow: "hidden", whiteSpace: "nowrap",
+        textOverflow: "ellipsis",
+      }}
+    >
+      {text || <span style={{ color: "#bfbfbf" }}>{placeholder || "—"}</span>}
+    </div>
+  );
+}
+
 const { Text, Title } = Typography;
 
 interface UserItem { id: string; username: string; }
@@ -17,6 +47,8 @@ export default function NipptReports() {
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
+  // 2026-10-30：左侧批次列表 470px + 右侧 4 个锁定列，在 1280 宽屏下会把表格挤到没有可用区域。
+  // 进入页面仍显示列表；选中批次后（窄屏）自动收起，给表格让出宽度，随时可点按钮展开。
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   // 批次级复核/审核（底部统一填，不需要每份报告都填）
   const [batRev, setBatRev] = useState<string | undefined>(undefined);
@@ -141,6 +173,8 @@ export default function NipptReports() {
   }, []);
 
   const openBatch = async (b: any) => {
+    // 窄屏（<1500）选批次后自动收起左侧列表，否则右侧表格只剩固定列可见
+    if (typeof window !== "undefined" && window.innerWidth < 1500) setSidebarCollapsed(true);
     setDetailLoading(true);
     setBatRev(undefined); setBatAud(undefined);
     setRevSel({}); setAudSel({}); setNoteEdit({});
@@ -286,6 +320,16 @@ export default function NipptReports() {
   const cnUserOptions = (users || [])
     .filter(isCnUser)
     .map((u: any) => ({ label: cnName(u), value: u.id }));
+
+  /** 当前选中的用户回显名（未保存的改动也能显示中文名） */
+  const labelOfUser = (id: any, savedName?: any) => {
+    if (!id) return "";
+    const hit = cnUserOptions.find((o: any) => o.value === id);
+    if (hit) return hit.label;
+    if (savedName) return String(savedName).trim();
+    const u = (users || []).find((x: any) => x.id === id);
+    return cnName(u) || u?.username || String(id);
+  };
 
   /** 下拉选项 = 有中文名的用户；**若「当前值」不在名单里**（历史/测试值，如 TestUser 没有汉字被过滤掉），
    *  把它按真实姓名补进选项。
@@ -637,16 +681,22 @@ export default function NipptReports() {
     { title: "报告版本", dataIndex: "report_version", key: "rvs", width: 118, fixed: "left" as const,
       render: (v: string, r: any) => {
         if (reportLocked(r)) return <Text style={{ fontSize: 12 }}>{v || "—"}</Text>;
+        const shown = rvEdit[r.id] ?? (v || "");
         return (
-          <Tooltip title="可搜索 / 直接输入新版本；保存后该案例全部配对生效">
-            <AutoComplete size="small" style={{ width: "100%" }} allowClear
-              value={rvEdit[r.id] ?? (v || "")}
-              placeholder="选择/输入"
-              options={rvOptions.map((o: string) => ({ value: o }))}
-              filterOption={(input: string, opt: any) =>
-                String(opt?.value || "").toLowerCase().includes(String(input).toLowerCase())}
-              onChange={(val: string) => setRvEdit((p) => ({ ...p, [r.id]: val }))}
-              onBlur={() => saveReportInfo(r, "report_version")} />
+          <Tooltip title="点击修改；可搜索 / 直接输入新版本；保存后该案例全部配对生效">
+            <ClickToEdit width={110} placeholder="—" hint="点击修改报告版本" text={shown || null}>
+              {(close) => (
+                <AutoComplete size="small" style={{ width: "100%" }} allowClear autoFocus defaultOpen
+                  value={shown}
+                  placeholder="选择/输入"
+                  options={rvOptions.map((o: string) => ({ value: o }))}
+                  filterOption={(input: string, opt: any) =>
+                    String(opt?.value || "").toLowerCase().includes(String(input).toLowerCase())}
+                  onChange={(val: string) => setRvEdit((p) => ({ ...p, [r.id]: val }))}
+                  onBlur={() => { saveReportInfo(r, "report_version"); close(); }}
+                  onKeyDown={(e: any) => { if (e.key === "Enter") (e.target as any).blur(); }} />
+              )}
+            </ClickToEdit>
           </Tooltip>
         );
       } },
@@ -676,12 +726,22 @@ export default function NipptReports() {
       } },
     { title: "报告日期", dataIndex: "report_date", key: "rpd", width: 132,
       render: (v: string, r: any) => {
-        if (reportLocked(r)) return <Text style={{ fontSize: 12 }}>{v ? String(v).slice(0, 10) : "—"}</Text>;
+        const shown = v ? String(v).slice(0, 10) : "";
+        if (reportLocked(r)) return <Text style={{ fontSize: 12 }}>{shown || "—"}</Text>;
         return (
-          <Tooltip title="预计出报告日期（报告模板的「检测日期/预计出报告时间」也取它）；该案例全部配对生效">
-            <DatePicker size="small" style={{ width: "100%" }} format="YYYY-MM-DD" allowClear
-              value={v ? dayjs(String(v).slice(0, 10)) : null}
-              onChange={(d: any) => saveReportInfo(r, "report_date", d ? d.format("YYYY-MM-DD") : "")} />
+          <Tooltip title="点击修改：预计出报告日期（报告模板的「检测日期/预计出报告时间」也取它）；该案例全部配对生效">
+            <ClickToEdit width={118} placeholder="—" hint="点击选择报告日期" text={shown || null}>
+              {(close) => (
+                <DatePicker size="small" style={{ width: "100%" }} format="YYYY-MM-DD" allowClear
+                  autoFocus defaultOpen
+                  value={v ? dayjs(String(v).slice(0, 10)) : null}
+                  onChange={(d: any) => {
+                    saveReportInfo(r, "report_date", d ? d.format("YYYY-MM-DD") : "");
+                    close();
+                  }}
+                  onBlur={close} />
+              )}
+            </ClickToEdit>
           </Tooltip>
         );
       } },
@@ -811,30 +871,46 @@ ${histLine(h)}`}>
         );
       } },
     { title: "复核人", key: "rv", width: 120,
-      render: (_: any, r: any) => notQualified(r) ? (
-        <Select size="small" style={{ width: "100%" }} disabled placeholder="未达标" title="未达标（无结果/QC异常），无需复核" />
-      ) : (
-        <Space size={2} direction="vertical" style={{ lineHeight: 1.2 }}>
-          <Select size="small" style={{ width: "100%" }} placeholder="选择" popupMatchSelectWidth={180}
-            value={revSel[r.id] ?? (r.report_reviewer || undefined)}
-            onChange={(v) => setRevSel(prev => ({ ...prev, [r.id]: v }))}
-            options={cnOptionsWith(users, revSel[r.id] ?? r.report_reviewer, r.report_reviewer_name)} showSearch optionFilterProp="label" />
-          {r.report_reviewer_name && <Text type="success" style={{ fontSize: 11 }}>✓ {r.report_reviewer_name}</Text>}
-        </Space>
-      ) },
+      render: (_: any, r: any) => {
+        if (notQualified(r)) return <Text type="secondary" style={{ fontSize: 11 }}>未达标</Text>;
+        const cur = revSel[r.id] ?? (r.report_reviewer || undefined);
+        const saved = !!cur && cur === r.report_reviewer && !!r.report_reviewer_name;
+        const label = labelOfUser(cur, saved ? r.report_reviewer_name : "");
+        return (
+          <ClickToEdit width={112} placeholder="—" hint="点击选择复核人"
+            text={label ? <span style={{ color: saved ? "#389e0d" : undefined }}>{saved ? "✓ " : ""}{label}</span> : null}>
+            {(close) => (
+              <Select size="small" style={{ width: "100%" }} placeholder="选择" popupMatchSelectWidth={180}
+                autoFocus defaultOpen
+                value={cur}
+                onChange={(v) => { setRevSel(prev => ({ ...prev, [r.id]: v })); close(); }}
+                onBlur={close}
+                options={cnOptionsWith(users, cur, r.report_reviewer_name)} showSearch optionFilterProp="label" />
+            )}
+          </ClickToEdit>
+        );
+      } },
     { title: "复核日期", dataIndex: "report_reviewed_at", key: "rvd", width: 100, render: fmtDT },
     { title: "审核人", key: "ad", width: 120,
-      render: (_: any, r: any) => notQualified(r) ? (
-        <Select size="small" style={{ width: "100%" }} disabled placeholder="未达标" title="未达标（无结果/QC异常），无需审核" />
-      ) : (
-        <Space size={2} direction="vertical" style={{ lineHeight: 1.2 }}>
-          <Select size="small" style={{ width: "100%" }} placeholder="选择" popupMatchSelectWidth={180}
-            value={audSel[r.id] ?? (r.report_auditor || undefined)}
-            onChange={(v) => setAudSel(prev => ({ ...prev, [r.id]: v }))}
-            options={cnOptionsWith(users, audSel[r.id] ?? r.report_auditor, r.report_auditor_name)} showSearch optionFilterProp="label" />
-          {r.report_auditor_name && <Text type="success" style={{ fontSize: 11 }}>✓ {r.report_auditor_name}</Text>}
-        </Space>
-      ) },
+      render: (_: any, r: any) => {
+        if (notQualified(r)) return <Text type="secondary" style={{ fontSize: 11 }}>未达标</Text>;
+        const cur = audSel[r.id] ?? (r.report_auditor || undefined);
+        const saved = !!cur && cur === r.report_auditor && !!r.report_auditor_name;
+        const label = labelOfUser(cur, saved ? r.report_auditor_name : "");
+        return (
+          <ClickToEdit width={112} placeholder="—" hint="点击选择审核人"
+            text={label ? <span style={{ color: saved ? "#389e0d" : undefined }}>{saved ? "✓ " : ""}{label}</span> : null}>
+            {(close) => (
+              <Select size="small" style={{ width: "100%" }} placeholder="选择" popupMatchSelectWidth={180}
+                autoFocus defaultOpen
+                value={cur}
+                onChange={(v) => { setAudSel(prev => ({ ...prev, [r.id]: v })); close(); }}
+                onBlur={close}
+                options={cnOptionsWith(users, cur, r.report_auditor_name)} showSearch optionFilterProp="label" />
+            )}
+          </ClickToEdit>
+        );
+      } },
     { title: "审核日期", dataIndex: "report_audited_at", key: "aud", width: 100, render: fmtDT },
     { title: "备注", key: "rn", width: 160,
       render: (_: any, r: any) => (
@@ -934,7 +1010,7 @@ ${histLine(h)}`}>
               columns={pairColumns}
               dataSource={selectedBatch.pairs || []}
               pagination={{
-                defaultPageSize: 10,
+                defaultPageSize: 25,
                 pageSizeOptions: [25, 50, 100, 200],
                 showSizeChanger: true,
                 showTotal: (t: number) => `共 ${t} 对`,
