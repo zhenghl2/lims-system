@@ -298,9 +298,12 @@ export const casesApi = {
   sampleHistory: (id: string) =>
     api.get<Record<string, any>>(`/cases/${id}/sample_history/`),
 
+  // 2026-10-30：手机照片 5~10MB，默认 30s 超时在慢网下必然失败（实测 nginx 30s 后返回 400/499）；
+  // 这里单独放宽到 3 分钟，配合 SampleReceiving 的上传前压缩。
   uploadReceiptPhoto: (id: string, formData: FormData) =>
     api.post(`/cases/${id}/upload-receipt-photo/`, formData, {
       headers: { "Content-Type": "multipart/form-data" },
+      timeout: 180000,
     }),
 };
 

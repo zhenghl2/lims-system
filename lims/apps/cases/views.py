@@ -1,4 +1,6 @@
 """Case views."""
+import logging
+
 from django.db import transaction
 from django.http import HttpResponse
 from django.db.models import Q, F
@@ -14,6 +16,8 @@ from rest_framework.filters import OrderingFilter, SearchFilter
 from .models import Case, CaseSample, WorkflowLog, NipptPreProcessingBatch, NipptPreProcessingSample, NipptExtractionBatch, NipptExtractionSample, NipptLibraryBatch, NipptLibrarySample, NipptPoolingBatch, NipptPoolingSample, NipptHybSeqBatch, NipptHybSeqSample, NipptBioinfoBatch, NipptBioinfoSample
 from lims.apps.audit.utils import log_audit
 from .nippt_photos import NipptPhotosMixin, purge_nippt_photos
+
+logger = logging.getLogger(__name__)
 from .report_gen import service as report_service
 from .serializers import (
     CaseListSerializer, CaseDetailSerializer, CaseCreateSerializer,
@@ -1974,12 +1978,26 @@ class CaseViewSet(viewsets.ModelViewSet):
         case_sample_id = request.data.get("case_sample_id")
         photo = request.FILES.get("photo")
         if not case_sample_id or not photo:
+            logger.warning("[receipt-photo] 缺参数 case=%s case_sample_id=%r photo=%r",
+                           getattr(case, "case_number", pk), case_sample_id, bool(photo))
             raise ValidationError("case_sample_id and photo are required")
         cs = case.case_samples.filter(id=case_sample_id).first()
         if not cs:
             raise NotFound("CaseSample not found in this case")
-        cs.receipt_photo = photo
-        cs.save(update_fields=["receipt_photo", "updated_at"])
+        # 体积上限：前端已压缩（长边 1920 / JPEG 0.85，通常 <1MB），超过 40MB 基本是原图/异常文件
+        if photo.size > 40 * 1024 * 1024:
+            logger.warning("[receipt-photo] 文件过大 case=%s cs=%s size=%.1fMB",
+                           case.case_number, case_sample_id, photo.size / 1048576.0)
+            return Response({"detail": "图片超过 40MB，请压缩后再上传"}, status=400)
+        logger.info("[receipt-photo] case=%s cs=%s name=%s size=%.2fMB type=%s",
+                    case.case_number, case_sample_id, photo.name,
+                    photo.size / 1048576.0, photo.content_type)
+        try:
+            cs.receipt_photo = photo
+            cs.save(update_fields=["receipt_photo", "updated_at"])
+        except Exception:
+            logger.exception("[receipt-photo] 保存失败 case=%s cs=%s", case.case_number, case_sample_id)
+            return Response({"detail": "照片保存失败，请重试或换一张图"}, status=500)
         return Response({
             "id": str(cs.id),
             "receipt_photo_url": request.build_absolute_uri(cs.receipt_photo.url) if cs.receipt_photo else None,

@@ -16,6 +16,44 @@ import dayjs from "dayjs";
 
 const { Text } = Typography;
 
+/**
+ * 2026-10-30：上传前把照片压到长边 ≤1920、JPEG 0.85。
+ * 手机原图常 5~10MB，现场网络上行慢时 30s 都传不完（axios 超时 → 前端只显示"上传失败"）。
+ * 压缩后一般 300~800KB，秒级完成；签收照片 1920px 足够看清标签与外观。
+ */
+const compressImage = async (file: File, maxSide = 1920, quality = 0.85): Promise<File> => {
+  try {
+    if (!(file.type || "").startsWith("image/")) return file;
+    if (file.type === "image/gif") return file;
+    const bmp: any = await createImageBitmap(file);
+    const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+    if (scale >= 1 && file.size <= 1.5 * 1024 * 1024) return file;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(bmp.width * scale));
+    canvas.height = Math.max(1, Math.round(bmp.height * scale));
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return file;
+    ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+    const blob: Blob | null = await new Promise((res) => canvas.toBlob(res, "image/jpeg", quality));
+    if (!blob || blob.size >= file.size) return file;
+    const name = (file.name || "photo").replace(/\.[^.]+$/, "") + ".jpg";
+    return new File([blob], name, { type: "image/jpeg" });
+  } catch {
+    return file;   // 浏览器不支持/解码失败 → 原图上传
+  }
+};
+
+/** 上传失败时给出可判断的原因（超时 / 文件过大 / 登录过期 / 其它） */
+const photoErrorText = (e: any): string => {
+  const st = e?.response?.status;
+  if (e?.code === "ECONNABORTED") return "上传超时：网络较慢或图片过大，请重试";
+  if (st === 413) return "图片太大（服务器限制），请压缩后重试";
+  if (st === 401 || st === 403) return "登录已过期，请重新登录后再上传";
+  const d = e?.response?.data;
+  const msg = typeof d === "string" ? d : d?.detail || d?.error || "";
+  return msg ? `上传失败：${msg}` : `上传失败${st ? "（HTTP " + st + "）" : ""}，请重试`;
+};
+
 // PT 警告关闭状态（按案例记住：「已核对，不再提示这些案例」；新出现的案例仍会提醒）
 const PT_WARN_DISMISS_KEY = "nippt_pt_warn_dismissed_v1";
 const loadPtWarnDismissed = (): string[] => {
@@ -176,7 +214,7 @@ export default function SampleReceiving() {
   // Photo upload
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingPhoto = useRef<{ caseId: string; csId: string } | null>(null);
-  const [, setUploadingPhoto] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null);
 
   // Inline editing
   const [editingField, setEditingField] = useState<{ key: string; field: string } | null>(null);
@@ -650,8 +688,9 @@ export default function SampleReceiving() {
     const prevPending = pendingPhoto.current;
     pendingPhoto.current = { caseId: row.caseId, csId: row.csId };
     try {
+      const upload = await compressImage(file);
       const formData = new FormData();
-      formData.append("photo", file);
+      formData.append("photo", upload);
       formData.append("case_sample_id", row.csId);
       const uploadRes = await (casesApi as any).uploadReceiptPhoto(row.caseId, formData);
       message.success("照片已上传");
@@ -661,8 +700,8 @@ export default function SampleReceiving() {
           ? { ...r, image: r.csId === row.csId ? photoUrl || null : r.image, caseHasPhoto: true }
           : r))
       );
-    } catch {
-      message.error("上传失败");
+    } catch (e: any) {
+      message.error(photoErrorText(e), 6);
     } finally {
       setUploadingPhoto(null);
       pendingPhoto.current = prevPending;
@@ -674,8 +713,9 @@ export default function SampleReceiving() {
     if (!file || !pendingPhoto.current) return;
     setUploadingPhoto(pendingPhoto.current.csId);
     try {
+      const upload = await compressImage(file);
       const formData = new FormData();
-      formData.append("photo", file);
+      formData.append("photo", upload);
       formData.append("case_sample_id", pendingPhoto.current.csId);
       const uploadRes = await (casesApi as any).uploadReceiptPhoto(pendingPhoto.current.caseId, formData);
       message.success("照片已上传");
@@ -692,8 +732,8 @@ export default function SampleReceiving() {
           return r;
         })
       );
-    } catch {
-      message.error("上传失败");
+    } catch (e: any) {
+      message.error(photoErrorText(e), 6);
     } finally {
       setUploadingPhoto(null);
       pendingPhoto.current = null;
@@ -802,13 +842,6 @@ export default function SampleReceiving() {
       render: (v: string) => v || "—",
     },
     {
-      title: "快递", dataIndex: "fedexNo", key: "fx", width: 150, ellipsis: true,
-      render: (v: string) =>
-        v
-          ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
-          : "—",
-    },
-    {
       title: "外部编号", dataIndex: "externalId", key: "eid", width: 140, ellipsis: true,
       render: (v: string) =>
         v
@@ -848,14 +881,6 @@ export default function SampleReceiving() {
       },
     },
     {
-      title: "证件号", dataIndex: "idCard", key: "idc", width: 130, ellipsis: true,
-      render: (v: string) => v || "—",
-    },
-    {
-      title: "管号", dataIndex: "tubeNo", key: "tno", width: 130, ellipsis: true,
-      render: (v: string) => v || "—",
-    },
-    {
       title: "姓名", dataIndex: "patientName", key: "name", width: 180, ellipsis: true,
       render: (v: string) =>
         v
@@ -866,6 +891,9 @@ export default function SampleReceiving() {
       title: "图片", dataIndex: "image", key: "img", width: 60,
       render: (v: string | null, r: CaseSampleRow) => {
         // Case 级显示：本行无照片时回退显示同案例其他样本的照片（与后端校验口径一致）
+        if (uploadingPhoto === r.csId) {
+          return <span style={{ fontSize: 11, color: "#1677ff", whiteSpace: "nowrap" }}>上传中…</span>;
+        }
         const eff = v || data.find((x) => x.caseId === r.caseId && x.image)?.image || null;
         return eff ? <Image src={eff} width={40} height={40} style={{ objectFit: "cover", borderRadius: 4 }} preview /> : "—";
       },
@@ -936,6 +964,21 @@ export default function SampleReceiving() {
           />
         )
       ),
+    },
+    {
+      title: "快递", dataIndex: "fedexNo", key: "fx", width: 150, ellipsis: true,
+      render: (v: string) =>
+        v
+          ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip>
+          : "—",
+    },
+    {
+      title: "证件号", dataIndex: "idCard", key: "idc", width: 130, ellipsis: true,
+      render: (v: string) => v || "—",
+    },
+    {
+      title: "管号", dataIndex: "tubeNo", key: "tno", width: 130, ellipsis: true,
+      render: (v: string) => v || "—",
     },
     {
       title: "孕周", dataIndex: "gestationalWeeks", key: "gw", width: 60,
@@ -1029,6 +1072,7 @@ export default function SampleReceiving() {
             <Button
               size="small"
               icon={<CameraOutlined />}
+              loading={uploadingPhoto === r.csId}
               onClick={() => handlePhotoClick(r)}
             />
             {r.role === "ALLEGED_FATHER" && (
