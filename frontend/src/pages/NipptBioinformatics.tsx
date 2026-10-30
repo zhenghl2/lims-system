@@ -215,8 +215,17 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       const pairs = pairIds.map(id => ({ id, ...editingPairs[id] }));
       const sampleIds = Object.keys(editingSamples);
       const samples = sampleIds.map(id => ({ id, ...editingSamples[id] }));
-      await api.post(`/cases/bioinfo/${selectedBatch.id}/save_processing/`, { pairs, samples });
-      message.success("Saved"); setEditingPairs({}); fetchDetail(selectedBatch.id);
+      const res = await api.post(`/cases/bioinfo/${selectedBatch.id}/save_processing/`, { pairs, samples });
+      const d = res.data || {};
+      if (d.qc_only) {
+        message.success("QC 已保存（批次已完成，仅 QC 标记 / 备注可修改）");
+        if (d.ignored_fields) {
+          message.warning(`有 ${d.ignored_fields} 项实验数据未保存：批次已完成，指标/结果不可再改`, 6);
+        }
+      } else {
+        message.success("Saved");
+      }
+      setEditingPairs({}); setEditingSamples({}); fetchDetail(selectedBatch.id);
     } catch (e: any) { message.error(e.response?.data?.error || "Save failed"); }
     setSaving(false);
   };
@@ -575,7 +584,13 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                 <Button type="primary" icon={<CheckOutlined />} loading={saving} onClick={handleSave}>Save</Button>
                 <Button icon={<CheckOutlined />} onClick={handleComplete}>Complete Batch</Button>
               </Space>)}
-            {selectedBatch.status === "COMPLETED" && <Alert type="success" message="Batch completed" showIcon style={{ marginTop: 16 }} />}
+            {selectedBatch.status === "COMPLETED" && (
+              <Space style={{ marginTop: 16 }} align="center">
+                <Alert type="success" message="Batch completed" showIcon />
+                {/* 2026-10-30：完成后 QC 标记/备注仍需可补记（污染、层数低…），单独给保存入口 */}
+                <Button type="primary" icon={<CheckOutlined />} loading={saving} onClick={handleSave}>保存 QC / 备注</Button>
+                <Text type="secondary" style={{ fontSize: 12 }}>已完成批次只能修改 QC 标记与备注，实验指标不可再改</Text>
+              </Space>)}
             <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
               <Text type="secondary">操作人: </Text>
               <Select size="small" placeholder="选择" style={{ width: 100 }}

@@ -3864,8 +3864,13 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
     @action(detail=True, methods=["post"])
     def save_processing(self, request, pk=None):
         batch = self.get_object()
-        if batch.status == "COMPLETED":
-            return Response({"error": "Batch already completed"}, status=400)
+        # 2026-10-30：已完成批次不再整单 400。
+        # QC 标记（污染/层数低/胎儿浓度低）与备注属于「事后判读」，出报告后仍可能补记；
+        # 原来这里直接返回 400，前端 QC 改完保存必然失败（页面上连 Save 按钮都不显示）。
+        # 已完成时只写 qc_flag / note / qc_note，其它实验指标与 bioinfo_data 一律忽略。
+        completed = batch.status == "COMPLETED"
+        ignored_fields = 0
+        qc_touched = []
         pairs_data = request.data.get("pairs", [])
         METRIC_FIELDS = [
             "mother_layers", "mother_concentration", "mother_het_ratio", "mother_y_ratio",
@@ -3874,6 +3879,18 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         for pd in pairs_data:
             pair_id = pd.get("id")
             if not pair_id: continue
+            if completed:
+                upd = {}
+                if "qc_flag" in pd:
+                    upd["qc_flag"] = pd.get("qc_flag") or ""
+                if "note" in pd:
+                    upd["note"] = pd.get("note") or ""
+                ignored_fields += len([k for k in pd if k not in ("id", "qc_flag", "note")])
+                if upd:
+                    upd["updated_at"] = timezone.now()
+                    if NipptBioinfoPair.objects.filter(id=pair_id, batch=batch).update(**upd):
+                        qc_touched.append(str(pair_id))
+                continue
             result_val = pd.get("result", "") or ""
             updates = {
                 # cpi 由 result 自动派生（前端 CPI 列已改为只读展示）：支持=10000 / 不支持=0.0001 / 临界与空=空
@@ -3898,6 +3915,17 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             sid = sd2.get("id")
             if not sid:
                 continue
+            if completed:
+                supd = {}
+                if "qc_flag" in sd2:
+                    supd["qc_flag"] = (sd2.get("qc_flag") or "").strip()
+                if "qc_note" in sd2:
+                    supd["qc_note"] = sd2.get("qc_note") or ""
+                ignored_fields += len([k for k in sd2 if k not in ("id", "qc_flag", "qc_note")])
+                if supd:
+                    supd["processed_at"] = timezone.now()
+                    samples_updated += NipptBioinfoSample.objects.filter(id=sid, batch=batch).update(**supd)
+                continue
             supd = {"processed_at": timezone.now()}
             for f in SAMPLE_METRIC_FIELDS:
                 if f in sd2 and sd2[f] is not None:
@@ -3906,13 +3934,23 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                 supd["qc_flag"] = sd2.get("qc_flag") or ""
             samples_updated += NipptBioinfoSample.objects.filter(id=sid, batch=batch).update(**supd)
         sd = request.data.get("bioinfo_data", {})
-        if sd:
+        if sd and not completed:
             batch.bioinfo_data = sd
             batch.save(update_fields=["bioinfo_data", "updated_at"])
+        elif sd and completed:
+            ignored_fields += 1
         # 2026-10-16：「最后保存」用 batch.updated_at 呈现。前端只传 {pairs, samples}，
         # 走的是 .update()（不触发 auto_now）→ 此前批次时间戳几乎不变，必须显式戳一次。
         batch.save(update_fields=["updated_at"])
-        return Response({"message": "Saved", "samples_updated": samples_updated})
+        if completed and qc_touched:
+            try:
+                log_audit(request, "UPDATE", batch, changes={
+                    "qc_after_complete": {"count": len(qc_touched), "pairs": qc_touched[:30]},
+                }, entity_type="nippt_bioinfo_batch", entity_repr=batch.batch_number)
+            except Exception as _ex:      # noqa: BLE001
+                print("[bioinfo] qc audit failed:", _ex)
+        return Response({"message": "Saved", "samples_updated": samples_updated,
+                         "qc_only": completed, "ignored_fields": ignored_fields})
 
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
