@@ -3788,7 +3788,38 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
     ordering_fields = ["created_at", "batch_number"]
 
     def get_queryset(self):
-        return NipptBioinfoBatch.objects.prefetch_related("samples", "pairs").all()
+        """2026-10-30 性能：报告页详情 86 对原本 1625 条 SQL / 1.4s。
+
+        详情页把 pair 的 FK、案例的 samples、备注样本一次性预取（配合
+        serializers.nippt_build_pair_cache 的批量缓存），降到 ~100 条。
+        """
+        qs = NipptBioinfoBatch.objects.all()
+        if self.action == "retrieve":
+            from django.db.models import Prefetch
+            from .models import NipptBioinfoPair
+            qs = qs.select_related("report_reviewer", "report_auditor").prefetch_related(
+                Prefetch("samples", queryset=NipptBioinfoSample.objects
+                         .select_related("case").prefetch_related("case__case_samples__sample")),
+                Prefetch("pairs", queryset=NipptBioinfoPair.objects
+                         .select_related("case", "mother_sample", "father_sample",
+                                         "report_reviewer", "report_auditor")
+                         .prefetch_related("case__case_samples__sample")),
+            )
+        else:
+            qs = qs.prefetch_related("samples", "pairs")
+        return qs
+
+    def retrieve(self, request, *args, **kwargs):
+        """详情：预构建 pair 批量缓存后再序列化（消除 N+1）。"""
+        inst = self.get_object()
+        ctx = self.get_serializer_context()
+        try:
+            from .serializers import nippt_build_pair_cache
+            ctx["_nippt_pair_cache"] = nippt_build_pair_cache(list(inst.pairs.all()))
+        except Exception as _ex:      # noqa: BLE001
+            print("[bioinfo] pair cache failed:", _ex)
+        ser = self.get_serializer(inst, context=ctx)
+        return Response(ser.data)
 
     def get_serializer_class(self):
         if self.action == "list":

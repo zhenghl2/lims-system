@@ -2026,6 +2026,43 @@ def nippt_pair_chip_map(serializer, obj):
     return cmap
 
 
+def nippt_build_pair_cache(pairs):
+    """一次请求内把 pair 用到的 CaseSample / 杂交行 / Pooling 行批量取回（消除 N+1）。
+
+    2026-10-30：报告页打开一个 86 对的批次会产生 1600+ 条 SQL（每对 15~19 条），
+    单次 1.4s。改为视图层预取 + 本缓存后降到 ~100 条。
+    """
+    from .models import NipptHybSeqSample, NipptPoolingSample
+
+    cs_ids, hyb_ids = set(), set()
+    for p in pairs:
+        for sm in (getattr(p, "mother_sample", None), getattr(p, "father_sample", None)):
+            if sm is None:
+                continue
+            cs_ids.update(sm.case_sample_ids or [])
+            if sm.source_hybseq_sample_id:
+                hyb_ids.add(str(sm.source_hybseq_sample_id))
+
+    cs_map = ({str(x.id): x for x in
+               CaseSample.objects.filter(id__in=list(cs_ids)).select_related("sample")}
+              if cs_ids else {})
+    hs_map = ({str(x.id): x for x in NipptHybSeqSample.objects.filter(id__in=list(hyb_ids))}
+              if hyb_ids else {})
+    pool_ids = [x.source_pooling_sample_id for x in hs_map.values() if x.source_pooling_sample_id]
+    ps_map = ({str(x.id): x for x in
+               NipptPoolingSample.objects.filter(id__in=pool_ids).select_related("batch")}
+              if pool_ids else {})
+    indexes = {}
+    for pid, ps in ps_map.items():
+        batch = getattr(ps, "batch", None)
+        if not batch:
+            continue
+        v = ((batch.pooling_data or {}).get("indexes") or {}).get(pid)
+        if v:
+            indexes[pid] = v
+    return {"cs": cs_map, "hyb": hs_map, "pool": ps_map, "indexes": indexes}
+
+
 class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     mother_source_chip = serializers.SerializerMethodField()
     father_source_chip = serializers.SerializerMethodField()
@@ -2109,8 +2146,10 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             return {"mother": _empty(), "father": _empty()}
         ids = list(getattr(obj.mother_sample, "case_sample_ids", None) or []) + \
             list(getattr(obj.father_sample, "case_sample_ids", None) or [])
-        cs_map = {}
-        if ids:
+        cache = self.context.get("_nippt_pair_cache") or {}
+        cs_map = cache.get("cs") if cache else {}
+        if not cs_map and ids:
+            cs_map = {}
             for cs in CaseSample.objects.filter(id__in=ids).select_related("sample"):
                 cs_map[str(cs.id)] = cs
 
@@ -2233,11 +2272,36 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
         return ""
 
     def get_case_source(self, obj):
-        """来源：改用案例级 Case.origin_country()（优先孕妇样本，其次任一已填来源的样本）"""
-        return obj.case.origin_country() if obj.case else ""
+        """来源：案例级（优先孕妇样本，其次任一已填来源的样本）。
+
+        2026-10-30：与 Case.origin_country() 同口径，但读预取的 case.case_samples，
+        不再每对单独查库（86 对时省 86 条 SQL）。
+        """
+        case = getattr(obj, "case", None)
+        if case is None:
+            return ""
+        try:
+            rows = list(case.case_samples.all())        # 预取命中，无查询
+        except Exception:                               # noqa: BLE001
+            return case.origin_country()
+        mothers, others = [], []
+        for cs in rows:
+            sm = getattr(cs, "sample", None)
+            if sm is None or not (sm.sample_source or ""):
+                continue
+            (mothers if cs.role == "MOTHER" else others).append(sm.sample_source)
+        if mothers:
+            return mothers[0]
+        return others[0] if others else ""
 
     def _get_index(self, sample):
         if not sample or not sample.source_hybseq_sample_id:
+            return ""
+        cache = self.context.get("_nippt_pair_cache") or {}
+        if cache:
+            hs = cache["hyb"].get(str(sample.source_hybseq_sample_id))
+            if hs and hs.source_pooling_sample_id:
+                return cache["indexes"].get(str(hs.source_pooling_sample_id), "")
             return ""
         from .models import NipptHybSeqSample, NipptPoolingSample
         hs = NipptHybSeqSample.objects.filter(id=sample.source_hybseq_sample_id).first()
@@ -2252,6 +2316,10 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     def _get_sample_type(self, sample):
         if not sample or not sample.case_sample_ids:
             return ""
+        cache = self.context.get("_nippt_pair_cache") or {}
+        if cache:
+            cs = cache["cs"].get(str(sample.case_sample_ids[0]))
+            return (cs.get_sample_source_display() or cs.sample_source) if cs else ""
         cs = CaseSample.objects.filter(id=sample.case_sample_ids[0]).first()
         if cs:
             return cs.get_sample_source_display() or cs.sample_source

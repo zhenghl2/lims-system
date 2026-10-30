@@ -583,9 +583,13 @@ export default function NipptReports() {
     }
   };
   const canComplete = !!selectedBatch && !doneReport && reportMissing.length === 0 && !!revVal && !!audVal;
+  // 2026-10-30：未上传清单很长（80 个 PT 号），全部塞进底部吸附条会把它撑到 ~300px 高、
+  // 直接盖住表格；这里只显示前 6 个，完整清单放进 Tooltip。
+  const missingLabels = reportMissing.map((p: any) => p.pt_number || p.case_number);
+  const missingFull = `还有 ${reportMissing.length} 个可出报告的配对未上传：${missingLabels.join("、")}`;
   const completeHint = !selectedBatch || doneReport ? ""
     : reportMissing.length > 0
-      ? `还有 ${reportMissing.length} 个可出报告的配对未上传：${reportMissing.map((p: any) => p.pt_number || p.case_number).join("、")}`
+      ? `还有 ${reportMissing.length} 个可出报告的配对未上传：${missingLabels.slice(0, 6).join("、")}${missingLabels.length > 6 ? " …" : ""}`
       : !revVal ? "请选择复核人" : !audVal ? "请选择审核人" : "可完成";
 
   const doComplete = () => {
@@ -611,6 +615,14 @@ export default function NipptReports() {
       },
     });
   };
+
+  // virtual 表格的滚动高度（antd 要求数字；跟随窗口高度）
+  const [tableScrollY, setTableScrollY] = useState(() => Math.max(240, window.innerHeight - 430));
+  useEffect(() => {
+    const onResize = () => setTableScrollY(Math.max(240, window.innerHeight - 430));
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   const pairColumns = [
     { title: "Case#", dataIndex: "case_number", key: "cn", width: 110, ellipsis: true, fixed: "left" as const,
@@ -914,13 +926,21 @@ ${histLine(h)}`}>
                 <Button type="primary" icon={<FileAddOutlined />} ghost onClick={openGenerate}>生成报告</Button>
               </Space>
             </div>
+            {/* 2026-10-30 性能：86 对 × 每行多个 antd 控件 = 400+ Select / 600+ input，
+                全量渲染首屏 ~1.5s。改分页（默认 25/页）只渲染当前页。 */}
             <Table
               size="small"
               rowKey="id"
               columns={pairColumns}
               dataSource={selectedBatch.pairs || []}
-              pagination={false}
-              scroll={{ x: 2500, y: "calc(100vh - 430px)" }}
+              pagination={{
+                defaultPageSize: 10,
+                pageSizeOptions: [25, 50, 100, 200],
+                showSizeChanger: true,
+                showTotal: (t: number) => `共 ${t} 对`,
+                size: "small",
+              }}
+              scroll={{ x: 2500, y: tableScrollY }}
               onRow={(r: any) => ({
                 style: notQualified(r) ? { background: "#fff2f0" } : {},
               })}
@@ -1096,7 +1116,12 @@ ${histLine(h)}`}>
               <Button type="primary" icon={<CheckCircleOutlined />} disabled={!canComplete} onClick={doComplete}>完成批次</Button>
               {doneReport
                 ? <Text type="success" style={{ fontSize: 12 }}>该批次报告已完成（复核 {selectedBatch.report_reviewer_name || "—"} / 审核 {selectedBatch.report_auditor_name || "—"}）</Text>
-                : <Text type="secondary" style={{ fontSize: 11 }}>{completeHint}</Text>}
+                : <Tooltip title={reportMissing.length > 0 ? missingFull : ""}>
+                    <Text type="secondary" style={{ fontSize: 11, maxWidth: 460, display: "inline-block",
+                      whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", verticalAlign: "bottom" }}>
+                      {completeHint}
+                    </Text>
+                  </Tooltip>}
             </div>
           </>
                 )}
