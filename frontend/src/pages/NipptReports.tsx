@@ -617,14 +617,12 @@ export default function NipptReports() {
       // 19 字符在 110px 下必然截断 → 补 hover Tooltip 看全（2026-10-13 用户要求缩短本列）
       render: (v: string) => v ? <Tooltip title={v}>{v}</Tooltip> : "—" },
     { title: "PT#", dataIndex: "pt_number", key: "pt", width: 90, fixed: "left" as const },
-    { title: "标签", dataIndex: "father_label", key: "lb", width: 52, render: (v: string) => <Tag style={{ margin: 0 }}>{v}</Tag> },
-    { title: "外部编号", key: "extid", width: 180, ellipsis: true,
-      render: (_: any, r: any) => {
-        const v = r.sample_dates?.external_id || r.sample_dates?.mother?.external_id;
-        return v ? <Tooltip title={v}>{v}</Tooltip> : "—";
-      } },
-    { title: "来源", dataIndex: "case_source", key: "src", width: 66, render: (v: string) => v || "—" },
-    { title: "报告版本", dataIndex: "report_version", key: "rvs", width: 118,
+    // 2026-10-28：来源 / 报告版本 移到 PT# 之后，并跟前两列一样左锁定
+    { title: "来源", dataIndex: "case_source", key: "src", width: 86, fixed: "left" as const,
+      render: (v: string) => v
+        ? <Tooltip title={v}><span style={{ whiteSpace: "nowrap" }}>{v}</span></Tooltip>
+        : "—" },
+    { title: "报告版本", dataIndex: "report_version", key: "rvs", width: 118, fixed: "left" as const,
       render: (v: string, r: any) => {
         if (reportLocked(r)) return <Text style={{ fontSize: 12 }}>{v || "—"}</Text>;
         return (
@@ -639,6 +637,12 @@ export default function NipptReports() {
               onBlur={() => saveReportInfo(r, "report_version")} />
           </Tooltip>
         );
+      } },
+    { title: "标签", dataIndex: "father_label", key: "lb", width: 52, render: (v: string) => <Tag style={{ margin: 0 }}>{v}</Tag> },
+    { title: "外部编号", key: "extid", width: 180, ellipsis: true,
+      render: (_: any, r: any) => {
+        const v = r.sample_dates?.external_id || r.sample_dates?.mother?.external_id;
+        return v ? <Tooltip title={v}>{v}</Tooltip> : "—";
       } },
     { title: "到样日期", key: "arrv", width: 104,
       render: (_: any, r: any) => {
@@ -893,7 +897,8 @@ ${histLine(h)}`}>
                 ? <div style={{ textAlign: "center", padding: 60 }}><Spin /></div>
                 : (
           <>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            {/* 2026-10-30：窄面板下按钮会把统计文字挤成竖排 → 允许换行 */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
               <Space>
                 <Text>配对: <b>{rp.length}</b></Text>
                 <Text>可出报告: <b>{reportable.length}</b></Text>
@@ -915,7 +920,7 @@ ${histLine(h)}`}>
               columns={pairColumns}
               dataSource={selectedBatch.pairs || []}
               pagination={false}
-              scroll={{ x: 2380, y: "calc(100vh - 430px)" }}
+              scroll={{ x: 2500, y: "calc(100vh - 430px)" }}
               onRow={(r: any) => ({
                 style: notQualified(r) ? { background: "#fff2f0" } : {},
               })}
