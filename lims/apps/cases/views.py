@@ -1221,8 +1221,9 @@ class CaseViewSet(viewsets.ModelViewSet):
         # 原逻辑因 all_samples_received and not case.pt_number 条件永不进入，
         # 导致手填 PT 的样本 test_sample_id 永远为空。此处补生成。
         if case.pt_number and not cs.test_sample_id:
-            cs.test_sample_id = case.generate_test_sample_id(cs)
-            cs.save(update_fields=["test_sample_id"])
+            # assign_supplement_test_id 内含 generate + 撞号 _R{n}：
+            # 同一疑父多个样本（血痕/血液）签收时不会拿到同一个 PT 号
+            case.assign_supplement_test_id(cs)
         # Save new receiving fields
         if received_by_name:
             cs.received_by_name = received_by_name
@@ -1366,11 +1367,16 @@ class CaseViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="receipt-supplement")
     def receipt_supplement(self, request, pk=None):
-        """签收时补录「实收比登记多出」的样本类型 → 按补样新建 CaseSample，并直接计为已签收。
+        """签收时补录「实收比登记多出」的样本类型 → 按补样新建 CaseSample（**待签收**）。
+
+        2026-10-30 用户要求：加号新增的补样不再提前签收，签收状态跟「加号所在行」一致
+        （= 待签收），因为 PT 号/照片等内容还要在现场核对后统一修改；签收人/签收地在
+        整批签收时按行选择，创建时不需要。
+        · PT 号：案例已有 PT → 按补样规则立即生成（撞号 _R{n}）；没有 → 留空，签收时生成
+        · 新样本 Sample.status=REGISTERED、CaseSample.received_at 为空 → 出现在待签收列表
 
         仅限疑父（ALLEGED_FATHER）；母亲样本走登记/补充样本入口。
         幂等：该人已存在的类型进 skipped，不重复建档。
-        新样本 Sample.status=RECEIVED → 直接进入前处理待处理。
         """
         case = self.get_object()
         src_id = (request.data.get("case_sample_id") or "").strip()
@@ -1378,6 +1384,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         if isinstance(types, str):
             types = [types]
         types = list(dict.fromkeys(str(t).strip() for t in types if str(t or "").strip()))
+        # 2026-10-30：补样不再直接签收 → 签收人/签收地不再必填（签收时按批次统一选）
         received_by_name = (request.data.get("received_by_name") or "").strip()
         receipt_location = (request.data.get("receipt_location") or "").strip()
         pt_number = (request.data.get("pt_number") or "").strip()
@@ -1389,11 +1396,6 @@ class CaseViewSet(viewsets.ModelViewSet):
         invalid = [t for t in types if t not in CaseSample.SampleSource.values]
         if invalid:
             raise ValidationError("无效的样本类型：%s" % "、".join(invalid))
-        if not received_by_name:
-            raise ValidationError("请先选择签收人")
-        if receipt_location not in ("XIAMEN", "HONGKONG"):
-            raise ValidationError("请先选择签收地（厦门/香港）")
-
         src_cs = case.case_samples.filter(id=src_id).select_related("sample").first()
         if not src_cs:
             raise NotFound("CaseSample not found in this case")
@@ -1402,12 +1404,11 @@ class CaseViewSet(viewsets.ModelViewSet):
         if src_cs.receipt_condition == "REJECTED" or src_cs.sample.status == "REJECTED":
             raise ValidationError("该样本已拒收，无法补录实收类型")
 
-        # PT 编号（与签收口径一致：行上填的优先，写回案例）
+        # PT 编号：加号所在行（案例）已填 PT → 立刻按规则补号；没填 → 留空，签收时再生成
         if pt_number and not case.pt_number:
             case.pt_number = pt_number
             case.save(update_fields=["pt_number", "updated_at"])
-        if not case.pt_number:
-            raise ValidationError("请先填写 PT 编号再补录实收类型")
+        has_pt = bool((case.pt_number or "").strip())
 
         # 该人（同 role + 同姓名）已有的类型集合 → 只有「未登记」的类型才建档
         person_css = list(
@@ -1444,9 +1445,11 @@ class CaseViewSet(viewsets.ModelViewSet):
                         fedex_no=src_cs.sample.fedex_no,
                         sample_source=case.origin_country(),
                         collection_date=now.date(),
+                        # receipt_date/time 是 NOT NULL（登记口径就是到样登记时间），
+                        # 真正的签收状态看 CaseSample.received_at
                         receipt_date=now.date(),
                         receipt_time=now.time(),
-                        status="RECEIVED",
+                        status="REGISTERED",          # 待签收：与加号所在行保持一致
                         site=case.site,
                         created_by=request.user,
                     )
@@ -1456,25 +1459,22 @@ class CaseViewSet(viewsets.ModelViewSet):
                         role=src_cs.role,
                         sample_source=t,
                         actual_sample_type=t,
-                        workflow_stage="RECEIVED",
-                        received_at=now,
-                        received_by=request.user,
-                        received_by_name=received_by_name,
-                        receipt_location=receipt_location,
-                        receipt_condition="OK",
-                        arrival_date=now.date(),
-                        collection_notes=f"签收补录实收类型（签收人：{received_by_name}）",
+                        workflow_stage="REGISTERED",  # 待签收
+                        receipt_condition="",
+                        collection_notes="签收补录新增补样（待签收）",
                     )
-                    # 与补样登记同一口径：撞号自动按重采给 _R{n}
-                    case.assign_supplement_test_id(new_cs, save=False)
-                    new_cs.save(update_fields=["test_sample_id", "resample_of", "resample_number"])
+                    if has_pt:
+                        # 案例已有 PT → 按补样规则立即补号（撞号自动 _R{n}）；
+                        # 没有 PT 则留空，签收（confirm_receipt）时再生成
+                        case.assign_supplement_test_id(new_cs, save=False)
+                        new_cs.save(update_fields=["test_sample_id", "resample_of", "resample_number"])
                     created.append(new_cs)
 
                 labels = "、".join(
                     (cs.get_sample_source_display() or cs.sample_source) for cs in created
                 )
                 case.notes = (case.notes + "\n" if case.notes else "") + \
-                    f"[签收补登] 实收多出 {labels}（签收人：{received_by_name}）"
+                    f"[签收补登] 新增补样 {labels}（待签收）"
                 case.save(update_fields=["notes", "updated_at"])
                 case.update_status()
 
@@ -1484,7 +1484,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                 "actual_sample_type": {"old": "", "new": nc.actual_sample_type or ""},
                 "test_sample_id": {"old": "", "new": nc.test_sample_id or ""},
                 "received_by_name": {"old": "", "new": nc.received_by_name or ""},
-                "来源": {"old": "", "new": "签收补录"},
+                "来源": {"old": "", "new": "签收补录（待签收）"},
             }, entity_type="casesample",
                 entity_repr="%s/%s" % (case.case_number, nc.sample_id))
 
@@ -1497,6 +1497,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                 "test_sample_id": cs.test_sample_id or "",
             } for cs in created],
             "skipped": skipped,
+            "pending": True,      # 新增的是待签收样本，需随本批一起签收
         }, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])

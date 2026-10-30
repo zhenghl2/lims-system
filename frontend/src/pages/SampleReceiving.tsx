@@ -763,21 +763,12 @@ export default function SampleReceiving() {
   };
 
   // --- 签收补录：实收比登记多出的样本类型 ---
+  // 2026-10-30：加号 = 新增补样（待签收），不再当场签收。
+  // 所以不要求先填 PT / 签收人 / 签收地：PT 有就按规则生成，没有等签收时生成；
+  // 签收人 / 签收地在整批签收时按行（与本行一致）选择。
   const openReceiptSupplement = (row: CaseSampleRow) => {
     if (row.role !== "ALLEGED_FATHER") return;          // 本期仅疑父开放
     if (row.received || row.status === "REJECTED") return;
-    if (!(row.ptBase || "").trim()) {
-      message.error("请先填写 PT 编号，再补录实收类型");
-      return;
-    }
-    if (!receiptPersons[row.key]) {
-      message.error("请先选择签收人，再补录实收类型");
-      return;
-    }
-    if (!receiptLocations[row.key]) {
-      message.error("请先选择签收地，再补录实收类型");
-      return;
-    }
     setSupTypes([]);
     setSupTarget(row);
   };
@@ -794,14 +785,17 @@ export default function SampleReceiving() {
         case_sample_id: supTarget.csId,
         sample_types: supTypes,
         pt_number: supTarget.ptBase ? `PT${supTarget.ptBase}` : undefined,
-        received_by_name: receiptPersons[supTarget.key],
-        receipt_location: receiptLocations[supTarget.key] || "",
       });
       const created = resp?.data?.created || [];
       const skipped = resp?.data?.skipped || [];
       if (created.length) {
-        const names = created.map((x: any) => x.sample_source_display || x.sample_source).join("、");
-        message.success(`已补录并签收：${names}`);
+        const names = created
+          .map((x: any) => {
+            const nm = x.sample_source_display || x.sample_source;
+            return x.test_sample_id ? `${nm}（${x.test_sample_id}）` : nm;
+          })
+          .join("、");
+        message.success(`已新增补样：${names} —— 待签收，随本批一起签收`, 6);
       }
       if (skipped.length) {
         const sk = skipped
@@ -814,7 +808,7 @@ export default function SampleReceiving() {
       fetchData();
     } catch (e: any) {
       const d = e?.response?.data;
-      message.error((Array.isArray(d) ? d[0] : d?.detail) || "补录失败");
+      message.error((Array.isArray(d) ? d[0] : d?.detail) || "新增补样失败");
     } finally {
       setSupLoading(false);
     }
@@ -1076,7 +1070,7 @@ export default function SampleReceiving() {
               onClick={() => handlePhotoClick(r)}
             />
             {r.role === "ALLEGED_FATHER" && (
-              <Tooltip title="补录实收样本类型（按补样登记并直接签收）">
+              <Tooltip title="新增补样（待签收，与本行一起签收）">
                 <Button
                   size="small"
                   icon={<PlusOutlined />}
@@ -1390,19 +1384,19 @@ export default function SampleReceiving() {
       {/* 补录实收样本类型（实收比登记多出）*/}
       <Modal
         open={!!supTarget}
-        title={supTarget ? `补录实收样本类型 — ${supTarget.patientName}（${supTarget.caseNumber}）` : ""}
+        title={supTarget ? `新增补样（待签收）— ${supTarget.patientName}（${supTarget.caseNumber}）` : ""}
         onCancel={() => { setSupTarget(null); setSupTypes([]); }}
         onOk={submitReceiptSupplement}
         confirmLoading={supLoading}
-        okText="确认补录"
+        okText="确认新增"
         cancelText="取消"
         destroyOnClose
       >
         <Space direction="vertical" size={12} style={{ width: "100%" }}>
           <div style={{ background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 4, padding: "8px 12px", fontSize: 12, color: "#874d00" }}>
-            补录的样本将按「补样」登记并<span style={{ fontWeight: 600 }}>直接计为已签收</span>：
-            登记人＝当前登录账号，签收人＝{supTarget ? (receiptPersons[supTarget.key] || "—") : "—"}，
-            到样日期＝今天。已登记的类型不会重复建档。
+            新增的样本按「补样」登记为 <span style={{ fontWeight: 600 }}>待签收</span>，
+            签收状态与加号所在行一致（不会提前签收）；PT 号、照片可在签收前继续修改，
+            签收人 / 签收地随本批签收时按行选择。已登记的类型不会重复建档。
           </div>
           <div>
             <Text strong style={{ display: "block", marginBottom: 6 }}>实际收到（未登记）的样本类型</Text>
