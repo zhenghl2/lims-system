@@ -676,11 +676,24 @@ class SupplementSerializer(serializers.Serializer):
         role_prefix = "M" if role == "MOTHER" else f"AF{case.case_samples.filter(role='ALLEGED_FATHER').count() + 1}"
         sample_id = explicit_external_id or f"{case.case_number}-{role_prefix}-SUP"
 
+        # 补样样本号：取该案例已有 SUP-{A|M}-* 的最大序号 +1。
+        # 不能用 len(css)+1 —— 每次请求都从 1 重数，第二次补样必然撞
+        # samples_barcode_key 唯一约束 -> HTTP 500（2026-11-02 报障）。
+        _sup_prefix = f"{case.case_number}-SUP-{role[0]}-"
+        _sup_seq = 0
+        for _sid in Sample.objects.filter(
+            sample_id__startswith=_sup_prefix
+        ).values_list("sample_id", flat=True):
+            _tail = _sid[len(_sup_prefix):].split("-")[0]
+            if _tail.isdigit():
+                _sup_seq = max(_sup_seq, int(_tail))
+
         css = []
         for st in sample_types:
             # 每个类型创建独立的 Sample + CaseSample
+            _sup_seq += 1
             s = Sample.objects.create(
-                sample_id=f"{case.case_number}-SUP-{role[0]}-{len(css)+1}",
+                sample_id=f"{_sup_prefix}{_sup_seq}",
                 sample_type=sample_type,
                 panel=case.panel,
                 patient_name=patient_name,
