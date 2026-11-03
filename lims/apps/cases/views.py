@@ -3100,6 +3100,11 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
                     excluded_ids.update(ids)
                 elif b.status == "COMPLETED" and sp.qc_status == "PASS":
                     excluded_ids.update(ids)
+                elif b.status == "COMPLETED" and sp.qc_status == "FAIL":
+                    # 2026-11-03：QC 不过只有「还有剩余样本」才回到待处理（可重做）；
+                    # 没有剩余样本（如毛发无毛囊、只能重采）→ 不再列出，避免无限循环出现
+                    if not (sp.remaining_sample_types or []):
+                        excluded_ids.update(ids)
 
         # is_active=True：已被重做取代的失效样本不再进入候选（否则原始+重做会被合并处理）
         qs = CaseSample.objects.filter(
@@ -4887,6 +4892,12 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                              "mode": "keep", "format": fmt, "pair": data})
 
         action = "replace" if prev_name else "upload"
+        # 2026-11-03：替换时先删旧实体，避免同名文件被 Django 追加 _7位随机串、也避免堆垃圾文件
+        if cur:
+            try:
+                cur.delete(save=False)
+            except Exception:                      # noqa: BLE001
+                pass
         setattr(pair, slot, f)
         fields = [slot, "report_history", "updated_at"]
         if slot == "report_file_pdf":
