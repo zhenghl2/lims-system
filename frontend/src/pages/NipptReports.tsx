@@ -367,6 +367,24 @@ export default function NipptReports() {
     if (/sexagem\s*fetal/i.test(n)) return "sex";
     return "main";
   };
+  /** 2026-11-03：泰国报告常以「外部编号」命名（MED18_Report.docx / WRM038_Report_LA4b05H.docx）。
+   *  归一化：去扩展名、去 Report/Laudo 等尾巴、去符号、转大写。 */
+  const normExtId = (v: any) => String(v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const parseExternalFromName = (name: string) => {
+    let base = String(name || "").replace(/\.(pdf|docx)$/i, "");
+    base = base.replace(/[\s_\-]*(report|laudo|relat[oó]rio|resultado)\b[\s\S]*$/i, "");
+    return normExtId(base);
+  };
+  /** 一个配对可用的外部编号：样本级 external_id（母/父）与顶层 */
+  const pairExternalIds = (p: any) => {
+    const sd = p?.sample_dates || {};
+    return Array.from(new Set([
+      normExtId(sd.external_id),
+      normExtId(sd?.mother?.external_id),
+      normExtId(sd?.father?.external_id),
+    ].filter(Boolean)));
+  };
+
   const pairOptionLabel = (p: any) =>
     `${p.pt_number || ""} ${p.father_label || ""}${p.father_name ? " · " + p.father_name : ""}`.trim();
 
@@ -482,19 +500,43 @@ export default function NipptReports() {
       const pt = parsePtFromName(f.name);
       const role = parseRoleFromName(f.name);
       const kind = parseKindFromName(f.name);   // main / sex（额外报告）
-      const found = pt ? pairs.filter((p: any) => normPt(p.pt_number) === pt) : [];
+      let found: any[] = [];
+      let ext = "", matchedExt = "";
+      if (pt) {
+        found = pairs.filter((p: any) => normPt(p.pt_number) === pt);
+      } else {
+        // 2026-11-03：泰国报告用外部编号命名 → 前端名去掉 Report 尾巴后，取「以外部编号开头」的配对，
+        // 多个编号都能命中时取最长的那一个（MED18 优先于 MED1），仍多个配对则留给人选
+        const fileNorm = parseExternalFromName(f.name);
+        ext = fileNorm;
+        if (fileNorm) {
+          const hits = pairs.map((p: any) => {
+            const best = pairExternalIds(p)
+              .filter((id) => fileNorm.startsWith(id))
+              .sort((a, b) => b.length - a.length)[0];
+            return best ? { p, id: best } : null;
+          }).filter(Boolean) as { p: any; id: string }[];
+          if (hits.length) {
+            const maxLen = Math.max(...hits.map((h) => h.id.length));
+            const bests = hits.filter((h) => h.id.length === maxLen);
+            found = bests.map((h) => h.p);
+            matchedExt = bests[0].id;
+          }
+        }
+      }
       let cand: any = null, reason = "";
       if (found.length === 1) cand = found[0];
       else if (found.length > 1) {
-        // 同 PT 多配对（一个 case 多个疑父 HA/HB）→ 用文件名角色后缀区分（2026-10-13）
+        // 同 PT / 同外部编号多配对（一个 case 多个疑父 HA/HB）→ 用文件名角色后缀区分（2026-10-13）
         const hit = role ? found.filter((p: any) => String(p.father_label || "").toUpperCase() === role) : [];
         if (hit.length === 1) cand = hit[0];
-        else reason = `该 PT 下有 ${found.length} 个配对（${found.map((p: any) => p.father_label || "?").join("/")}），`
+        else reason = `${pt ? `该 PT 下` : `外部编号 ${matchedExt} 对应`} ${found.length} 个配对（${found.map((p: any) => `${p.pt_number || "?"}${p.father_label ? "/" + p.father_label : ""}`).join("、")}），`
           + (role ? `文件名后缀「${role}」对不上，` : "文件名没有角色后缀，") + "请在「匹配到」里手工选择";
       }
       let state = "ok";
-      if (!pt) { state = "no_pt"; reason = "文件名里没有 PT 编号"; }
-      else if (!found.length) { state = "unmatched"; reason = `本批次没有 PT${pt} 的配对（库内编号可能不同）`; }
+      if (!pt && !ext) { state = "no_pt"; reason = "文件名里没有 PT 编号，也没有可匹配的外部编号"; }
+      else if (!pt && ext && !found.length) { state = "unmatched"; reason = `本批次没有外部编号 ${ext} 的配对`; }
+      else if (pt && !found.length) { state = "unmatched"; reason = `本批次没有 PT${pt} 的配对（库内编号可能不同）`; }
       else if (!cand) { state = "unmatched"; }
       else if (notQualified(cand)) { state = "unqualified"; reason = `该配对未达标（${badReason(cand)}）`; }
       else if (checkReportFile(f)) {
@@ -502,19 +544,21 @@ export default function NipptReports() {
         state = /MB/.test(why) ? "too_big" : "bad_type";
         reason = why;
       }
-      return { key: `${f.name}-${Math.random()}`, file: f, pt, role, kind,
-               cands: (pt && found.length) ? found : pairs, pair: cand, state, reason, mode: "overwrite" };
+      return { key: `${f.name}-${Math.random()}`, file: f, pt, role, kind, ext, extId: matchedExt,
+               cands: ((pt || ext) && found.length) ? found : pairs, pair: cand, state, reason, mode: "overwrite" };
     });
     // 判重：同 PT + 同角色 才算重复（HA/HB 两个文件不再互判重复）
     // 判重：同 PT + 同角色 + 同格式 才算重复（Word/PDF 两份不算，2026-10-13）
     const _fmtOf = (f: File) => (/\.pdf$/i.test(f.name || "") ? "pdf" : "word");
     const cnt: Record<string, number> = {};
     rows.forEach((r: any) => {
-      if (r.pt) { const k = `${r.pt}|${r.role}|${_fmtOf(r.file)}|${r.kind}`; cnt[k] = (cnt[k] || 0) + 1; }
+      const _idKey = r.pt || (r.ext ? `ext:${r.ext}` : "");
+      if (_idKey) { const k = `${_idKey}|${r.role}|${_fmtOf(r.file)}|${r.kind}`; cnt[k] = (cnt[k] || 0) + 1; }
     });
     rows.forEach((r: any) => {
-      const k = `${r.pt}|${r.role}|${_fmtOf(r.file)}|${r.kind}`;
-      if (r.pt && r.state === "ok" && cnt[k] > 1) {
+      const _idKey = r.pt || (r.ext ? `ext:${r.ext}` : "");
+      const k = `${_idKey}|${r.role}|${_fmtOf(r.file)}|${r.kind}`;
+      if (_idKey && r.state === "ok" && cnt[k] > 1) {
         r.state = "dup"; r.reason = "与另一个文件解析到同一个 PT、同一角色、同一格式和同一类型";
       }
     });
@@ -528,7 +572,7 @@ export default function NipptReports() {
       if (r.key !== key) return r;
       const pair = (r.cands || []).find((c: any) => c.id === pairId) || null;
       let state = "ok", reason = "";
-      if (!r.pt) { state = "no_pt"; reason = "文件名里没有 PT 编号"; }
+      if (!r.pt && !r.ext) { state = "no_pt"; reason = "文件名里没有 PT 编号，也没有可匹配的外部编号"; }
       else if (!pair) { state = "unmatched"; reason = "未选择配对"; }
       else if (notQualified(pair)) { state = "unqualified"; reason = `该配对未达标（${badReason(pair)}）`; }
       else {
@@ -1021,8 +1065,10 @@ ${histLine(h)}`}>
               </Space>
               <Space>
                 <Button icon={<ReloadOutlined />} onClick={refreshDetail}>刷新报告列表</Button>
-                <Button type="primary" icon={<UploadOutlined />}
-                  onClick={() => { if (bulkFileRef.current) { bulkFileRef.current.value = ""; bulkFileRef.current.click(); } }}>批量上传报告</Button>
+                <Tooltip title="文件名带 PT 编号 → 按 PT 匹配；没有 PT 的（泰国报告常用外部编号，如 WRM038_Report_xxx）→ 按外部编号匹配">
+                  <Button type="primary" icon={<UploadOutlined />}
+                    onClick={() => { if (bulkFileRef.current) { bulkFileRef.current.value = ""; bulkFileRef.current.click(); } }}>批量上传报告</Button>
+                </Tooltip>
                 <Button type="primary" icon={<FileAddOutlined />} ghost onClick={openGenerate}>生成报告</Button>
               </Space>
             </div>
@@ -1148,10 +1194,17 @@ ${histLine(h)}`}>
                 columns={[
                   { title: "文件名", dataIndex: "file", key: "fn", ellipsis: true,
                     render: (f: File) => <Text style={{ fontSize: 12 }}>{f.name}</Text> },
-                  { title: "解析 PT", dataIndex: "pt", key: "pt", width: 118,
+                  { title: "文件名里的编号", dataIndex: "pt", key: "pt", width: 150,
                     render: (v: string, r: any) => v
                       ? <Space size={4}><Text code>PT{v}</Text>{r.role ? <Tag style={{ margin: 0 }}>{r.role}</Tag> : null}</Space>
-                      : <Text type="secondary">—</Text> },
+                      : (r.ext
+                          ? <Space size={4}>
+                              <Tooltip title="文件名里没有 PT，按外部编号匹配（泰国报告常见）">
+                                <Text code>{r.extId || r.ext}</Text>
+                              </Tooltip>
+                              <Tag color="geekblue" style={{ margin: 0 }}>外部编号</Tag>
+                            </Space>
+                          : <Text type="secondary">—</Text>) },
                   { title: "类型", key: "kind", width: 118,
                     render: (_: any, r: any) => (
                       <Select size="small" style={{ width: 108 }} value={r.kind || "main"}
