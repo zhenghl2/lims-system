@@ -247,15 +247,46 @@ export default function NipptReports() {
   const notQualified = (p: any) => !p.result || (p.qc_flag || "") !== "";
 
   /** 打开「生成报告」：默认全选本批次所有可出报告的配对 */
+  /** 2026-11-03：报告日期未填 → 拦住生成，列出缺日期的 PT（用户确认：整批拦住） */
+  const showMissingReportDate = (list: any[]) => {
+    Modal.error({
+      title: "有配对没填「报告日期」，不能生成报告",
+      width: 580,
+      content: (
+        <div style={{ fontSize: 13, lineHeight: 1.9 }}>
+          共 <b style={{ color: "#cf1322" }}>{list.length}</b> 个配对缺报告日期（报告里的检测日期/预计出报告时间取它）。
+          请先在「报告日期」列点红色「未填」补齐，再生成：
+          <div style={{ maxHeight: 220, overflow: "auto", marginTop: 8, background: "#fff1f0",
+            padding: "6px 10px", borderRadius: 6, border: "1px solid #ffccc7" }}>
+            {list.map((p: any) => (
+              <div key={p.id} style={{ fontSize: 12 }}>
+                <Text code>{p.pt_number || "（无PT）"}</Text>{" "}
+                {p.mother_name || ""}{p.father_label ? ` / ${p.father_label}` : ""}
+                <Text type="secondary" style={{ fontSize: 11 }}> · {p.case_number || ""}</Text>
+              </div>
+            ))}
+          </div>
+        </div>
+      ),
+      okText: "知道了",
+    });
+  };
+
   const openGenerate = () => {
-    const ok = (selectedBatch?.pairs || []).filter((p: any) => !notQualified(p)).map((p: any) => p.id);
-    setGenPicked(ok); setGenResult(null);
-    if (ok.length === 0) { message.warning("本批次没有可出报告的配对（无结果或 QC 异常）"); return; }
+    const okPairs = (selectedBatch?.pairs || []).filter((p: any) => !notQualified(p));
+    if (okPairs.length === 0) { message.warning("本批次没有可出报告的配对（无结果或 QC 异常）"); return; }
+    const miss = okPairs.filter((p: any) => !p.report_date);
+    if (miss.length) { showMissingReportDate(miss); return; }
+    setGenPicked(okPairs.map((p: any) => p.id)); setGenResult(null);
     setGenOpen(true);
   };
 
   const doGenerate = async () => {
     if (!selectedBatch) return;
+    const miss = (selectedBatch.pairs || []).filter(
+      (p: any) => genPicked.includes(p.id) && !p.report_date,
+    );
+    if (miss.length) { setGenOpen(false); showMissingReportDate(miss); return; }
     setGenBusy(true);
     try {
       const r = await api.post(`/cases/bioinfo/${selectedBatch.id}/generate-reports/`, { pair_ids: genPicked }, { timeout: 600000 });
@@ -272,6 +303,8 @@ export default function NipptReports() {
   /** 单个配对生成 */
   const genOne = async (pairId: string) => {
     if (!selectedBatch) return;
+    const _pair = (selectedBatch.pairs || []).find((p: any) => p.id === pairId);
+    if (_pair && !_pair.report_date) { showMissingReportDate([_pair]); return; }
     setGenRowBusy((p) => ({ ...p, [pairId]: true }));
     try {
       const r = await api.post(`/cases/bioinfo/${selectedBatch.id}/generate-reports/`, { pair_ids: [pairId] }, { timeout: 600000 });
@@ -787,10 +820,16 @@ export default function NipptReports() {
     { title: "报告日期", dataIndex: "report_date", key: "rpd", width: 132,
       render: (v: string, r: any) => {
         const shown = v ? String(v).slice(0, 10) : "";
-        if (reportLocked(r)) return <Text style={{ fontSize: 12 }}>{shown || "—"}</Text>;
+        // 已填且锁定 → 只读；未填即使锁定也允许补填（否则无法生成报告，用户 2026-11-03）
+        if (shown && reportLocked(r)) return <Text style={{ fontSize: 12 }}>{shown}</Text>;
         return (
-          <Tooltip title="点击修改：预计出报告日期（报告模板的「检测日期/预计出报告时间」也取它）；该案例全部配对生效">
-            <ClickToEdit width={118} placeholder="—" hint="点击选择报告日期" text={shown || null}>
+          <Tooltip title={shown
+            ? "点击修改：预计出报告日期（报告模板的「检测日期/预计出报告时间」也取它）；该案例全部配对生效"
+            : "报告日期未填：生成报告前必须填写（点这里选日期）"}>
+            <ClickToEdit width={118} placeholder="未填" hint="点击选择报告日期"
+              text={shown
+                ? <span style={{ fontSize: 12 }}>{shown}</span>
+                : <span style={{ color: "#cf1322", fontWeight: 600, fontSize: 12 }}>未填</span>}>
               {(close) => (
                 <DatePicker size="small" style={{ width: "100%" }} format="YYYY-MM-DD" allowClear
                   autoFocus defaultOpen
@@ -1069,6 +1108,15 @@ ${histLine(h)}`}>
                   <Button type="primary" icon={<UploadOutlined />}
                     onClick={() => { if (bulkFileRef.current) { bulkFileRef.current.value = ""; bulkFileRef.current.click(); } }}>批量上传报告</Button>
                 </Tooltip>
+                {(() => {
+                  const n = (selectedBatch?.pairs || []).filter(
+                    (p: any) => !notQualified(p) && !p.report_date).length;
+                  return n > 0 ? (
+                    <Tooltip title="这些配对没有报告日期，生成报告会被拦住；点表格里的红色「未填」补齐">
+                      <Text type="danger" style={{ fontSize: 12, fontWeight: 600 }}>缺报告日期 {n}</Text>
+                    </Tooltip>
+                  ) : null;
+                })()}
                 <Button type="primary" icon={<FileAddOutlined />} ghost onClick={openGenerate}>生成报告</Button>
               </Space>
             </div>

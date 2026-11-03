@@ -4704,9 +4704,27 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         qs = batch.pairs.select_related("case", "mother_sample", "father_sample")
         if ids:
             qs = qs.filter(id__in=ids)
+        # 2026-11-03：报告日期（Case.expected_completion）必填 —— 原来为空会静默用"今天"，
+        # 生成出错误日期的报告；这里整批拦住（用户确认口径）
+        _pairs = list(qs)
+        # 只校验「可出报告」的配对（有结果且 QC 正常）——未达标的本就不会生成，不该拖累整批
+        _missing = [
+            p for p in _pairs
+            if (p.result or "").strip() and not (p.qc_flag or "").strip()
+            and not p.case.expected_completion
+        ]
+        if _missing:
+            _names = "、".join(
+                (p.case.pt_number or p.case.case_number or "") for p in _missing[:10]
+            )
+            raise ValidationError(
+                "以下 %d 个配对未填「报告日期」，无法生成报告：%s%s（请先在报告模块补齐）"
+                % (len(_missing), _names, "…" if len(_missing) > 10 else "")
+            )
+
         out_dir = _tempfile.mkdtemp(prefix="nippt_report_")
         generated, skipped = [], []
-        for pair in qs:
+        for pair in _pairs:
             base = self._pair_brief(pair)
             files, why = report_service.generate_and_save(pair, out_dir, request.user)
             if files:
