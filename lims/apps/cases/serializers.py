@@ -546,6 +546,8 @@ class NipptImportCaseItemSerializer(serializers.Serializer):
     notes = serializers.CharField(required=False, allow_blank=True, default="")
     expected_completion = serializers.CharField(required=False, allow_blank=True, default="")  # DD/MM/YYYY
     merge_kind = serializers.CharField(required=False, allow_blank=True, default="")  # 补样合并: MOTHER/FATHER/FATHER2/FORCE
+    # 2026-11-03：备注里引用的原案例编号（VGBR*）→ 该行男性作为补充样本并入原案例
+    reuse_external_id = serializers.CharField(required=False, allow_blank=True, default="")
 
 
 class NipptBatchImportSerializer(serializers.Serializer):

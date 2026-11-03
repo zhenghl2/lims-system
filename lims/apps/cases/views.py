@@ -51,6 +51,67 @@ def _classify_supplement_kind(text):
     return "DUPLICATE"
 
 
+def _norm_name(s):
+    """姓名比对口径：去重音符号、大写、压缩空格（巴西名字常带重音）"""
+    import unicodedata
+    t = unicodedata.normalize("NFKD", (s or "")).encode("ascii", "ignore").decode()
+    return " ".join(t.upper().split())
+
+
+def _names_match(a, b):
+    na, nb = _norm_name(a), _norm_name(b)
+    return bool(na) and na == nb
+
+
+def _add_father_supplements(request, case, item, external_id):
+    """把导入行里的疑父作为补充样本并入已有案例（备注引用原案例编号场景，用户 2026-11-03）。
+
+    · 同一人 + 同一类型已存在 → 跳过并在结果里说明，不重复建档
+    · 本行 Client Code 记到样本 Sample.external_id（便于下次查重）
+    """
+    from .serializers import SupplementSerializer
+
+    existing = list(
+        case.case_samples.select_related("sample").filter(role=CaseSample.Role.ALLEGED_FATHER)
+    )
+    made, dup = [], []
+    for f in (item.get("fathers") or []):
+        name = (f.get("name") or "").strip()
+        if not name or name == "-":
+            continue
+        for st in (f.get("sample_types") or ["BLOOD"]):
+            hit = next(
+                (cs for cs in existing
+                 if _names_match(cs.sample.patient_name, name)
+                 and (cs.sample_source or "") == st),
+                None,
+            )
+            if hit is not None:
+                dup.append({"name": name, "sample_type": st,
+                            "test_sample_id": hit.test_sample_id or ""})
+                continue
+            sup = SupplementSerializer(data={
+                "role": "ALLEGED_FATHER",
+                "patient_name": name,
+                "sample_types": [st],
+                "notes": item.get("notes") or "",
+            }, context={"case": case, "request": request})
+            sup.is_valid(raise_exception=True)
+            cs = sup.save()
+            smp = cs.sample
+            upd = ["external_id", "updated_at"]
+            smp.external_id = external_id
+            if f.get("id_card"):
+                smp.id_card = f["id_card"]; upd.append("id_card")
+            if f.get("tube_no"):
+                smp.tube_no = f["tube_no"]; upd.append("tube_no")
+            smp.save(update_fields=upd)
+            existing.append(cs)
+            made.append({"name": name, "sample_type": st,
+                         "test_sample_id": cs.test_sample_id or ""})
+    return made, dup
+
+
 def _is_sales_scoped(user):
     """销售账号判定（小程序自助注册）：数据范围限本人登记的案例。
 
@@ -640,6 +701,46 @@ class CaseViewSet(viewsets.ModelViewSet):
                     "case_number": cs.case.case_number,
                 })
 
+        # ── 备注引用原案例编号（VGBR*）：判定能否作为男性补充样本并入原案例 ──
+        reuse_info = []
+        for c in cases:
+            rid = (c.get("reuse_external_id") or "").strip()
+            if not rid:
+                continue
+            info = {
+                "seq": c["seq"], "reuse_seq": rid, "found": False,
+                "mother_name_file": c.get("mother_name") or "",
+                "fathers": [{"name": f.get("name") or "",
+                             "sample_types": f.get("sample_types") or []}
+                            for f in (c.get("fathers") or [])],
+                "blocked": False, "block_reason": "",
+            }
+            tcs = (CaseSample.objects.filter(sample__external_id=rid)
+                   .select_related("case").first())
+            if tcs is not None:
+                target = tcs.case
+                m = (target.case_samples.filter(role=CaseSample.Role.MOTHER)
+                     .select_related("sample").first())
+                existing_mother = m.sample.patient_name if m else ""
+                info.update({
+                    "found": True,
+                    "case_number": target.case_number,
+                    "pt_number": target.pt_number or "",
+                    "mother_name_existing": existing_mother,
+                    "mother_match": _names_match(existing_mother, c.get("mother_name") or ""),
+                    "existing_samples": [
+                        {"role": cs.role, "name": cs.sample.patient_name,
+                         "sample_source": cs.sample_source,
+                         "sample_source_display": cs.get_sample_source_display(),
+                         "test_sample_id": cs.test_sample_id or ""}
+                        for cs in target.case_samples.select_related("sample").order_by("created_at")
+                    ],
+                })
+                if not info["mother_match"]:
+                    info["blocked"] = True
+                    info["block_reason"] = "孕妇姓名与原案例不一致（原案例孕妇：%s）" % (existing_mother or "—")
+            reuse_info.append(info)
+
         return Response({
             "cases": cases,
             "nipt_files": nipt_files,
@@ -647,6 +748,7 @@ class CaseViewSet(viewsets.ModelViewSet):
             "duplicate_files": duplicate_files,
             "existing": existing_seqs,
             "existing_info": existing_info,
+            "reuse_info": reuse_info,
             "case_count": len(cases),
             "nipt_count": len(nipt_files),
             "error_count": len(error_files),
@@ -681,6 +783,7 @@ class CaseViewSet(viewsets.ModelViewSet):
                     return None
 
         created, skipped, errors, merged = [], [], [], []
+        reuse_missing = []
         for item in serializer.validated_data["cases"]:
             seq = item["seq"]
             merge_kind = (item.get("merge_kind") or "").strip()
@@ -730,6 +833,45 @@ class CaseViewSet(viewsets.ModelViewSet):
                 except Exception as e:
                     errors.append({"seq": seq, "error": str(e)[:300]})
                 continue
+            # ── 备注引用原案例编号（VGBR*）→ 男性补充样本并入原案例（用户 2026-11-03）──
+            reuse_seq = (item.get("reuse_external_id") or "").strip()
+            if reuse_seq:
+                target_cs = (CaseSample.objects.filter(sample__external_id=reuse_seq)
+                             .select_related("case").first())
+                if target_cs is not None:
+                    target_case = target_cs.case
+                    mother_cs = (target_case.case_samples.filter(role=CaseSample.Role.MOTHER)
+                                 .select_related("sample").first())
+                    existing_mother = mother_cs.sample.patient_name if mother_cs else ""
+                    if existing_mother and not _names_match(existing_mother, item["mother_name"]):
+                        errors.append({"seq": seq,
+                                       "error": "孕妇姓名与原案例不一致，已阻止导入（原案例孕妇：%s）"
+                                                % existing_mother})
+                        continue
+                    try:
+                        with transaction.atomic():
+                            made, dup_skipped = _add_father_supplements(
+                                request, target_case, item, seq)
+                            if made:
+                                log_audit(request, "UPDATE", target_case, changes={
+                                    "来源": {"old": "", "new": "巴西导入：复用原案例材料（男性补充样本）"},
+                                    "原案例编号": {"old": "", "new": reuse_seq},
+                                    "本次编号": {"old": "", "new": seq},
+                                    "新增样本": {"old": "", "new": "、".join(
+                                        "%s/%s" % (x["name"], x["sample_type"]) for x in made)},
+                                    "跳过(已存在)": {"old": "", "new": "、".join(
+                                        "%s/%s" % (x["name"], x["sample_type"]) for x in dup_skipped) or "无"},
+                                }, entity_type="case", entity_repr=target_case.case_number)
+                        merged.append({"seq": seq, "case_number": target_case.case_number,
+                                       "kind": "REUSE", "reuse_seq": reuse_seq,
+                                       "created_samples": made,
+                                       "skipped_duplicates": dup_skipped})
+                    except Exception as e:
+                        errors.append({"seq": seq, "error": str(e)[:300]})
+                    continue
+                # 原案例找不到 → 照常新建（结果里标注）
+                reuse_missing.append(seq)
+
             try:
                 with transaction.atomic():
                     father_names = [f["name"] for f in item["fathers"] if f["name"] and f["name"] != "-"]
@@ -819,6 +961,7 @@ class CaseViewSet(viewsets.ModelViewSet):
             "skipped_count": len(skipped),
             "error_count": len(errors),
             "merged_count": len(merged),
+            "reuse_missing": reuse_missing,
         })
 
     @action(detail=False, methods=["post"], parser_classes=[MultiPartParser, FormParser, JSONParser])

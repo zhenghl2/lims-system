@@ -6,7 +6,7 @@ import {
   Card, Form, Input, Select, AutoComplete, Button, message, Typography,
   Divider, Table, Tag, Modal, DatePicker, Row, Col,
   Radio, Space, Collapse, InputNumber, Upload,
-  Checkbox, Descriptions, Tooltip,
+  Checkbox, Descriptions, Tooltip, Alert,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, SendOutlined,
@@ -152,6 +152,10 @@ export default function NipptRegistration() {
   const [importChecked, setImportChecked] = useState<Set<string>>(new Set());
   const [importExisting, setImportExisting] = useState<Set<string>>(new Set());
   const [importKindMap, setImportKindMap] = useState<Record<string, { kind: string; case_number?: string }>>({});
+  // 2026-11-03：备注里引用原案例编号（VGBR*）→ 疑父作为补充样本并入原案例，需人工确认
+  const [importReuse, setImportReuse] = useState<any[]>([]);
+  const [reuseApproved, setReuseApproved] = useState<Set<string>>(new Set());
+  const [reuseModalOpen, setReuseModalOpen] = useState(false);
   const [importNiptSkipped, setImportNiptSkipped] = useState(0);
   const [importFileName, setImportFileName] = useState("");
   const [importLoading, setImportLoading] = useState(false);
@@ -402,10 +406,23 @@ export default function NipptRegistration() {
       const supSeqs = (d.existing_info || [])
         .filter((e: any) => e.kind && e.kind !== "DUPLICATE")
         .map((e: any) => e.seq);
+      // ── 备注引用原案例（VGBR*）：收集 + 弹窗确认；孕妇不一致的直接不可导入 ──
+      const reuseList: any[] = d.reuse_info || [];
+      setImportReuse(reuseList);
+      setReuseApproved(new Set(
+        reuseList
+          .filter((x: any) => x.found && !x.blocked && !existingSet.has(x.seq))
+          .map((x: any) => x.seq),
+      ));
+      const blockedSeqs = new Set(
+        reuseList.filter((x: any) => x.blocked).map((x: any) => x.seq),
+      );
       setImportChecked(new Set([
-        ...(d.cases || []).map((r: any) => r.seq).filter((sq: string) => !existingSet.has(sq)),
-        ...supSeqs,
+        ...(d.cases || []).map((r: any) => r.seq)
+          .filter((sq: string) => !existingSet.has(sq) && !blockedSeqs.has(sq)),
+        ...supSeqs.filter((sq: string) => !blockedSeqs.has(sq)),
       ]));
+      if (reuseList.length) setReuseModalOpen(true);
       setImportResult(null);
       if (d.error_count > 0) {
         message.warning(`解析完成：${d.case_count} 个Case，${d.nipt_count ?? 0} 个NIPT跳过，${d.error_count} 个文件解析失败`);
@@ -424,8 +441,15 @@ export default function NipptRegistration() {
     if (importChecked.size === 0) { message.warning("请先勾选要导入的行"); return; }
     const selected = importRows.filter((r) => importChecked.has(r.seq)).map((r: any) => {
       const info = importKindMap[r.seq];
-      if (!info) return r;
-      return { ...r, merge_kind: info.kind === "DUPLICATE" ? "FORCE" : info.kind };
+      const row: any = info ? { ...r, merge_kind: info.kind === "DUPLICATE" ? "FORCE" : info.kind } : { ...r };
+      // 备注引用原案例：只有弹窗里确认过的才带 reuse_external_id
+      const reuse = importReuse.find((x: any) => x.seq === r.seq);
+      if (reuse && reuseApproved.has(r.seq) && reuse.found && !reuse.blocked) {
+        row.reuse_external_id = reuse.reuse_seq;
+      } else {
+        delete row.reuse_external_id;
+      }
+      return row;
     });
     setImportLoading(true);
     try {
@@ -1519,6 +1543,17 @@ export default function NipptRegistration() {
                       }
                       return cb;
                     } },
+                  { title: "备注引用", key: "reuse", width: 168, render: (_: any, r: any) => {
+                      const reuse = importReuse.find((x: any) => x.seq === r.seq);
+                      if (!reuse) return <Text type="secondary">—</Text>;
+                      if (!reuse.found) return <Tag color="orange">原案例未找到</Tag>;
+                      if (reuse.blocked) return <Tooltip title={reuse.block_reason}><Tag color="red">孕妇姓名不一致</Tag></Tooltip>;
+                      return (
+                        <Tooltip title={`复用原案例 ${reuse.case_number} · ${reuse.pt_number || "无PT"} · 孕妇 ${reuse.mother_name_existing}；疑父并入该案例`}>
+                          <Tag color="purple" style={{ cursor: "default" }}>→ {reuse.case_number}</Tag>
+                        </Tooltip>
+                      );
+                    } },
                   { title: "Seq", dataIndex: "seq", width: 90,
                     render: (v: string) => <Text code>{v}</Text> },
                   { title: "孕妇", dataIndex: "mother_name", width: 170, ellipsis: true },
@@ -1558,6 +1593,96 @@ export default function NipptRegistration() {
               )}
             </>
           )}
+
+          {/* 备注引用原案例（VGBR*）：导入前人工确认 */}
+          <Modal
+            title="发现「复用原案例材料」的样本行"
+            open={reuseModalOpen}
+            onCancel={() => setReuseModalOpen(false)}
+            onOk={() => setReuseModalOpen(false)}
+            okText="按勾选执行"
+            cancelButtonProps={{ style: { display: "none" } }}
+            width={900}
+            destroyOnClose
+          >
+            <Alert type="info" showIcon style={{ marginBottom: 12 }}
+              message="备注（Remarks）里出现了原案例的外部编号（VGBR…）"
+              description="这些行的疑父会作为「男性补充样本」并入原案例，不再新建 Case；原案例已有的同名同类型样本会自动跳过。孕妇姓名与原案例不一致的行不允许导入。" />
+            {importReuse.map((x: any) => {
+              const already = importExisting.has(x.seq);
+              return (
+                <Card key={x.seq} size="small"
+                  style={{ marginBottom: 10, borderColor: x.blocked ? "#ffccc7" : undefined }}>
+                  <Row gutter={12}>
+                    <Col span={12}>
+                      <div style={{ fontSize: 12, marginBottom: 4 }}>
+                        <Text type="secondary">原案例（备注编号 <Text code>{x.reuse_seq}</Text>）</Text>
+                      </div>
+                      {x.found ? (
+                        <>
+                          <div style={{ fontSize: 13 }}>
+                            <Text strong>{x.case_number}</Text>{" "}
+                            <Tag color="blue">{x.pt_number || "无 PT"}</Tag>
+                          </div>
+                          <div style={{ fontSize: 12, marginTop: 2 }}>
+                            孕妇：{x.mother_name_existing}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+                            现有样本：{(x.existing_samples || []).map((s: any) =>
+                              `${s.role === "MOTHER" ? "👩" : "👨"}${s.name}(${s.sample_source_display}${s.test_sample_id ? " " + s.test_sample_id : ""})`
+                            ).join("、") || "—"}
+                          </div>
+                        </>
+                      ) : (
+                        <Text type="warning" style={{ fontSize: 12 }}>
+                          库中未找到该编号 → 本行将按新 Case 正常登记
+                        </Text>
+                      )}
+                    </Col>
+                    <Col span={12}>
+                      <div style={{ fontSize: 12, marginBottom: 4 }}>
+                        <Text type="secondary">本次导入（编号 <Text code>{x.seq}</Text>）</Text>
+                      </div>
+                      <div style={{ fontSize: 13 }}>
+                        孕妇：{x.mother_name_file}{" "}
+                        {x.found ? (x.mother_match
+                          ? <Tag color="green">同名 ✓</Tag>
+                          : <Tag color="red">不一致</Tag>) : null}
+                      </div>
+                      <div style={{ fontSize: 12, marginTop: 2 }}>
+                        疑父：{(x.fathers || []).map((f: any) =>
+                          `${f.name}（${(f.sample_types || []).join("/")}）`).join("、") || "—"}
+                      </div>
+                      {x.found && !x.blocked && (
+                        <Checkbox
+                          style={{ marginTop: 6 }}
+                          disabled={already}
+                          checked={!already && reuseApproved.has(x.seq)}
+                          onChange={(e) => setReuseApproved((prev) => {
+                            const next = new Set(prev);
+                            e.target.checked ? next.add(x.seq) : next.delete(x.seq);
+                            return next;
+                          })}
+                        >
+                          作为男性补充样本并入原案例
+                        </Checkbox>
+                      )}
+                      {x.blocked && (
+                        <div style={{ marginTop: 6 }}>
+                          <Text type="danger" style={{ fontSize: 12 }}>{x.block_reason} → 该行不可导入</Text>
+                        </div>
+                      )}
+                      {already && (
+                        <div style={{ marginTop: 4 }}>
+                          <Text type="secondary" style={{ fontSize: 11 }}>该编号已导入过，本次会跳过</Text>
+                        </div>
+                      )}
+                    </Col>
+                  </Row>
+                </Card>
+              );
+            })}
+          </Modal>
         </Card>
       )}
 

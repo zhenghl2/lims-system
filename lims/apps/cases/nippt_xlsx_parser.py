@@ -35,6 +35,8 @@ NOTE_TRANSLATIONS = [
 ]
 
 DATE_RE = re.compile(r"(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})")
+# 2026-11-03：备注里引用原案例外部编号（REAPROVEITAMENTO MATERIAL … (VGBRBVD2609151283)）
+REUSE_ID_RE = re.compile(r"VGBR[A-Z0-9]+", re.I)
 
 
 class NipptXlsxParseError(Exception):
@@ -192,6 +194,9 @@ def parse_xlsx_bytes(data, filename=""):
         due = norm(r[27]) if len(r) > 27 else ""
         gender = _map_gender(norm(r[31])) if len(r) > 31 else ""
         remarks = norm(r[32]) if len(r) > 32 else ""
+        # 备注里引用原案例编号（排除本行自己的 Client Code）
+        _own = client_code.strip().upper()
+        reuse_ids = [x.upper() for x in REUSE_ID_RE.findall(remarks) if x.upper() != _own]
 
         if not test_item and not client_code and not mother_name:
             continue  # 空行
@@ -222,6 +227,8 @@ def parse_xlsx_bytes(data, filename=""):
                 existing["fathers"].append(father)
             if not existing["notes"] and remarks:
                 existing["notes"] = _translate_notes(remarks)
+            if not existing.get("reuse_external_id") and reuse_ids:
+                existing["reuse_external_id"] = reuse_ids[0]
             continue
 
         cases.append({
@@ -242,6 +249,7 @@ def parse_xlsx_bytes(data, filename=""):
             "fedex_no": fedex,
             "notes": _translate_notes(remarks),
             "remarks_raw": remarks,
+            "reuse_external_id": reuse_ids[0] if reuse_ids else "",
             "expected_completion": _first_part(due),
         })
 
