@@ -10,6 +10,7 @@
   输出名   = WJ{万基编号}-{申请人}-{Y/N}(YYYY.MM.DD).docx（WQ 用「编号」）
 """
 import os
+import re
 
 from docxtpl import DocxTemplate
 
@@ -74,6 +75,13 @@ def render(row, appendix_path, tpl_dir, out_dir="."):
         parts = str(ctx.get("编号", "")).split("-")
         ctx["sm_id_num"] = parts[1] if len(parts) > 1 else sm_id_num
         base_code = str(ctx.get("编号", ""))
+    # 2026-11-03（用户口径）：同一案例多疑父（HA/HB…）时文件名会完全相同 →
+    # 第二个被 Django 加 _7位随机串。改为「母编号去掉尾部字母 + 疑父标签小写」：
+    # WJPT72570W + HA → WJPT72570a；单疑父保持原样 WJPT72570W
+    _flabel = str(ctx.get("father_label") or "").strip().upper()
+    if ctx.get("multi_father") and _flabel and not is_wq:
+        _letter = _flabel[-1].lower()
+        base_code = re.sub(r"[A-Za-z]+$", "", str(base_code)) + _letter
     out_name = "WJ%s-%s-%s%s.docx" % (base_code, ctx.get("申请人", ""), result, report_name_date)
 
     # 代孕判定

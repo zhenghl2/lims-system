@@ -105,6 +105,15 @@ def generate_and_save(pair, out_dir, user=None):
         except Exception:                          # noqa: BLE001
             pass
 
+    # 2026-11-03：先删旧实体文件。否则同名新文件会被 Django 的
+    # Storage.get_available_name() 判为冲突，自动改名成 xxx_<7位随机串>.docx
+    # （用户反馈 "Y2026_147Ijl6.11.03.docx" 就是这么来的）
+    if pair.report_file:
+        try:
+            pair.report_file.delete(save=False)
+        except Exception:                          # noqa: BLE001
+            pass
+
     with open(main, "rb") as fh:
         pair.report_file.save(os.path.basename(main), fh, save=False)
 
@@ -113,6 +122,11 @@ def generate_and_save(pair, out_dir, user=None):
     if sex_file:
         sex_path = sex_file if os.path.isabs(str(sex_file)) else os.path.join(out_dir, str(sex_file))
         if os.path.exists(sex_path):
+            if pair.report_file_sex:       # 同上：先删旧的，避免随机后缀
+                try:
+                    pair.report_file_sex.delete(save=False)
+                except Exception:                  # noqa: BLE001
+                    pass
             with open(sex_path, "rb") as fh:
                 pair.report_file_sex.save(os.path.basename(sex_path), fh, save=False)
             sex_saved = True

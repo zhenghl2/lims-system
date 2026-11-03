@@ -2,6 +2,10 @@
 import uuid
 import secrets
 from django.db import models
+
+from lims.apps.cases.storage import NipptReportStorage
+
+nippt_report_storage = NipptReportStorage()
 from django.conf import settings
 from django.utils import timezone
 
@@ -1112,13 +1116,18 @@ class NipptBioinfoPair(models.Model):
     report_data = models.JSONField(default=dict, blank=True)
 
     # ── Reports 模块：报告文件 + 复核/审核（每配对一份报告）──
-    report_file = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True)
+    # 2026-11-03：报告文件名要保留括号（Y(2026.11.03)），改用自定义存储
+    report_file = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True,
+                                   storage=nippt_report_storage)
     # 2026-10-13：PDF 独立槽位 —— Word 与 PDF 可同时存在，互不覆盖
-    report_file_pdf = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True)
+    report_file_pdf = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True,
+                                       storage=nippt_report_storage)
     report_pdf_stale = models.BooleanField(default=False)   # 重新生成 Word 后旧 PDF 可能过期（只提示不删）
     # 2026-10-21：额外报告（胎儿性别报告）—— Word 由生成器产出，PDF 人工上传；与主报告互不影响
-    report_file_sex = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True)
-    report_file_sex_pdf = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True)
+    report_file_sex = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True,
+                                      storage=nippt_report_storage)
+    report_file_sex_pdf = models.FileField(upload_to="nippt_reports/%Y%m/", null=True, blank=True,
+                                          storage=nippt_report_storage)
 
     def has_report(self):
         """是否有报告（2026-10-13 用户口径：任一格式即算「已上传」）。"""

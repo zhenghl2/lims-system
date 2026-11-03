@@ -65,6 +65,15 @@ def case_client_id(case):
     return ""
 
 
+def _multi_father(pair):
+    """同一批次内该案例是否存在「父方样本不同」的另一条配对（多疑父 HA/HB…）。"""
+    try:
+        return pair.batch.pairs.filter(case_id=pair.case_id) \
+            .exclude(father_sample_id=pair.father_sample_id).exists()
+    except Exception:                              # noqa: BLE001
+        return False
+
+
 def build_row(pair):
     """NipptBioinfoPair → 报告渲染所需的行字典（键名与模板一致）。"""
     case = pair.case
@@ -106,6 +115,9 @@ def build_row(pair):
         "万基编号": vg_id,
         "mother_test_id": (mother.test_sample_id if mother else "") or "",
         "father_test_id": (father.test_sample_id if father else "") or "",
+        # 2026-11-03：多疑父（同案例多条配对、父方样本不同）→ 国内报告名加 a/b 区分
+        "father_label": (getattr(pair, "father_label", "") or ""),
+        "multi_father": _multi_father(pair),
         "female_name": ms.patient_name if ms else "",
         "male_name": fs.patient_name if fs else "",
         "female_name2": ms.patient_name if ms else "",
