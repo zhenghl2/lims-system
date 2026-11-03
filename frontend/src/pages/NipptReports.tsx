@@ -358,6 +358,15 @@ export default function NipptReports() {
     if (t === "B") return "HB";
     return t;
   };
+  /** 2026-11-03：文件名识别「额外报告」（性别报告）
+   *  HK_report_sex_PT72353W.docx / HK_report_sex_fr_PT71905.pdf / ... Sexagem Fetal ...
+   *  命中 _sex_（含 _sex_fr_）或 Sexagem Fetal → sex；其余 → main */
+  const parseKindFromName = (name: string): "main" | "sex" => {
+    const n = String(name || "");
+    if (/_sex([_\-\s.]|$)/i.test(n)) return "sex";
+    if (/sexagem\s*fetal/i.test(n)) return "sex";
+    return "main";
+  };
   const pairOptionLabel = (p: any) =>
     `${p.pt_number || ""} ${p.father_label || ""}${p.father_name ? " · " + p.father_name : ""}`.trim();
 
@@ -430,22 +439,28 @@ export default function NipptReports() {
     }
   };
 
-  // ── 额外报告（性别报告）PDF 上传（Word 由生成器产出）──
-  const pickSexPdf = (pair: any) => {
-    pendingSexPair.current = pair;
+  // ── 额外报告（性别报告）上传：Word / PDF 各自独立槽位（2026-11-03 起 Word 也支持上传）──
+  const pickSexReport = (pair: any, fmt: "word" | "pdf") => {
+    pendingSexPair.current = { pair, fmt };
     if (sexFileRef.current) { sexFileRef.current.value = ""; sexFileRef.current.click(); }
   };
 
   const onSexFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];
-    const pair = pendingSexPair.current;
+    const pend = pendingSexPair.current;
     pendingSexPair.current = null;
-    if (!f || !pair) return;
+    if (!f || !pend) return;
+    const pair = pend.pair;
     const _bad = checkReportFile(f);
     if (_bad) { message.warning(_bad); return; }
-    if (pair.report_file_sex_pdf_url) {
+    const isWord = /\.docx$/i.test(f.name || "");
+    if (pend.fmt === "word" && !isWord) { message.warning("这里只收 Word（.docx）；PDF 请点 PDF 的上传按钮"); return; }
+    if (pend.fmt === "pdf" && isWord) { message.warning("这里只收 PDF；Word 请点 W 的上传按钮"); return; }
+    const fmtLabel = isWord ? "Word" : "PDF";
+    const has = isWord ? !!pair.report_file_sex_url : !!pair.report_file_sex_pdf_url;
+    if (has) {
       Modal.confirm({
-        title: "该配对的性别报告 PDF 已存在",
+        title: `该配对的额外报告 ${fmtLabel} 已存在`,
         okText: "覆盖", cancelText: "保留现有",
         content: <div style={{ fontSize: 12 }}>本次文件：<Text code>{f.name}</Text></div>,
         onOk: async () => { const r = await doUpload(pair, f, "overwrite", "sex"); r.ok ? message.success(r.msg) : message.error(r.msg); refreshDetail(); },
@@ -466,6 +481,7 @@ export default function NipptReports() {
     const rows = files.map((f: File) => {
       const pt = parsePtFromName(f.name);
       const role = parseRoleFromName(f.name);
+      const kind = parseKindFromName(f.name);   // main / sex（额外报告）
       const found = pt ? pairs.filter((p: any) => normPt(p.pt_number) === pt) : [];
       let cand: any = null, reason = "";
       if (found.length === 1) cand = found[0];
@@ -486,7 +502,7 @@ export default function NipptReports() {
         state = /MB/.test(why) ? "too_big" : "bad_type";
         reason = why;
       }
-      return { key: `${f.name}-${Math.random()}`, file: f, pt, role,
+      return { key: `${f.name}-${Math.random()}`, file: f, pt, role, kind,
                cands: (pt && found.length) ? found : pairs, pair: cand, state, reason, mode: "overwrite" };
     });
     // 判重：同 PT + 同角色 才算重复（HA/HB 两个文件不再互判重复）
@@ -494,12 +510,12 @@ export default function NipptReports() {
     const _fmtOf = (f: File) => (/\.pdf$/i.test(f.name || "") ? "pdf" : "word");
     const cnt: Record<string, number> = {};
     rows.forEach((r: any) => {
-      if (r.pt) { const k = `${r.pt}|${r.role}|${_fmtOf(r.file)}`; cnt[k] = (cnt[k] || 0) + 1; }
+      if (r.pt) { const k = `${r.pt}|${r.role}|${_fmtOf(r.file)}|${r.kind}`; cnt[k] = (cnt[k] || 0) + 1; }
     });
     rows.forEach((r: any) => {
-      const k = `${r.pt}|${r.role}|${_fmtOf(r.file)}`;
+      const k = `${r.pt}|${r.role}|${_fmtOf(r.file)}|${r.kind}`;
       if (r.pt && r.state === "ok" && cnt[k] > 1) {
-        r.state = "dup"; r.reason = "与另一个文件解析到同一个 PT、同一角色和同一格式";
+        r.state = "dup"; r.reason = "与另一个文件解析到同一个 PT、同一角色、同一格式和同一类型";
       }
     });
     setBulkRows(rows);
@@ -529,7 +545,7 @@ export default function NipptReports() {
     setBulkBusy(true);
     let n = 0, kept = 0, fail = 0;
     for (const r of oks) {
-      const res = await doUpload(r.pair, r.file, r.mode || "overwrite");
+      const res = await doUpload(r.pair, r.file, r.mode || "overwrite", r.kind || "main");
       if (res.ok) { n++; if ((r.mode || "overwrite") === "keep") kept++; } else { fail++; message.error(`${r.file.name}：${res.msg}`); }
     }
     setBulkBusy(false); setBulkOpen(false);
@@ -847,24 +863,32 @@ ${histLine(h)}`}>
     { title: "额外报告", key: "sexr", width: 128,
       render: (_: any, r: any) => {
         const enabled = String(r.gender_info || "").trim() === "Yes";
-        if (!enabled) {
-          return <Tooltip title="「额外信息」不是「是」→ 不出性别报告"><Text type="secondary" style={{ fontSize: 11 }}>未开启</Text></Tooltip>;
-        }
         if (notQualified(r)) return <Text type="secondary" style={{ fontSize: 11 }}>不可出报告</Text>;
         return (
           <Space size={4}>
-            <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>性别</Tag>
-            <Tooltip title={r.report_file_sex_url ? "下载性别报告 Word" : "还没有生成：点主报告列的生成按钮，会一起生成"}>
-              <Button size="small" disabled={!r.report_file_sex_url}
-                onClick={() => r.report_file_sex_url && window.open(r.report_file_sex_url, "_blank")}>W</Button>
-            </Tooltip>
+            {enabled ? (
+              <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>性别</Tag>
+            ) : (
+              <Tooltip title="「额外信息」不是「是」→ 自动生成不会出性别报告；仍可手工上传额外报告">
+                <Tag color="orange" style={{ margin: 0, fontSize: 11 }}>未开启</Tag>
+              </Tooltip>
+            )}
+            {r.report_file_sex_url ? (
+              <Tooltip title="下载额外报告 Word">
+                <Button size="small" onClick={() => window.open(r.report_file_sex_url, "_blank")}>W</Button>
+              </Tooltip>
+            ) : (
+              <Tooltip title="上传额外报告 Word（.docx）">
+                <Button size="small" icon={<UploadOutlined />} onClick={() => pickSexReport(r, "word")} />
+              </Tooltip>
+            )}
             {r.report_file_sex_pdf_url ? (
-              <Tooltip title="下载性别报告 PDF">
+              <Tooltip title="下载额外报告 PDF">
                 <Button size="small" onClick={() => window.open(r.report_file_sex_pdf_url, "_blank")}>PDF</Button>
               </Tooltip>
             ) : (
-              <Tooltip title="上传性别报告 PDF">
-                <Button size="small" icon={<UploadOutlined />} onClick={() => pickSexPdf(r)} />
+              <Tooltip title="上传额外报告 PDF">
+                <Button size="small" icon={<UploadOutlined />} onClick={() => pickSexReport(r, "pdf")} />
               </Tooltip>
             )}
           </Space>
@@ -1100,7 +1124,7 @@ ${histLine(h)}`}>
             </Modal>
             <input ref={singleFileRef} type="file" accept=".pdf,.docx" style={{ display: "none" }} onChange={onSingleFile} />
             <input ref={bulkFileRef} type="file" accept=".pdf,.docx" multiple style={{ display: "none" }} onChange={onBulkFiles} />
-            <input ref={sexFileRef} type="file" accept=".pdf" style={{ display: "none" }} onChange={onSexFile} />
+            <input ref={sexFileRef} type="file" accept=".pdf,.docx" style={{ display: "none" }} onChange={onSexFile} />
 
             <Modal
               title={<Space><UploadOutlined /> 批量上传报告 — <Text code>{selectedBatch.batch_number}</Text></Space>}
@@ -1128,6 +1152,12 @@ ${histLine(h)}`}>
                     render: (v: string, r: any) => v
                       ? <Space size={4}><Text code>PT{v}</Text>{r.role ? <Tag style={{ margin: 0 }}>{r.role}</Tag> : null}</Space>
                       : <Text type="secondary">—</Text> },
+                  { title: "类型", key: "kind", width: 118,
+                    render: (_: any, r: any) => (
+                      <Select size="small" style={{ width: 108 }} value={r.kind || "main"}
+                        onChange={(v) => setBulkRows((prev) => prev.map((x: any) => x.key === r.key ? { ...x, kind: v } : x))}
+                        options={[{ value: "main", label: "主报告" }, { value: "sex", label: "额外报告" }]} />
+                    ) },
                   { title: "匹配到", key: "mt", width: 290,
                     render: (_: any, r: any) => (
                       <Select size="small" style={{ width: "100%" }} value={r.pair?.id}
@@ -1139,18 +1169,23 @@ ${histLine(h)}`}>
                     render: (_: any, r: any) => {
                       if (!r.pair) return "—";
                       const isPdf = /\.pdf$/i.test(r.file?.name || "");
-                      const has = isPdf ? !!r.pair.report_file_pdf_url : !!r.pair.report_file_url;
-                      const other = isPdf ? !!r.pair.report_file_url : !!r.pair.report_file_pdf_url;
+                      const isSex = (r.kind || "main") === "sex";
+                      const has = isSex
+                        ? (isPdf ? !!r.pair.report_file_sex_pdf_url : !!r.pair.report_file_sex_url)
+                        : (isPdf ? !!r.pair.report_file_pdf_url : !!r.pair.report_file_url);
                       const fmt = isPdf ? "PDF" : "Word";
                       return <Space size={4}>
                         <Tag color={has ? "blue" : "orange"} style={{ margin: 0 }}>{has ? `已有 ${fmt}` : `${fmt} 首次上传`}</Tag>
-                        {other && <Tag style={{ margin: 0 }}>{isPdf ? "另有 Word" : "另有 PDF"}</Tag>}
+                        {isSex ? <Tag color="purple" style={{ margin: 0 }}>额外报告</Tag> : null}
                       </Space>;
                     } },
                   { title: "有报告时", key: "md", width: 150,
                     render: (_: any, r: any) => {
                       const isPdf = /\.pdf$/i.test(r.file?.name || "");
-                      const has = r.pair && (isPdf ? r.pair.report_file_pdf_url : r.pair.report_file_url);
+                      const isSex = (r.kind || "main") === "sex";
+                      const has = r.pair && (isSex
+                        ? (isPdf ? r.pair.report_file_sex_pdf_url : r.pair.report_file_sex_url)
+                        : (isPdf ? r.pair.report_file_pdf_url : r.pair.report_file_url));
                       return (r.state === "ok" && has) ? (
                         <Select size="small" style={{ width: 120 }} value={r.mode}
                           onChange={(v) => setBulkRows((prev) => prev.map((x: any) => x.key === r.key ? { ...x, mode: v } : x))}
