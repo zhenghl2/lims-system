@@ -2238,26 +2238,71 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
         return {"mother": md, "father": fd,
                 "external_id": md["external_id"] or fd["external_id"]}
 
+    def _real_samples(self, obj):
+        """母/父的「真实 Sample」——证件号/管号(id_card/tube_no)存在 Sample 上。
+
+        2026-11-03 修：原来直接 self._sattr(obj.mother_sample, "id_card")，
+        而 obj.mother_sample 是 NipptBioinfoSample（只有 case_sample_ids，没有这两个字段），
+        于是报告模块的「孕妇/疑父 证件/管号」列恒为空。
+        改为经 case_sample_ids 反查 CaseSample→Sample（与 sample_dates 同路径），每对只查一次。
+        """
+        # ⚠️ many=True 时 DRF 复用同一个 child serializer 实例 → 缓存必须按配对 id 区分
+        _cache = getattr(self, "_real_sm_cache", None)
+        if _cache is None:
+            _cache = self._real_sm_cache = {}
+        _key = str(getattr(obj, "id", ""))
+        if _key in _cache:
+            return _cache[_key]
+        ids = []
+        for _s in (obj.mother_sample, obj.father_sample):
+            ids.extend(list(getattr(_s, "case_sample_ids", None) or []))
+        by_id = {}
+        if ids:
+            for _cs in CaseSample.objects.filter(id__in=ids).select_related("sample"):
+                by_id[str(_cs.id)] = _cs.sample
+
+        def _pick(sample):
+            if not sample:
+                return None
+            for cid in (getattr(sample, "case_sample_ids", None) or []):
+                sm = by_id.get(str(cid))
+                if sm:
+                    return sm
+            return None
+
+        _cache[_key] = (_pick(obj.mother_sample), _pick(obj.father_sample))
+        return _cache[_key]
+
     def get_mother_id_card(self, obj):
-        return self._sattr(obj.mother_sample, "id_card")
+        m, _ = self._real_samples(obj)
+        return (getattr(m, "id_card", "") or "") if m else ""
 
     def get_mother_tube_no(self, obj):
-        return self._sattr(obj.mother_sample, "tube_no")
+        m, _ = self._real_samples(obj)
+        return (getattr(m, "tube_no", "") or "") if m else ""
 
     def get_father_id_card(self, obj):
-        return self._sattr(obj.father_sample, "id_card")
+        _, f = self._real_samples(obj)
+        return (getattr(f, "id_card", "") or "") if f else ""
 
     def get_father_tube_no(self, obj):
-        return self._sattr(obj.father_sample, "tube_no")
+        _, f = self._real_samples(obj)
+        return (getattr(f, "tube_no", "") or "") if f else ""
 
     def get_mother_display(self, obj):
-        """证件号 / 管号，逗号拼接（前端一列显示）"""
-        return " · ".join([x for x in (self._sattr(obj.mother_sample, "id_card"),
-                                       self._sattr(obj.mother_sample, "tube_no")) if x])
+        """证件号 / 管号（前端一列显示）"""
+        m, _ = self._real_samples(obj)
+        if not m:
+            return ""
+        return " · ".join([x for x in (getattr(m, "id_card", "") or "",
+                                       getattr(m, "tube_no", "") or "") if x])
 
     def get_father_display(self, obj):
-        return " · ".join([x for x in (self._sattr(obj.father_sample, "id_card"),
-                                       self._sattr(obj.father_sample, "tube_no")) if x])
+        _, f = self._real_samples(obj)
+        if not f:
+            return ""
+        return " · ".join([x for x in (getattr(f, "id_card", "") or "",
+                                       getattr(f, "tube_no", "") or "") if x])
 
     class Meta:
         model = NipptBioinfoPair
