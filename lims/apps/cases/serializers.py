@@ -689,6 +689,8 @@ class SupplementSerializer(serializers.Serializer):
                 _sup_seq = max(_sup_seq, int(_tail))
 
         css = []
+        batch_pt = None        # 同一次补样里同时选的多个类型共用同一个 PT 号（用户 2026-11-03）
+        batch_first = None
         for st in sample_types:
             # 每个类型创建独立的 Sample + CaseSample
             _sup_seq += 1
@@ -717,8 +719,19 @@ class SupplementSerializer(serializers.Serializer):
                 relationship_to_mother=relationship,
                 collection_notes=notes,
             )
-            # 补样登记即分配 PT 编号（撞号自动按重采给 _R{n}，用户 2026-10-13）
-            case.assign_supplement_test_id(cs_obj)
+            # PT 编号：
+            # · 本次补样的第一个类型 → 正常分配（与既有样本撞号时按重采给 _R{n}）
+            # · 同一次补样里的其余类型 → 直接沿用第一个类型的 PT 号
+            #   （用户 2026-11-03：同一次登记的多类型是同一个人，不该出现 _R1）
+            if batch_pt is None:
+                case.assign_supplement_test_id(cs_obj)
+                batch_pt = cs_obj.test_sample_id
+                batch_first = cs_obj
+            else:
+                cs_obj.test_sample_id = batch_pt
+                cs_obj.resample_of = batch_first.resample_of
+                cs_obj.resample_number = batch_first.resample_number
+                cs_obj.save(update_fields=["test_sample_id", "resample_of", "resample_number"])
             css.append(cs_obj)
         # 备注同步案例级 Case.notes（签收页"登记备注"列与案例管理共用）
         if notes:

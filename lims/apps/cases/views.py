@@ -1465,8 +1465,13 @@ class CaseViewSet(viewsets.ModelViewSet):
                     )
                     if has_pt:
                         # 案例已有 PT → 按补样规则立即补号（撞号自动 _R{n}）；
-                        # 没有 PT 则留空，签收（confirm_receipt）时再生成
-                        case.assign_supplement_test_id(new_cs, save=False)
+                        # 同一次补登的多个类型共用同一个 PT 号（用户 2026-11-03）
+                        if created:
+                            new_cs.test_sample_id = created[0].test_sample_id
+                            new_cs.resample_of = created[0].resample_of
+                            new_cs.resample_number = created[0].resample_number
+                        else:
+                            case.assign_supplement_test_id(new_cs, save=False)
                         new_cs.save(update_fields=["test_sample_id", "resample_of", "resample_number"])
                     created.append(new_cs)
 
