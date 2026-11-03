@@ -1717,6 +1717,40 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
                             index_map.setdefault(p, _hit)
             except Exception:
                 pass
+
+        # ── PT 改名兼容（2026-11-03）──
+        # 建库板面 cell.vgId 存的是「建库当时的 PT 字符串」，之后 PT 可能变化
+        # （重采 R / 重做 T / 编号修正）。精确匹配不到时，去掉 _R{n}/_T{n} 后缀再试一次；
+        # 只有唯一命中才采用，避免把别的样本的 Index 张冠李戴。
+        if index_map:
+            import re as _re
+            def _strip_sfx(v):
+                return _re.sub(r"_(R|T)\d+$", "", (v or "").strip())
+
+            _norm = {}
+            for _vg, _ix in index_map.items():
+                if _ix:
+                    _norm.setdefault(_strip_sfx(_vg), set()).add(_ix)
+            _cs_ids = []
+            for _sp in obj.samples.all():
+                _cs_ids.extend(_sp.case_sample_ids or [])
+            _pt_by_id = {
+                str(_cid): _pt
+                for _cid, _pt in CaseSample.objects.filter(id__in=_cs_ids)
+                    .values_list("id", "test_sample_id")
+            }
+            for _sp in obj.samples.all():
+                _pts = [_pt_by_id.get(c) for c in (_sp.case_sample_ids or [])]
+                _pts = [p for p in _pts if p]
+                if not _pts or any(p in index_map for p in _pts):
+                    continue
+                _cand = set()
+                for p in _pts:
+                    _cand |= _norm.get(_strip_sfx(p), set())
+                if len(_cand) == 1:
+                    _idx = _cand.pop()
+                    for p in _pts:
+                        index_map[p] = _idx
         return index_map
 
     def get_library_plate(self, obj):
