@@ -734,7 +734,7 @@ export default function NipptRegistration() {
       {/* === 首次检测：完整登记表单 === */}
       {regType === "FIRST" && (
         <Card size="small" style={{ borderRadius: 8 }}>
-          <Form form={form} layout="vertical" size="small"
+          <Form form={form} layout="vertical" size="small" scrollToFirstError
             initialValues={{
               males: [{ sample_type: ["BLOOD"] }],
               mother_sample_type: ["BLOOD"],
@@ -976,7 +976,12 @@ export default function NipptRegistration() {
                   <Input placeholder="销售或代理名称" size="small" />
                 </Form.Item>
                 <Form.Item name="report_version" label="报告版本" style={{ marginBottom: 8 }}
-                  tooltip="决定出报告用哪个模板（后续支持自动生成时生效）；可直接输入新版本">
+                  rules={[{
+                    required: true,
+                    whitespace: true,
+                    message: "必填：出报告按它选模板（可直接输入新版本）",
+                  }]}
+                  tooltip="必填。决定出报告用哪个模板；可直接输入新版本（如 英文 / 英繁 / 泰国 / 巴西）">
                   <AutoComplete
                     size="small"
                     placeholder="选择或输入（如 英文 / 英繁 / 泰国…）"
