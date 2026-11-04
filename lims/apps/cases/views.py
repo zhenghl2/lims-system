@@ -163,7 +163,14 @@ class CaseViewSet(viewsets.ModelViewSet):
         if getattr(self, "action", None) == "list":
             try:
                 from .models import NipptPreProcessingSample
-                case_ids = list(self.filter_queryset(self.get_queryset()).values_list("id", flat=True))
+                # 2026-11-04：分页结果已经取到了，直接复用这一页的案例 id。
+                # 原来又跑一次 filter_queryset(...).values_list("id") —— 检索时等于
+                # 把「三表 join + DISTINCT」的模糊查询再执行一遍（每次列表请求 3 次里最浪费的一次）
+                _page = getattr(getattr(self, "paginator", None), "page", None)
+                if _page is not None:
+                    case_ids = [obj.id for obj in _page]
+                else:
+                    case_ids = list(self.filter_queryset(self.get_queryset()).values_list("id", flat=True))
                 m = {}
                 if case_ids:
                     rows = (NipptPreProcessingSample.objects
