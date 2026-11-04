@@ -239,7 +239,11 @@ export default function NipptReports() {
    *  原实现直接切字符串 → 显示 UTC，比北京时间少 8 小时。输出格式保持 MM-DD HH:mm。 */
   const fmtDT = (v: string | null | undefined) => {
     if (!v) return "—";
-    const d = new Date(v);
+    // 后端存的是 UTC；没有时区后缀的旧串（如 2026-11-04T06:12:45）按 UTC 解析，
+    // 否则浏览器当本地时间 → 显示比实际早 8 小时
+    const raw = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/.test(String(v))
+      ? `${v}Z` : v;
+    const d = new Date(raw);
     if (isNaN(d.getTime())) return `${v.slice(5, 10)} ${v.slice(11, 16)}`;
     const p = (n: number) => String(n).padStart(2, "0");
     return `${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
@@ -438,9 +442,20 @@ export default function NipptReports() {
     if (f.size > MAX_REPORT_MB * 1024 * 1024) return `文件超过 ${MAX_REPORT_MB}MB 上限，请压缩后上传`;
     return "";
   };
-  const histLine = (h: any) => h
-    ? `${h.action === "keep" ? "保留" : h.action === "replace" ? "替换" : "上传"} · ${h.filename}${h.prev_filename ? `（原 ${h.prev_filename}）` : ""} · ${h.by || "-"} · ${fmtDT(h.at)}`
-    : "";
+  // 2026-11-04：历史里有两种结构（旧：{file, replaced_at, by}；新：{action, filename, at, …}）
+  // 之前只认新结构 → 系统生成的那几条显示成「上传 · undefined · admin · —」
+  const HIST_LABEL: Record<string, string> = {
+    upload: "上传", replace: "替换", keep: "保留", overwrite: "覆盖",
+    generate: "生成", regenerate: "重新生成",
+  };
+  const histLine = (h: any) => {
+    if (!h) return "";
+    const label = HIST_LABEL[String(h.action || "")] || (h.action ? String(h.action) : "生成");
+    const file = h.filename
+      || (h.file ? String(h.file).split("/").pop() : "");
+    const at = h.at || h.replaced_at || "";
+    return `${label} · ${file || "—"}${h.prev_filename ? `（原 ${h.prev_filename}）` : ""} · ${h.by || "-"} · ${fmtDT(at)}`;
+  };
 
   const doUpload = async (pair: any, file: File, mode: "overwrite" | "keep", kind: "main" | "sex" = "main") => {
     const fd = new FormData();

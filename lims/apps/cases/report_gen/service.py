@@ -132,10 +132,18 @@ def generate_and_save(pair, out_dir, user=None):
     history = list(pair.report_history or [])
     if pair.report_file:
         try:
+            # 2026-11-04：与「手动上传」统一结构（action/filename/prev_filename/at/…），
+            # 原来写的是 {file, replaced_at, by} → 报告模块的「报告更新记录」显示 undefined
+            from django.utils import timezone as _tz
+            _new_name = os.path.basename(os.path.join(out_dir, files[0]))
             history.append({
-                "file": pair.report_file.name,
-                "replaced_at": datetime.now().isoformat(timespec="seconds"),
+                "action": "regenerate",
+                "filename": _new_name,
+                "prev_filename": os.path.basename(pair.report_file.name or ""),
+                "format": "word",
                 "by": getattr(user, "username", "") or "",
+                "at": _tz.now().isoformat(),
+                "size": os.path.getsize(main) if os.path.exists(main) else 0,
             })
         except Exception:                          # noqa: BLE001
             pass
