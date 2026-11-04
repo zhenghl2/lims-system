@@ -4,7 +4,7 @@ import { Table, Tag, Spin, Typography, Space, Button, Card, Empty, Select, Input
 import {
   FileTextOutlined, DownloadOutlined, EyeOutlined, UploadOutlined,
   CheckCircleOutlined, ReloadOutlined, HistoryOutlined,
-  MenuFoldOutlined, MenuUnfoldOutlined, FileAddOutlined,
+  MenuFoldOutlined, MenuUnfoldOutlined, FileAddOutlined, EditOutlined,
 } from "@ant-design/icons";
 import api from "../api/client";
 import dayjs from "dayjs";
@@ -58,6 +58,8 @@ export default function NipptReports() {
   const [revSel, setRevSel] = useState<Record<string, string>>({});
   // 报告版本 / 报告日期 行内编辑（案例级字段）
   const [rvEdit, setRvEdit] = useState<Record<string, string>>({});
+  // 2026-11-04：报告日期改用「小窗选择」——单元格内自动展开的 DatePicker 点不稳
+  const [datePick, setDatePick] = useState<{ row: any; value: string } | null>(null);
   const [rvOptions, setRvOptions] = useState<string[]>([]);
   const [audSel, setAudSel] = useState<Record<string, string>>({});
   const [noteEdit, setNoteEdit] = useState<Record<string, string>>({});
@@ -709,10 +711,16 @@ export default function NipptReports() {
     const val = field === "report_version" ? (rvEdit[row.id] ?? cur) : (dateVal ?? "");
     if (String(val ?? "").trim() === String(cur ?? "").trim()) return;
     try {
-      await api.post(`/cases/bioinfo/${row.batch}/set-report-info/`, { pair_ids: [row.id], [field]: val });
-      message.success(field === "report_version"
-        ? "报告版本已保存（该案例全部配对生效）"
-        : "报告日期已保存（该案例全部配对生效）");
+      const resp = await api.post(`/cases/bioinfo/${row.batch}/set-report-info/`, { pair_ids: [row.id], [field]: val });
+      const updated = ((resp as any)?.data?.updated_cases || []) as string[];
+      if (updated.length) {
+        message.success(field === "report_version"
+          ? "报告版本已保存（该案例全部配对生效）"
+          : "报告日期已保存（该案例全部配对生效）");
+      } else {
+        // 值没变 / 后端没更新任何案例：不能谎报成功（用户会以为改了）
+        message.info("没有变化，未保存");
+      }
       setRvEdit((p) => { const n = { ...p }; delete n[row.id]; return n; });
       await refreshDetail();
     } catch (e: any) {
@@ -817,30 +825,30 @@ export default function NipptReports() {
           <div>父 {f ? String(f).slice(0, 10) : "—"}</div>
         </div>;
       } },
-    { title: "报告日期", dataIndex: "report_date", key: "rpd", width: 132,
+    { title: "报告日期", dataIndex: "report_date", key: "rpd", width: 138,
       render: (v: string, r: any) => {
         const shown = v ? String(v).slice(0, 10) : "";
         // 已填且锁定 → 只读；未填即使锁定也允许补填（否则无法生成报告，用户 2026-11-03）
         if (shown && reportLocked(r)) return <Text style={{ fontSize: 12 }}>{shown}</Text>;
+        // 2026-11-04：不再在单元格里自动展开 DatePicker（autoFocus + defaultOpen + onBlur
+        // 三个处理器互相打架，用户反馈「点不开 / 输不进」）；改为点一下弹小窗选日期
         return (
           <Tooltip title={shown
             ? "点击修改：预计出报告日期（报告模板的「检测日期/预计出报告时间」也取它）；该案例全部配对生效"
             : "报告日期未填：生成报告前必须填写（点这里选日期）"}>
-            <ClickToEdit width={118} placeholder="未填" hint="点击选择报告日期"
-              text={shown
-                ? <span style={{ fontSize: 12 }}>{shown}</span>
-                : <span style={{ color: "#cf1322", fontWeight: 600, fontSize: 12 }}>未填</span>}>
-              {(close) => (
-                <DatePicker size="small" style={{ width: "100%" }} format="YYYY-MM-DD" allowClear
-                  autoFocus defaultOpen
-                  value={v ? dayjs(String(v).slice(0, 10)) : null}
-                  onChange={(d: any) => {
-                    saveReportInfo(r, "report_date", d ? d.format("YYYY-MM-DD") : "");
-                    close();
-                  }}
-                  onBlur={close} />
-              )}
-            </ClickToEdit>
+            <div
+              onClick={(e) => { e.stopPropagation(); setDatePick({ row: r, value: shown }); }}
+              style={{
+                width: 124, cursor: "pointer", fontSize: 12, lineHeight: "20px", minHeight: 22,
+                padding: "1px 4px", borderRadius: 2, background: "#fafafa",
+                borderBottom: "1px dashed #dcdcdc", display: "flex", alignItems: "center", gap: 4,
+                overflow: "hidden", whiteSpace: "nowrap",
+              }}>
+              {shown
+                ? <span>{shown}</span>
+                : <span style={{ color: "#cf1322", fontWeight: 600 }}>未填</span>}
+              <EditOutlined style={{ color: "#bfbfbf", fontSize: 11 }} />
+            </div>
           </Tooltip>
         );
       } },
@@ -1340,6 +1348,38 @@ ${histLine(h)}`}>
           </Card>
         </div>
       </div>
+
+      {/* 报告日期小窗：点「未填/日期」后在这里选，避开单元格内弹层被裁剪或一闪而关 */}
+      <Modal
+        open={!!datePick}
+        title={`设置报告日期${datePick?.row?.pt_number ? ` · ${datePick.row.pt_number}` : ""}`}
+        okText="保存"
+        cancelText="取消"
+        width={360}
+        onCancel={() => setDatePick(null)}
+        onOk={() => {
+          const picked = datePick;
+          setDatePick(null);
+          if (!picked) return;
+          const cur = picked.row?.report_date ? String(picked.row.report_date).slice(0, 10) : "";
+          if (cur === picked.value) return;
+          saveReportInfo(picked.row, "report_date", picked.value);
+        }}
+        destroyOnClose
+      >
+        <DatePicker
+          style={{ width: "100%" }}
+          format="YYYY-MM-DD"
+          allowClear
+          autoFocus
+          placeholder="选择报告日期"
+          value={datePick?.value ? dayjs(datePick.value) : null}
+          onChange={(d: any) => setDatePick((p) => (p ? { ...p, value: d ? d.format("YYYY-MM-DD") : "" } : p))}
+        />
+        <div style={{ fontSize: 12, color: "#8c8c8c", marginTop: 8, lineHeight: 1.7 }}>
+          该案例的全部配对一起生效；报告模板里的「检测日期 / 预计出报告时间」也用这个日期。
+        </div>
+      </Modal>
     </div>
   );
 }
