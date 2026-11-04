@@ -2195,11 +2195,30 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     def get_report_auditor_name(self, obj):
         return _user_display_name(getattr(obj, "report_auditor", None))
 
+    @staticmethod
+    def _file_version(f):
+        """文件版本号（mtime 秒）。
+
+        2026-11-04：报告重新生成时文件名不变（WJ..-Y(2026.11.04).docx），
+        而 nginx 对 /media/ 设了 expires 7d → 浏览器 7 天内都拿旧文件
+        （用户改了代孕重新生成，下载下来还是旧版附表报告）。
+        在 URL 上带 ?v=mtime，文件一变 URL 就变，缓存自然失效。
+        """
+        try:
+            ts = f.storage.get_modified_time(f.name)
+            return int(ts.timestamp()) if hasattr(ts, "timestamp") else 0
+        except Exception:                          # noqa: BLE001
+            return 0
+
     def _report_file_url(self, f):
         if not f:
             return ""
         request = self.context.get("request")
-        return request.build_absolute_uri(f.url) if request else f.url
+        url = request.build_absolute_uri(f.url) if request else f.url
+        v = self._file_version(f)
+        if v:
+            url += ("&" if "?" in url else "?") + "v=%s" % v
+        return url
 
     def get_report_file_pdf_url(self, obj):
         """PDF 槽位地址（2026-10-13：与 Word 并存，互不覆盖）"""
@@ -2382,17 +2401,13 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
         if not obj.appendix_file:
             return None
         try:
-            return obj.appendix_file.url
+            return self._report_file_url(obj.appendix_file)
         except Exception:      # noqa: BLE001
             return None
 
     def get_report_file_url(self, obj):
-        if obj.report_file:
-            request = self.context.get("request")
-            if request:
-                return request.build_absolute_uri(obj.report_file.url)
-            return obj.report_file.url
-        return None
+        # 复用 _report_file_url：带上 ?v=mtime，重新生成后不会命中浏览器旧缓存
+        return self._report_file_url(obj.report_file) or None
 
     def get_mother_index(self, obj):
         return self._get_index(obj.mother_sample)
