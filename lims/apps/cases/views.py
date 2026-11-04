@@ -1701,6 +1701,9 @@ class CaseViewSet(viewsets.ModelViewSet):
         serializer = SupplementSerializer(data=request.data, context={"case": case, "request": request})
         serializer.is_valid(raise_exception=True)
         new_cs = serializer.save()
+        # 2026-11-03（用户要求）：补样登记写审计（只记操作人 + 时间）
+        log_audit(request, "SUPPLEMENT", case, {}, entity_type="case",
+                  entity_repr=case.case_number)
         return Response(CaseSampleSerializer(new_cs).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -1817,6 +1820,7 @@ class CaseViewSet(viewsets.ModelViewSet):
         ACTION_DISPLAY = {
             "CREATE": "登记建档", "RECEIVE": "签收", "REJECT": "拒收",
             "UPDATE": "修改", "DELETE": "删除", "IMPORT": "批量导入",
+            "RESAMPLE": "重采登记", "SUPPLEMENT": "补样登记",
         }
 
         qs = AuditLog.objects.filter(
@@ -2118,6 +2122,10 @@ class CaseViewSet(viewsets.ModelViewSet):
                 case.save(update_fields=["notes", "updated_at"])
 
         case.update_status()
+        # 2026-11-03（用户要求）：重采登记写审计 —— 只记录「谁、什么时候」，
+        # 编号/原因实验记录里已有，不重复写
+        log_audit(request, "RESAMPLE", case, {}, entity_type="case",
+                  entity_repr=case.case_number)
         return Response(CaseSampleSerializer(new_cs).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"], url_path="upload-receipt-photo")
