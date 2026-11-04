@@ -1,4 +1,5 @@
 """Sample management views."""
+import logging
 import os
 from datetime import date, timedelta
 from django.utils import timezone
@@ -108,6 +109,42 @@ class SampleFilter(FilterSet):
         model = Sample
         fields = ["sample_type", "receipt_date", "hpv_sample_type", "test_item",
                    "patient_sex", "sample_source", "acceptance_date", "vg_id"]
+
+
+def _parse_due_date(raw):
+    """报告截止日期文本 → date（容错，永不抛异常）。
+
+    支持：DD/MM/YYYY、YYYY-MM-DD、Excel 序列号（如 46339）。
+    空值 / "-" / 其它脏值 → None（调用方跳过并记日志）。
+
+    2026-11-04：原来在 SQL 里 TO_DATE(report_due_date,'DD/MM/YYYY')，
+    只要库里混进一条 "46339" 或 "-"，整个 /samples/urgent/ 就 500。
+    """
+    import re as _re
+    from datetime import date as _date, timedelta as _td
+
+    v = str(raw or "").strip()
+    if not v or v in {"-", "—", "/", "N/A", "n/a"}:
+        return None
+    m = _re.fullmatch(r"(\d{4})-(\d{1,2})-(\d{1,2})", v)
+    if m:
+        try:
+            return _date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            return None
+    m = _re.fullmatch(r"(\d{1,2})/(\d{1,2})/(\d{4})", v)
+    if m:
+        try:
+            return _date(int(m.group(3)), int(m.group(2)), int(m.group(1)))
+        except ValueError:
+            return None
+    # Excel 序列号（1900 日期系统；序列 1 = 1900-01-01，故基线 1899-12-30）
+    if _re.fullmatch(r"\d{5}(\.\d+)?", v):
+        try:
+            return _date(1899, 12, 30) + _td(days=int(float(v)))
+        except (ValueError, OverflowError):
+            return None
+    return None
 
 
 class SampleViewSet(viewsets.ModelViewSet):
@@ -433,7 +470,6 @@ class SampleViewSet(viewsets.ModelViewSet):
     def urgent(self, request):
         """Return NIPT samples near or past their report due date."""
         from datetime import timedelta
-        from django.db.models.expressions import RawSQL
 
         days = int(request.query_params.get("days", 2))
         today = timezone.now().date()
@@ -443,20 +479,27 @@ class SampleViewSet(viewsets.ModelViewSet):
             panel__code__in=["NIPT", "NIPT_PLUS", "NIPT_FULL"],
         ).exclude(
             status__in=["REJECTED", "COMPLETED", "REPORTED", "ARCHIVED", "DISPOSED"]
-        ).annotate(
-            due_date=RawSQL("TO_DATE(NULLIF(report_due_date, ''), 'DD/MM/YYYY')", []),
-        ).filter(
-            due_date__lte=deadline,
-            due_date__isnull=False,
-        ).exclude(
-            report_due_date="",
-        ).annotate(
-            days_remaining=RawSQL(
-                "TO_DATE(NULLIF(report_due_date, ''), 'DD/MM/YYYY') - CURRENT_DATE", []
-            ),
-        ).order_by("due_date")
+        ).exclude(report_due_date="")
 
-        serializer = self.get_serializer(qs, many=True)
+        # 2026-11-04：候选只有百余条 → 在 Python 里解析日期，
+        # 脏值（Excel 序列号 / "-" / 非法日期）跳过并记日志，不再让整个接口 500
+        rows, bad = [], []
+        for smp in qs:
+            due = _parse_due_date(smp.report_due_date)
+            if due is None:
+                bad.append(smp.sample_id)
+                continue
+            if due <= deadline:
+                smp.due_date = due
+                smp.days_remaining = (due - today).days
+                rows.append(smp)
+        if bad:
+            logging.getLogger("lims.samples").warning(
+                "urgent: 跳过 %d 条无法解析的报告截止日期 %s", len(bad), bad[:5]
+            )
+        rows.sort(key=lambda x: x.due_date)
+
+        serializer = self.get_serializer(rows, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=["post"])

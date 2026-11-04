@@ -76,6 +76,28 @@ def _to_text(v):
     return str(v).replace("\xa0", " ").strip()
 
 
+
+def _to_date_str(v):
+    """日期单元格 → 'DD/MM/YYYY'（Excel 数字序列号也换算）。
+
+    2026-11-04：Excel 里日期若存成数字，_to_text 会得到 '46339' 这种序列号，
+    落库后凡是按日期解析的地方都会炸（/samples/urgent/ 曾整页 500）。
+    这里在写入前统一换算，从源头避免脏值。
+    """
+    if isinstance(v, (datetime.datetime, datetime.date)):
+        return v.strftime("%d/%m/%Y")
+    txt = _to_text(v)
+    if not txt:
+        return ""
+    s = txt.strip()
+    if re.fullmatch(r"\d{5}(\.\d+)?", s):          # Excel 序列号（1900 日期系统）
+        try:
+            d = datetime.date(1899, 12, 30) + datetime.timedelta(days=int(float(s)))
+            return d.strftime("%d/%m/%Y")
+        except (ValueError, OverflowError):
+            return s
+    return s
+
 def _parse_date_dmy(v):
     """从字符串提取第一个 DD/MM/YYYY 或 DD-MM-YYYY；失败返回 None"""
     s = _to_text(v)
@@ -277,7 +299,7 @@ def extract_brazil_planilha(file_path, source="巴西万基"):
             "balance": _clean_money(r[COL_BALANCE] if len(r) > COL_BALANCE else ""),
             "fetal_gender": _map_gender(r[COL_GENDER] if len(r) > COL_GENDER else ""),
             "fedex_no": _to_text(r[COL_FEDEX] if len(r) > COL_FEDEX else ""),
-            "report_due_date": _first_part(_to_text(r[COL_DUE_DATE] if len(r) > COL_DUE_DATE else "")),
+            "report_due_date": _first_part(_to_date_str(r[COL_DUE_DATE] if len(r) > COL_DUE_DATE else "")),
             "remarks_raw": _to_text(r[COL_REMARKS] if len(r) > COL_REMARKS else ""),
             "remarks": _translate_notes(r[COL_REMARKS] if len(r) > COL_REMARKS else ""),
             "wd": "",
