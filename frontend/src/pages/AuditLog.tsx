@@ -44,6 +44,8 @@ const ACTION_COLORS: Record<string, string> = {
   REVIEW: "orange",
   VERIFY: "geekblue",
   RELEASE: "lime",
+  RESAMPLE: "orange",
+  SUPPLEMENT: "purple",
 };
 
 const ENTITY_LABELS: Record<string, string> = {
