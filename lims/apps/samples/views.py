@@ -18,6 +18,89 @@ from .serializers import (
     SampleRejectSerializer, SampleMovementSerializer, SampleTypeSerializer, TestPanelSerializer,
 )
 from lims.core.permissions import IsSiteScoped
+
+
+# ══════════════════════════════════════════════════════════════════
+# 重号处理辅助（2026-10-15 用户口径）
+#   重号时不阻断、也不静默丢弃 → 返回 409 + 明细，由前端弹窗让操作者选：
+#     「继续录入」= 标记为重采样本（retest_reason/recollected_from_vg_id/experiment_history）
+#     R1/R2 加在 HN 编号（vg_id）上，且推迟到收样填 HN 时自动补。
+# ══════════════════════════════════════════════════════════════════
+def _as_bool(v) -> bool:
+    """FormData / JSON 里 'true'/'1'/True 都算真。"""
+    if isinstance(v, bool):
+        return v
+    return str(v).strip().lower() in ("1", "true", "yes", "y", "on")
+
+
+def _dup_sample_payload(s) -> dict:
+    """重号命中的已有样本摘要（给前端弹窗展示）。"""
+    return {
+        "sample_id": s.sample_id,
+        "patient_name": s.patient_name or "",
+        "vg_id": s.vg_id or "",
+        "external_id": s.external_id or "",
+        "sample_source": s.sample_source or "",
+        "test_option": s.test_option or "",
+        "created_at": __import__("lims.core.timefmt", fromlist=["bj"]).bj(s.created_at, "%Y-%m-%d %H:%M"),
+    }
+
+
+def _find_dup_by_external_id(external_id, exclude_id=None):
+    ext = (external_id or "").strip()
+    if not ext:
+        return None
+    qs = Sample.objects.filter(external_id=ext, is_deleted=False)
+    if exclude_id:
+        qs = qs.exclude(id=exclude_id)
+    return qs.order_by("created_at").first()
+
+
+def _find_dup_by_vg_id(vg_id, exclude_id=None):
+    v = (vg_id or "").strip()
+    if not v:
+        return None
+    qs = Sample.objects.filter(vg_id=v, is_deleted=False)
+    if exclude_id:
+        qs = qs.exclude(id=exclude_id)
+    return qs.order_by("created_at").first()
+
+
+def _next_resample_vg_id(base: str) -> str:
+    """HN1111 → HN1111R1（已存在则 R2、R3…）。重采样本加 R 后缀以区别于原件。"""
+    import re as _re
+    b = (base or "").strip()
+    m = _re.match(r"^(.*?)(R\d+)$", b, _re.I)
+    core = m.group(1) if m else b
+    n = 1
+    while Sample.objects.filter(vg_id=f"{core}R{n}", is_deleted=False).exists():
+        n += 1
+    return f"{core}R{n}"
+
+
+def _mark_resample(sample, original, save=True):
+    """把样本标记为重采：retest_reason + recollected_from_vg_id + experiment_history(RECOLLECTED)。"""
+    fields = []
+    if not sample.retest_reason:
+        sample.retest_reason = "重采"
+        fields.append("retest_reason")
+    if original and not sample.recollected_from_vg_id:
+        sample.recollected_from_vg_id = original.vg_id or original.sample_id
+        fields.append("recollected_from_vg_id")
+    history = list(sample.experiment_history or [])
+    history.append({
+        "action": "RECOLLECTED",
+        "reason": "编号重复，按重采录入" + (f"（原样本 {original.sample_id}）" if original else ""),
+        "timestamp": timezone.now().isoformat(),
+    })
+    sample.experiment_history = history
+    fields.append("experiment_history")
+    if save:
+        fields.append("updated_at")
+        sample.save(update_fields=fields)
+    return sample
+
+
 class SampleFilter(FilterSet):
     vg_id = CharFilter(lookup_expr="icontains")
 
@@ -95,8 +178,72 @@ class SampleViewSet(viewsets.ModelViewSet):
             return SampleUrgentSerializer
         return SampleSerializer
     @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        """编辑样本（含「批量填写 VG」的 PATCH）时的重号处理（2026-10-15）。
+
+        - 只有**真的把号改成别的值**时才判重（原值未变 → 不校验，避免误报）。
+        - 撞号：默认 409 + 明细（前端弹窗让操作者选）；allow_duplicates=true → 自动加 R1/R2 并标记重采。
+        """
+        sample = self.get_object()
+        allow_dup = _as_bool(request.data.get("allow_duplicates"))
+        data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+
+        new_vg = str(data.get("vg_id") or "").strip()
+        if new_vg and new_vg != (sample.vg_id or "").strip():
+            dup = _find_dup_by_vg_id(new_vg, exclude_id=sample.id)
+            if dup and not allow_dup:
+                return Response(
+                    {"duplicate": True, "field": "vg_id", "vg_id": new_vg,
+                     "message": f"HN 编号 {new_vg} 已存在", "existing": _dup_sample_payload(dup)},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if dup and allow_dup:
+                data["vg_id"] = _next_resample_vg_id(new_vg)
+                request._full_data = data
+                resp = super().update(request, *args, **kwargs)
+                sample.refresh_from_db()
+                _mark_resample(sample, dup)
+                return resp
+
+        new_ext = str(data.get("external_id") or "").strip()
+        if new_ext and new_ext != (sample.external_id or "").strip():
+            dup2 = _find_dup_by_external_id(new_ext, exclude_id=sample.id)
+            if dup2 and not allow_dup:
+                return Response(
+                    {"duplicate": True, "field": "external_id", "external_id": new_ext,
+                     "message": f"外部编号 {new_ext} 已存在", "existing": _dup_sample_payload(dup2)},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if dup2 and allow_dup:
+                request._full_data = data
+                resp = super().update(request, *args, **kwargs)
+                sample.refresh_from_db()
+                _mark_resample(sample, dup2)
+                return resp
+
+        return super().update(request, *args, **kwargs)
+
+    @transaction.atomic
     def create(self, request, *args, **kwargs):
-        """Receive a new sample."""
+        """Receive a new sample.
+
+        2026-10-15：外部编号与已有样本重复时返回 409 + 明细（不静默放行），
+        由前端弹窗询问是否继续录入；继续（allow_duplicates=true）则标记为重采样本。
+        """
+        allow_duplicates = _as_bool(request.data.get("allow_duplicates"))
+        external_id = (request.data.get("external_id") or "").strip()
+        dup = _find_dup_by_external_id(external_id)
+        if dup and not allow_duplicates:
+            return Response(
+                {
+                    "duplicate": True,
+                    "field": "external_id",
+                    "external_id": external_id,
+                    "message": f"外部编号 {external_id} 已存在",
+                    "existing": _dup_sample_payload(dup),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         sample = serializer.save()
@@ -107,6 +254,8 @@ class SampleViewSet(viewsets.ModelViewSet):
             reason="RECEIPT",
             performed_by=request.user,
         )
+        if dup:
+            _mark_resample(sample, dup)
         return Response(SampleSerializer(sample).data, status=status.HTTP_201_CREATED)
     @action(detail=True, methods=["post"])
     def reject(self, request, pk=None):
@@ -134,6 +283,20 @@ class SampleViewSet(viewsets.ModelViewSet):
         receipt_date = request.data.get("receipt_date")
         password = request.data.get("password", "")
         vg_id = request.data.get("vg_id", "").strip()
+        accept_allow_dup = _as_bool(request.data.get("allow_duplicates"))
+        # HN（vg_id）重复：默认 409 + 明细；allow_duplicates → 存成 HN1111R1/R2…（重采样本）
+        _dup_vg = _find_dup_by_vg_id(vg_id, exclude_id=sample.id)
+        if _dup_vg and not accept_allow_dup:
+            return Response(
+                {
+                    "duplicate": True,
+                    "field": "vg_id",
+                    "vg_id": vg_id,
+                    "message": f"HN 编号 {vg_id} 已存在",
+                    "existing": _dup_sample_payload(_dup_vg),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         if receiver_id:
             try:
                 receiver = Receiver.objects.get(id=receiver_id, is_active=True)
@@ -155,6 +318,23 @@ class SampleViewSet(viewsets.ModelViewSet):
             sample.receipt_date = timezone.now().date()
         update_fields = ["status", "received_by", "received_by_name", "receipt_date", "updated_at"]
         if vg_id:
+            if _dup_vg:
+                # 重采：HN 编号后自动加 R1/R2…，并标记重采
+                vg_id = _next_resample_vg_id(vg_id)
+                if not sample.retest_reason:
+                    sample.retest_reason = "重采"
+                    update_fields.append("retest_reason")
+                if not sample.recollected_from_vg_id:
+                    sample.recollected_from_vg_id = _dup_vg.vg_id or _dup_vg.sample_id
+                    update_fields.append("recollected_from_vg_id")
+                _hist = list(sample.experiment_history or [])
+                _hist.append({
+                    "action": "RECOLLECTED",
+                    "reason": f"HN 编号重复，按重采录入 {vg_id}（原样本 {_dup_vg.sample_id}）",
+                    "timestamp": timezone.now().isoformat(),
+                })
+                sample.experiment_history = _hist
+                update_fields.append("experiment_history")
             sample.vg_id = vg_id
             update_fields.append("vg_id")
         sample.save(update_fields=update_fields)
@@ -165,6 +345,7 @@ class SampleViewSet(viewsets.ModelViewSet):
         return Response({
             "status": "RECEIVED",
             "sample_id": sample.sample_id,
+            "vg_id": sample.vg_id or "",
             "received_by": sample.received_by_name or None,
         })
     @action(detail=True, methods=["post"], url_path="upload-image", parser_classes=[MultiPartParser, FormParser])
@@ -325,6 +506,21 @@ class SampleViewSet(viewsets.ModelViewSet):
         source = request.data.get("source", "泰国")
         fedex_no = request.data.get("fedex_no", "")
         uploaded_files = request.FILES.getlist("files")
+        # 重号处理（2026-10-15）：默认跳过重复并返回明细；allow_duplicates=继续录入(标记重采)；
+        # only_duplicates=第二遍只补录重复的那些行（避免把第一遍已建的再建一遍）。
+        allow_duplicates = _as_bool(request.data.get("allow_duplicates"))
+        # 「继续录入」时前端把用户选择继续的那些外部编号明确传过来：
+        # 只录这些行（其余跳过）。不能用「凡是重复的就录」——第一遍刚建的行在第二遍也成了重复，
+        # 会被再建一遍（2026-10-15 实测抓到的 bug）。
+        force_ids = set()
+        _raw_force = request.data.get("force_external_ids")
+        if _raw_force:
+            import json as _json
+            try:
+                _v = _json.loads(_raw_force) if str(_raw_force).strip().startswith("[") else str(_raw_force).split(",")
+            except Exception:
+                _v = str(_raw_force).split(",")
+            force_ids = {str(x).strip() for x in _v if str(x).strip()}
 
         if not uploaded_files:
             return Response(
@@ -385,6 +581,7 @@ class SampleViewSet(viewsets.ModelViewSet):
             created_ids = []          # 本次导入新建样本 id（用于方案B排序）
             errors = []
             skip = 0
+            duplicates = []          # 重号明细（前端据此弹窗询问是否继续录入）
 
             # ── 巴西：在现有顺序规则之上，增加「Basic 先 / Plus 后」分组（2026-10-14 用户）──
             #   Basic = NIPT、Plus = NIPT_PLUS；其它档位（如 NIPT_FULL）排最后。
@@ -417,15 +614,23 @@ class SampleViewSet(viewsets.ModelViewSet):
                 elif test_opt == "Twin":
                     panel_code = "twin_basic"
 
-                # Skip duplicates by external_id
-                external_id = data.get("external_id")
-                if external_id:
-                    existing = Sample.objects.filter(
-                        external_id=external_id, is_deleted=False
-                    ).first()
-                    if existing:
-                        skip += 1
-                        continue
+                # ── 重号处理（2026-10-15 用户口径：只提醒，由操作者决定）──
+                external_id = (data.get("external_id") or "").strip()
+                _dup = _find_dup_by_external_id(external_id)
+                if _dup and not allow_duplicates:
+                    skip += 1
+                    duplicates.append({
+                        "row": i,
+                        "external_id": external_id,
+                        "patient_name": data.get("patient_name", ""),
+                        "test_option": data.get("test_option", ""),
+                        "existing": _dup_sample_payload(_dup),
+                    })
+                    continue
+                if force_ids and external_id not in force_ids:
+                    # 只补录用户选择继续的那些行；其余（含第一遍已建好的）跳过
+                    skip += 1
+                    continue
 
                 # Build sample data
                 sample_data = {
@@ -473,6 +678,8 @@ class SampleViewSet(viewsets.ModelViewSet):
                                 reason="RECEIPT",
                                 performed_by=request.user,
                             )
+                        if _dup:
+                            _mark_resample(sample, _dup)
                         created.append(SampleListSerializer(sample).data)
                         created_ids.append(str(sample.id))
                     except Exception as save_err:
@@ -526,6 +733,7 @@ class SampleViewSet(viewsets.ModelViewSet):
                     "created_count": len(created),
                     "error_count": len(errors),
                     "skipped_duplicates": skip,
+                    "duplicates": duplicates,
                     "total_extracted": len(extracted),
                     "created": created,
                     "errors": errors,
