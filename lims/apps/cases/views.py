@@ -139,11 +139,16 @@ class CaseViewSet(viewsets.ModelViewSet):
         qs = super().filter_queryset(queryset)
         search = self.request.query_params.get("search", "").strip()
         if search:
+            # 2026-11-04（用户要求）：补上「外部编号 / 样本编号 / 代理」；
+            # 销售(sales_person) 本来就在，代理另外存在 applicant（越南/MV/ALB/BCC…），两个都搜
             qs = qs.filter(
                 Q(case_number__icontains=search)
                 | Q(pt_number__icontains=search)
                 | Q(clinic_name__icontains=search)
                 | Q(sales_person__icontains=search)
+                | Q(applicant__icontains=search)
+                | Q(case_samples__test_sample_id__icontains=search)       # PT72583W / H / _R1
+                | Q(case_samples__sample__external_id__icontains=search)  # VGBR* / ALB03 / MED18
                 | Q(case_samples__sample__patient_name__icontains=search)
             ).distinct()
         wf = self.request.query_params.get("workflow_status", "").strip()

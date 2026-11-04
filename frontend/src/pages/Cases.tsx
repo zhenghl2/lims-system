@@ -486,7 +486,7 @@ export default function Cases() {
 
       <Space style={{ marginBottom: 16 }} wrap>
         <Input.Search
-          placeholder="Case / PT / 姓名..."
+          placeholder="Case / PT / 姓名 / 外部编号 / 销售 / 代理..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           onSearch={(value) => { setSearch(value); setPage(1); }}
