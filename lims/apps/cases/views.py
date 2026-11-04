@@ -4531,7 +4531,9 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         - 报告版本 = Case.report_version（同时决定用哪个语种模板生成报告）
         - 报告日期 = Case.expected_completion（报告模板里的「检测日期/预计出报告时间」也取它）
         两者都是案例级 → 同一案例的全部配对一起变。
-        锁定：报告批次已完成 / 该配对已审核 → 拒绝。
+        锁定：报告批次已完成 / 该配对已审核 → 不允许「修改已有值」，
+              但**允许补填空白**（2026-11-04：否则已完成批次里缺报告日期的
+              配对永远补不上，生成报告又被必填校验拦住，等于死锁）。
         """
         from datetime import date as _date
         batch = self.get_object()
@@ -4539,13 +4541,6 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         pairs = list(batch.pairs.select_related("case").filter(id__in=ids)) if ids else []
         if not pairs:
             return Response({"error": "Pair not found"}, status=404)
-        if batch.report_status == "COMPLETED":
-            return Response({"error": "报告批次已完成，报告版本/报告日期已锁定"}, status=400)
-        audited = [p for p in pairs if p.report_audited_at]
-        if audited:
-            return Response({"error": "配对已审核，报告版本/报告日期已锁定：%s"
-                                      % "、".join((p.case.pt_number or str(p.id)) for p in audited)},
-                            status=400)
 
         has_ver = "report_version" in request.data
         has_date = "report_date" in request.data
@@ -4561,6 +4556,32 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                     new_date = _date.fromisoformat(raw[:10])
                 except ValueError:
                     return Response({"error": "报告日期格式应为 YYYY-MM-DD"}, status=400)
+
+        # ── 锁定判定：只允许「补空」，不允许覆盖已有值 ──
+        lock_reason = ""
+        if batch.report_status == "COMPLETED":
+            lock_reason = "报告批次已完成"
+        else:
+            audited = [p for p in pairs if p.report_audited_at]
+            if audited:
+                lock_reason = "配对已审核（%s）" % "、".join(
+                    (p.case.pt_number or str(p.id)) for p in audited[:5])
+        if lock_reason:
+            block = []
+            seen_cases = set()
+            for p in pairs:
+                c = p.case
+                if c is None or str(c.id) in seen_cases:
+                    continue
+                seen_cases.add(str(c.id))
+                old_ver = (c.report_version or "").strip()
+                if has_ver and old_ver and version != old_ver:
+                    block.append("%s 报告版本已有值「%s」" % (c.case_number, old_ver))
+                if has_date and c.expected_completion and new_date != c.expected_completion:
+                    block.append("%s 报告日期已有值「%s」" % (c.case_number, c.expected_completion))
+            if block:
+                return Response({"error": "%s，只能补填空白项，不能修改已有值：%s"
+                                          % (lock_reason, "；".join(block[:5]))}, status=400)
 
         updated = []
         seen = set()
@@ -4901,7 +4922,14 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
 
         action = "replace" if prev_name else "upload"
         # 2026-11-03：替换时先删旧实体，避免同名文件被 Django 追加 _7位随机串、也避免堆垃圾文件
+        # 2026-11-04：删前把旧文件读进内存，保存失败则回滚（否则 DB 指向已删文件 → 报告 404）
+        _bak_bytes = None
         if cur:
+            try:
+                with cur.storage.open(cur.name, "rb") as _fh:
+                    _bak_bytes = _fh.read()
+            except Exception:                      # noqa: BLE001
+                _bak_bytes = None
             try:
                 cur.delete(save=False)
             except Exception:                      # noqa: BLE001
@@ -4916,7 +4944,17 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         hist = list(pair.report_history or [])
         hist.append(entry)
         pair.report_history = hist[-50:]
-        pair.save(update_fields=fields)
+        try:
+            pair.save(update_fields=fields)
+        except Exception:
+            # 新文件没落地 → 把刚删掉的旧文件写回，保持 DB 与磁盘一致
+            if _bak_bytes is not None and prev_name:
+                try:
+                    from django.core.files.base import ContentFile
+                    cur.storage.save(prev_name, ContentFile(_bak_bytes))
+                except Exception:                  # noqa: BLE001
+                    pass
+            raise
         log_audit(request, "UPDATE", pair, {slot: {"old": prev_name, "new": f.name}})
         self._recompute_report_status(batch)
         data = NipptBioinfoPairSerializer(pair, context={"request": request}).data

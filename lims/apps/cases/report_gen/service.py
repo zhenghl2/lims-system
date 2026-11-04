@@ -83,6 +83,41 @@ def render_pair(pair, out_dir):
         return [], "渲染异常: %s" % exc
 
 
+def _save_storage_file(pair, field, src_path):
+    """把 src_path 存进 pair.<field>；覆盖同名旧文件时先备份，失败可回滚。
+
+    为什么先删旧文件：Django 的 Storage.get_available_name() 遇到同名会改名成
+    xxx_<7位随机串>.docx（用户反馈过）。
+    为什么先备份（2026-11-04）：删完再保存若失败（磁盘满/存储异常），旧文件就永久丢了，
+    而 DB 仍指向它 → 报告 404 且不可恢复。这里把旧内容读进内存，失败时写回。
+    """
+    from django.core.files.base import ContentFile
+
+    ff = getattr(pair, field)
+    old_name = ff.name if ff else ""
+    backup = None
+    if old_name:
+        try:
+            with ff.storage.open(old_name, "rb") as fh:
+                backup = fh.read()
+        except Exception:                          # noqa: BLE001
+            backup = None
+        try:
+            ff.delete(save=False)
+        except Exception:                          # noqa: BLE001
+            pass
+    try:
+        with open(src_path, "rb") as fh:
+            getattr(pair, field).save(os.path.basename(src_path), fh, save=False)
+    except Exception:
+        if backup is not None and old_name:
+            try:
+                ff.storage.save(old_name, ContentFile(backup))
+            except Exception:                      # noqa: BLE001
+                pass
+        raise
+
+
 def generate_and_save(pair, out_dir, user=None):
     """渲染并写回 report_file；旧文件进 report_history。"""
     files, reason = render_pair(pair, out_dir)
@@ -105,30 +140,16 @@ def generate_and_save(pair, out_dir, user=None):
         except Exception:                          # noqa: BLE001
             pass
 
-    # 2026-11-03：先删旧实体文件。否则同名新文件会被 Django 的
-    # Storage.get_available_name() 判为冲突，自动改名成 xxx_<7位随机串>.docx
-    # （用户反馈 "Y2026_147Ijl6.11.03.docx" 就是这么来的）
-    if pair.report_file:
-        try:
-            pair.report_file.delete(save=False)
-        except Exception:                          # noqa: BLE001
-            pass
-
-    with open(main, "rb") as fh:
-        pair.report_file.save(os.path.basename(main), fh, save=False)
+    # 2026-11-03：覆盖同名旧文件前先删实体，避免 Django 自动加 _7位随机串
+    # 2026-11-04：删前备份、失败回滚（见 _save_storage_file）
+    _save_storage_file(pair, "report_file", main)
 
     # 2026-10-21：额外报告（性别报告）也要落库 —— 原来只存 files[0]，性别报告被丢掉
     sex_file = next((f for f in files if "_sex" in str(f)), None)
     if sex_file:
         sex_path = sex_file if os.path.isabs(str(sex_file)) else os.path.join(out_dir, str(sex_file))
         if os.path.exists(sex_path):
-            if pair.report_file_sex:       # 同上：先删旧的，避免随机后缀
-                try:
-                    pair.report_file_sex.delete(save=False)
-                except Exception:                  # noqa: BLE001
-                    pass
-            with open(sex_path, "rb") as fh:
-                pair.report_file_sex.save(os.path.basename(sex_path), fh, save=False)
+            _save_storage_file(pair, "report_file_sex", sex_path)
             sex_saved = True
     pair.report_history = history[-20:]            # 只留最近 20 条
     # 2026-10-13：重新生成 Word 后，若已有 PDF → 标记可能过期（保留不删，前端提示）

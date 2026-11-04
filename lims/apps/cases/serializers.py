@@ -2125,6 +2125,34 @@ def nippt_build_pair_cache(pairs):
     return {"cs": cs_map, "hyb": hs_map, "pool": ps_map, "indexes": indexes}
 
 
+class NipptBioinfoPairListSerializer(serializers.ListSerializer):
+    """配对列表序列化：一次性取本列表所有配对的真实 Sample（证件号/管号）。
+
+    2026-11-04：原先每个配对在 _real_samples() 里各查 1 条 SQL，
+    86 个配对 = 86 条额外查询（整批详情 1949 条 SQL / 1.66s）。
+    这里在 to_representation 前面批量取一次，放进 context 共享。
+    """
+
+    def to_representation(self, data):
+        # 嵌套 many=True 时 DRF 传进来的是 RelatedManager（不是列表）→ 同 DRF 原生写法先 .all()
+        from django.db.models.manager import BaseManager
+        if isinstance(data, BaseManager):
+            data = data.all()
+        pairs = list(data)
+        ids = set()
+        for p in pairs:
+            for _sm in (getattr(p, "mother_sample", None), getattr(p, "father_sample", None)):
+                for cid in (getattr(_sm, "case_sample_ids", None) or []):
+                    ids.add(str(cid))
+        by_id = {}
+        if ids:
+            for cs in CaseSample.objects.filter(id__in=list(ids)).select_related("sample"):
+                by_id[str(cs.id)] = cs.sample
+        if isinstance(self.context, dict):
+            self.context["_nippt_real_samples"] = by_id
+        return [self.child.to_representation(item) for item in pairs]
+
+
 class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     mother_source_chip = serializers.SerializerMethodField()
     father_source_chip = serializers.SerializerMethodField()
@@ -2246,6 +2274,19 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
         于是报告模块的「孕妇/疑父 证件/管号」列恒为空。
         改为经 case_sample_ids 反查 CaseSample→Sample（与 sample_dates 同路径），每对只查一次。
         """
+        # 批量模式（列表序列化）已一次性取好 → 直接用，不再逐对查询
+        _shared = self.context.get("_nippt_real_samples") if isinstance(self.context, dict) else None
+        if _shared is not None:
+            def _pick_in_shared(sample):
+                if not sample:
+                    return None
+                for cid in (getattr(sample, "case_sample_ids", None) or []):
+                    sm = _shared.get(str(cid))
+                    if sm:
+                        return sm
+                return None
+            return (_pick_in_shared(obj.mother_sample), _pick_in_shared(obj.father_sample))
+
         # ⚠️ many=True 时 DRF 复用同一个 child serializer 实例 → 缓存必须按配对 id 区分
         _cache = getattr(self, "_real_sm_cache", None)
         if _cache is None:
@@ -2306,6 +2347,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = NipptBioinfoPair
+        list_serializer_class = NipptBioinfoPairListSerializer
         fields = [
             "id", "batch", "case", "case_number", "pt_number", "case_source",
             "mother_sample", "mother_name", "mother_index",

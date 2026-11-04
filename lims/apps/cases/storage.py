@@ -7,6 +7,7 @@ Django 默认 get_valid_filename() 会清掉 [^-\w.] 以外的字符，
 """
 import re
 
+from django.core.exceptions import SuspiciousFileOperation
 from django.core.files.storage import FileSystemStorage
 from django.utils.deconstruct import deconstructible
 
@@ -17,4 +18,8 @@ class NipptReportStorage(FileSystemStorage):
 
     def get_valid_name(self, name):
         s = str(name).strip().replace(" ", "_")
-        return re.sub(r"(?u)[^-\w.()（）]", "", s)
+        s = re.sub(r"(?u)[^-\w.()（）]", "", s)
+        # 与 Django 原生实现保持一致：清洗后不能是空名 / 当前目录 / 上级目录
+        if s in {"", ".", ".."}:
+            raise SuspiciousFileOperation("Could not derive file name from '%s'" % name)
+        return s

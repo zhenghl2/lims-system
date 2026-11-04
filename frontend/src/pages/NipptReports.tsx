@@ -568,7 +568,7 @@ export default function NipptReports() {
       }
       let state = "ok";
       if (!pt && !ext) { state = "no_pt"; reason = "文件名里没有 PT 编号，也没有可匹配的外部编号"; }
-      else if (!pt && ext && !found.length) { state = "unmatched"; reason = `本批次没有外部编号 ${ext} 的配对`; }
+      else if (!pt && ext && !found.length) { state = "unmatched"; reason = `文件名里没有 PT 编号；按外部编号「${ext}」也没匹配到本批次的配对`; }
       else if (pt && !found.length) { state = "unmatched"; reason = `本批次没有 PT${pt} 的配对（库内编号可能不同）`; }
       else if (!cand) { state = "unmatched"; }
       else if (notQualified(cand)) { state = "unqualified"; reason = `该配对未达标（${badReason(cand)}）`; }
