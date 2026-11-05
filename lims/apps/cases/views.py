@@ -3996,13 +3996,28 @@ class NipptHybSeqViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             lanes = nippt_pool_mix_lanes(pb, pd)
             _targets = nippt_pool_mix_groups(pb, pd)
             _failed_total = pb.samples.filter(qc_status="FAIL").count()
+            # 2026-11-05：每个 mix 的「计划样本数」—— 手动分组（rows[].mixOverride）优先，
+            # 没有手动分组时才用均摊目标。
+            # 原来一律用均摊目标 → 操作员手动把样本挪到别的 mix 后，少的那个 mix 会被
+            # 当成「失败样本」，弹窗里显示成「N 个失败样本未进入杂交测序」（实际 0 个 FAIL）。
+            _override_cnt = [0] * len(lanes)
+            for _r in rows:
+                try:
+                    _mo = int(_r.get("mixOverride") or 0)
+                except (TypeError, ValueError):
+                    _mo = 0
+                if 1 <= _mo <= len(lanes):
+                    _override_cnt[_mo - 1] += 1
+
             for gi, (f_list, m_list) in enumerate(lanes):
                 mid = f"{pb.id}_{gi}"
                 if mid in used_mix_ids: continue
                 nf, nm = len(f_list), len(m_list)
                 _tgt = _targets[gi] if gi < len(_targets) else {}
                 _target_total = int(_tgt.get("female", 0) or 0) + int(_tgt.get("male", 0) or 0)
-                _missing = max(0, _target_total - (nf + nm))
+                # 手动分组时以「手动分到本 mix 的样本数」为计划数，差额才是真的没进来（FAIL/剔除）
+                _planned_total = _override_cnt[gi] if any(_override_cnt) else _target_total
+                _missing = max(0, _planned_total - (nf + nm))
                 mixes.append({
                     "id": mid,
                     "pooling_batch_id": str(pb.id),
@@ -4013,6 +4028,7 @@ class NipptHybSeqViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
                     "data_amount": (nf*2 + nm*1),
                     # 该 mix 相对于 Pooling 分组目标少掉的样本数（因质检失败未进入杂交）
                     "missing": _missing,
+                    "planned_total": _planned_total,
                     "target_total": _target_total,
                     "pooling_failed_total": _failed_total,
                 })

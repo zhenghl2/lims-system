@@ -669,8 +669,10 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                 <Tag color="blue">{m.mix_name}</Tag>
                 <Text type="secondary">女:{m.female} 男:{m.male} 数据量:{m.data_amount}</Text>
                 {!!m.missing && (
+                  // 2026-11-05：差额 = 计划进本 mix 但没进来的样本（质检失败/被剔除），
+                  // 不再是「比均摊目标少」→ 原来手动分组会误报成失败样本
                   <Tag color="orange" style={{fontSize:11,margin:0}}>
-                    {m.missing} 个失败样本未进入杂交测序
+                    {m.missing} 个样本未进入杂交（质检失败或已剔除）
                   </Tag>
                 )}
               </div>
