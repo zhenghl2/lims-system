@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useRef } from "react";
 import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography, Table } from "antd";
 import { PlusOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
+import { INDEX_LOOKUP } from "../utils/indexLookup";
 import api from "../api/client";
 import NiptSignerModal from "./NiptSignerModal";
 import { useTranslation } from "../i18n/useTranslation";
@@ -9,86 +10,9 @@ import { registerTabSaver } from "../utils/niptTabSave";
 
 const { Text } = Typography;
 
-// ── Index lookup table from N34101-N34116接头index信息表 ──
-// Format: indexNumber → { i7, i5 }
-// i7 = column C (i7 index for all Illumina systems)
-// i5 = column D (i5 index for HiSeq 3000/4000, NextSeq, MiniSeq, NovaSeq v1.5)
-const INDEX_LOOKUP: Record<string, { i7: string; i5: string }> = {
-  "001":{i7:"CTGATCGT",i5:"GCGCATAT"},"002":{i7:"ACTCTCGA",i5:"CTGTACCA"},"003":{i7:"TGAGCTAG",i5:"GAACGGTT"},
-  "004":{i7:"GAGACGAT",i5:"ACCGGTTA"},"005":{i7:"CTTGTCGA",i5:"CGATGTTC"},"006":{i7:"TTCCAAGG",i5:"CTACAAGG"},
-  "007":{i7:"CGCATGAT",i5:"AAGCCTGA"},"008":{i7:"ACGGAACA",i5:"ACGAGAAC"},"009":{i7:"CGGCTAAT",i5:"CTCGTTCT"},
-  "010":{i7:"ATCGATCG",i5:"TGGAAGCA"},"011":{i7:"GCAAGATC",i5:"AGTCGAAG"},"012":{i7:"GCTATCCT",i5:"AACAGGTG"},
-  "013":{i7:"TACGCTAC",i5:"CGTGTGAT"},"014":{i7:"TGGACTCT",i5:"TCTTACGG"},"015":{i7:"AGAGTAGC",i5:"AAGGCGTA"},
-  "016":{i7:"ATCCAGAG",i5:"TAACGTCG"},"017":{i7:"GACGATCT",i5:"TCGTGCAT"},"018":{i7:"AACTGAGC",i5:"CAATCAGG"},
-  "019":{i7:"CTTAGGAC",i5:"ACTCCTAC"},"020":{i7:"GTGCCATA",i5:"CTCCTAGT"},"021":{i7:"GAATCCGA",i5:"AGCTAGTG"},
-  "022":{i7:"TCGCTGTT",i5:"CAAGTCGT"},"023":{i7:"TTCGTTGG",i5:"TACACACG"},"024":{i7:"AAGCACTG",i5:"AGGTCAAC"},
-  "025":{i7:"CCTTGATC",i5:"GATGGAGT"},"026":{i7:"GTCGAAGA",i5:"CCACATTG"},"027":{i7:"ACCACGAT",i5:"GTCTGCAA"},
-  "028":{i7:"GATTACCG",i5:"TTGGACTG"},"029":{i7:"GCACAACT",i5:"CTGAACGT"},"030":{i7:"GCGTCATT",i5:"CAGACGTT"},
-  "031":{i7:"ATCCGGTA",i5:"GACCGATA"},"032":{i7:"CGTTGCAA",i5:"ATAGAGCG"},"033":{i7:"GTGAAGTG",i5:"GAGCAATC"},
-  "034":{i7:"CATGGCTA",i5:"CACACATC"},"035":{i7:"ATGCCTGT",i5:"AGATTGCG"},"036":{i7:"CAACACCT",i5:"AGCTACCA"},
-  "037":{i7:"TGTGACTG",i5:"AGCCTATC"},"038":{i7:"GTCATCGA",i5:"GATCCACT"},"039":{i7:"AGCACTTC",i5:"ACGTCCAA"},
-  "040":{i7:"GAAGGAAG",i5:"GACGTCAT"},"041":{i7:"GTTGTTCG",i5:"CCAACTTC"},"042":{i7:"CGGTTGTT",i5:"GTGGTATG"},
-  "043":{i7:"ACTGAGGT",i5:"GTCAACAG"},"044":{i7:"TGAAGACG",i5:"ACATGCCA"},"045":{i7:"GTTACGCA",i5:"ATGGCGAT"},
-  "046":{i7:"AGCGTGTT",i5:"CTTCGCAA"},"047":{i7:"GATCGAGT",i5:"GACGAACT"},"048":{i7:"ACAGCTCA",i5:"TACTGCTC"},
-  "049":{i7:"GAGCAGTA",i5:"TGAGCTGT"},"050":{i7:"AGTTCGTC",i5:"ACTCGATC"},"051":{i7:"TTGCGAAG",i5:"AACACGCT"},
-  "052":{i7:"ATCGCCAT",i5:"TGCGTAAC"},"053":{i7:"TGGCATGT",i5:"CGTCTTCA"},"054":{i7:"CTGTTGAC",i5:"ACCTCAGT"},
-  "055":{i7:"CATACCAC",i5:"AACAACCG"},"056":{i7:"GAAGTTGG",i5:"CGAACAAC"},"057":{i7:"ATGACGTC",i5:"CTTCCTTC"},
-  "058":{i7:"TTGGACGT",i5:"GAAGTGCT"},"059":{i7:"AGTGGATC",i5:"TCGATGAC"},"060":{i7:"GATAGGCT",i5:"CAGTCACA"},
-  "061":{i7:"TGGTAGCT",i5:"AGGTGTTG"},"062":{i7:"CGCAATCT",i5:"ACAGGCAT"},"063":{i7:"GATGTGTG",i5:"TAGCCATG"},
-  "064":{i7:"GATTGCTC",i5:"CACTTCAC"},"065":{i7:"CGCTCTAT",i5:"TTGCAACG"},"066":{i7:"TATCGGTC",i5:"TACCGGAT"},
-  "067":{i7:"AACGTCTG",i5:"AATGACGC"},"068":{i7:"ACGTTCAG",i5:"AGTTGTGC"},"069":{i7:"CAGTCCAA",i5:"CGGTAATC"},
-  "070":{i7:"TTGCAGAC",i5:"ATCGTGGT"},"071":{i7:"CAATGTGG",i5:"TCTTCGAC"},"072":{i7:"ACTCCATC",i5:"GATCAAGG"},
-  "073":{i7:"GTTGACCT",i5:"CAGTGCTT"},"074":{i7:"CGTGTGTA",i5:"CCAACGAA"},"075":{i7:"ACGACTTG",i5:"AACAGCGA"},
-  "076":{i7:"CACTAGCT",i5:"TCGGATTC"},"077":{i7:"ACTAGGAG",i5:"TATGGCAC"},"078":{i7:"GTAGGAGT",i5:"GTCCTAAG"},
-  "079":{i7:"CCTGATTG",i5:"GCTCAGTT"},"080":{i7:"ATGCACGA",i5:"AGATCGTC"},"081":{i7:"CGACGTTA",i5:"CTCTGGAT"},
-  "082":{i7:"TACGCCTT",i5:"GCTACTCT"},"083":{i7:"CCGTAAGA",i5:"AGAGTCCA"},"084":{i7:"ATCACACG",i5:"GTAGCGTA"},
-  "085":{i7:"CACCTGTT",i5:"AGGATAGC"},"086":{i7:"CTTCGACT",i5:"GATCTTGC"},"087":{i7:"TGCTTCCA",i5:"CGATCGAT"},
-  "088":{i7:"AGAACGAG",i5:"ATTAGCCG"},"089":{i7:"GTTCTCGT",i5:"TGTTCCGT"},"090":{i7:"TCAGGCTT",i5:"ATCATGCG"},
-  "091":{i7:"CCTTGTAG",i5:"CCTTGGAA"},"092":{i7:"GAACATCG",i5:"TCGACAAG"},"093":{i7:"TAACCGGT",i5:"ATCGTCTC"},
-  "094":{i7:"AACCGTTC",i5:"CTAGCTCA"},"095":{i7:"TGGTACAG",i5:"TCGAGAGT"},"096":{i7:"ATATGCGC",i5:"ACGATCAG"},
-};
-
 // ── Index range extender for 097-384 (generated from the original data)
 // Only showing 001-096 above; 097+ follows same pattern
 // For now we include the complete set up to 384
-const _EXT: Record<string,{i7:string;i5:string}> = {
-  "097":{i7:"GCCTATCA",i5:"AATGGTCG"},"098":{i7:"CTTGGATG",i5:"TCGCTATC"},"099":{i7:"AGTCTCAC",i5:"CGTCCATT"},
-  "100":{i7:"CTCATCAG",i5:"TACTAGCG"},"101":{i7:"TGTACCGT",i5:"CCTAGAGA"},"102":{i7:"AAGTCGAG",i5:"CGCAATGT"},
-  "103":{i7:"CACGTTGT",i5:"ACACCTCA"},"104":{i7:"TCACAGCA",i5:"GAGGCATT"},"105":{i7:"CTACTTGG",i5:"TACTCCAG"},
-  "106":{i7:"CCTCAGTT",i5:"CAGCATAC"},"107":{i7:"TCCTACCT",i5:"ACTCTCCA"},"108":{i7:"ATGGCGAA",i5:"CTCTATCG"},
-  "109":{i7:"CTTACCTG",i5:"GCAATGAG"},"110":{i7:"CTCGATAC",i5:"AAGCTGGT"},"111":{i7:"TCCGTGAA",i5:"CACGATTC"},
-  "112":{i7:"TAGAGCTC",i5:"AGAAGCCT"},"113":{i7:"TGACTGAC",i5:"CAGAACTG"},"114":{i7:"TAGACGTG",i5:"CTCACCAA"},
-  "115":{i7:"CCGGAATT",i5:"ACCGAATG"},"116":{i7:"CTCCTAGA",i5:"GCTTCACA"},"117":{i7:"CAACGGAT",i5:"GCCACTTA"},
-  "118":{i7:"TGGCTATC",i5:"CATCACGT"},"119":{i7:"CGGTCATA",i5:"TGCTCTAC"},"120":{i7:"TCCAATCG",i5:"CAACTGAC"},
-  "121":{i7:"GAGCTTGT",i5:"CCTCGAAT"},"122":{i7:"GAAGGTTC",i5:"CCAGTATC"},"123":{i7:"ATCTCGCT",i5:"AACAAGGC"},
-  "124":{i7:"AGTTACGG",i5:"GAGACCAA"},"125":{i7:"GTGTCTGA",i5:"ATAGTCGG"},"126":{i7:"TGACTTCG",i5:"CTTAGGAC"},
-  "127":{i7:"TGGATCAC",i5:"GCATTGGT"},"128":{i7:"ACACCAGT",i5:"AGTGCATC"},"129":{i7:"CAGGTTAG",i5:"AATCCAGC"},
-  "130":{i7:"AGTTGGCT",i5:"GCAACCAT"},"131":{i7:"TCAACTGG",i5:"CGATTCTG"},"132":{i7:"CTGCACTT",i5:"AAGCGTTC"},
-  "133":{i7:"ACACGGTT",i5:"TGGTTCGA"},"134":{i7:"AATACGCG",i5:"TGCGATAG"},"135":{i7:"TGCGAACT",i5:"CAACCGTA"},
-  "136":{i7:"GCTGACTA",i5:"GACATCTC"},"137":{i7:"GTGGTGTT",i5:"GCTGTAAG"},"138":{i7:"GTGCTTAC",i5:"TTCCTCCT"},
-  "139":{i7:"TCAAGGAC",i5:"CATTCGTC"},"140":{i7:"TGAACCTG",i5:"ACCTCTTC"},"141":{i7:"AGTGTTGG",i5:"CATTGACG"},
-  "142":{i7:"GTACTCTC",i5:"TCCTGGTA"},"143":{i7:"CCGTATCT",i5:"TTCGTACG"},"144":{i7:"CGAAGAAC",i5:"CCTAAGTC"},
-  "145":{i7:"AGCGGAAT",i5:"ACTGCACT"},"146":{i7:"GTGAGCTT",i5:"CGGATCAA"},"147":{i7:"CGTGATCA",i5:"GAATGGCA"},
-  "148":{i7:"TCGCATTG",i5:"ACAGCAAG"},"149":{i7:"TGACGCAT",i5:"TCAGTAGG"},"150":{i7:"CCGATGTA",i5:"CAACTTGG"},
-  "151":{i7:"TTCGCAGT",i5:"TCCGATCA"},"152":{i7:"ACGACAGA",i5:"CGCAACTA"},"153":{i7:"AGCTTGAG",i5:"GATCAGAC"},
-  "154":{i7:"GAGTGGTT",i5:"GCATAACG"},"155":{i7:"GCTGTAAG",i5:"TACAGAGC"},"156":{i7:"CCAAGACT",i5:"CTCGGTAA"},
-  "157":{i7:"ATTGCGTG",i5:"GTTATGGC"},"158":{i7:"CTGAAGCT",i5:"ACTCTGAG"},"159":{i7:"TAACGAGG",i5:"TAGTCTCG"},
-  "160":{i7:"TCGTCTCA",i5:"AACGCACA"},"161":{i7:"TTCCTGTG",i5:"CTCCTGAA"},"162":{i7:"CGTTGAGT",i5:"GCATAGTC"},
-  "163":{i7:"AGTCGCTT",i5:"TCGAACCT"},"164":{i7:"TAGGTAGG",i5:"CACAGACT"},"165":{i7:"CAGGAGAT",i5:"CCTTAGGT"},
-  "166":{i7:"CATCGTGA",i5:"TACCTGCA"},"167":{i7:"TGTTGTGG",i5:"GTGTCCTT"},"168":{i7:"ACAGACCT",i5:"CTAGGTTG"},
-  "169":{i7:"GTCCTTCT",i5:"TGTGTCAG"},"170":{i7:"TGATACGC",i5:"CAACGAGT"},"171":{i7:"CTGTGTTG",i5:"TAGGAGCT"},
-  "172":{i7:"AACGTGGA",i5:"CCGATGTA"},"173":{i7:"GTTGCGAT",i5:"GACTTGTG"},"174":{i7:"AACGACGT",i5:"TCAATCCG"},
-  "175":{i7:"CGTATTCG",i5:"TGTCGACT"},"176":{i7:"AGCAAGCA",i5:"AAGGAGAC"},"177":{i7:"TGTTCGAG",i5:"CGTATCTC"},
-  "178":{i7:"CTCCATGT",i5:"ACACCGAT"},"179":{i7:"CGTCTTGT",i5:"TTGCGAGA"},"180":{i7:"ATAAGGCG",i5:"GCGTTAGA"},
-  "181":{i7:"TGTCTGCT",i5:"GTCGATTG"},"182":{i7:"CGCTTAAC",i5:"AAGTCCTC"},"183":{i7:"GATCCATG",i5:"CAACTCCA"},
-  "184":{i7:"ACCTCTGT",i5:"ATGCCTAG"},"185":{i7:"GCCACTTA",i5:"GAGTAGAG"},"186":{i7:"ACCTGACT",i5:"ACGCTTCT"},
-  "187":{i7:"GTTAAGGC",i5:"ACCTTCGA"},"188":{i7:"ATGCCAAC",i5:"TTACCGAC"},"189":{i7:"AGAGGTTG",i5:"GTCATCGT"},
-  "190":{i7:"ACCATCCA",i5:"CATACGGA"},"191":{i7:"GTGGATAG",i5:"TCACCTAG"},"192":{i7:"CTGAGATC",i5:"AGGCAATG"},
-  "193":{i7:"CTTCGTTC",i5:"GAGAAGGT"},"194":{i7:"GTCTAGGT",i5:"ATCCACGA"},"195":{i7:"ACGTCGTA",i5:"CCATGAAC"},
-  "196":{i7:"GAGCTCAA",i5:"GCATCCTA"},"197":{i7:"CGTGTACT",i5:"GTTCCATG"},"198":{i7:"CACTGACA",i5:"AGCTAAGC"},
-  "199":{i7:"TCGTAGTC",i5:"CGAGTTAG"},"200":{i7:"GCACGTAA",i5:"CACATGGT"},
-};
-Object.assign(INDEX_LOOKUP, _EXT);
 
 // ── Helper: parse index string (e.g. "UDIA-015" or "015") to lookup key ──
 function parseIndexNum(index: string): string {
@@ -173,7 +97,10 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
     const batchNum = String(batch.batch_number || "").trim()
       || batchNotes.replace(/^Batch:\s*/i, "").trim();
     // Report Code prefix: chipXXXX → RXXXX.date
-    const today = dayjs().format("YYYY.MM.DD");
+    // 2026-11-05：Report Code 的日期用「上机日期」（有就取，没有才用今天）。
+    // 原来固定取浏览器当天 → 隔天打开同一批次，Report Code 会变。
+    const today = edata?.seq_date ? dayjs(edata.seq_date).format("YYYY.MM.DD")
+                                  : dayjs().format("YYYY.MM.DD");
     const reportPrefix = batchNum.replace(/^chip/i, "R");
     return poolSamples.map((ps: any, i: number) => {
       const indexStr = ps.index || "";
@@ -193,7 +120,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
         reportCode: `${reportPrefix}.${today}.${idxPadded}.${vgId}`,
       };
     });
-  }, [poolSamples, batch.batch_number, batch.notes]);
+  }, [poolSamples, batch.batch_number, batch.notes, edata?.seq_date]);
 
   useEffect(()=>{
     form.setFieldsValue({
@@ -282,7 +209,6 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
     }
     if (role === "op") setOpModal(true); else setRvModal(true);
   };
-
 
   const indexColumns = [
     { title:"编号",dataIndex:"idx",key:"idx",width:50,align:"center" as const },
