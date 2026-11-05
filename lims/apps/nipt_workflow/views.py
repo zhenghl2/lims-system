@@ -74,6 +74,16 @@ class _StepBatchViewSet(viewsets.GenericViewSet,
     def get_serializer_class(self):
         return self.list_serializer_class if self.action == "list" else self.detail_serializer_class
 
+    def destroy(self, request, *args, **kwargs):
+        """2026-11-05（用户口径）：已完成的批次不允许删除；其余可删。
+
+        删除批次会级联删掉批次内的样本行，样本因此回到上游「待处理」，可重新建批次。
+        """
+        batch = self.get_object()
+        if batch.status == "COMPLETED":
+            return Response({"error": "该批次已完成，不能删除"}, status=status.HTTP_400_BAD_REQUEST)
+        return super().destroy(request, *args, **kwargs)
+
     # ── 保存实验数据（body 与旧 /runs/{id}/save_* 一致）──
     def _save_data(self, request):
         batch = self.get_object()

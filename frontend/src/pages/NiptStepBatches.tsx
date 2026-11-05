@@ -1,8 +1,8 @@
 // NiptStepBatches.tsx — NIPT 实验流程「分步批次」列表（阶段3：5 步全部走新表）
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Card, Table, Tag, Button, Typography, Space, message, Modal, Alert, Input } from "antd";
-import { ReloadOutlined, ArrowRightOutlined, PlusOutlined } from "@ant-design/icons";
+import { Card, Table, Tag, Button, Typography, Space, message, Modal, Alert, Input, Tooltip } from "antd";
+import { ReloadOutlined, ArrowRightOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import {
   niptExtractionApi, niptLibraryApi, niptPoolingApi, niptSequencingApi, niptBioinformaticsApi,
@@ -87,16 +87,64 @@ export default function NiptStepBatches() {
     plasma: r.plasma_remaining,
   })), [pending.results]);
 
+  /** 2026-11-05：测序步骤按「上游 Pooling 批次」整组勾选 —— 56 个样本变成 7 组，
+   *  等价于 NIPPT 按 mix 勾选（NIPT 一次 pooling 实验 = 一管）。 */
+  const poolGroups = useMemo(() => {
+    const m = new Map<string, any[]>();
+    pendingRows.forEach((r: any) => {
+      const k = r.source || "未分组";
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(r);
+    });
+    return Array.from(m.entries()).map(([batch, rows]) => ({
+      key: batch,
+      batch,
+      count: rows.length,
+      vgPreview: rows.map((r: any) => r.vg).filter(Boolean).slice(0, 4).join(", ")
+        + (rows.filter((r: any) => r.vg).length > 4 ? " …" : ""),
+      sampleKeys: rows.map((r: any) => r.key),
+      rows,
+    }));
+  }, [pendingRows]);
+
+  /** 本次真正要提交的样本行：测序按组展开，其它步骤按勾选的样本 */
+  const pickedRows = useMemo(() => {
+    if (step !== "sequencing") return pendingRows.filter((r: any) => picked.includes(r.key));
+    const keys = new Set<string>();
+    poolGroups.forEach((g: any) => { if (picked.includes(g.key)) g.sampleKeys.forEach((k: string) => keys.add(k)); });
+    return pendingRows.filter((r: any) => keys.has(r.key));
+  }, [step, pendingRows, picked, poolGroups]);
+
+  const confirmDelete = (r: any) => {
+    Modal.confirm({
+      title: `删除批次 ${r.no}？`,
+      content: "批次内样本会回到「待处理」，可重新建批次。已完成的批次不能删除。",
+      okText: "删除", okType: "danger", cancelText: "取消",
+      onOk: async () => {
+        try {
+          await api.remove(r.id);
+          message.success(`已删除批次 ${r.no}`);
+          fetchRows();
+        } catch (e: any) {
+          message.error(e?.response?.data?.error || e?.response?.data?.detail || "删除失败");
+        }
+      },
+    });
+  };
+
   const createBatch = async () => {
     if (!api) return;
-    if (!picked.length) { message.warning("请先勾选要加入批次的样本"); return; }
+    if (!pickedRows.length) {
+      message.warning(step === "sequencing" ? "请先勾选要上机的上游批次" : "请先勾选要加入批次的样本");
+      return;
+    }
     setCreating(true);
     try {
       let body: any;
       if (step === "extraction") {
         body = { sample_ids: picked };
       } else {
-        const sel = pendingRows.filter(r => picked.includes(r.key));
+        const sel = pickedRows;
         body = {
           sample_ids: Array.from(new Set(sel.map(r => r.sampleId))),
           source_extraction_sample_ids: sel.map(r => r.key),   // 后端按「上游行」建指针
@@ -136,14 +184,23 @@ export default function NiptStepBatches() {
       ) },
     { title: "创建时间", dataIndex: "created_at", key: "ca", width: 160,
       render: (v: string) => (v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "—") },
-    { title: "", key: "act", width: 110,
+    { title: "", key: "act", width: 150,
       render: (_: any, r: any) => (
-        <Button type="link" size="small" icon={<ArrowRightOutlined />}
-          onClick={(e) => { e.stopPropagation(); navigate(`/nipt/${step}/${r.id}`); }}>
-          进入本步
-        </Button>
+        <Space size={2}>
+          <Button type="link" size="small" icon={<ArrowRightOutlined />}
+            onClick={(e) => { e.stopPropagation(); navigate(`/nipt/${step}/${r.id}`); }}>
+            进入本步
+          </Button>
+          {step === "sequencing" && (
+            <Tooltip title={r.status === "COMPLETED" ? "已完成批次不能删除" : "删除该批次（样本回到待处理）"}>
+              <Button danger type="link" size="small" icon={<DeleteOutlined />}
+                disabled={r.status === "COMPLETED"}
+                onClick={(e) => { e.stopPropagation(); confirmDelete(r); }} />
+            </Tooltip>
+          )}
+        </Space>
       ) },
-  ]), [step, navigate]);
+  ]), [step, navigate, confirmDelete]);
 
   if (!meta || !api) return <Card><Text type="danger">未知步骤：{step}</Text></Card>;
 
@@ -203,7 +260,7 @@ export default function NiptStepBatches() {
         onOk={createBatch}
         okText={creating ? "创建中…" : "创建批次"}
         confirmLoading={creating}
-        okButtonProps={{ disabled: step === "sequencing" && !chipNo.trim() }}
+        okButtonProps={{ disabled: picked.length === 0 || (step === "sequencing" && !chipNo.trim()) }}
         width={880}
         destroyOnClose
       >
@@ -225,9 +282,37 @@ export default function NiptStepBatches() {
         <Alert type="warning" showIcon style={{ marginBottom: 10 }}
           message={step === "extraction"
             ? "勾选的样本会进入同一块 96 孔板的提取批次。"
-            : "可跨上游批次勾选：勾中的样本进同一个批次，上游批次谱系自动记录。"} />
+            : step === "sequencing"
+              ? "按上游 Pooling 批次整组勾选（一次 pooling = 一管）；勾中某个批次，该批全部样本进入本次上机。"
+              : "可跨上游批次勾选：勾中的样本进同一个批次，上游批次谱系自动记录。"} />
         {pendingRows.length === 0 ? (
           <Alert type="success" showIcon message="暂无待处理样本（上游已全部进批次）" />
+        ) : step === "sequencing" ? (
+          <Table
+            size="small"
+            dataSource={poolGroups as any}
+            rowKey="key"
+            pagination={false}
+            rowSelection={{ selectedRowKeys: picked, onChange: (k) => setPicked(k as string[]) }}
+            columns={[
+              { title: "上游 Pooling 批次", dataIndex: "batch", key: "g1",
+                render: (v: string) => <Text code>{v}</Text> },
+              { title: "样本数", dataIndex: "count", key: "g2", width: 80, align: "center" as const },
+              { title: "VG ID", dataIndex: "vgPreview", key: "g3", ellipsis: true },
+            ]}
+            expandable={{
+              expandedRowRender: (g: any) => (
+                <Table size="small" pagination={false} dataSource={g.rows} rowKey="key"
+                  columns={[
+                    { title: "样本编号", dataIndex: "code", key: "s1", width: 180 },
+                    { title: "VG ID", dataIndex: "vg", key: "s2", width: 120 },
+                    { title: "姓名", dataIndex: "name", key: "s3", ellipsis: true },
+                    { title: "孔位", dataIndex: "pos", key: "s4", width: 80 },
+                  ]} />
+              ),
+            }}
+            scroll={{ y: 340 }}
+          />
         ) : (
           <Table
             size="small"
