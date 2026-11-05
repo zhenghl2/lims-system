@@ -1,7 +1,7 @@
 // NiptStepBatches.tsx — NIPT 实验流程「分步批次」列表（阶段3：5 步全部走新表）
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Card, Table, Tag, Button, Typography, Space, message, Modal, Alert } from "antd";
+import { Card, Table, Tag, Button, Typography, Space, message, Modal, Alert, Input } from "antd";
 import { ReloadOutlined, ArrowRightOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import {
@@ -45,6 +45,8 @@ export default function NiptStepBatches() {
   const [modalOpen, setModalOpen] = useState(false);
   const [picked, setPicked] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
+  // 2026-11-05：测序批次由操作员手填 chip 号当批次号（chip7047 → R7047）
+  const [chipNo, setChipNo] = useState("");
 
   const fetchRows = useCallback(async () => {
     if (!api) return;
@@ -99,10 +101,11 @@ export default function NiptStepBatches() {
           sample_ids: Array.from(new Set(sel.map(r => r.sampleId))),
           source_extraction_sample_ids: sel.map(r => r.key),   // 后端按「上游行」建指针
         };
+        if (step === "sequencing") body.batch_number = chipNo.trim();
       }
       const res: any = await api.create(body);
       message.success("批次已创建：" + res.data?.batch_number);
-      setModalOpen(false); setPicked([]);
+      setModalOpen(false); setPicked([]); setChipNo("");
       const nid = res.data?.id;
       fetchRows();
       if (nid) navigate(`/nipt/${step}/${nid}`);
@@ -196,13 +199,29 @@ export default function NiptStepBatches() {
       <Modal
         open={modalOpen}
         title={`新建${meta.title}批次 · 从待处理勾选`}
-        onCancel={() => setModalOpen(false)}
+        onCancel={() => { setModalOpen(false); setChipNo(""); }}
         onOk={createBatch}
         okText={creating ? "创建中…" : "创建批次"}
         confirmLoading={creating}
+        okButtonProps={{ disabled: step === "sequencing" && !chipNo.trim() }}
         width={880}
         destroyOnClose
       >
+        {step === "sequencing" && (
+          <div style={{ marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+            <Text strong>批次号（芯片号）</Text>
+            <Input
+              style={{ width: 190 }}
+              value={chipNo}
+              onChange={(e) => setChipNo(e.target.value)}
+              placeholder="例如 chip7047"
+            />
+            <Text type="secondary" style={{ fontSize: 12 }}>
+              即本批次的批次号；index 表的 Batch Number 用它，Report Code 前缀取
+              {" "}<Text code style={{ fontSize: 12 }}>R{(chipNo.trim().replace(/^chip/i, "") || "XXXX")}</Text>
+            </Text>
+          </div>
+        )}
         <Alert type="warning" showIcon style={{ marginBottom: 10 }}
           message={step === "extraction"
             ? "勾选的样本会进入同一块 96 孔板的提取批次。"

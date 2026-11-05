@@ -154,18 +154,24 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
     (batch.run_samples || []).forEach((rs: any) => {
       if (rs.sample_vg_id) runSampleMap.set(rs.sample_vg_id, rs.sample_status || "");
     });
+    // 2026-11-05：只保留「本批次」里的样本。
+    // 原来只按 REJECTED 过滤上游 JSON，导致只勾了 2 个样本、index 表却列出上游整批 12 行。
+    const inBatch = runSampleMap.size > 0;
     return (pdata.samples || []).filter((s: any) => {
       if (s.qc === "FAIL") return false;
       const st = runSampleMap.get(s.vgId);
       if (st === "REJECTED") return false;
+      if (inBatch && !runSampleMap.has(s.vgId)) return false;   // 不在本批次 → 不进 index 表
       return true;
     });
   }, [batch.pooling_data, batch.run_samples]);
 
   const indexRows: IndexRow[] = useMemo(() => {
-    // Extract batch number from notes (format: "Batch: XXXXX")
+    // 2026-11-05：批次号直接用批次本身的 batch_number（测序批次=操作员填的 chip 号）；
+    // 老数据没有时再回退到 notes 里的 "Batch: xxx"
     const batchNotes = batch.notes || "";
-    const batchNum = batchNotes.replace(/^Batch:\s*/i, "").trim();
+    const batchNum = String(batch.batch_number || "").trim()
+      || batchNotes.replace(/^Batch:\s*/i, "").trim();
     // Report Code prefix: chipXXXX → RXXXX.date
     const today = dayjs().format("YYYY.MM.DD");
     const reportPrefix = batchNum.replace(/^chip/i, "R");
@@ -187,7 +193,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
         reportCode: `${reportPrefix}.${today}.${idxPadded}.${vgId}`,
       };
     });
-  }, [poolSamples]);
+  }, [poolSamples, batch.batch_number, batch.notes]);
 
   useEffect(()=>{
     form.setFieldsValue({
@@ -300,7 +306,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `SampleSheet_${batch.notes?.replace(/^Batch:\s*/i, "").trim() || "export"}.csv`;
+    a.download = `SampleSheet_${String(batch.batch_number || "").trim() || batch.notes?.replace(/^Batch:\s*/i, "").trim() || "export"}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };

@@ -9,6 +9,8 @@
 - 照片复用 `workflows.nipt_run_photos`（namespace `nipt_workflow/<batch_id>/<module>/`）
 - `Sample.status` 只在 complete 时**向前推进**（panel 限定 + 只升不降）
 """
+import re
+
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -447,9 +449,26 @@ class _ChainStepMixin:
                    .order_by("-created_at").first())
             ptr[s.id] = row.id if row else None
 
+        # 2026-11-05（用户口径）：测序批次由操作员手填 chip 号直接当批次号
+        # （chip7047 → Report Code 前缀 R7047，index 表 Batch Number 也用它）。
+        # 不填则沿用自动编号，其它步骤行为不变。
+        manual_no = str((request.data or {}).get("batch_number") or "").strip()
+        if manual_no:
+            if not re.match(r"^chip\d+$", manual_no, re.I):
+                return Response({"error": "批次号必须形如 chip7047（chip + 芯片序号）"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            exists = (self.model.objects.filter(batch_number__iexact=manual_no)
+                      .values_list("batch_number", flat=True).first())
+            if exists:
+                return Response({"error": "批次号 %s 已存在（%s），请换一个" % (manual_no, exists)},
+                                status=status.HTTP_400_BAD_REQUEST)
+            batch_number = manual_no
+        else:
+            batch_number = self.model.generate_batch_number()
+
         with transaction.atomic():
             batch = self.model.objects.create(
-                batch_number=self.model.generate_batch_number(), status="DRAFT",
+                batch_number=batch_number, status="DRAFT",
                 created_by=request.user if request.user.is_authenticated else None,
             )
             for s in samples:
