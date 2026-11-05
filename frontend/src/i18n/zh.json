@@ -1232,7 +1232,7 @@
       "noIndexData": "暂未从生信数据获取 Index 信息",
       "selectPlatform": "选择测序平台",
       "selectChip": "选择芯片",
-      "concentration": "上样浓度 (pM)",
+      "concentration": "上样浓度 (ng/μl)",
       "targetReads": "目标数据量 (M reads)",
       "select": "选择",
       "addReagent": "添加试剂",

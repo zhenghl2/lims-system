@@ -1230,7 +1230,7 @@
       "noIndexData": "Sem dados de índice da bioinformática",
       "selectPlatform": "Selecionar Plataforma",
       "selectChip": "Selecionar Chip",
-      "concentration": "Conc. de Carregamento (pM)",
+      "concentration": "Conc. de Carregamento (ng/μl)",
       "targetReads": "Dados Alvo (M reads)",
       "select": "Selecionar",
       "addReagent": "Adicionar Reagente",

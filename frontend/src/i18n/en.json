@@ -1230,7 +1230,7 @@
       "noIndexData": "No index data from bioinformatics yet",
       "selectPlatform": "Select Platform",
       "selectChip": "Select Chip",
-      "concentration": "Loading Conc. (pM)",
+      "concentration": "Loading Conc. (ng/μl)",
       "targetReads": "Target Data (M reads)",
       "select": "Select",
       "addReagent": "Add Reagent",

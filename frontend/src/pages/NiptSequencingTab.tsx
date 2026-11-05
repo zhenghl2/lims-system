@@ -201,7 +201,8 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
       seq_time:edata.seq_time||dayjs().format("HH:mm"),
       equipment:edata.equipment||[],
       chip:edata.chip||undefined,
-      conc_pM:edata.conc_pM??undefined,
+      // 2026-11-05：单位改为 ng/μl（原 pM 是写错）；旧数据存的是 conc_pM，读时兼容
+      conc_ng_ul:edata.conc_ng_ul ?? edata.conc_pM ?? undefined,
       read_type:edata.read_type||undefined,
       target_reads:edata.target_reads??undefined,
       temperature:edata.temperature??undefined,
@@ -246,7 +247,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
         equipment:vals.equipment,
         chip:vals.chip,
         reagents:reagents.filter(r=>r.type),
-        conc_pM:vals.conc_pM,
+        conc_ng_ul:vals.conc_ng_ul,
         read_type:vals.read_type,
         target_reads:vals.target_reads,
         temperature:vals.temperature,
@@ -327,7 +328,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
             <Col span={6}><Form.Item name="seq_time" label={t("nipt.extraction.experimentTime")} rules={[{required:true}]} style={{marginBottom:0}}><Input placeholder="例：09:00"/></Form.Item></Col>
             <Col span={6}><Form.Item name="equipment" label={t("nipt.sequencing.equipment")} rules={[{required:true}]} style={{marginBottom:0}}><Select mode="multiple" options={EQUIPMENT_OPTIONS} placeholder={t("nipt.sequencing.equipmentPlaceholder")} maxTagCount={2}/></Form.Item></Col>
             <Col span={6}><Form.Item name="chip" label={t("nipt.sequencing.chipType")} rules={[{required:true}]} style={{marginBottom:0}}><Select options={chipOptions} placeholder={t("nipt.sequencing.selectChip")} disabled={!platform}/></Form.Item></Col>
-            <Col span={6}><Form.Item name="conc_pM" label={t("nipt.sequencing.concentration")} rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} step={0.1} style={{width:"100%"}} placeholder="e.g. 12"/></Form.Item></Col>
+            <Col span={6}><Form.Item name="conc_ng_ul" label={t("nipt.sequencing.concentration")} rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} step={0.1} style={{width:"100%"}} placeholder="e.g. 12"/></Form.Item></Col>
             <Col span={6}><Form.Item name="read_type" label={t("nipt.sequencing.readLength")} rules={[{required:true}]} style={{marginBottom:0}}><Select options={READ_TYPE_OPTIONS} placeholder="选择"/></Form.Item></Col>
             <Col span={6}><Form.Item name="target_reads" label={t("nipt.sequencing.targetReads")} rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} style={{width:"100%"}} placeholder="e.g. 25"/></Form.Item></Col>
             <Col span={6}><Form.Item name="temperature" label={t("nipt.extraction.temperature")} style={{marginBottom:0}}><InputNumber min={0} max={50} step={0.1} style={{width:"100%"}}/></Form.Item></Col>
