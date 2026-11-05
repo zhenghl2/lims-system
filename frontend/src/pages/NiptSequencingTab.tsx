@@ -21,7 +21,6 @@ function parseIndexNum(index: string): string {
 }
 
 // ── Platform / Equipment ──
-const PLATFORM_OPTIONS = [{ label:"泰国", options:[{ value:"ILLUMINA_500",label:"illumina500" },{ value:"SIKUN_2000",label:"Sikun2000" }]},{ label:"厦门", options:[{ value:"ILLUMINA_550DX",label:"illumina550dx" },{ value:"SALUS_PRO",label:"Salus Pro" }]},{ label:"巴西", options:[{ value:"MGI_G99",label:"MGI G99" }]}];
 const EQUIPMENT_OPTIONS = [{ value:"ILLUMINA_500",label:"illumina500" },{ value:"ILLUMINA_550DX",label:"illumina550dx" },{ value:"SALUS_PRO",label:"Salus Pro" },{ value:"SIKUN_2000",label:"Sikun2000" },{ value:"MGI_G99",label:"MGI G99" },{ value:"PCR_ABI_9700",label:"PCR仪 - ABI 9700" },{ value:"PCR_ABI_Veriti",label:"PCR仪 - ABI Veriti" },{ value:"PCR_BioRad_T100",label:"PCR仪 - Bio-Rad T100" }];
 const CHIP_OPTIONS_BY_PLATFORM: Record<string,{value:string;label:string}[]> = { ILLUMINA_500:[{value:"S1",label:"S1 Flow Cell"},{value:"S2",label:"S2 Flow Cell"},{value:"S4",label:"S4 Flow Cell"}], ILLUMINA_550DX:[{value:"S1",label:"S1 Flow Cell"},{value:"S2",label:"S2 Flow Cell"}], SALUS_PRO:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}], SIKUN_2000:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}], MGI_G99:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}] };
 // 2026-11-05（用户口径）：补 PE100 / PE75 / SE50（原来只有 SE75 / SE100 / PE150）
@@ -59,7 +58,9 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
   const reagentOptionsTL = REAGENT_OPTIONS.map(o => ({ value: o.key, label: t(`nipt.sequencing.${o.key === "SEQUENCING" ? "seqReagent" : o.key === "CHIP_FLOWCELL" ? "chipFlowCell" : o.key === "WASH_BUFFER" ? "washBuffer" : o.key === "NAOH_DENATURE" ? "naohDenature" : "otherReagent"}`) }));
   const [form]=Form.useForm();
   const edata=useMemo(()=>batch.sequencing_data||{},[batch.sequencing_data]);
-  const [platform,setPlatform]=useState(edata.platform||"");
+  // 2026-11-05（用户口径）：顶部「测序平台」与基本信息里的「测序仪」重复 → 删掉平台下拉，
+  // 平台由测序仪自动推导（芯片类型/试剂盒都按平台联动）。
+  const [platform,setPlatform]=useState(edata.platform || (edata.sequencing_data||{}).platform || "");
   const [steps,setSteps]=useState<Record<string,boolean>>(edata.step_confirmations||{});
   const [saving,setSaving]=useState(false);
   const [opModal,setOpModal]=useState(false);
@@ -75,6 +76,16 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
     if(edata.reagents&&Array.isArray(edata.reagents)) return edata.reagents.map((r:any,i:number)=>({id:i+1,type:translateReagentType(r.type)||"",kit:r.kit||"",lot:r.lot||"",expiry:r.expiry||""}));
     return DEFAULT_REAGENT_TYPES.map((t,i)=>({id:i+1,type:t.key,kit:"",lot:"",expiry:""}));
   });
+
+  // 测序仪 → 平台映射：取第一个「测序仪」型选项（PCR 仪器不算）
+  const equipmentWatch = Form.useWatch("equipment", form);
+  useEffect(() => {
+    const list = Array.isArray(equipmentWatch) ? equipmentWatch : [];
+    const seq = list.find((v: string) => Object.prototype.hasOwnProperty.call(CHIP_OPTIONS_BY_PLATFORM, v));
+    if (seq) setPlatform(seq);
+    else if (list.length > 0) setPlatform("");   // 只选了 PCR 等非测序仪 → 清空
+    // list 为空时保持原平台不动：老批次可能只存了 platform、没存 equipment
+  }, [equipmentWatch]);
 
   const chipOptions=useMemo(()=>CHIP_OPTIONS_BY_PLATFORM[platform]||[],[platform]);
   const reagentKits=useMemo(()=>REAGENT_KITS_BY_PLATFORM[platform]||{},[platform]);
@@ -250,12 +261,6 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
 
   return (
     <div>
-      {/* Platform */}
-      <Row gutter={16} style={{marginBottom:16}}>
-        <Col span={8}><Form.Item label={t("nipt.sequencing.platform")} required><Select options={PLATFORM_OPTIONS} value={platform||undefined} onChange={setPlatform} placeholder={t("nipt.sequencing.selectPlatform")} showSearch optionFilterProp="label"/></Form.Item></Col>
-        <Col span={8} style={{display:"flex",alignItems:"center",paddingTop:6}}><span style={{fontSize:12,color:"#888"}}>{platform?`${PLATFORM_OPTIONS.flatMap(g=>g.options).find(o=>o.value===platform)?.label||platform}`:""}</span></Col>
-      </Row>
-
       <Form form={form} layout="vertical">
         {/* Basic info */}
         <Card size="small" title={t("nipt.sequencing.basicInfo")} style={{marginBottom:12}}>
@@ -263,9 +268,9 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
             <Col span={6}><Form.Item name="seq_date" label={t("nipt.extraction.experimentDate")} rules={[{required:true}]} style={{marginBottom:0}}><DatePicker style={{width:"100%"}}/></Form.Item></Col>
             <Col span={6}><Form.Item name="seq_time" label={t("nipt.extraction.experimentTime")} rules={[{required:true}]} style={{marginBottom:0}}><Input placeholder="例：09:00"/></Form.Item></Col>
             <Col span={6}><Form.Item name="equipment" label={t("nipt.sequencing.equipment")} rules={[{required:true}]} style={{marginBottom:0}}><Select mode="multiple" options={EQUIPMENT_OPTIONS} placeholder={t("nipt.sequencing.equipmentPlaceholder")} maxTagCount={2}/></Form.Item></Col>
-            <Col span={6}><Tooltip title={platform ? "" : "请先选择「平台」，芯片类型按平台可选"}>
+            <Col span={6}><Tooltip title={platform ? "" : "请先在基本信息里选择「测序仪」，芯片类型按平台自动可选"}>
                 <Form.Item name="chip" label={t("nipt.sequencing.chipType")} rules={[{required:true}]} style={{marginBottom:0}}>
-                  <Select options={chipOptions} placeholder={platform ? t("nipt.sequencing.selectChip") : "先选平台"} disabled={!platform}/>
+                  <Select options={chipOptions} placeholder={platform ? t("nipt.sequencing.selectChip") : "先选测序仪"} disabled={!platform}/>
                 </Form.Item>
               </Tooltip></Col>
             <Col span={6}><Form.Item name="conc_ng_ul" label={t("nipt.sequencing.concentration")} rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} step={0.1} style={{width:"100%"}} placeholder="e.g. 12"/></Form.Item></Col>
