@@ -24,7 +24,15 @@ function parseIndexNum(index: string): string {
 const PLATFORM_OPTIONS = [{ label:"泰国", options:[{ value:"ILLUMINA_500",label:"illumina500" },{ value:"SIKUN_2000",label:"Sikun2000" }]},{ label:"厦门", options:[{ value:"ILLUMINA_550DX",label:"illumina550dx" },{ value:"SALUS_PRO",label:"Salus Pro" }]},{ label:"巴西", options:[{ value:"MGI_G99",label:"MGI G99" }]}];
 const EQUIPMENT_OPTIONS = [{ value:"ILLUMINA_500",label:"illumina500" },{ value:"ILLUMINA_550DX",label:"illumina550dx" },{ value:"SALUS_PRO",label:"Salus Pro" },{ value:"SIKUN_2000",label:"Sikun2000" },{ value:"MGI_G99",label:"MGI G99" },{ value:"PCR_ABI_9700",label:"PCR仪 - ABI 9700" },{ value:"PCR_ABI_Veriti",label:"PCR仪 - ABI Veriti" },{ value:"PCR_BioRad_T100",label:"PCR仪 - Bio-Rad T100" }];
 const CHIP_OPTIONS_BY_PLATFORM: Record<string,{value:string;label:string}[]> = { ILLUMINA_500:[{value:"S1",label:"S1 Flow Cell"},{value:"S2",label:"S2 Flow Cell"},{value:"S4",label:"S4 Flow Cell"}], ILLUMINA_550DX:[{value:"S1",label:"S1 Flow Cell"},{value:"S2",label:"S2 Flow Cell"}], SALUS_PRO:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}], SIKUN_2000:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}], MGI_G99:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}] };
-const READ_TYPE_OPTIONS = [{ value:"SE75",label:"SE75" },{ value:"SE100",label:"SE100" },{ value:"PE150",label:"PE150" }];
+// 2026-11-05（用户口径）：补 PE100 / PE75 / SE50（原来只有 SE75 / SE100 / PE150）
+const READ_TYPE_OPTIONS = [
+  { value:"PE75",  label:"PE75"  },
+  { value:"PE100", label:"PE100" },
+  { value:"PE150", label:"PE150" },
+  { value:"SE50",  label:"SE50"  },
+  { value:"SE75",  label:"SE75"  },
+  { value:"SE100", label:"SE100" },
+];
 const DEFAULT_REAGENT_TYPES = [{ key: "SEQUENCING", label: "测序试剂" }, { key: "CHIP_FLOWCELL", label: "芯片/Flow Cell" }, { key: "WASH_BUFFER", label: "清洗液" }];
 const REAGENT_OPTIONS = [{ key: "SEQUENCING", label: "测序试剂" }, { key: "CHIP_FLOWCELL", label: "芯片/Flow Cell" }, { key: "WASH_BUFFER", label: "清洗液" }, { key: "NAOH_DENATURE", label: "NaOH变性液" }, { key: "OTHER", label: "其他" }];
 const REAGENT_KITS_BY_PLATFORM: Record<string,Record<string,{value:string;label:string}[]>> = { ILLUMINA_500:{"测序试剂":[{value:"NextSeq500_High_v2.5",label:"NextSeq 500 High Output v2.5"}],"芯片/Flow Cell":[{value:"S1_FlowCell",label:"S1 Flow Cell"},{value:"S2_FlowCell",label:"S2 Flow Cell"}],"清洗液":[{value:"Wash_Buffer_A",label:"Wash Buffer A"}]},ILLUMINA_550DX:{"测序试剂":[{value:"NextSeq550_High_v2.5",label:"NextSeq 550 High Output v2.5"}],"芯片/Flow Cell":[{value:"S1_FlowCell",label:"S1 Flow Cell"},{value:"S2_FlowCell",label:"S2 Flow Cell"}],"清洗液":[{value:"Wash_Buffer_A",label:"Wash Buffer A"}]},SALUS_PRO:{"测序试剂":[{value:"Salus_Seq_Kit_v1",label:"Salus Pro Sequencing Kit v1"}],"芯片/Flow Cell":[{value:"FCL_Chip",label:"FCL Chip"},{value:"FCS_Chip",label:"FCS Chip"}],"清洗液":[{value:"Salus_Wash",label:"Salus Wash Buffer"}]},SIKUN_2000:{"测序试剂":[{value:"Sikun_Seq_Kit",label:"Sikun2000 Sequencing Kit"}],"芯片/Flow Cell":[{value:"FCL_Chip",label:"FCL Chip"},{value:"FCS_Chip",label:"FCS Chip"}],"清洗液":[{value:"Sikun_Wash",label:"Sikun Wash Buffer"}]},MGI_G99:{"测序试剂":[{value:"MGI_G99_Standard",label:"MGI G99 Standard Kit"}],"芯片/Flow Cell":[{value:"FCL_Chip",label:"FCL Chip"},{value:"FCS_Chip",label:"FCS Chip"}],"清洗液":[{value:"MGI_Wash",label:"MGI Wash Buffer"}]} };
