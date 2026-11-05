@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography, Table } from "antd";
+import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography, Table, Tooltip } from "antd";
 import { PlusOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { INDEX_LOOKUP } from "../utils/indexLookup";
@@ -135,7 +135,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
       seq_date:edata.seq_date?dayjs(edata.seq_date):dayjs(),
       seq_time:edata.seq_time||dayjs().format("HH:mm"),
       equipment:edata.equipment||[],
-      chip:edata.chip||undefined,
+      chip:edata.chip || (edata.sequencing_data||{}).chip || undefined,
       // 2026-11-05：单位改为 ng/μl（原 pM 是写错）；旧数据存的是 conc_pM，读时兼容
       conc_ng_ul:edata.conc_ng_ul ?? edata.conc_pM ?? undefined,
       read_type:edata.read_type||undefined,
@@ -144,7 +144,9 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
       humidity:edata.humidity??undefined,
     });
     setSteps(edata.step_confirmations||{});
-    if(edata.platform)setPlatform(edata.platform);
+    // 2026-11-05：平台可能只在 sequencing_data 里（老数据/只发 JSON 的保存）→ 兜底，否则芯片类型一直是灰的
+    const _pf = edata.platform || (edata.sequencing_data||{}).platform;
+    if(_pf)setPlatform(_pf);
   },[edata,form]);
 
   // Pre-fill platform/equipment/chip from last batch (runs once per batch.id)
@@ -261,7 +263,11 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
             <Col span={6}><Form.Item name="seq_date" label={t("nipt.extraction.experimentDate")} rules={[{required:true}]} style={{marginBottom:0}}><DatePicker style={{width:"100%"}}/></Form.Item></Col>
             <Col span={6}><Form.Item name="seq_time" label={t("nipt.extraction.experimentTime")} rules={[{required:true}]} style={{marginBottom:0}}><Input placeholder="例：09:00"/></Form.Item></Col>
             <Col span={6}><Form.Item name="equipment" label={t("nipt.sequencing.equipment")} rules={[{required:true}]} style={{marginBottom:0}}><Select mode="multiple" options={EQUIPMENT_OPTIONS} placeholder={t("nipt.sequencing.equipmentPlaceholder")} maxTagCount={2}/></Form.Item></Col>
-            <Col span={6}><Form.Item name="chip" label={t("nipt.sequencing.chipType")} rules={[{required:true}]} style={{marginBottom:0}}><Select options={chipOptions} placeholder={t("nipt.sequencing.selectChip")} disabled={!platform}/></Form.Item></Col>
+            <Col span={6}><Tooltip title={platform ? "" : "请先选择「平台」，芯片类型按平台可选"}>
+                <Form.Item name="chip" label={t("nipt.sequencing.chipType")} rules={[{required:true}]} style={{marginBottom:0}}>
+                  <Select options={chipOptions} placeholder={platform ? t("nipt.sequencing.selectChip") : "先选平台"} disabled={!platform}/>
+                </Form.Item>
+              </Tooltip></Col>
             <Col span={6}><Form.Item name="conc_ng_ul" label={t("nipt.sequencing.concentration")} rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} step={0.1} style={{width:"100%"}} placeholder="e.g. 12"/></Form.Item></Col>
             <Col span={6}><Form.Item name="read_type" label={t("nipt.sequencing.readLength")} rules={[{required:true}]} style={{marginBottom:0}}><Select options={READ_TYPE_OPTIONS} placeholder="选择"/></Form.Item></Col>
             <Col span={6}><Form.Item name="target_reads" label={t("nipt.sequencing.targetReads")} rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} style={{width:"100%"}} placeholder="e.g. 25"/></Form.Item></Col>

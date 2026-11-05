@@ -103,8 +103,15 @@ class _StepBatchViewSet(viewsets.GenericViewSet,
         setattr(batch, self.DATA_KEY, cur)
 
         method = body.get(self.METHOD_KEY) or ""
+        if not method:
+            # 2026-11-05：测序页只发 {sequencing_data:{platform, chip, …}}，顶层没有 platform，
+            # 结果 platform 列一直是空 → 刷新后「芯片类型」下拉因为 disabled={!platform} 变灰。
+            method = str(payload.get(self.METHOD_KEY) or "")
         if method:
             setattr(batch, self.METHOD_KEY, method)
+        # 芯片类型同理（JSON 里叫 chip），同步到 chip_type 列，列表/详情可直接用
+        if "chip" in payload and hasattr(batch, "chip_type"):
+            batch.chip_type = str(payload.get("chip") or "")[:30]
         region = body.get("region") or ""
         if region:
             batch.region = region
