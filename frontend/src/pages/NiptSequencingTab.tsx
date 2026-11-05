@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography, Table, Tooltip } from "antd";
+import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography, Table } from "antd";
 import { PlusOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { INDEX_LOOKUP } from "../utils/indexLookup";
@@ -22,7 +22,14 @@ function parseIndexNum(index: string): string {
 
 // ── Platform / Equipment ──
 const EQUIPMENT_OPTIONS = [{ value:"ILLUMINA_500",label:"illumina500" },{ value:"ILLUMINA_550DX",label:"illumina550dx" },{ value:"SALUS_PRO",label:"Salus Pro" },{ value:"SIKUN_2000",label:"Sikun2000" },{ value:"MGI_G99",label:"MGI G99" },{ value:"PCR_ABI_9700",label:"PCR仪 - ABI 9700" },{ value:"PCR_ABI_Veriti",label:"PCR仪 - ABI Veriti" },{ value:"PCR_BioRad_T100",label:"PCR仪 - Bio-Rad T100" }];
-const CHIP_OPTIONS_BY_PLATFORM: Record<string,{value:string;label:string}[]> = { ILLUMINA_500:[{value:"S1",label:"S1 Flow Cell"},{value:"S2",label:"S2 Flow Cell"},{value:"S4",label:"S4 Flow Cell"}], ILLUMINA_550DX:[{value:"S1",label:"S1 Flow Cell"},{value:"S2",label:"S2 Flow Cell"}], SALUS_PRO:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}], SIKUN_2000:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}], MGI_G99:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}] };
+// 2026-11-05（用户口径）：芯片类型改为固定 3 种 PRM 规格，与平台无关
+const CHIP_TYPE_OPTIONS = [
+  { value:"PRM-PE150-150M", label:"PRM-PE150-150M" },
+  { value:"PRM-PE100-250M", label:"PRM-PE100-250M" },
+  { value:"PRM-PE75-500M",  label:"PRM-PE75-500M"  },
+];
+// 测序仪型 equipment 值（用于从「测序仪」推导平台；PCR 仪不在其中）
+const SEQUENCER_PLATFORMS = ["ILLUMINA_500","ILLUMINA_550DX","SALUS_PRO","SIKUN_2000","MGI_G99"];
 // 2026-11-05（用户口径）：补 PE100 / PE75 / SE50（原来只有 SE75 / SE100 / PE150）
 const READ_TYPE_OPTIONS = [
   { value:"PE75",  label:"PE75"  },
@@ -81,13 +88,13 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
   const equipmentWatch = Form.useWatch("equipment", form);
   useEffect(() => {
     const list = Array.isArray(equipmentWatch) ? equipmentWatch : [];
-    const seq = list.find((v: string) => Object.prototype.hasOwnProperty.call(CHIP_OPTIONS_BY_PLATFORM, v));
+    const seq = list.find((v: string) => SEQUENCER_PLATFORMS.includes(v));
     if (seq) setPlatform(seq);
     else if (list.length > 0) setPlatform("");   // 只选了 PCR 等非测序仪 → 清空
     // list 为空时保持原平台不动：老批次可能只存了 platform、没存 equipment
   }, [equipmentWatch]);
 
-  const chipOptions=useMemo(()=>CHIP_OPTIONS_BY_PLATFORM[platform]||[],[platform]);
+
   const reagentKits=useMemo(()=>REAGENT_KITS_BY_PLATFORM[platform]||{},[platform]);
 
   // ── Build index table from pooling data ──
@@ -268,11 +275,9 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
             <Col span={6}><Form.Item name="seq_date" label={t("nipt.extraction.experimentDate")} rules={[{required:true}]} style={{marginBottom:0}}><DatePicker style={{width:"100%"}}/></Form.Item></Col>
             <Col span={6}><Form.Item name="seq_time" label={t("nipt.extraction.experimentTime")} rules={[{required:true}]} style={{marginBottom:0}}><Input placeholder="例：09:00"/></Form.Item></Col>
             <Col span={6}><Form.Item name="equipment" label={t("nipt.sequencing.equipment")} rules={[{required:true}]} style={{marginBottom:0}}><Select mode="multiple" options={EQUIPMENT_OPTIONS} placeholder={t("nipt.sequencing.equipmentPlaceholder")} maxTagCount={2}/></Form.Item></Col>
-            <Col span={6}><Tooltip title={platform ? "" : "请先在基本信息里选择「测序仪」，芯片类型按平台自动可选"}>
-                <Form.Item name="chip" label={t("nipt.sequencing.chipType")} rules={[{required:true}]} style={{marginBottom:0}}>
-                  <Select options={chipOptions} placeholder={platform ? t("nipt.sequencing.selectChip") : "先选测序仪"} disabled={!platform}/>
-                </Form.Item>
-              </Tooltip></Col>
+            <Col span={6}><Form.Item name="chip" label={t("nipt.sequencing.chipType")} rules={[{required:true}]} style={{marginBottom:0}}>
+              <Select options={CHIP_TYPE_OPTIONS} placeholder={t("nipt.sequencing.selectChip")}/>
+            </Form.Item></Col>
             <Col span={6}><Form.Item name="conc_ng_ul" label={t("nipt.sequencing.concentration")} rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} step={0.1} style={{width:"100%"}} placeholder="e.g. 12"/></Form.Item></Col>
             <Col span={6}><Form.Item name="read_type" label={t("nipt.sequencing.readLength")} rules={[{required:true}]} style={{marginBottom:0}}><Select options={READ_TYPE_OPTIONS} placeholder="选择"/></Form.Item></Col>
             <Col span={6}><Form.Item name="target_reads" label={t("nipt.sequencing.targetReads")} rules={[{required:true}]} style={{marginBottom:0}}><InputNumber min={0} style={{width:"100%"}} placeholder="e.g. 25"/></Form.Item></Col>
