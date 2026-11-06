@@ -232,6 +232,11 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     return `${prefix}注意：有 ${n} 个重复 Index（${brief}${n > 8 ? "…" : ""}），所有板之间不建议重复（已标黄提示，不影响保存）`;
   };
   /** 当前地区全部板（校验/导出用） */
+  /** 该侧是否所有样本都填了 Index —— 没填完不允许开浓度板（用户 2026-11-06 要求） */
+  const sideIndexReady = (scheme: "f" | "m" | "x"): boolean => {
+    const plates = scheme === "f" ? femalePlates : scheme === "m" ? malePlates : xiamenPlates;
+    return plates.every(g => g.every(row => row.every(c => !c?.vgId || !!(c.index || "").trim())));
+  };
   const allPlates = ():PlateGrid[] => region==="XIAMEN" ? xiamenPlates
     : (region==="HONGKONG" ? [...femalePlates, ...malePlates] : femalePlates);
   const [sampleResults, setSampleResults] = useState<Record<string,{status:string;note:string}>>({});
@@ -1147,29 +1152,47 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
   const renderConcPlate = (plate:PlateGrid, setter:any, pi:number, scheme:string, disabled:boolean) => {
     const group = `${scheme}c${pi}`;
+    // 与孔板完全一致：同样的表格/边框/行高/列宽；只有「列名」底色 浅绿→浅蓝
+    const thConc:React.CSSProperties = {...thStyle, background:"#d6e8f7"};
+    const idxBox:React.CSSProperties = {...inputStyle, width:50, boxSizing:"border-box", lineHeight:"26px",
+      textAlign:"center", color:"#8c8c8c", fontWeight:600, background:"#fffbe6"};
+    const concInput:React.CSSProperties = {...vgIdStyle, flex:1, minWidth:0, width:"100%", background:"#fff",
+      border:"none", outline:"none", fontSize:12, fontWeight:600, color:"#1677ff"};
     return (
       <div style={{overflowX:"auto"}}>
-        <table data-conc-plate={group} style={{borderCollapse:"collapse",fontSize:12,margin:"0 auto"}}>
-          <thead><tr><th style={rowLabelStyle}></th>{COLS.map(c=><th key={c} style={thStyle}>{c}</th>)}</tr></thead>
+        <table data-conc-plate={group} style={{borderCollapse:"collapse",fontSize:12,margin:"0 auto",tableLayout:"fixed",width:"100%",minWidth:1418}}>
+          <colgroup><col style={{width:26}} />{COLS.map(c=><col key={c} />)}</colgroup>
+          <thead><tr><th style={rowLabelStyle}></th>{COLS.map(c=><th key={c} style={thConc}>{c}</th>)}</tr></thead>
           <tbody>{ROWS.map((label,row)=>(
             <tr key={row}><td style={rowLabelStyle}>{label}</td>
               {Array.from({length:12},(_,col)=>{
                 const cell = plate[row]?.[col]||{vgId:"",index:""};
                 const bg = cell.skip ? "#fff7e6" : cell.vgId ? "#e8f5e9" : "#fafafa";
+                const val = typeof cell.conc === "number" ? String(cell.conc) : "";
                 return (
-                  <td key={col} style={{...cellStyle, background:bg, padding:2}}>
-                    {cell.vgId ? (
-                      <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                        <span style={{fontSize:10,color:"#8c8c8c",lineHeight:1}}>{cell.index||"—"}</span>
-                        <InputNumber size="small" min={0} step={0.1} style={{width:58}}
-                          disabled={disabled}
-                          value={typeof cell.conc === "number" ? cell.conc : null}
-                          onChange={(v)=>setPlateConc(setter, pi, row, col, v as number|null)}
-                          data-conc-group={group} data-conc-row={row} data-conc-col={col}
+                  <td key={col} style={{...cellStyle, background:bg}}>
+                    {cell.skip ? (
+                      <div style={{minHeight:30,lineHeight:"30px",textAlign:"center",fontSize:10,color:"#d48806",fontWeight:600}}>SKIP</div>
+                    ) : (
+                      <div style={{display:"flex",alignItems:"stretch",minHeight:30}}>
+                        <div style={idxBox}>{cell.index || "\u00a0"}</div>
+                        <input type="text" inputMode="decimal"
+                          disabled={disabled || !cell.vgId}
+                          value={val}
+                          placeholder={cell.vgId ? "浓度" : ""}
+                          title={cell.vgId ? (cell.index ? `孔位 ${label}${col+1} · Index ${cell.index}` : `孔位 ${label}${col+1}`) : undefined}
+                          onChange={(e)=>{
+                            const raw = e.target.value.replace(/[^0-9.]/g, "");
+                            if (raw === "") { setPlateConc(setter, pi, row, col, null); return; }
+                            if (!/^\d*\.?\d*$/.test(raw)) return;
+                            const n = Number(raw);
+                            setPlateConc(setter, pi, row, col, Number.isFinite(n) ? n : null);
+                          }}
                           onKeyDown={(e:any)=>{ if(e.key==="Enter"){ e.preventDefault(); focusNextConcCell(group,row,col); } }}
-                          placeholder="0" />
+                          data-conc-group={group} data-conc-row={row} data-conc-col={col}
+                          style={cell.vgId ? concInput : {...concInput, background:"#fafafa"}} />
                       </div>
-                    ) : cell.skip ? <span style={{fontSize:10,color:"#fa8c16"}}>SKIP</span> : null}
+                    )}
                   </td>
                 );
               })}
@@ -1182,7 +1205,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
   const renderNiptPlate = (plate:PlateGrid, setter:any, plateKey:string) => (
     <div style={{overflowX:"auto"}}>
-      <table data-plate-grid={plateKey} style={{borderCollapse:"collapse",fontSize:12,margin:"0 auto"}}>
+      <table data-plate-grid={plateKey} style={{borderCollapse:"collapse",fontSize:12,margin:"0 auto",tableLayout:"fixed",width:"100%",minWidth:1418}}>
+        <colgroup><col style={{width:26}} />{COLS.map(c=><col key={c} />)}</colgroup>
         <thead><tr><th style={rowLabelStyle}></th>{COLS.map(c=><th key={c} style={thStyle}>{c}</th>)}</tr></thead>
         <tbody>{ROWS.map((label,row)=>(
           <tr key={row}><td style={rowLabelStyle}>{label}</td>
@@ -1343,7 +1367,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   const cnt = (kind:string)=> g.flat().filter((c:any)=>c?.vgId && (c.sexKind||c.kind)===kind).length;
                   const st = xiamenStarts[k] || {f:"",m:""};
                   return ([
-                    <Card key={`x${k}`} size="small" title={<Space>{`🧬 96孔板 板${k+1}${xiamenPlates.length>1?`/共${xiamenPlates.length}块`:""} — 👩${cnt("F")}+👨${cnt("M")} 样本`}<Text type="secondary" style={{fontSize:11}}>（按住拖动样本可换位）</Text><Text type="secondary" style={{fontSize:11}}>女起:</Text><Input size="small" style={{width:50}} value={st.f} onChange={e=>setXiamenStarts(p=>{const n=padStarts(p,k,{f:"",m:""}); n[k]={...n[k],f:e.target.value.toUpperCase()}; return n;})} placeholder="居中"/><Text type="secondary" style={{fontSize:11}}>男起:</Text><Input size="small" style={{width:50}} value={st.m} onChange={e=>setXiamenStarts(p=>{const n=padStarts(p,k,{f:"",m:""}); n[k]={...n[k],m:e.target.value.toUpperCase()}; return n;})} placeholder="居中"/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcX?"primary":"default"} style={{marginLeft:8}} onClick={()=>setShowConcX(v=>!v)}>🧪 填入浓度</Button></ConfigProvider></Space>}>
+                    <Card key={`x${k}`} size="small" title={<Space>{`🧬 96孔板 板${k+1}${xiamenPlates.length>1?`/共${xiamenPlates.length}块`:""} — 👩${cnt("F")}+👨${cnt("M")} 样本`}<Text type="secondary" style={{fontSize:11}}>（按住拖动样本可换位）</Text><Text type="secondary" style={{fontSize:11}}>女起:</Text><Input size="small" style={{width:50}} value={st.f} onChange={e=>setXiamenStarts(p=>{const n=padStarts(p,k,{f:"",m:""}); n[k]={...n[k],f:e.target.value.toUpperCase()}; return n;})} placeholder="居中"/><Text type="secondary" style={{fontSize:11}}>男起:</Text><Input size="small" style={{width:50}} value={st.m} onChange={e=>setXiamenStarts(p=>{const n=padStarts(p,k,{f:"",m:""}); n[k]={...n[k],m:e.target.value.toUpperCase()}; return n;})} placeholder="居中"/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcX?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("x")} title={sideIndexReady("x")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcX(v=>!v)}>🧪 填入浓度</Button></ConfigProvider></Space>}>
                       {renderNiptPlate(g, plateSetter("x", k), `x${k}`)}
                     </Card>,
                     showConcX ? (
@@ -1402,7 +1426,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   )}
                 </Space>
                 {femalePlates.flatMap((g,k)=>([
-                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeF==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeF==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeF==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcF?"primary":"default"} style={{marginLeft:8}} onClick={()=>setShowConcF(v=>!v)}>🧪 填入浓度</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
+                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeF==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeF==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeF==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcF?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("f")} title={sideIndexReady("f")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcF(v=>!v)}>🧪 填入浓度</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
                     {renderNiptPlate(g, plateSetter("f", k), `f${k}`)}
                   </Card>,
                   showConcF ? (
@@ -1418,7 +1442,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   ) : null,
                 ]))}
                 {malePlates.flatMap((g,k)=>([
-                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeM==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeM==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeM==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcM?"primary":"default"} style={{marginLeft:8}} onClick={()=>setShowConcM(v=>!v)}>🧪 填入浓度</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
+                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeM==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeM==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeM==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcM?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("m")} title={sideIndexReady("m")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcM(v=>!v)}>🧪 填入浓度</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
                     {renderNiptPlate(g, plateSetter("m", k), `m${k}`)}
                   </Card>,
                   showConcM ? (
