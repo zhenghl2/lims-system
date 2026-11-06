@@ -32,7 +32,9 @@ const ptSortKey = (s: any) => {
 };
 function maleOrder<T = any>(d: any): T[] {
   const raw = [...(d?.male_blood_samples || []), ...(d?.male_other_samples || [])];
-  if (!d || d.status === "COMPLETED") return raw;   // 已完成批次保持原样
+  // 已完成批次保持后端原始顺序：历史板图现在由 plate_layout 快照保证（见 snapPlateLayout），
+  // 不再依赖这里的排序；改排序会让历史已完成批次的显示集体变化，故维持原样。
+  if (!d || d.status === "COMPLETED") return raw;
   return raw.sort((a: any, b: any) => {
     const ah = PT_HB.test(String(a?.test_sample_id || "")) ? 1 : 0;
     const bh = PT_HB.test(String(b?.test_sample_id || "")) ? 1 : 0;
@@ -76,6 +78,42 @@ const focusNextConcInput = (group: string, row: number) => {
   next.input.focus();
   next.input.select();
 };
+
+/** 按磁棒法规则生成板位（与 buildMagneticPlates 的 filling 完全一致）：
+ *  每板先 1 列 A-H，再 7 列 A-H；跳过孔不进。
+ *  2026-11-06：完成批次时把它存进 extraction_data.plate_layout，
+ *  板位从此是「数据」而不是「每次按顺序现算」，不会再因排序/样本变动而漂。 */
+function rulePlateLayout(samples: any[], skipMap: Record<number, string>): Record<string, Record<string, string>> {
+  const out: Record<string, Record<string, string>> = {};
+  let si = 0, pi = 0;
+  while (si < samples.length) {
+    let skips = new Set(
+      String((skipMap || {})[pi] || "").split(",").map((x) => x.trim().toUpperCase())
+        .filter((x) => /^[A-H](1[0-2]|[1-9])$/.test(x))
+    );
+    // 与页面一致：跳过孔位把上样孔占满 → 视为无效配置，按常规排
+    const loadWells = [...ROWS_8.map((r) => `${r}1`), ...ROWS_8.map((r) => `${r}7`)];
+    if (loadWells.every((w) => skips.has(w))) skips = new Set();
+    const cells: Record<string, string> = {};
+    for (const r of ROWS_8) if (!skips.has(`${r}1`) && si < samples.length) cells[`${r}1`] = samples[si++].id;
+    for (const r of ROWS_8) if (!skips.has(`${r}7`) && si < samples.length) cells[`${r}7`] = samples[si++].id;
+    if (!Object.keys(cells).length) break;
+    out[String(pi)] = cells;
+    pi++;
+  }
+  return out;
+}
+
+/** 已有板位仍覆盖当前样本集合 → 保留（尊重手动拖动）；否则按规则重算 */
+function snapPlateLayout(samples: any[], method: string, skipMap: Record<number, string>,
+                         existing: Record<string, Record<string, string>>): Record<string, Record<string, string>> {
+  if (String(method || "").toUpperCase() !== "MAGNETIC_ROD") return existing || {};
+  const ids = new Set(samples.map((s) => String(s.id)));
+  const layIds = new Set(Object.values(existing || {}).flatMap((m) => Object.values(m || {}))
+    .filter(Boolean).map(String));
+  const sameSet = layIds.size > 0 && layIds.size === ids.size && [...layIds].every((i) => ids.has(i));
+  return sameSet ? existing : rulePlateLayout(samples, skipMap);
+}
 
 const ROWS_8 = ["A","B","C","D","E","F","G","H"];
 const COLS_12 = [1,2,3,4,5,6,7,8,9,10,11,12];
@@ -408,7 +446,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     const sid = selectedBatch?.id || "";
     return {
       female: { method: femaleMethod, sample_results: femaleResults, plate_skip_coords: femaleSkipCoords,
-        plate_kit_types: femaleKitTypes, plate_layout: femalePlateLayout,
+        plate_kit_types: femaleKitTypes,
+        plate_layout: snapPlateLayout(selectedBatch?.female_samples || [], femaleMethod, femaleSkipCoords, femalePlateLayout),
         magnetic_notes: femaleMagneticNotes.current,
         manual_notes: femaleManualNotes, auto_notes: femaleAutoNotes,
         extraction_date: dateF || "", extraction_time: timeF || "",
@@ -417,7 +456,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         reagent_expiry: reagentF.reagent_expiry ? dayjs(reagentF.reagent_expiry).format("YYYY-MM-DD") : "",
         temperature: reagentF.temperature ?? null, humidity: reagentF.humidity ?? null },
       male: { method: maleMethod, sample_results: maleResults, plate_skip_coords: maleSkipCoords,
-        plate_kit_types: maleKitTypes, plate_layout: malePlateLayout,
+        plate_kit_types: maleKitTypes,
+        plate_layout: snapPlateLayout(maleOrder<ExtractionSample>(selectedBatch), maleMethod, maleSkipCoords, malePlateLayout),
         magnetic_notes: maleMagneticNotes.current,
         manual_notes: maleManualNotes, auto_notes: maleAutoNotes,
         extraction_date: dateM || "", extraction_time: timeM || "",
