@@ -88,6 +88,8 @@ export default function NipptLibrary() {
   // 起点状态已迁到 xiamenStarts / hkFemaleStarts / hkMaleStarts（每块板各自起点，2026-10-14）
   // 孔板重排基准：记录"进入批次时"的起点/地区值，只有用户真的改了才重排（否则会覆盖拖动的板面）
   const plateBaseRef = useRef<string>("");
+  // 上一次的 HK 起始列（判断是哪一侧变了 → 只重排该侧）
+  const prevHkStartsRef = useRef<{f:string;m:string}>({f:"",m:""});
 
   // ── Reagents (NIPT-style) ──
   const [femaleLibKit, setFemaleLibKit] = useState("");
@@ -147,7 +149,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   // 2026-10-14：超 96 孔自动增板 —— 状态改为「板数组」，每块板有独立起点；最多 4 块（4 套 UDI 试剂盒）
   const MAX_PLATES = 4;
   // 2026-10-30：填板方式 —— pt=按 PT 顺序居中（默认）｜extraction=按提取板列顺序（保留 SKIP）
-  const [fillMode, setFillMode] = useState<"pt" | "extraction">("pt");
+  // 2026-11-06：男女板各自独立（用户要求可只对男/只对女使用提取顺序填入）
+  const [fillModeF, setFillModeF] = useState<"pt" | "extraction">("pt");
+  const [fillModeM, setFillModeM] = useState<"pt" | "extraction">("pt");
   const [extOrder, setExtOrder] = useState<any>(null);
   const [extLoading, setExtLoading] = useState(false);
   const [femalePlates, setFemalePlates] = useState<PlateGrid[]>([emptyPlate()]);
@@ -361,37 +365,44 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   };
   /** 多板统一入口（按地区） */
   const rebuildAllPlates = (d:any, startsXm:{f:string;m:string}[], startsF:string[], startsM:string[],
-                            modeOverride?: "pt" | "extraction", orderOverride?: any) => {
+                            opts?: { modeF?: "pt" | "extraction"; modeM?: "pt" | "extraction"; order?: any;
+                                     only?: "F" | "M" | "B" }) => {
     const males = maleOrder<SampleItem>(d);
-    const mode = modeOverride || fillMode;
-    const order = orderOverride || extOrder;
+    const modeF = opts?.modeF ?? fillModeF;
+    const modeM = opts?.modeM ?? fillModeM;
+    const order = opts?.order !== undefined ? opts.order : extOrder;
+    // 2026-11-06：only=F/M 时只重建该侧，另一侧（可能被手动拖过）原样保留
+    const only = opts?.only ?? "B";
     if (region === "XIAMEN") {
       const r = buildXiamenPlates(d.female_samples || [], males, startsXm);
       setXiamenPlates(prev => r.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
       setPlateOverflow(r.overflow);
       // 起点数补齐到板数：只增不减，避免与依赖它的 effect 反复触发
       setXiamenStarts(p => p.length >= r.plates.length ? p : padStarts(p, r.plates.length-1, {f:"",m:""}));
-    } else if (mode === "extraction" && order) {
-      // 提取顺序：按提取板列 → 建库板列（保留 SKIP）
+    } else {
+      // 2026-11-06：男女各自决定用哪种排法（可一侧用提取顺序、另一侧仍按 PT）
       const fIdx: Record<string, number> = {};
       (d.female_samples || []).forEach((x: any, i: number) => { if (x?.id) fIdx[x.id] = i; });
       const mIdx: Record<string, number> = {};
       males.forEach((x: any, i: number) => { if (x?.id) mIdx[x.id] = i; });
-      const rf = buildPlatesFromExtraction(order?.female?.columns || [], startsF, "F", fIdx);
-      const rm = buildPlatesFromExtraction(order?.male?.columns || [], startsM, "M", mIdx);
-      setFemalePlates(prev => rf.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
-      setMalePlates(prev => rm.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
-      setPlateOverflow(rf.overflow + rm.overflow);
-      setHkFemaleStarts(p => p.length >= rf.plates.length ? p : padStarts(p, rf.plates.length-1, ""));
-      setHkMaleStarts(p => p.length >= rm.plates.length ? p : padStarts(p, rm.plates.length-1, ""));
-    } else {
-      const rf = buildPlatesFromStart(d.female_samples || [], startsF, "F");
-      const rm = buildPlatesFromStart(males, startsM, "M");
-      setFemalePlates(prev => rf.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
-      setMalePlates(prev => rm.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
-      setPlateOverflow(rf.overflow + rm.overflow);
-      setHkFemaleStarts(p => p.length >= rf.plates.length ? p : padStarts(p, rf.plates.length-1, ""));
-      setHkMaleStarts(p => p.length >= rm.plates.length ? p : padStarts(p, rm.plates.length-1, ""));
+      let overflow = 0;
+      if (only !== "M") {
+        const rf = (modeF === "extraction" && order)
+          ? buildPlatesFromExtraction(order?.female?.columns || [], startsF, "F", fIdx)
+          : buildPlatesFromStart(d.female_samples || [], startsF, "F");
+        setFemalePlates(prev => rf.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
+        setHkFemaleStarts(p => p.length >= rf.plates.length ? p : padStarts(p, rf.plates.length-1, ""));
+        overflow += rf.overflow;
+      }
+      if (only !== "F") {
+        const rm = (modeM === "extraction" && order)
+          ? buildPlatesFromExtraction(order?.male?.columns || [], startsM, "M", mIdx)
+          : buildPlatesFromStart(males, startsM, "M");
+        setMalePlates(prev => rm.plates.map((g,k)=>keepIndex(g, prev[k]||emptyPlate())));
+        setHkMaleStarts(p => p.length >= rm.plates.length ? p : padStarts(p, rm.plates.length-1, ""));
+        overflow += rm.overflow;
+      }
+      if (only === "B") setPlateOverflow(overflow);
     }
   };
 
@@ -443,11 +454,22 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   useEffect(() => {
     if (!selectedBatch) return;
     const _key = `${region}|${femaleStartCoord}|${maleStartCoord}|${hkFemaleStart}|${hkMaleStart}`;
-    if (plateBaseRef.current === "") { plateBaseRef.current = _key; return; }   // 刚进入批次：只记基准，不重排
+    if (plateBaseRef.current === "") {                                       // 刚进入批次：只记基准，不重排
+      plateBaseRef.current = _key;
+      prevHkStartsRef.current = { f: JSON.stringify(hkFemaleStarts), m: JSON.stringify(hkMaleStarts) };
+      return;
+    }
     if (plateBaseRef.current === _key) return;                                  // 与基准一致：保持已保存的板面
     plateBaseRef.current = _key;                                                // 用户改了起点/地区：重排
     const d = selectedBatch;
-    rebuildAllPlates(d, xiamenStarts, hkFemaleStarts, hkMaleStarts);
+    // 2026-11-06：只有一侧的起始列变了就只重排那一侧 ——
+    // 否则点「女性：提取顺序填入」时会把男性的板面（可能手动拖过）一起冲掉
+    const fKey = JSON.stringify(hkFemaleStarts), mKey = JSON.stringify(hkMaleStarts);
+    const changedF = prevHkStartsRef.current.f !== fKey;
+    const changedM = prevHkStartsRef.current.m !== mKey;
+    prevHkStartsRef.current = { f: fKey, m: mKey };
+    const only: "F" | "M" | "B" = changedF && !changedM ? "F" : (changedM && !changedF ? "M" : "B");
+    rebuildAllPlates(d, xiamenStarts, hkFemaleStarts, hkMaleStarts, { only });
   }, [JSON.stringify(xiamenStarts), JSON.stringify(hkFemaleStarts), JSON.stringify(hkMaleStarts), region]);
 
   const fetchDetail = async(id:string)=>{
@@ -455,7 +477,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     try{
       const r = await(casesApi as any).getLibraryBatch(id);
       const d=r.data;setSelectedBatch(d);plateBaseRef.current="";
-      setFillMode("pt"); setExtOrder(null);   // 换批次：回到默认排列
+      setFillModeF("pt"); setFillModeM("pt"); setExtOrder(null);   // 换批次：回到默认排列
       const ld=d.library_data||{};
       setRegion(ld.region||"XIAMEN");setFemaleStartCoord(ld.female_start_coord||"");setMaleStartCoord(ld.male_start_coord||"");
       setHkFemaleStart(ld.hk_female_start||"");setHkMaleStart(ld.hk_male_start||"");
@@ -1031,14 +1053,23 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     });
   };
 
-  /** 2026-10-30：切换「提取顺序填入」——取提取板列顺序后立即重排；再点一次恢复按 PT 顺序 */
-  const toggleExtractionFill = async () => {
+  /** 2026-10-30：切换「提取顺序填入」——取提取板列顺序后立即重排；再点一次恢复按 PT 顺序
+   *  2026-11-06：按侧（F/M）独立操作，互不影响 */
+  const toggleExtractionFill = async (side: "F" | "M") => {
     if (!selectedBatch) return;
-    if (fillMode === "extraction") {
-      setFillMode("pt");
-      setExtOrder(null);
-      rebuildAllPlates(selectedBatch, xiamenStarts, hkFemaleStarts, hkMaleStarts, "pt", null);
-      message.success("已恢复按 PT 顺序排列（起始输入回到孔位坐标，如 A3）");
+    const curF = fillModeF, curM = fillModeM;
+    const cur = side === "F" ? curF : curM;
+    const sideName = side === "F" ? "女性" : "男性";
+    if (cur === "extraction") {
+      const nf: "pt" | "extraction" = side === "F" ? "pt" : curF;
+      const nm: "pt" | "extraction" = side === "M" ? "pt" : curM;
+      setFillModeF(nf); setFillModeM(nm);
+      // 该侧起始输入回到孔位坐标语义 → 清空
+      const fS = side === "F" ? hkFemaleStarts.map(() => "") : hkFemaleStarts;
+      const mS = side === "M" ? hkMaleStarts.map(() => "") : hkMaleStarts;
+      if (side === "F") setHkFemaleStarts(fS); else setHkMaleStarts(mS);
+      rebuildAllPlates(selectedBatch, xiamenStarts, fS, mS, { modeF: nf, modeM: nm, order: extOrder, only: side });
+      message.success(`${sideName}板已恢复按 PT 顺序排列（起始输入回到孔位坐标，如 A3）`);
       return;
     }
     setExtLoading(true);
@@ -1047,20 +1078,23 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       const d = r.data || {};
       const fN = d?.female?.columns?.length || 0;
       const mN = d?.male?.columns?.length || 0;
-      if (!fN && !mN) {
-        message.warning("本批次样本在提取板里没有找到排列数据（提取批次可能未保存板面）");
+      const cols = side === "F" ? fN : mN;
+      if (!cols) {
+        message.warning(`提取板里没有找到${sideName}样本的排列数据（提取批次可能未保存板面）`);
         return;
       }
       setExtOrder(d);
-      setFillMode("extraction");
-      // 原来的起始值是孔位坐标（如 A1），在「起始列」语义下会被读成第 1 列 → 先清空，按列数居中
+      const nf: "pt" | "extraction" = side === "F" ? "extraction" : curF;
+      const nm: "pt" | "extraction" = side === "M" ? "extraction" : curM;
+      setFillModeF(nf); setFillModeM(nm);
+      // 原来的起始值是孔位坐标（如 A1），在「起始列」语义下会被读成第 1 列 → 该侧先清空，按列数居中
       const cleanStarts = (arr: string[]) => arr.map(v => /^[0-9]{1,2}$/.test(String(v || "").trim()) ? v : "");
-      const fStarts = cleanStarts(hkFemaleStarts);
-      const mStarts = cleanStarts(hkMaleStarts);
-      setHkFemaleStarts(fStarts); setHkMaleStarts(mStarts);
-      rebuildAllPlates(selectedBatch, xiamenStarts, fStarts, mStarts, "extraction", d);
+      const fStarts = side === "F" ? cleanStarts(hkFemaleStarts) : hkFemaleStarts;
+      const mStarts = side === "M" ? cleanStarts(hkMaleStarts) : hkMaleStarts;
+      if (side === "F") setHkFemaleStarts(fStarts); else setHkMaleStarts(mStarts);
+      rebuildAllPlates(selectedBatch, xiamenStarts, fStarts, mStarts, { modeF: nf, modeM: nm, order: d, only: side });
       const batches = (d.batches || []).join("、");
-      message.success(`已按提取顺序排列：女性 ${fN} 列 / 男性 ${mN} 列（保留 SKIP）${batches ? "；提取批次 " + batches : ""}`, 6);
+      message.success(`${sideName}板已按提取顺序排列：${cols} 列（保留 SKIP）${batches ? "；提取批次 " + batches : ""}`, 6);
       if ((d.missing || []).length) {
         message.warning(`有 ${d.missing.length} 个样本找不到提取板位置，未排入板面：` +
           d.missing.slice(0, 3).map((x: any) => `${x.test_sample_id || ""} ${x.patient_name}`).join("、"), 8);
@@ -1251,37 +1285,52 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               </Space>
             ):(
               <Space direction="vertical" style={{width:"100%"}}>
-                {/* 2026-10-30：按提取板列顺序填入（香港女性/男性板通用；保留 SKIP 孔位） */}
-                <Space size={8} wrap>
-                  <Button
-                    size="small"
-                    type={fillMode === "extraction" ? "primary" : "default"}
-                    loading={extLoading}
-                    onClick={toggleExtractionFill}
-                  >
-                    🧪 提取顺序填入
-                  </Button>
-                  {fillMode === "extraction" && (
-                    <>
-                      <Button size="small" onClick={toggleExtractionFill}>恢复按 PT 顺序</Button>
+                {/* 2026-11-06：男女板各自独立可切换（可只对女/只对男用提取顺序填入，保留 SKIP 孔位） */}
+                <Space size={24} wrap align="start">
+                  <Space size={8} wrap>
+                    <Text strong style={{ fontSize: 12 }}>👩 女性板</Text>
+                    <Button size="small"
+                      type={fillModeF === "extraction" ? "primary" : "default"}
+                      loading={extLoading}
+                      onClick={() => toggleExtractionFill("F")}>
+                      🧪 提取顺序填入
+                    </Button>
+                    {fillModeF === "extraction" && (
+                      <Button size="small" onClick={() => toggleExtractionFill("F")}>恢复按 PT 顺序</Button>
+                    )}
+                  </Space>
+                  <Space size={8} wrap>
+                    <Text strong style={{ fontSize: 12 }}>👨 男性板</Text>
+                    <Button size="small"
+                      type={fillModeM === "extraction" ? "primary" : "default"}
+                      loading={extLoading}
+                      onClick={() => toggleExtractionFill("M")}>
+                      🧪 提取顺序填入
+                    </Button>
+                    {fillModeM === "extraction" && (
+                      <Button size="small" onClick={() => toggleExtractionFill("M")}>恢复按 PT 顺序</Button>
+                    )}
+                  </Space>
+                  {(fillModeF === "extraction" || fillModeM === "extraction") && (
+                    <Space size={8} wrap>
                       <Text type="secondary" style={{ fontSize: 11 }}>
-                        已按提取板「一列 → 一列」排列（SKIP 孔保留）；「起始列」填 1–12，留空=居中
+                        提取顺序：一列 → 一列排列（SKIP 孔保留）；该侧「起始列」填 1–12，留空=居中
                       </Text>
-                      {!!(extOrder?.female?.columns?.length || extOrder?.male?.columns?.length) && (
+                      {!!(extOrder?.batches || []).length && (
                         <Tag color="blue" style={{ fontSize: 11 }}>
                           提取批次 {(extOrder?.batches || []).join("、") || "—"}
                         </Tag>
                       )}
-                    </>
+                    </Space>
                   )}
                 </Space>
                 {femalePlates.map((g,k)=>(
-                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillMode==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillMode==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillMode==="extraction"?"1-12":"居中"}/></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
+                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeF==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeF==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeF==="extraction"?"1-12":"居中"}/></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
                     {renderNiptPlate(g, plateSetter("f", k), `f${k}`)}
                   </Card>
                 ))}
                 {malePlates.map((g,k)=>(
-                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillMode==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillMode==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillMode==="extraction"?"1-12":"居中"}/></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
+                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeM==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeM==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeM==="extraction"?"1-12":"居中"}/></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
                     {renderNiptPlate(g, plateSetter("m", k), `m${k}`)}
                   </Card>
                 ))}
