@@ -1252,6 +1252,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   .meta { display:flex; gap:18px; color:#444; flex-wrap:wrap; }
   table { border-collapse:collapse; width:100%; max-width:1047px; table-layout:fixed; }
   thead th { background:#d5e8d4; }
+  .ft { position:fixed; left:0; right:0; bottom:0; display:flex; justify-content:space-between;
+        font-size:10px; color:#666; border-top:1px solid #d9d9d9; padding-top:3px; }
 </style></head><body>
   <div class="hd">
     <div class="r1">
@@ -1269,6 +1271,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     </div>
   </div>
   <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+  <div class="ft">
+    <span>打印时间：${esc(dayjs().format("YYYY-MM-DD HH:mm"))}</span>
+    <span>${esc(sideName)} 第 ${pi + 1} 张 / 共 ${plates.length} 张</span>
+  </div>
 </body></html>`;
 
     const w = window.open("", "_blank", "width=1280,height=900");
