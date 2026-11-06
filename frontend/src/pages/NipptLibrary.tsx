@@ -1203,6 +1203,82 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     );
   };
 
+  /** 2026-11-06：打印当前孔板 —— A4 横向，保留屏上的颜色/边框/字号（Index 浅黄、样本浅绿、表头浅绿） */
+  const printPlate = (scheme: "f" | "m" | "x", pi: number) => {
+    const plates = scheme === "f" ? femalePlates : scheme === "m" ? malePlates : xiamenPlates;
+    const plate = plates[pi];
+    if (!plate) return;
+    const sid = selectedBatch?.id || "";
+    const sideName = scheme === "f" ? "女性板" : scheme === "m" ? "男性板" : "厦门96孔板";
+    // 试剂盒：香港板按板上的试剂盒；厦门板/未选时退回批次「文库构建Kit」多选列表
+    const sideKit = scheme === "f" ? femaleLibKit : scheme === "m" ? maleLibKit : "";
+    const kit = sideKit || libKits.map(k => LIB_KITS.find(x => x.value === k)?.label || k).join("、");
+    const ops = scheme === "m" ? operatorsM[sid] : scheme === "x" ? [...(operators[sid] || []), ...(operatorsM[sid] || [])] : operators[sid];
+    const rvs = scheme === "m" ? reviewersM[sid] : scheme === "x" ? [...(reviewers[sid] || []), ...(reviewersM[sid] || [])] : reviewers[sid];
+    const dateStr = (scheme === "m" ? dateM : dateF) || dayjs().format("YYYY-MM-DD");
+    const esc = (v: any) => String(v ?? "").replace(/[&<>]/g, (m) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[m] as string));
+    const cnt = plate.flat().filter((c: any) => c?.vgId).length;
+
+    const head = `<th style="border:1px solid #bbb;background:#e8e8e8;width:26px"></th>` +
+      COLS.map(c => `<th style="border:1px solid #bbb;background:#d5e8d4;padding:4px 6px;text-align:center;font-weight:700;font-size:12px">${c}</th>`).join("");
+
+    const body = ROWS.map((label, row) => {
+      const cells = Array.from({ length: 12 }, (_, col) => {
+        const cell: any = plate[row]?.[col] || { vgId: "", index: "" };
+        const bg = cell.skip ? "#fff7e6" : cell.vgId ? "#e8f5e9" : "#fafafa";
+        if (cell.skip) {
+          return `<td style="border:1px solid #d9d9d9;background:${bg};height:34px;text-align:center;font-size:10px;color:#d48806;font-weight:600">SKIP</td>`;
+        }
+        // A4 横向单页只放得下 ~78px 一列：Index 与 PT 左右并排会挤爆，
+        // 打印成「Index 小字在上、PT 在下」两行（颜色/底色与屏上一致）
+        const ptLen = String(cell.vgId || "").length;
+        const ptFs = ptLen >= 12 ? 9 : ptLen >= 10 ? 9.8 : 10.5;
+        return `<td style="border:1px solid #d9d9d9;background:${bg};padding:2px 1px;text-align:center;line-height:1.18">
+            <div style="font-size:8.5px;color:#8c8c8c;min-height:9px">${esc(cell.index)}</div>
+            <div style="font-size:${ptFs}px;font-weight:600;white-space:nowrap;overflow:hidden">${esc(cell.vgId)}${cell.isQC ? '<span style="color:#13c2c2;margin-left:1px">QC</span>' : ""}</div>
+          </td>`;
+      }).join("");
+      return `<tr><td style="border:1px solid #bbb;background:#e8e8e8;width:26px;text-align:center;font-weight:600;font-size:12px">${label}</td>${cells}</tr>`;
+    }).join("");
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(sideName)}</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  body { margin:0; font-family: -apple-system, "PingFang SC", "Microsoft YaHei", Arial, sans-serif; color:#333; }
+  .hd { margin-bottom:8px; font-size:12px; line-height:1.9; }
+  .r1 { display:flex; justify-content:space-between; align-items:baseline; }
+  .name { font-size:15px; font-weight:700; }
+  .meta { display:flex; gap:18px; color:#444; flex-wrap:wrap; }
+  table { border-collapse:collapse; width:100%; max-width:1047px; table-layout:fixed; }
+  thead th { background:#d5e8d4; }
+</style></head><body>
+  <div class="hd">
+    <div class="r1">
+      <div class="name">${esc(sideName)}${plates.length > 1 ? `（${pi + 1}/${plates.length}）` : ""}</div>
+      <div class="meta">
+        <span>批次号：<b>${esc(selectedBatch?.batch_number || "")}</b></span>
+        <span>试剂盒：${esc(kit || "未选")}</span>
+        <span>样本数：${cnt}</span>
+      </div>
+    </div>
+    <div class="meta">
+      <span>操作人：${esc(joinPersons(ops)) || "—"}</span>
+      <span>审核人：${esc(joinPersons(rvs)) || "—"}</span>
+      <span>日期：${esc(dateStr)}</span>
+    </div>
+  </div>
+  <table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>
+</body></html>`;
+
+    const w = window.open("", "_blank", "width=1280,height=900");
+    if (!w) { message.warning("浏览器拦截了弹窗，请允许本站弹窗后重试"); return; }
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    setTimeout(() => { try { w.focus(); w.print(); } catch { /* 用户可手动 Ctrl+P */ } }, 350);
+  };
+
   const renderNiptPlate = (plate:PlateGrid, setter:any, plateKey:string) => (
     <div style={{overflowX:"auto"}}>
       <table data-plate-grid={plateKey} style={{borderCollapse:"collapse",fontSize:12,margin:"0 auto",tableLayout:"fixed",width:"100%",minWidth:1418}}>
@@ -1367,7 +1443,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   const cnt = (kind:string)=> g.flat().filter((c:any)=>c?.vgId && (c.sexKind||c.kind)===kind).length;
                   const st = xiamenStarts[k] || {f:"",m:""};
                   return ([
-                    <Card key={`x${k}`} size="small" title={<Space>{`🧬 96孔板 板${k+1}${xiamenPlates.length>1?`/共${xiamenPlates.length}块`:""} — 👩${cnt("F")}+👨${cnt("M")} 样本`}<Text type="secondary" style={{fontSize:11}}>（按住拖动样本可换位）</Text><Text type="secondary" style={{fontSize:11}}>女起:</Text><Input size="small" style={{width:50}} value={st.f} onChange={e=>setXiamenStarts(p=>{const n=padStarts(p,k,{f:"",m:""}); n[k]={...n[k],f:e.target.value.toUpperCase()}; return n;})} placeholder="居中"/><Text type="secondary" style={{fontSize:11}}>男起:</Text><Input size="small" style={{width:50}} value={st.m} onChange={e=>setXiamenStarts(p=>{const n=padStarts(p,k,{f:"",m:""}); n[k]={...n[k],m:e.target.value.toUpperCase()}; return n;})} placeholder="居中"/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcX?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("x")} title={sideIndexReady("x")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcX(v=>!v)}>🧪 填入浓度</Button></ConfigProvider></Space>}>
+                    <Card key={`x${k}`} size="small" title={<Space>{`🧬 96孔板 板${k+1}${xiamenPlates.length>1?`/共${xiamenPlates.length}块`:""} — 👩${cnt("F")}+👨${cnt("M")} 样本`}<Text type="secondary" style={{fontSize:11}}>（按住拖动样本可换位）</Text><Text type="secondary" style={{fontSize:11}}>女起:</Text><Input size="small" style={{width:50}} value={st.f} onChange={e=>setXiamenStarts(p=>{const n=padStarts(p,k,{f:"",m:""}); n[k]={...n[k],f:e.target.value.toUpperCase()}; return n;})} placeholder="居中"/><Text type="secondary" style={{fontSize:11}}>男起:</Text><Input size="small" style={{width:50}} value={st.m} onChange={e=>setXiamenStarts(p=>{const n=padStarts(p,k,{f:"",m:""}); n[k]={...n[k],m:e.target.value.toUpperCase()}; return n;})} placeholder="居中"/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcX?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("x")} title={sideIndexReady("x")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcX(v=>!v)}>🧪 填入浓度</Button></ConfigProvider><ConfigProvider componentDisabled={false}><Button size="small" style={{marginLeft:6}} onClick={()=>printPlate("x", k)}>🖨 打印</Button></ConfigProvider></Space>}>
                       {renderNiptPlate(g, plateSetter("x", k), `x${k}`)}
                     </Card>,
                     showConcX ? (
@@ -1426,7 +1502,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   )}
                 </Space>
                 {femalePlates.flatMap((g,k)=>([
-                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeF==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeF==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeF==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcF?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("f")} title={sideIndexReady("f")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcF(v=>!v)}>🧪 填入浓度</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
+                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeF==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeF==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeF==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcF?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("f")} title={sideIndexReady("f")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcF(v=>!v)}>🧪 填入浓度</Button></ConfigProvider><ConfigProvider componentDisabled={false}><Button size="small" style={{marginLeft:6}} onClick={()=>printPlate("f", k)}>🖨 打印</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
                     {renderNiptPlate(g, plateSetter("f", k), `f${k}`)}
                   </Card>,
                   showConcF ? (
@@ -1442,7 +1518,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   ) : null,
                 ]))}
                 {malePlates.flatMap((g,k)=>([
-                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeM==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeM==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeM==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcM?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("m")} title={sideIndexReady("m")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcM(v=>!v)}>🧪 填入浓度</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
+                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeM==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeM==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeM==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcM?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("m")} title={sideIndexReady("m")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcM(v=>!v)}>🧪 填入浓度</Button></ConfigProvider><ConfigProvider componentDisabled={false}><Button size="small" style={{marginLeft:6}} onClick={()=>printPlate("m", k)}>🖨 打印</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
                     {renderNiptPlate(g, plateSetter("m", k), `m${k}`)}
                   </Card>,
                   showConcM ? (
