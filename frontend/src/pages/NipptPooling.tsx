@@ -28,7 +28,9 @@ const getDefaultAmount=(category:string,sampleType:string):number=>{
 
 type PoolRow = { id:string; ptId:string; index:string; sampleType:string; category:string;
   concentration:number|null; elutionVolume:number; yield:number;
-  poolingAmount:number; poolingVolume:number; eliminated:boolean; qc:string; mixOverride?:number };
+  poolingAmount:number; poolingVolume:number; eliminated:boolean; qc:string; mixOverride?:number;
+  /** 2026-11-06：浓度是否来自建库「浓度板」（Pooling 自己没填过时才带入） */
+  concFromLib?: boolean };
 type PoolGroup = { name:string; rows:PoolRow[]; totalMass:number; totalVol:number; theoryConc:number; dataAmount:number;
   countedCount:number; failedCount:number; totalCount:number; femaleCount:number; maleCount:number };
 interface SampleItem { id:string; patient_name:string; category:string; test_sample_id:string|null; experiment_sample_type?:string; }
@@ -247,6 +249,16 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       setCustomAmounts(pd.customAmounts||{});
       setHkDoubled(pd.hk_doubled ?? false);
       const savedRows = pd.rows||[];
+      // 2026-11-06：建库「浓度板」填的浓度 → Pooling 浓度默认值（Pooling 已填过则以 Pooling 为准）
+      const libConc: Record<string, number> = (d as any).library_conc_map || {};
+      const stripSfx = (v: string) => String(v || "").replace(/_(?:R|T)\d+$/i, "");
+      const libConcOf = (pt: string): number | null => {
+        if (!pt) return null;
+        const v = libConc[pt];
+        if (typeof v === "number") return v;
+        const b = libConc[stripSfx(pt)];
+        return typeof b === "number" ? b : null;
+      };
       // Index from library plate or saved data
       let savedIdx:Record<string,string> = pd.indexes||{};
       const idxMap:Record<string,string> = d.library_index_map || {};
@@ -261,7 +273,8 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       }
       const poolRows:PoolRow[] = allSamples.map((s:SampleItem,i)=>{
         const sr = savedRows[i]||{};
-        const conc = sr.concentration??null;
+        const _fromLib = sr.concentration == null ? libConcOf(s.test_sample_id||"") : null;
+        const conc = sr.concentration ?? _fromLib ?? null;
         const elution = sr.elutionVolume??globalElutionVol??DEFAULT_ELUTION;
         const y = (conc??0)*elution;
         const sampleTp=s.experiment_sample_type||(s.category==="MALE_BLOOD"?"BLOOD":s.category==="FEMALE_BLOOD"?"BLOOD":"");const defaultPa=getDefaultAmount(s.category,sampleTp);const pa=sr.poolingAmount??defaultPa;
@@ -269,7 +282,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
         const sampleType2 = s.experiment_sample_type||(s.category==="FEMALE_BLOOD"||s.category==="MALE_BLOOD"?"BLOOD":"");
         return {
           id:s.id, ptId:s.test_sample_id||"?", index:savedIdx[s.id]||"", sampleType:sampleType2, category:s.category,
-          concentration:conc, elutionVolume:elution, yield:Math.round(y*10)/10,
+          concentration:conc, concFromLib: _fromLib != null, elutionVolume:elution, yield:Math.round(y*10)/10,
           poolingAmount:pa, poolingVolume:Math.round(pv*100)/100,
           eliminated:computeEliminated(conc??null, elution), qc:sr.qc||"PASS",
           mixOverride: (typeof sr.mixOverride === "number" && sr.mixOverride >= 1) ? sr.mixOverride : undefined,
@@ -623,7 +636,19 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                   <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,tableLayout:"auto"}}>
                     <thead><tr>
                       <th style={{...th,width:36}}>#</th><th style={{...th,width:95}}>mix</th><th style={{...th,width:90}}>PT编号</th><th style={{...th,width:55}}>Index</th><th style={{...th,width:55}}>类型</th>
-                      <th style={{...th,width:85}}>浓度</th><th style={{...th,width:65}}>洗脱 μL</th><th style={{...th,width:70}}>产量 ng</th>
+                      <th style={{...th,width:85}}>
+                        浓度
+                        {!!(selectedBatch?.pooling_data?.conc_log || []).length && (
+                          <Tooltip title={<div style={{fontSize:12}}>
+                            {(((selectedBatch?.pooling_data?.conc_log)||[]).slice(-5) as any[]).map((x:any,i:number)=>(
+                              <div key={i}>{x.pt}：{x.old} → {x.new}（{String(x.at||"").slice(0,16).replace("T"," ")} {x.by||""}）</div>
+                            ))}
+                            <div style={{marginTop:4,color:"#999"}}>以 Pooling 已填的浓度为准，这里只记录建库侧改动</div>
+                          </div>}>
+                            <span style={{marginLeft:4,cursor:"help",color:"#faad14"}}>⚠️</span>
+                          </Tooltip>
+                        )}
+                      </th><th style={{...th,width:65}}>洗脱 μL</th><th style={{...th,width:70}}>产量 ng</th>
                       <th style={{...th,width:75}}>投入 ng</th><th style={{...th,width:75}}>体积 μL</th><th style={{...th,width:90}}>QC</th>
                     </tr></thead>
                     <tbody>
@@ -658,7 +683,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                             <td style={td}><Text strong style={{fontSize:13}}>{r.ptId}</Text></td>
                             <td style={td}><Input size="small" style={{width:60}} value={savedIndexes[r.id]||""} onChange={e=>setSavedIndexes(p=>({...p,[r.id]:e.target.value}))} placeholder="ix"/></td>
                             <td style={td}>{stLabel}</td>
-                            <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.concentration} data-pool-cell={vri+"_conc"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(vri,"conc");}}} onChange={v=>updateCell(ri,"concentration",v)} style={{width:70}} placeholder="0"/></td>
+                            <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.concentration} style={r.concFromLib?{width:70,background:"#e6f4ff"}:{width:70}} title={r.concFromLib?"来自建库「浓度板」（Pooling 未填，自动带入）":undefined} data-pool-cell={vri+"_conc"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(vri,"conc");}}} onChange={v=>updateCell(ri,"concentration",v)} placeholder="0"/></td>
                             <td style={td}><InputNumber size="small" min={0} step={1} value={r.elutionVolume} data-pool-cell={vri+"_elu"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(vri,"elu");}}} onChange={v=>updateCell(ri,"elutionVolume",v)} style={{width:60}}/></td>
                             <td style={{...td,fontWeight:r.yield>0?600:400,color:r.eliminated?"#faad14":"#333"}}>{r.yield>0?r.yield.toFixed(1):"-"}{r.eliminated&&<Tag color="gold" style={{marginLeft:4,fontSize:10}}>淘汰</Tag>}</td>
                             <td style={td}><InputNumber size="small" min={0} step={1} value={r.poolingAmount} data-pool-cell={vri+"_amt"} onKeyDown={(e:any)=>{if(e.key==="Enter"){e.preventDefault();focusNextPoolCell(vri,"amt");}}} onChange={v=>updateCell(ri,"poolingAmount",v)} style={{width:70}}/></td>

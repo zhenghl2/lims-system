@@ -3634,6 +3634,105 @@ def _lib_tsid(ls):
     return ""
 
 
+def _nippt_log_library_conc_changes(batch, user):
+    """建库「浓度板」改了浓度，但 Pooling 批次里已经存过浓度 → 在 pooling_data.conc_log 记一条。
+
+    规则（用户 2026-11-06）：Pooling 已填的值为准，不覆盖；只记录变更便于追溯。
+    """
+    from .models import CaseSample, NipptPoolingBatch, NipptPoolingSample
+
+    ld = batch.library_data or {}
+    conc_by_pt = {}
+
+    def take(plate):
+        if not plate or not isinstance(plate, list):
+            return
+        for row in plate:
+            if not isinstance(row, list):
+                continue
+            for cell in row:
+                if not isinstance(cell, dict):
+                    continue
+                vg = str(cell.get("vgId") or "").strip()
+                c = cell.get("conc")
+                if vg and isinstance(c, (int, float)):
+                    conc_by_pt[vg] = float(c)
+
+    def any_plate(val):
+        if not val:
+            return
+        if (isinstance(val, list) and val and isinstance(val[0], list)
+                and val[0] and isinstance(val[0][0], list)):
+            for g in val:
+                take(g)
+        else:
+            take(val)
+
+    for k in ("xiamen_plates", "xiamen_plate", "female_plates", "female_plate",
+              "male_plates", "male_plate"):
+        any_plate(ld.get(k))
+    if not conc_by_pt:
+        return 0
+
+    case_ids = set(batch.samples.values_list("case_id", flat=True))
+    if not case_ids:
+        return 0
+
+    # Pooling 样本 → 所属批次
+    ps_rows = list(NipptPoolingSample.objects.filter(case_id__in=case_ids)
+                   .values("id", "case_sample_ids", "batch_id"))
+    if not ps_rows:
+        return 0
+
+    cs_ids = [cid for r in ps_rows for cid in (r["case_sample_ids"] or [])]
+    pt_by_cs = {}
+    for cid, pt in CaseSample.objects.filter(id__in=cs_ids).values_list("id", "test_sample_id"):
+        if pt:
+            pt_by_cs[str(cid)] = pt
+
+    by_batch = {}
+    for r in ps_rows:
+        pt = next((pt_by_cs.get(str(cid)) for cid in (r["case_sample_ids"] or [])
+                   if pt_by_cs.get(str(cid))), None)
+        if not pt:
+            continue
+        new_c = conc_by_pt.get(pt)
+        if new_c is None:
+            continue
+        by_batch.setdefault(str(r["batch_id"]), []).append((str(r["id"]), pt, new_c))
+
+    changed = 0
+    now_iso = timezone.now().isoformat()
+    uname = getattr(user, "username", "") or ""
+    for bid, items in by_batch.items():
+        pb = NipptPoolingBatch.objects.filter(id=bid).first()
+        if not pb:
+            continue
+        pd = pb.pooling_data or {}
+        row_conc = {str(x.get("id")): x.get("concentration")
+                    for x in (pd.get("rows") or []) if isinstance(x, dict)}
+        log = list(pd.get("conc_log") or [])
+        dirty = False
+        for ps_id, pt, new_c in items:
+            old_c = row_conc.get(ps_id)
+            if old_c in (None, ""):
+                continue                      # Pooling 没填 → 下次会直接带入，无需记录
+            try:
+                same = abs(float(old_c) - float(new_c)) < 1e-9
+            except (TypeError, ValueError):
+                same = False
+            if same:
+                continue
+            log.append({"pt": pt, "old": old_c, "new": new_c, "at": now_iso, "by": uname})
+            dirty = True
+            changed += 1
+        if dirty:
+            pd["conc_log"] = log[-100:]
+            pb.pooling_data = pd
+            pb.save(update_fields=["pooling_data", "updated_at"])
+    return changed
+
+
 class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.ModelViewSet):
     nippt_stage = "LIBRARY_PREP"
 
@@ -3861,6 +3960,11 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
             NipptLibrarySample.objects.filter(id=sd.get("id")).update(
                 qc_status=sd.get("qc_status","PASS"), qc_note=sd.get("qc_note",""),
                 processed_at=timezone.now(), operator=request.user)
+        # 2026-11-06：浓度板改浓度、而 Pooling 已存过浓度 → 记一条变更（Pooling 值不被覆盖）
+        try:
+            _nippt_log_library_conc_changes(batch, request.user)
+        except Exception as _ex:
+            print("[conc-log] failed:", _ex)
         return Response({"message":"Saved"})
 
     @action(detail=True, methods=["post"])

@@ -1649,11 +1649,12 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
     male_blood_samples = serializers.SerializerMethodField()
     male_other_samples = serializers.SerializerMethodField()
     library_index_map = serializers.SerializerMethodField()
+    library_conc_map = serializers.SerializerMethodField()
     receipt_location = serializers.SerializerMethodField()
 
     class Meta:
         model = NipptPoolingBatch
-        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","library_index_map","created_by", "operator_name", "reviewer","created_at","updated_at", "receipt_location",
+        fields = ["id","batch_number","status","status_display","sample_count","female_count","male_blood_count","male_other_count","female_samples","male_blood_samples","male_other_samples","pooling_data","library_plate","library_index_map","library_conc_map","created_by", "operator_name", "reviewer","created_at","updated_at", "receipt_location",
         ]
         read_only_fields = ["id","batch_number","created_at","updated_at"]
     def get_sample_count(self,obj): return obj.samples.count()
@@ -1663,6 +1664,58 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
     def get_female_samples(self,obj): return NipptPoolingSampleSerializer(obj.samples.filter(category="FEMALE_BLOOD"), many=True).data
     def get_male_blood_samples(self,obj): return NipptPoolingSampleSerializer(obj.samples.filter(category="MALE_BLOOD"), many=True).data
     def get_male_other_samples(self,obj): return NipptPoolingSampleSerializer(obj.samples.filter(category="MALE_OTHER"), many=True).data
+    def get_library_conc_map(self, obj):
+        """2026-11-06：建库模块「浓度板」录入的浓度 → 供 Pooling 作默认值（仅当 Pooling 还没填时用）。
+        返回 {PT(vgId): 浓度}；另附「去 _R/_T 后缀」的别名，兼容 PT 改名的情况。
+        """
+        import re as _re
+
+        out = {}
+        seen_batches = set()
+
+        def take(plate):
+            if not plate or not isinstance(plate, list):
+                return
+            for row in plate:
+                if not isinstance(row, list):
+                    continue
+                for cell in row:
+                    if not isinstance(cell, dict):
+                        continue
+                    vg = str(cell.get("vgId") or "").strip()
+                    c = cell.get("conc")
+                    if vg and isinstance(c, (int, float)):
+                        out.setdefault(vg, float(c))
+
+        def any_plate(val):
+            if not val:
+                return
+            if (isinstance(val, list) and val and isinstance(val[0], list)
+                    and val[0] and isinstance(val[0][0], list)):
+                for g in val:
+                    take(g)
+            else:
+                take(val)
+
+        for sp in obj.samples.all():
+            if not sp.source_library_sample_id:
+                continue
+            ls = NipptLibrarySample.objects.filter(id=sp.source_library_sample_id).first()
+            if not ls or not ls.batch or ls.batch.id in seen_batches:
+                continue
+            seen_batches.add(ls.batch.id)
+            ld = ls.batch.library_data or {}
+            for k in ("xiamen_plates", "xiamen_plate", "female_plates", "female_plate",
+                      "male_plates", "male_plate"):
+                any_plate(ld.get(k))
+
+        # PT 改名兜底：去掉 _R{n}/_T{n} 后同名且浓度一致的，作为别名
+        for vg, c in list(out.items()):
+            base = _re.sub(r"_(R|T)\d+$", "", vg)
+            if base != vg:
+                out.setdefault(base, c)
+        return out
+
     def get_library_index_map(self, obj):
         index_map = {}
         seen_batches = set()
