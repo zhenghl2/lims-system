@@ -61,6 +61,16 @@ const SAMPLE_TYPE_LABELS: Record<string, string> = {
   BEARD: "胡须", FLOSS: "牙线", SEMSTAIN: "精斑", GUM: "口香糖",
 };
 
+/** 2026-11-05（用户口径）：DNA浓度输入框按回车 → 焦点跳到「同一列的下一个样本」，
+ *  不用再手动点。group 标识同一个输入列（手动=manual-M，磁棒=mag-M-<板>-<列>）。 */
+const focusNextConcInput = (group: string, row: number) => {
+  const el = document.querySelector<HTMLInputElement>(
+    `[data-conc="${group}"][data-row="${row + 1}"] input`);
+  if (!el) return;
+  el.focus();
+  el.select();
+};
+
 const ROWS_8 = ["A","B","C","D","E","F","G","H"];
 const COLS_12 = [1,2,3,4,5,6,7,8,9,10,11,12];
 
@@ -952,6 +962,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   return (
                               <td key={key} style={{ width: 80, height: 42, textAlign: "center", padding: 2, background: "#fafafa" }}>
                                 <InputNumber size="small" min={0} step={0.1} style={{ width: 70, fontSize: 11 }}
+                                  data-conc={`mag-${isFemale ? "F" : "M"}-${pIdx}-${col}`}
+                                  data-row={ROWS_8.indexOf(row)}
+                                  onPressEnter={() => focusNextConcInput(`mag-${isFemale ? "F" : "M"}-${pIdx}-${col}`, ROWS_8.indexOf(row))}
                                   value={v ?? undefined} placeholder="—"
                                   onChange={val => setResult(isFemale, pairSample.id, r.status || "pass", r.note || "", val ?? undefined)} />
                               </td>
@@ -1102,10 +1115,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   return <InputNumber size="small" min={0} max={200} value={v}
                     onChange={val => setElution(isFemale, r.id, val ?? undefined)} style={{ width: 65 }} />;
                 }},
-                { title: "DNA浓度", key: "conc", width: 110, render: (_: any, r: ExtractionSample) => {
+                { title: "DNA浓度", key: "conc", width: 110, render: (_: any, r: ExtractionSample, i: number) => {
                   const res = getResult(isFemale, r.id);
                   const v = res.concentration ?? r.dna_concentration;
+                  const concGroup = `manual-${isFemale ? "F" : "M"}`;
                   return <InputNumber size="small" min={0} step={0.1} style={{ width: 80 }}
+                    data-conc={concGroup} data-row={i}
+                    onPressEnter={() => focusNextConcInput(concGroup, i)}
                     value={v ?? undefined} placeholder="—"
                     onChange={val => setResult(isFemale, r.id, res.status || "pass", res.note || "", val ?? undefined)} />;
                 }},
