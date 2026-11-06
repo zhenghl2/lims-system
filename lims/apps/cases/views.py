@@ -1577,8 +1577,16 @@ class CaseViewSet(viewsets.ModelViewSet):
                 existing.add(cs_x.sample_source.strip())
             if cs_x.effective_sample_type:
                 existing.add(cs_x.effective_sample_type)
-        extras = [t for t in types if t not in existing]
-        skipped = [t for t in types if t in existing]
+        # 2026-11-06（用户口径）：重采 —— 同一个人可以再采一次同类型样本（如指甲）。
+        # 前端勾「重采」后带 allow_repeat=true：不再把已登记类型丢进 skipped，
+        # 而是照常建档；PT 号由 assign_supplement_test_id 自动判撞号 → _R{n}。
+        allow_repeat = str(request.data.get("allow_repeat")).lower() in ("1", "true", "yes", "on")
+        if allow_repeat:
+            extras = list(types)
+            skipped = []
+        else:
+            extras = [t for t in types if t not in existing]
+            skipped = [t for t in types if t in existing]
 
         created = []
         if extras:
@@ -1616,12 +1624,14 @@ class CaseViewSet(viewsets.ModelViewSet):
                         actual_sample_type=t,
                         workflow_stage="REGISTERED",  # 待签收
                         receipt_condition="",
-                        collection_notes="签收补录新增补样（待签收）",
+                        collection_notes=("签收补录新增重采样本（待签收）" if allow_repeat
+                                          else "签收补录新增补样（待签收）"),
                     )
                     if has_pt:
                         # 案例已有 PT → 按补样规则立即补号（撞号自动 _R{n}）；
-                        # 同一次补登的多个类型共用同一个 PT 号（用户 2026-11-03）
-                        if created:
+                        # 同一次补登的多个类型共用同一个 PT 号（用户 2026-11-03）；
+                        # 但「重采」必须各自算号，否则两条重采会拿到同一个 _R{n}
+                        if created and not allow_repeat:
                             new_cs.test_sample_id = created[0].test_sample_id
                             new_cs.resample_of = created[0].resample_of
                             new_cs.resample_number = created[0].resample_number

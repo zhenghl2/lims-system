@@ -5,7 +5,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Table, Button, Tag, Input, Select, Space, Typography, message,
-  Modal, Tabs, Row, Col, Image, Tooltip, Segmented, Alert,
+  Modal, Tabs, Row, Col, Image, Tooltip, Segmented, Alert, Checkbox,
 } from "antd";
 import {
   CheckOutlined, CloseOutlined, CameraOutlined, PlusOutlined,
@@ -227,6 +227,7 @@ export default function SampleReceiving() {
   // 签收补录（实收比登记多出的样本类型）
   const [supTarget, setSupTarget] = useState<CaseSampleRow | null>(null);
   const [supTypes, setSupTypes] = useState<string[]>([]);
+  const [supRepeat, setSupRepeat] = useState(false);      // 2026-11-06：同类型重采
   const [supLoading, setSupLoading] = useState(false);
 
   // Reject Modal
@@ -770,6 +771,7 @@ export default function SampleReceiving() {
     if (row.role !== "ALLEGED_FATHER") return;          // 本期仅疑父开放
     if (row.received || row.status === "REJECTED") return;
     setSupTypes([]);
+    setSupRepeat(false);                                 // 2026-11-06：重采开关默认关
     setSupTarget(row);
   };
 
@@ -785,6 +787,7 @@ export default function SampleReceiving() {
         case_sample_id: supTarget.csId,
         sample_types: supTypes,
         pt_number: supTarget.ptBase ? `PT${supTarget.ptBase}` : undefined,
+        allow_repeat: supRepeat,                         // 重采：允许再建一条同类型样本
       });
       const created = resp?.data?.created || [];
       const skipped = resp?.data?.skipped || [];
@@ -805,6 +808,7 @@ export default function SampleReceiving() {
       }
       setSupTarget(null);
       setSupTypes([]);
+      setSupRepeat(false);
       fetchData();
     } catch (e: any) {
       const d = e?.response?.data;
@@ -1385,7 +1389,7 @@ export default function SampleReceiving() {
       <Modal
         open={!!supTarget}
         title={supTarget ? `新增补样（待签收）— ${supTarget.patientName}（${supTarget.caseNumber}）` : ""}
-        onCancel={() => { setSupTarget(null); setSupTypes([]); }}
+        onCancel={() => { setSupTarget(null); setSupTypes([]); setSupRepeat(false); }}
         onOk={submitReceiptSupplement}
         confirmLoading={supLoading}
         okText="确认新增"
@@ -1396,23 +1400,39 @@ export default function SampleReceiving() {
           <div style={{ background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 4, padding: "8px 12px", fontSize: 12, color: "#874d00" }}>
             新增的样本按「补样」登记为 <span style={{ fontWeight: 600 }}>待签收</span>，
             签收状态与加号所在行一致（不会提前签收）；PT 号、照片可在签收前继续修改，
-            签收人 / 签收地随本批签收时按行选择。已登记的类型不会重复建档。
+            签收人 / 签收地随本批签收时按行选择。已登记的类型不会重复建档；如需同类型再采一次，勾选「重采」。
           </div>
           <div>
-            <Text strong style={{ display: "block", marginBottom: 6 }}>实际收到（未登记）的样本类型</Text>
+            <Checkbox
+              checked={supRepeat}
+              onChange={(e) => { setSupRepeat(e.target.checked); setSupTypes([]); }}
+              style={{ marginBottom: 6 }}
+            >
+              重采（同类型再采一次，例如指甲/毛发重新采集）
+            </Checkbox>
+            <Text strong style={{ display: "block", marginBottom: 6 }}>
+              {supRepeat ? "选择重采的样本类型（已登记的也可以选）" : "实际收到（未登记）的样本类型"}
+            </Text>
             <Select
               mode="multiple"
               style={{ width: "100%" }}
-              placeholder="选择实际收到但未登记的样本类型"
+              placeholder={supRepeat ? "选择要重采的样本类型" : "选择实际收到但未登记的样本类型"}
               value={supTypes}
               onChange={(v) => setSupTypes(v as string[])}
-              options={SAMPLE_TYPE_OPTIONS.filter(
-                (o) => !(supTarget?.personTypes || []).includes(o.value)
-              )}
+              options={SAMPLE_TYPE_OPTIONS
+                .filter((o) => supRepeat || !(supTarget?.personTypes || []).includes(o.value))
+                .map((o) => ({
+                  value: o.value,
+                  label: (supTarget?.personTypes || []).includes(o.value)
+                    ? `${o.label}（已登记 · 重采）`
+                    : o.label,
+                }))}
             />
-            {!!supTarget &&
+            {!!supTarget && !supRepeat &&
               SAMPLE_TYPE_OPTIONS.filter((o) => !(supTarget.personTypes || []).includes(o.value)).length === 0 && (
-                <Text type="secondary" style={{ fontSize: 12 }}>该人的所有样本类型都已登记，无需补录</Text>
+                <Text type="secondary" style={{ fontSize: 12 }}>
+                  该人的所有样本类型都已登记；如需同类型再采一次，请勾选上面的「重采」
+                </Text>
               )}
           </div>
         </Space>
