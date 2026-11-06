@@ -62,17 +62,35 @@ export default function NipptPooling() {
   const [rows, setRows] = useState<PoolRow[]>([]);
 /** 按 PT 编号排序（仅显示层）：与后端 Length(pt_number) 规则一致 —— 先按编号长度，再按序号。
  *  只复制数组、不动对象；用于 mix 表显示顺序，不参与 mix 分配。 */
-/** 先女后男；男女内部按 PT 编号排序（兼容 ptId / test_sample_id 两种字段） */
+/** 先女后男；男女内部按 PT 编号排序（兼容 ptId / test_sample_id 两种字段）
+ *  2026-11-06（用户要求）：排序**忽略重采/重做后缀**（_R1 / _T2 / _R1_T2），
+ *  例如 PT72301W_R1 按 PT72301W 的位置排；显示仍是原编号，不做任何改写。
+ *  同一编号的原样本排在重采之前（PT72250W → PT72250W_R1 → PT72250W_R2）。 */
 const sortBySexThenPt = <T extends { ptId?: string; test_sample_id?: string; category?: string }>(arr: T[]): T[] => {
   const pt = (o: any) => String(o?.ptId || o?.test_sample_id || "");
-  const k = (s: string) => s.replace(/^PT/i, "");
+  // 去掉 _R{n}/_T{n}（可叠加），只用于排序比较
+  const baseOf = (s: string) => s.replace(/^PT/i, "").replace(/(?:_(?:R|T)\d+)+$/i, "");
+  const keyOf = (s: string) => {
+    const b = baseOf(s);
+    const m = /^(\d+)(.*)$/.exec(b);
+    return {
+      numLen: m ? m[1].length : Number.MAX_SAFE_INTEGER,
+      num: m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER,
+      rest: (m ? m[2] : b).toUpperCase(),
+      full: s,
+      hasSuffix: /_(?:R|T)\d+/i.test(s),
+    };
+  };
   return [...arr].sort((a, b) => {
     const fa = a.category === "FEMALE_BLOOD" ? 0 : 1;
     const fb = b.category === "FEMALE_BLOOD" ? 0 : 1;
     if (fa !== fb) return fa - fb;
-    const ka = k(pt(a)), kb = k(pt(b));
-    if (ka.length !== kb.length) return ka.length - kb.length;
-    return ka.localeCompare(kb, "en", { numeric: true });
+    const ka = keyOf(pt(a)), kb = keyOf(pt(b));
+    if (ka.numLen !== kb.numLen) return ka.numLen - kb.numLen;      // 位数优先（与后端按 PT 位数口径一致）
+    if (ka.num !== kb.num) return ka.num - kb.num;                  // 主编号
+    if (ka.rest !== kb.rest) return ka.rest.localeCompare(kb.rest, "en");  // W / H / HA / HB
+    if (ka.hasSuffix !== kb.hasSuffix) return ka.hasSuffix ? 1 : -1;       // 原样本在前，_R1/_R2 在后
+    return ka.full.localeCompare(kb.full, "en", { numeric: true });
   });
 };
 
