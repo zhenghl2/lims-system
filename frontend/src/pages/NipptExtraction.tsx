@@ -61,14 +61,20 @@ const SAMPLE_TYPE_LABELS: Record<string, string> = {
   BEARD: "胡须", FLOSS: "牙线", SEMSTAIN: "精斑", GUM: "口香糖",
 };
 
-/** 2026-11-05（用户口径）：DNA浓度输入框按回车 → 焦点跳到「同一列的下一个样本」，
- *  不用再手动点。group 标识同一个输入列（手动=manual-M，磁棒=mag-M-<板>-<列>）。 */
+/** 2026-11-05（用户口径）：DNA浓度输入框按回车 → 焦点跳到「同一列的下一个样本」。
+ *  兼容两种 DOM 落点：antd InputNumber 会把未知 props 透传到**内层 <input> 本身**
+ *  （rc-input-number: inputProps 展开在 <input> 上），也可能落在包裹层，
+ *  所以统一按 data-conc 分组取元素，再找行号更大的第一个。 */
 const focusNextConcInput = (group: string, row: number) => {
-  const el = document.querySelector<HTMLInputElement>(
-    `[data-conc="${group}"][data-row="${row + 1}"] input`);
-  if (!el) return;
-  el.focus();
-  el.select();
+  const toInput = (n: HTMLElement) =>
+    (n instanceof HTMLInputElement ? n : n.querySelector("input")) as HTMLInputElement | null;
+  const next = Array.from(document.querySelectorAll<HTMLElement>(`[data-conc="${group}"]`))
+    .map(n => ({ r: Number(n.getAttribute("data-row")), input: toInput(n) }))
+    .filter(x => !!x.input && Number.isFinite(x.r) && x.r > row)
+    .sort((a, b) => a.r - b.r)[0];
+  if (!next?.input) return;
+  next.input.focus();
+  next.input.select();
 };
 
 const ROWS_8 = ["A","B","C","D","E","F","G","H"];
