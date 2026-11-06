@@ -165,8 +165,11 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
 
     for (let g = 0; g < numGroups; g++) {
       const groupRows = mixArrays[g];
-      // 显示顺序：未完成批次按 PT 编号排（已完成保持原样）；分配顺序 groupRows 不变
-      const dispRows = selectedBatch?.status === "COMPLETED" ? groupRows : sortBySexThenPt(groupRows);
+      // 显示顺序：统一「先女后男 + 男女内部按 PT 编号」——编辑中 / 已完成都一样。
+      // 2026-11-06（同事反馈）：原来已完成批次直接用分配顺序（=后端 created_at 顺序），
+      // 于是保存/完成之后同一张表的行序跟编辑时不一样。排序只是显示层，不动分配结果，
+      // 也不写回 pooling_data.rows（保存的数据顺序不变，下游不受影响）。
+      const dispRows = sortBySexThenPt(groupRows);
       // QC=FAIL 不参与汇总（与后端 nippt_pool_mix_groups 只取 PASS 的口径一致）
       const counted = groupRows.filter(r => (r.qc || "") !== "FAIL");
       const failedCount = groupRows.length - counted.length;
@@ -190,7 +193,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       });
     }
     return result;
-  }, [rows, useManualAlloc, manualAlloc, selectedBatch?.status]);
+  }, [rows, useManualAlloc, manualAlloc]);
 
   // 视觉顺序（按 mix 分组渲染后的行序）：用于行号显示与回车跳格
   const visualOrder = useMemo(() => groups.flatMap(g => g.rows.map(r => r.id)), [groups]);
