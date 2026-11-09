@@ -9,6 +9,25 @@ import re
 from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample, NipptPlasmaTubeLog
 
 
+_PT_FATHER_LABEL_RE = re.compile(r"^PT\d+H([A-Z])(?:_[RT]\d+)*$")
+
+
+def father_label_of(bioinfo_sample, idx=0, total=1):
+    """父标签 = 父方样本自己的 PT 后缀（PT72482HB → HB）。
+
+    2026-11-09 修：原来按 enumerate 顺序给 A/B/C/D，而生信样本来自无序 queryset →
+    标签与样本错位（HA 行挂着 HB 的样本），导入的 QC/结果按标签落库，
+    于是报告里出现「这个人 + 别人的结果」（用户报障：A/B 报告结果与质控相反）。
+    """
+    for cid in (getattr(bioinfo_sample, "case_sample_ids", None) or []):
+        cs = CaseSample.objects.filter(id=cid).only("test_sample_id").first()
+        tid = ((getattr(cs, "test_sample_id", "") or "") if cs else "").strip().upper()
+        m = _PT_FATHER_LABEL_RE.match(tid)
+        if m:
+            return "H" + m.group(1)
+    return "H" if total == 1 else "H" + chr(65 + idx)
+
+
 class CaseSampleSerializer(serializers.ModelSerializer):
     sample_id = serializers.CharField(source="sample.sample_id", read_only=True)
     patient_name = serializers.CharField(source="sample.patient_name", read_only=True)
@@ -2915,8 +2934,11 @@ class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
                 mothers = groups["MOTHER"]
                 fathers = groups["FATHER"]
                 for mother in mothers:
-                    for idx, father in enumerate(fathers):
-                        label = "H" if len(fathers) == 1 else f"H{chr(65 + idx)}"
+                    # 2026-11-09：标签取样本自身的 A/B/C/D，并按标签排序（顺序稳定、与样本一致）
+                    _labeled = sorted(
+                        ((father_label_of(f, i, len(fathers)), f) for i, f in enumerate(fathers)),
+                        key=lambda x: x[0])
+                    for idx, (label, father) in enumerate(_labeled):
                         NipptBioinfoPair.objects.create(
                             batch=batch, case_id=case_id,
                             mother_sample=mother, father_sample=father,
@@ -2979,8 +3001,11 @@ class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
 
                 # Cross-batch pairing
                 for mother in groups["MOTHER"]:
-                    for idx, father in enumerate(groups["FATHER"]):
-                        label = "H" if len(groups["FATHER"]) == 1 else f"H{chr(65 + idx)}"
+                    _fl = groups["FATHER"]
+                    _labeled = sorted(
+                        ((father_label_of(f, i, len(_fl)), f) for i, f in enumerate(_fl)),
+                        key=lambda x: x[0])
+                    for idx, (label, father) in enumerate(_labeled):
                         if NipptBioinfoPair.objects.filter(
                             batch=batch, mother_sample=mother, father_sample=father,
                         ).exists():

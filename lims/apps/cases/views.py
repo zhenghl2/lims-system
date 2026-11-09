@@ -5338,8 +5338,10 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             return Response({"error": "mother must be MOTHER"}, status=400)
         label = request.data.get("father_label") or ""
         if not label:
-            existing = NipptBioinfoPair.objects.filter(batch=batch, mother_sample=mother).count()
-            label = "H" if existing == 0 else f"H{chr(65 + existing)}"
+            # 2026-11-09：优先用父方样本自己的 H 后缀（PT72482HB → HB），没后缀才按已有条数推
+            from .serializers import father_label_of as _fl_of
+            _all_f = NipptBioinfoPair.objects.filter(batch=batch, mother_sample=mother).count()
+            label = _fl_of(father, _all_f, _all_f + 1)
         pair = NipptBioinfoPair.objects.create(
             batch=batch, case=mother.case, mother_sample=mother,
             father_sample=father, father_label=label, is_cross_batch=True)
