@@ -443,8 +443,9 @@ export default function NipptReports() {
     const m = String(name || "").match(/PT\s*0*(\d+)\s*([A-Za-z]{1,2})?(?!\d)/i);
     const t = (m?.[2] || "").toUpperCase();
     if (!t) return "";
-    if (t === "A") return "HA";
-    if (t === "B") return "HB";
+    // 2026-11-09：多疑父标签是 HA/HB/HC/HD…，文件名里只带 a/b/c/d
+    //   → 单字母且不是 W(母亲)/H/R 的，统一补 H 前缀（a→HA、c→HC、d→HD）
+    if (t.length === 1 && !["W", "H", "R"].includes(t)) return "H" + t;
     return t;
   };
   /** 2026-11-03：文件名识别「额外报告」（性别报告）

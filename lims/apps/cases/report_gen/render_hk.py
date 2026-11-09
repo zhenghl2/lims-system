@@ -151,21 +151,24 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
     # 主报告（英繁 = 英文 + 繁体两份，与老脚本一致）
     ctx["posi"] = posi
     generated = []
-    # 2026-11-09：多疑父（同一 PT 多个男样）→ 文件名加父标签后缀 a/b/c/d。
-    # 否则多个「不支持」报告同名，Django 存储会自动加 7 位随机串（用户报障：文件名乱码）。
+    # 2026-11-09：多疑父（同一 PT 多个男样）→ 名里的父标签字母紧贴 PT 编号。
+    #   目标格式（用户截图 / 下游批量上传可识别）：HK_report_EN_PT72482a-Y.docx
+    #   字母必须在 PT 号后面、结果(-Y/-N)前面，否则批量上传解析不出角色，多疑父会匹配失败。
     _flabel = str(ctx.get("father_label") or "").strip().upper()
-    _lsuf = ("_" + _flabel[-1].lower()) if (ctx.get("multi_father") and _flabel) else ""
+    _lsuf = _flabel[-1].lower() if (ctx.get("multi_father") and _flabel) else ""
+    # 文件名里的 PT 号：vg_id 是母亲号（PT72482W / PT72206W_R1），下游要的是纯 PT数字
+    _name_pt = pt_prefix_of(vg_id) or vg_id
     if version == "英繁":
         ctx["posi"] = parse_appendix(appendix_path)      # 未翻译副本 → 英文报告用 Match/Mismatch
         tpl = DocxTemplate(os.path.join(tpl_dir, TPL_BY_VERSION["英文"]))
         tpl.render(ctx)
-        en_name = "%s%s-%s%s.docx" % (OUT_PREFIX["英文"], vg_id, result, _lsuf)
+        en_name = "%s%s%s-%s.docx" % (OUT_PREFIX["英文"], _name_pt, _lsuf, result)
         tpl.save(os.path.join(out_dir, en_name))
         generated.append(en_name)
         translate_posi(ctx["posi"], "zh")                # 繁体报告用「匹配/錯配」
         tpl = DocxTemplate(os.path.join(tpl_dir, TPL_BY_VERSION["英繁"]))
         tpl.render(ctx)
-        tc_name = "%s%s-%s%s.docx" % (OUT_PREFIX["英繁"], vg_id, result, _lsuf)
+        tc_name = "%s%s%s-%s.docx" % (OUT_PREFIX["英繁"], _name_pt, _lsuf, result)
         tpl.save(os.path.join(out_dir, tc_name))
         generated.append(tc_name)
     else:
@@ -174,7 +177,7 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
         if version == "泰国":
             main_name = "%s Report.docx" % ctx.get("case_id", "")
         else:
-            main_name = "%s%s-%s%s%s.docx" % (OUT_PREFIX[version], vg_id, result, _lsuf, NAME_SUFFIX.get(version, ""))
+            main_name = "%s%s%s-%s%s.docx" % (OUT_PREFIX[version], _name_pt, _lsuf, result, NAME_SUFFIX.get(version, ""))
         tpl.save(os.path.join(out_dir, main_name))
         generated.append(main_name)
 
@@ -191,7 +194,7 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
         ctx["fetal_gender"] = words[sex_val]
         sex_tpl = DocxTemplate(os.path.join(tpl_dir, tpl_file))
         sex_tpl.render(ctx)
-        sex_name = "HK_report_%s_%s%s.docx" % (tag, vg_id, _lsuf)
+        sex_name = "HK_report_%s_%s%s.docx" % (tag, _name_pt, _lsuf)
         sex_tpl.save(os.path.join(out_dir, sex_name))
         generated.append(sex_name)
 
