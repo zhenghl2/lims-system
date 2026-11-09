@@ -209,11 +209,33 @@ export default function NipptExtraction() {
     temperature?: number | null; humidity?: number | null };
   const [reagentF, setReagentF] = useState<ReagentInfo>({});
   const [reagentM, setReagentM] = useState<ReagentInfo>({});
-  // 每种试剂盒「全系统最近一次保存」的批号/有效期 → 选中时自动带入（用户可改，改了下次就用新的）
-  const [kitLots, setKitLots] = useState<Record<string, { lot?: string; expiry?: string }>>({});
-  const kitLotsRef = useRef<Record<string, { lot?: string; expiry?: string }>>({});
-  // 设备号记忆（金属浴/Qubit/设备号）——同样取最近一次保存的值
-  const deviceNosRef = useRef<Record<string, { no?: string }>>({});
+  // 每种试剂盒「该地区（厦门/香港）最近一次保存」的批号/有效期 → 选中时自动带入
+  // 结构：{ XIAMEN: {kit: {lot,expiry}}, HONGKONG: {...}, "": {...} }
+  type LotInfo = { lot?: string; expiry?: string; saved_at?: string };
+  const kitLotsRef = useRef<Record<string, Record<string, LotInfo>>>({});
+  // 设备号记忆（金属浴/Qubit）——同样按地区分
+  const deviceNosRef = useRef<Record<string, Record<string, { no?: string }>>>({});
+  /** 批次签收地 → 记忆桶 key（厦门/香港）；混地区或未知 → ""（不自动带值） */
+  const regionKeyOf = (loc?: string): "XIAMEN" | "HONGKONG" | "" => {
+    const t = String(loc || "");
+    if (!t || t.includes("/")) return "";      // 混地区（香港/厦门）
+    if (t.includes("香港") || t.toUpperCase().includes("HONGKONG")) return "HONGKONG";
+    if (t.includes("厦门") || t.toUpperCase().includes("XIAMEN")) return "XIAMEN";
+    return "";
+  };
+  /** 该地区上次的试剂盒批号/有效期；混地区/未知批次 → 空（用户要求：这种批次人工填） */
+  const kitLotsFor = (loc?: string): Record<string, LotInfo> => {
+    const k = regionKeyOf(loc);
+    if (!k) return {};
+    return (kitLotsRef.current || {})[k] || {};
+  };
+  /** 该地区上次的设备编号 */
+  const deviceNosFor = (loc?: string): Record<string, { no?: string }> => {
+    const k = regionKeyOf(loc);
+    if (!k) return {};
+    return (deviceNosRef.current || {})[k] || {};
+  };
+
   // 打开页面拉一次：选中试剂盒时自动带入上次的批号/有效期；设备号同理
   useEffect(() => {
     (async () => {
@@ -221,7 +243,6 @@ export default function NipptExtraction() {
         const r = await (casesApi as any).extractionKitLots?.();
         const data = (r && r.data) || {};
         kitLotsRef.current = data;
-        setKitLots(data);
       } catch { /* 读不到就不带入，不影响手工填写 */ }
       try {
         const r2 = await (casesApi as any).extractionDeviceNos?.();
@@ -359,7 +380,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         }));
       };
       const _dev = (sec: any) => {
-        const mem = deviceNosRef.current || {};
+        // 2026-11-09：设备编号按批次签收地取（厦门/香港分别记忆）；混地区批次不取记忆
+        const mem = deviceNosFor(d.receipt_location);
         return {
           dev_metal: sec?.dev_metal || mem.dev_metal?.no || DEVICE_ROWS[0].def,
           dev_qubit: sec?.dev_qubit || mem.dev_qubit?.no || DEVICE_ROWS[1].def,
@@ -378,7 +400,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         temperature: fed.temperature ?? ed.temperature ?? null,
         humidity: fed.humidity ?? ed.humidity ?? null,
       });
-      const _q = kitLotsRef.current[QUANT_KIT_CODE] || {};
+      const _q = kitLotsFor(d.receipt_location)[QUANT_KIT_CODE] || {};
       const _exNotDoneM = d.status !== "COMPLETED";
       setReagentM({
         ..._devM,
@@ -544,7 +566,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       const next: KitRow[] = vals.map((v) => {
         const hit = cur.find((k) => k.kit === v);
         if (hit) return hit;
-        const last = kitLots[v] || {};
+        const last = kitLotsFor(selectedBatch?.receipt_location)[v] || {};
         return { kit: v, lot: last.lot || "", expiry: last.expiry ? dayjs(last.expiry) : undefined };
       });
       return { ...p, kits: next };

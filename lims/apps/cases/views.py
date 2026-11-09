@@ -3430,6 +3430,37 @@ from .serializers import (
     NipptExtractionBatchCreateSerializer, NipptExtractionSampleSerializer,
 )
 
+def _nippt_batch_region_map(batches):
+    """{batch_id: 'XIAMEN'|'HONGKONG'|''} —— 由批次样本的签收地推出来。
+
+    2026-11-09：试剂盒/定量试剂/设备的「上次值」按厦门、香港分开记。
+    混地区（同时含两地样本）或没有签收地 → ''（前端据此不自动带值）。
+    """
+    from .models import CaseSample
+
+    cs_ids = set()
+    for b in batches:
+        for sp in b.samples.all():
+            for i in (sp.case_sample_ids or []):
+                cs_ids.add(str(i))
+    locs = {}
+    if cs_ids:
+        for row in CaseSample.objects.filter(id__in=list(cs_ids)).values("id", "receipt_location"):
+            if row["receipt_location"]:
+                locs[str(row["id"])] = row["receipt_location"]
+
+    out = {}
+    for b in batches:
+        found = set()
+        for sp in b.samples.all():
+            for i in (sp.case_sample_ids or []):
+                val = locs.get(str(i))
+                if val:
+                    found.add(val)
+        out[str(b.id)] = next(iter(found)) if len(found) == 1 else ""
+    return out
+
+
 class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.ModelViewSet):
     nippt_stage = "EXTRACTION"
     photos_namespace = "nippt_extraction"
@@ -3450,27 +3481,31 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
 
     @action(detail=False, methods=["get"], url_path="device_nos")
     def device_nos(self, request):
-        """最近一次保存的各设备编号（金属浴 / Qubit定量仪 / 设备号）。
+        """按签收地分组：金属浴 / Qubit定量仪「该地区最近一次保存」的设备编号。
 
-        前端打开批次时自动带入：批次自己存了就用批次的，没存过就用这里最近一次的值。
-        只记非空值 —— 清空某次填写不会把记忆抹掉。
+        2026-11-09：两地设备不同 → 分开记忆。只记非空值（清空不会抹掉记忆）。
+        返回 {"XIAMEN": {...}, "HONGKONG": {...}, "": {...}}
         """
         from .models import NipptExtractionBatch
 
-        out = {}
-        qs = NipptExtractionBatch.objects.order_by("-updated_at").only(
-            "batch_number", "extraction_data", "updated_at")[:800]
+        qs = list(NipptExtractionBatch.objects
+                  .order_by("-updated_at")
+                  .only("id", "batch_number", "extraction_data", "updated_at")
+                  .prefetch_related("samples")[:800])
+        region_of = _nippt_batch_region_map(qs)
+        out = {"XIAMEN": {}, "HONGKONG": {}, "": {}}
         for b in qs:
+            bucket = out.setdefault(region_of.get(str(b.id), ""), {})
             data = b.extraction_data or {}
             for side in ("female", "male"):
                 sec = data.get(side) or {}
-                for key in ("dev_metal", "dev_qubit", "dev_extra"):
-                    if key in out:
+                for key in ("dev_metal", "dev_qubit"):
+                    if key in bucket:
                         continue
-                    v = str(sec.get(key) or "").strip()
-                    if v:
-                        out[key] = {
-                            "no": v,
+                    val = str(sec.get(key) or "").strip()
+                    if val:
+                        bucket[key] = {
+                            "no": val,
                             "batch_number": b.batch_number,
                             "saved_at": b.updated_at.isoformat() if b.updated_at else None,
                         }
@@ -3478,19 +3513,23 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
 
     @action(detail=False, methods=["get"], url_path="kit_lots")
     def kit_lots(self, request):
-        """每种提取试剂盒「全系统最近一次保存」的批号/有效期。
+        """按签收地分组：每种试剂盒「该地区最近一次保存」的批号/有效期。
 
-        前端选中试剂盒时自动带入，实验室改过后下次就用改后的值。
-        · 按批次 updated_at 倒序扫，第一次出现的即最近一次
-        · 兼容旧数据（单数 kit_type + reagent_lot/reagent_expiry）
-        · 男女两侧都扫；同一批次里两侧都用了同一试剂盒 → 取女性侧优先（先扫 female）
+        2026-11-09 用户要求：同一个试剂盒厦门、香港可能不同批号 → 分开记忆。
+        · "XIAMEN"/"HONGKONG" = 该地区最近一次保存
+        · "" = 签收地为空 / 混地区批次汇总（前端不使用，避免串地区）
+        男侧定量试剂 quant_lot/quant_expiry 同样按地区入桶（key=VAHTS_DSDNA_HS）。
         """
         from .models import NipptExtractionBatch
 
-        out = {}
-        qs = NipptExtractionBatch.objects.order_by("-updated_at").only(
-            "batch_number", "extraction_data", "updated_at")[:800]
+        qs = list(NipptExtractionBatch.objects
+                  .order_by("-updated_at")
+                  .only("id", "batch_number", "extraction_data", "updated_at")
+                  .prefetch_related("samples")[:800])
+        region_of = _nippt_batch_region_map(qs)
+        out = {"XIAMEN": {}, "HONGKONG": {}, "": {}}
         for b in qs:
+            bucket = out.setdefault(region_of.get(str(b.id), ""), {})
             data = b.extraction_data or {}
             for side in ("female", "male"):
                 sec = data.get(side) or {}
@@ -3503,18 +3542,16 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
                     if not isinstance(r, dict):
                         continue
                     k = str(r.get("kit") or "").strip()
-                    if not k or k in out:
+                    if not k or k in bucket:
                         continue
-                    out[k] = {
+                    bucket[k] = {
                         "lot": str(r.get("lot") or ""),
                         "expiry": str(r.get("expiry") or ""),
                         "batch_number": b.batch_number,
                         "saved_at": b.updated_at.isoformat() if b.updated_at else None,
                     }
-                # 2026-11-09：男性侧「定量试剂」固定在 quant_lot / quant_expiry 两个字段里，
-                # 也当作一种试剂返回（key = VAHTS_DSDNA_HS），前端同样自动带入上次的值
-                if "VAHTS_DSDNA_HS" not in out and (sec.get("quant_lot") or sec.get("quant_expiry")):
-                    out["VAHTS_DSDNA_HS"] = {
+                if "VAHTS_DSDNA_HS" not in bucket and (sec.get("quant_lot") or sec.get("quant_expiry")):
+                    bucket["VAHTS_DSDNA_HS"] = {
                         "lot": str(sec.get("quant_lot") or ""),
                         "expiry": str(sec.get("quant_expiry") or ""),
                         "batch_number": b.batch_number,
