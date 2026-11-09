@@ -319,9 +319,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               isQC: !!cell.sample.is_qc,
               kind,
             };
-          } else if (cell.skip) {
-            g[r][c] = { vgId: "", index: "", skip: true, kind };
           }
+          // 2026-11-09（用户要求）：提取板的 SKIP 孔在建库板上「留空」，不写 SKIP 标记。
+          // 位置照样被占住（行 A→H 一一对应），只是看起来就是一个普通空孔。
         }
         ci++; used++;
       }
@@ -1111,7 +1111,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       if (side === "F") setHkFemaleStarts(fStarts); else setHkMaleStarts(mStarts);
       rebuildAllPlates(selectedBatch, xiamenStarts, fStarts, mStarts, { modeF: nf, modeM: nm, order: d, only: side });
       const batches = (d.batches || []).join("、");
-      message.success(`${sideName}板已按提取顺序排列：${cols} 列（保留 SKIP）${batches ? "；提取批次 " + batches : ""}`, 6);
+      message.success(`${sideName}板已按提取顺序排列：${cols} 列（提取板的空孔留空）${batches ? "；提取批次 " + batches : ""}`, 6);
       if ((d.missing || []).length) {
         message.warning(`有 ${d.missing.length} 个样本找不到提取板位置，未排入板面：` +
           d.missing.slice(0, 3).map((x: any) => `${x.test_sample_id || ""} ${x.patient_name}`).join("、"), 8);
@@ -1167,12 +1167,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
             <tr key={row}><td style={rowLabelStyle}>{label}</td>
               {Array.from({length:12},(_,col)=>{
                 const cell = plate[row]?.[col]||{vgId:"",index:""};
-                const bg = cell.skip ? "#fff7e6" : cell.vgId ? "#e8f5e9" : "#fafafa";
+                const bg = cell.vgId ? "#e8f5e9" : "#fafafa";
                 const val = typeof cell.conc === "number" ? String(cell.conc) : "";
                 return (
                   <td key={col} style={{...cellStyle, background:bg}}>
                     {cell.skip ? (
-                      <div style={{minHeight:30,lineHeight:"30px",textAlign:"center",fontSize:10,color:"#d48806",fontWeight:600}}>SKIP</div>
+                      <div style={{minHeight:30}} />
                     ) : (
                       <div style={{display:"flex",alignItems:"stretch",minHeight:30}}>
                         <div style={idxBox}>{cell.index || "\u00a0"}</div>
@@ -1225,9 +1225,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     const body = ROWS.map((label, row) => {
       const cells = Array.from({ length: 12 }, (_, col) => {
         const cell: any = plate[row]?.[col] || { vgId: "", index: "" };
-        const bg = cell.skip ? "#fff7e6" : cell.vgId ? "#e8f5e9" : "#fafafa";
+        const bg = cell.vgId ? "#e8f5e9" : "#fafafa";
         if (cell.skip) {
-          return `<td style="border:1px solid #d9d9d9;background:${bg};height:34px;text-align:center;font-size:10px;color:#d48806;font-weight:600">SKIP</td>`;
+          // 2026-11-09：SKIP 孔打印成普通空格
+          return `<td style="border:1px solid #d9d9d9;background:#fafafa;height:34px"></td>`;
         }
         // A4 横向单页只放得下 ~78px 一列：Index 与 PT 左右并排会挤爆，
         // 打印成「Index 小字在上、PT 在下」两行（颜色/底色与屏上一致）
@@ -1301,7 +1302,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               const sr = sKey ? (sampleResults[sKey] ?? sampleResults[String(sIdx)]) : undefined;
               const failBg = sr?.status==="fail"?"#fff1f0":undefined;
               const passBg = sr?.status==="pass"?"#f6ffed":undefined;
-              const baseBg = cell.skip ? "#fff7e6" : cell.vgId?"#e8f5e9":"#fafafa";
+              const baseBg = cell.vgId?"#e8f5e9":"#fafafa";
               const bg = failBg||passBg||baseBg;
               // Index 查重（实时）：本格重复则标红并提示其他位置
               const _dupList = indexCheck.cellDup.get(`${plateKey}:${row}:${col}`);
@@ -1330,7 +1331,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                     </div>
                   }>
                     {cell.skip ? (
-                      <div style={{minHeight:30,lineHeight:"30px",textAlign:"center",fontSize:10,color:"#d48806",fontWeight:600}}>SKIP</div>
+                      <div style={{minHeight:30}} />
                     ) : (
                     <div style={{display:"flex",alignItems:"stretch",minHeight:30}}>
                       <input type="text" data-ix-cell={row+"_"+col} disabled={selectedBatch?.status==="COMPLETED"} value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value)} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); const ni=col*8+row+1; if(ni<96){ const nr=ni%8, nc=Math.floor(ni/8); const root=document.querySelector(`[data-plate-grid="${plateKey}"]`); const el=root?.querySelector(`[data-ix-cell="${nr}_${nc}"]`) as HTMLInputElement|null; if(el){ el.focus(); el.select(); } } } }} style={_dupList ? {...inputStyle, background:"#ffe58f", color:"#ad4e00", fontWeight:700, boxSizing:"border-box", border:"1px solid #faad14"} : inputStyle}
@@ -1507,7 +1508,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   {(fillModeF === "extraction" || fillModeM === "extraction") && (
                     <Space size={8} wrap>
                       <Text type="secondary" style={{ fontSize: 11 }}>
-                        提取顺序：一列 → 一列排列（SKIP 孔保留）；该侧「起始列」填 1–12，留空=居中
+                        提取顺序：一列 → 一列排列（提取板的 SKIP 孔在建库板上留空）；该侧「起始列」填 1–12，留空=居中
                       </Text>
                       {!!(extOrder?.batches || []).length && (
                         <Tag color="blue" style={{ fontSize: 11 }}>
