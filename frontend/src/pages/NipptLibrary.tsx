@@ -879,10 +879,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         const k = INDEX_KITS.find(x => x.value === kv);
         rows.push(["Index接头", k?.label || kv, "批号", indexKitDetails[kv]?.lot || "", "有效期", indexKitDetails[kv]?.expiry || ""]);
       });
-      rows.push(["阳性质控品", positiveControl || ""]);
-      rows.push(["阴性质控品", negativeControl || ""]);
       rows.push(["纯化磁珠", BEADS_LABEL, "批号", beadsLot || "", "有效期", beadsExpiry || ""]);
       rows.push(["定量试剂", QUANT_REAGENT_LABEL, "批号", quantLot || "", "有效期", quantExpiry || ""]);
+      rows.push(["阳性质控品", positiveControl || ""]);
+      rows.push(["阴性质控品", negativeControl || ""]);
       rows.push([]);
       return rows;
     };
@@ -1542,11 +1542,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                 )})}
               </div>
 
-              <Row gutter={16} style={{marginTop:8}}>
-                <Col span={12}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontWeight:600,whiteSpace:"nowrap"}}>阳性质控品:</span><Input placeholder="批号/序列号" value={positiveControl} onChange={e=>setPositiveControl(e.target.value)}/></div></Col>
-                <Col span={12}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontWeight:600,whiteSpace:"nowrap"}}>阴性质控品:</span><Input placeholder="批号/序列号" value={negativeControl} onChange={e=>setNegativeControl(e.target.value)}/></div></Col>
-              </Row>
-
               {/* 2026-11-09：纯化磁珠 / 定量试剂（名称固定，只填批号+有效期；按地区默认带出上一批） */}
               <Row gutter={12} style={{marginTop:8}}>
                 <Col span={13}><div style={{padding:"4px 11px",lineHeight:"30px",border:"1px solid #d9d9d9",borderRadius:6,background:"#f5f5f5",color:"#1677ff",fontWeight:500,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>纯化磁珠 — {BEADS_LABEL}</div></Col>
@@ -1558,6 +1553,11 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                 <Col span={4}><Input placeholder="批号" value={quantLot} onChange={e=>setQuantLot(e.target.value)} /></Col>
                 <Col span={5}><DatePicker picker="month" placeholder="有效期" style={{width:"100%"}} format="YYYY-MM" value={quantExpiry?dayjs(quantExpiry):null} onChange={(d:any)=>setQuantExpiry(d?d.format("YYYY-MM"):"")} /></Col>
               </Row>
+              <Row gutter={16} style={{marginTop:8}}>
+                <Col span={12}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontWeight:600,whiteSpace:"nowrap"}}>阳性质控品:</span><Input placeholder="批号/序列号" value={positiveControl} onChange={e=>setPositiveControl(e.target.value)}/></div></Col>
+                <Col span={12}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontWeight:600,whiteSpace:"nowrap"}}>阴性质控品:</span><Input placeholder="批号/序列号" value={negativeControl} onChange={e=>setNegativeControl(e.target.value)}/></div></Col>
+              </Row>
+
             </Card>
 
             {/* Step confirmations */}
