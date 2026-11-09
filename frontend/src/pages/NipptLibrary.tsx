@@ -53,11 +53,12 @@ const STEPS = [
  *  · 香港 PCR仪 VBL-THC-01~04；Qubit VBL-QB-03（无打断仪）
  *  男女各一套：key 带 _female/_male，多选值用「、」拼接
  */
-type LibDevItem = { key: "dev_stopper" | "dev_pcr" | "dev_qubit"; label: string; options: string[]; multi?: boolean; width?: number };
+type LibDevItem = { key: "dev_stopper" | "dev_pcr" | "dev_concentrator" | "dev_qubit"; label: string; options: string[]; multi?: boolean; width?: number };
 const LIB_DEVICE_BY_REGION: Record<"XIAMEN" | "HONGKONG", LibDevItem[]> = {
   XIAMEN: [
     { key: "dev_stopper", label: "打断仪", options: ["YSFH-EI-049"], width: 170 },
     { key: "dev_pcr", label: "PCR仪", options: ["YSFH-EI-024-08（孵育）", "YSFH-EI-024-05", "YSFH-EI-024-12", "YSFH-EI-024-07"], multi: true, width: 320 },
+    { key: "dev_concentrator", label: "浓缩仪", options: ["YSFH-EI-036-01", "YSFH-EI-036-02（常用）"], multi: true, width: 260 },
     { key: "dev_qubit", label: "Qubit定量仪", options: ["YSFH-EI-021-04"], width: 170 },
   ],
   HONGKONG: [

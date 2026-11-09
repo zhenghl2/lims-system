@@ -3929,7 +3929,7 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
             reg = str(ld.get("region") or "").strip().upper() or region_of.get(str(b.id), "")
             bucket = out.setdefault(reg if reg in ("XIAMEN", "HONGKONG") else "", {})
             for side in ("female", "male"):
-                for key in ("dev_stopper", "dev_pcr", "dev_qubit"):
+                for key in ("dev_stopper", "dev_pcr", "dev_concentrator", "dev_qubit"):
                     k = "%s_%s" % (key, side)
                     if k in bucket:
                         continue
