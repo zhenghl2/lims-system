@@ -56,6 +56,13 @@ const KIT_OPTIONS = [
   { value: "MAGEN_ROUND", label: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)" },
   { value: "MAGEN_CONICAL", label: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)" },
 ];
+/** 设备（2026-11-09）：金属浴 / Qubit定量仪 固定默认编号；「设备号」留空，填过就记住 */
+const DEVICE_ROWS = [
+  { key: "dev_metal", label: "金属浴", def: "YSFH-EI-010-03", w: 140 },
+  { key: "dev_qubit", label: "Qubit定量仪", def: "YSFH-EI-021-03", w: 140 },
+  { key: "dev_extra", label: "设备号", def: "", w: 120 },
+] as const;
+
 /** 男性侧固定定量试剂（2026-11-09） */
 const QUANT_KIT_CODE = "VAHTS_DSDNA_HS";
 const QUANT_KIT_LABEL = "VAHTS 1×dsDNA HS Assay Kit (EQ121-02)";
@@ -197,7 +204,8 @@ export default function NipptExtraction() {
   const [maleMethod, setMaleMethod] = useState("");
   // 实验记录（设备/试剂盒/批号/有效期/温湿度）——男女各自一套（2026-10-19 解耦）
   type KitRow = { kit: string; lot: string; expiry?: any };
-  type ReagentInfo = { equipment?: string; kit_type?: any; reagent_lot?: string; reagent_expiry?: any;
+  type ReagentInfo = { equipment?: string; dev_metal?: string; dev_qubit?: string; dev_extra?: string;
+    kit_type?: any; reagent_lot?: string; reagent_expiry?: any;
     kits?: KitRow[]; quant_lot?: string; quant_expiry?: any;
     temperature?: number | null; humidity?: number | null };
   const [reagentF, setReagentF] = useState<ReagentInfo>({});
@@ -205,7 +213,9 @@ export default function NipptExtraction() {
   // 每种试剂盒「全系统最近一次保存」的批号/有效期 → 选中时自动带入（用户可改，改了下次就用新的）
   const [kitLots, setKitLots] = useState<Record<string, { lot?: string; expiry?: string }>>({});
   const kitLotsRef = useRef<Record<string, { lot?: string; expiry?: string }>>({});
-  // 打开页面拉一次：选中试剂盒时自动带入上次的批号/有效期
+  // 设备号记忆（金属浴/Qubit/设备号）——同样取最近一次保存的值
+  const deviceNosRef = useRef<Record<string, { no?: string }>>({});
+  // 打开页面拉一次：选中试剂盒时自动带入上次的批号/有效期；设备号同理
   useEffect(() => {
     (async () => {
       try {
@@ -214,6 +224,10 @@ export default function NipptExtraction() {
         kitLotsRef.current = data;
         setKitLots(data);
       } catch { /* 读不到就不带入，不影响手工填写 */ }
+      try {
+        const r2 = await (casesApi as any).extractionDeviceNos?.();
+        deviceNosRef.current = (r2 && r2.data) || {};
+      } catch { /* 同上 */ }
     })();
   }, []);
   const [stepConfirmations, setStepConfirmations] = useState<Record<string, boolean>>({});
@@ -345,7 +359,20 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
           expiry: x.expiry ? dayjs(x.expiry) : undefined,
         }));
       };
+      const _dev = (sec: any, legacy: any) => {
+        const mem = deviceNosRef.current || {};
+        const oldText = String((sec && sec.equipment) ?? legacy?.equipment ?? "").trim();
+        return {
+          dev_metal: sec?.dev_metal || mem.dev_metal?.no || DEVICE_ROWS[0].def,
+          dev_qubit: sec?.dev_qubit || mem.dev_qubit?.no || DEVICE_ROWS[1].def,
+          // 旧批次只有一个自由文本设备框 → 放到「设备号」里，不丢历史
+          dev_extra: sec?.dev_extra || mem.dev_extra?.no || oldText || "",
+        };
+      };
+      const _devF = _dev(fed, ed);
+      const _devM = _dev(med, ed);
       setReagentF({
+        ..._devF,
         equipment: fed.equipment ?? ed.equipment ?? "",
         kits: pickKits(fed, ed),
         kit_type: fed.kit_type ?? ed.kit_type ?? undefined,
@@ -357,6 +384,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       const _q = kitLotsRef.current[QUANT_KIT_CODE] || {};
       const _exNotDoneM = d.status !== "COMPLETED";
       setReagentM({
+        ..._devM,
         equipment: med.equipment ?? ed.equipment ?? "",
         kits: pickKits(med, ed),
         quant_lot: med.quant_lot || (_exNotDoneM ? (_q.lot || "") : ""),
@@ -488,6 +516,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     return o === "" ? undefined : o;
   };
 
+  /** 设备三项 → 兼容旧字段 equipment（导出/统计仍读它） */
+  const devJoined = (rg: ReagentInfo) =>
+    DEVICE_ROWS
+      .map((d) => { const v = String((rg as any)[d.key] || "").trim(); return v ? `${d.label} ${v}` : ""; })
+      .filter(Boolean).join(" / ");
+
   /** 试剂盒多选 → 保存用数组（日期统一 YYYY-MM-DD） */
   const kitsForSave = (rg: ReagentInfo) =>
     (rg.kits || []).filter((k) => k && k.kit).map((k) => ({
@@ -530,7 +564,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         magnetic_notes: femaleMagneticNotes.current,
         manual_notes: femaleManualNotes, auto_notes: femaleAutoNotes,
         extraction_date: dateF || "", extraction_time: timeF || "",
-        equipment: reagentF.equipment || "",
+        equipment: devJoined(reagentF),
+        dev_metal: reagentF.dev_metal || "", dev_qubit: reagentF.dev_qubit || "",
+        dev_extra: reagentF.dev_extra || "",
         kits: kitsForSave(reagentF),
         kit_type: (reagentF.kits?.[0]?.kit) || reagentF.kit_type || "",
         reagent_lot: (reagentF.kits?.[0]?.lot) || reagentF.reagent_lot || "",
@@ -543,7 +579,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         magnetic_notes: maleMagneticNotes.current,
         manual_notes: maleManualNotes, auto_notes: maleAutoNotes,
         extraction_date: dateM || "", extraction_time: timeM || "",
-        equipment: reagentM.equipment || "",
+        equipment: devJoined(reagentM),
+        dev_metal: reagentM.dev_metal || "", dev_qubit: reagentM.dev_qubit || "",
+        dev_extra: reagentM.dev_extra || "",
         kits: kitsForSave(reagentM),
         quant_lot: reagentM.quant_lot || "",
         quant_expiry: reagentM.quant_expiry ? dayjs(reagentM.quant_expiry).format("YYYY-MM-DD") : "",
@@ -553,7 +591,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
           : (reagentM.reagent_expiry ? dayjs(reagentM.reagent_expiry).format("YYYY-MM-DD") : ""),
         temperature: reagentM.temperature ?? null, humidity: reagentM.humidity ?? null },
       // 顶层字段保留女性侧值：旧导出模板/报表仍按顶层读（向后兼容）
-      kit_type: (reagentF.kits?.[0]?.kit) || reagentF.kit_type || "", equipment: reagentF.equipment || "",
+      kit_type: (reagentF.kits?.[0]?.kit) || reagentF.kit_type || "", equipment: devJoined(reagentF),
       reagent_lot: (reagentF.kits?.[0]?.lot) || reagentF.reagent_lot || "",
       reagent_expiry: reagentF.kits?.[0]?.expiry ? dayjs(reagentF.kits[0].expiry).format("YYYY-MM-DD")
         : (reagentF.reagent_expiry ? dayjs(reagentF.reagent_expiry).format("YYYY-MM-DD") : ""),
@@ -1156,12 +1194,16 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   value={reagent.humidity as any}
                   onChange={(v) => setReagent((p: any) => ({ ...p, humidity: v }))} />
               </div>
-              <div>
-                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>设备</div>
-                <Input size="small" style={{ width: 140 }} placeholder="设备编号"
-                  value={reagent.equipment || ""}
-                  onChange={(e) => setReagent((p: any) => ({ ...p, equipment: e.target.value }))} />
-              </div>
+              {/* 2026-11-09：设备拆成三行 —— 金属浴 / Qubit定量仪（默认带编号）+ 设备号（留空，填过就记住） */}
+              {DEVICE_ROWS.map((d) => (
+                <div key={d.key}>
+                  <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>{d.label}</div>
+                  <Input size="small" style={{ width: d.w }}
+                    placeholder={d.key === "dev_extra" ? "设备编号" : "设备编号"}
+                    value={String((reagent as any)[d.key] ?? "")}
+                    onChange={(e) => setReagent((p: any) => ({ ...p, [d.key]: e.target.value }))} />
+                </div>
+              ))}
               <div>
                 <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>试剂盒（可多选）</div>
                 <Select mode="multiple" size="small" style={{ minWidth: 300 }} placeholder="选择（可多选）"
@@ -1356,7 +1398,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       aoa.push(["照片数量", photos.length]);
       aoa.push(["温度(℃)", rg.temperature ?? ""]);
       aoa.push(["湿度(%)", rg.humidity ?? ""]);
-      aoa.push(["设备", rg.equipment || ""]);
+      DEVICE_ROWS.forEach((d) => aoa.push([d.label, String((rg as any)[d.key] ?? "")]));
       const _kits = (rg.kits && rg.kits.length)
         ? rg.kits
         : (rg.kit_type ? [{ kit: rg.kit_type, lot: rg.reagent_lot, expiry: rg.reagent_expiry }] : []);

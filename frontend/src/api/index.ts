@@ -248,6 +248,8 @@ export const casesApi = {
   getQCandidates: (search: string) => api.get(`/cases/extraction/qc_candidates/?search=${encodeURIComponent(search)}`),
   /** 每种试剂盒「全系统最近一次保存」的批号/有效期（提取页自动带入） */
   extractionKitLots: () => api.get("/cases/extraction/kit_lots/"),
+  /** 最近一次保存的各设备编号（金属浴 / Qubit定量仪 / 设备号） */
+  extractionDeviceNos: () => api.get("/cases/extraction/device_nos/"),
   deleteExtractionBatch: (id: string) => api.delete(`/cases/extraction/${id}/`),
   saveExtraction: (id: string, data: any) => api.post(`/cases/extraction/${id}/save_processing/`, data),
   completeExtraction: (id: string) => api.post(`/cases/extraction/${id}/complete/`),

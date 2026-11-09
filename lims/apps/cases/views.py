@@ -3448,6 +3448,34 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
             return NipptExtractionBatchCreateSerializer
         return NipptExtractionBatchDetailSerializer
 
+    @action(detail=False, methods=["get"], url_path="device_nos")
+    def device_nos(self, request):
+        """最近一次保存的各设备编号（金属浴 / Qubit定量仪 / 设备号）。
+
+        前端打开批次时自动带入：批次自己存了就用批次的，没存过就用这里最近一次的值。
+        只记非空值 —— 清空某次填写不会把记忆抹掉。
+        """
+        from .models import NipptExtractionBatch
+
+        out = {}
+        qs = NipptExtractionBatch.objects.order_by("-updated_at").only(
+            "batch_number", "extraction_data", "updated_at")[:800]
+        for b in qs:
+            data = b.extraction_data or {}
+            for side in ("female", "male"):
+                sec = data.get(side) or {}
+                for key in ("dev_metal", "dev_qubit", "dev_extra"):
+                    if key in out:
+                        continue
+                    v = str(sec.get(key) or "").strip()
+                    if v:
+                        out[key] = {
+                            "no": v,
+                            "batch_number": b.batch_number,
+                            "saved_at": b.updated_at.isoformat() if b.updated_at else None,
+                        }
+        return Response(out)
+
     @action(detail=False, methods=["get"], url_path="kit_lots")
     def kit_lots(self, request):
         """每种提取试剂盒「全系统最近一次保存」的批号/有效期。
