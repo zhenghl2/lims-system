@@ -60,7 +60,7 @@ const KIT_OPTIONS = [
 const DEVICE_ROWS = [
   { key: "dev_metal", label: "金属浴", def: "YSFH-EI-010-03", w: 140 },
   { key: "dev_qubit", label: "Qubit定量仪", def: "YSFH-EI-021-03", w: 140 },
-  { key: "dev_extra", label: "设备号", def: "", w: 120 },
+  { key: "dev_extra", label: "其他设备", def: "", w: 170 },
 ] as const;
 
 /** 男性侧固定定量试剂（2026-11-09） */
@@ -1194,16 +1194,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   value={reagent.humidity as any}
                   onChange={(v) => setReagent((p: any) => ({ ...p, humidity: v }))} />
               </div>
-              {/* 2026-11-09：设备拆成三行 —— 金属浴 / Qubit定量仪（默认带编号）+ 设备号（留空，填过就记住） */}
-              {DEVICE_ROWS.map((d) => (
-                <div key={d.key}>
-                  <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>{d.label}</div>
-                  <Input size="small" style={{ width: d.w }}
-                    placeholder={d.key === "dev_extra" ? "设备编号" : "设备编号"}
-                    value={String((reagent as any)[d.key] ?? "")}
-                    onChange={(e) => setReagent((p: any) => ({ ...p, [d.key]: e.target.value }))} />
-                </div>
-              ))}
               <div>
                 <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>试剂盒（可多选）</div>
                 <Select mode="multiple" size="small" style={{ minWidth: 300 }} placeholder="选择（可多选）"
@@ -1220,6 +1210,24 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                 {isFemale ? "同男性侧" : "同女性侧"}
               </Button>
             </div>
+            {/* 2026-11-09：设备 = 设备名 + 各自的设备号（金属浴 / Qubit 默认带编号；其他设备留空，填过就记住） */}
+            <div style={{ marginTop: 2 }}>
+              <div style={{ fontSize: 12, color: "#999", marginBottom: 4 }}>设备</div>
+              <div style={{ display: "inline-block", border: "1px solid #f0f0f0", borderRadius: 4,
+                            padding: "6px 10px", background: "#fafafa" }}>
+                {DEVICE_ROWS.map((d, di) => (
+                  <div key={d.key} style={{ display: "flex", alignItems: "center", gap: 10,
+                                            marginBottom: di === DEVICE_ROWS.length - 1 ? 0 : 4,
+                                            whiteSpace: "nowrap" }}>
+                    <div style={{ width: 110, fontSize: 12, color: "#666" }}>{d.label}</div>
+                    <Input size="small" style={{ width: 170 }} placeholder="设备号"
+                      value={String((reagent as any)[d.key] ?? "")}
+                      onChange={(e) => setReagent((p: any) => ({ ...p, [d.key]: e.target.value }))} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* 2026-11-09：多选试剂盒 → 每个试剂盒各自一行批号/有效期（选中时自动带入上次的值） */}
             {(reagent.kits || []).length > 0 && (
               <div style={{ marginTop: 8, overflowX: "auto" }}>
