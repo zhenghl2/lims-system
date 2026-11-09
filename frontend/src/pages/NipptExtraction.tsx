@@ -1181,6 +1181,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
             {/* 2026-11-09：多选试剂盒 → 每个试剂盒各自一行批号/有效期（选中时自动带入上次的值） */}
             {(reagent.kits || []).length > 0 && (
               <div style={{ marginTop: 8, overflowX: "auto" }}>
+                {/* 2026-11-09：两种试剂用「行名 + 分隔线」分开，避免混在一起看不清 */}
+                <div style={{ fontSize: 12, color: "#999", marginBottom: 4 }}>提取试剂</div>
                 {(reagent.kits || []).map((k, i) => (
                   // 2026-11-09：试剂名称一行显示（不换行；列宽固定保证批号/有效期上下对齐）
                   <div key={k.kit} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4,
@@ -1203,11 +1205,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
             {/* 2026-11-09：男性侧定量试剂（固定这一种，只需批号/有效期；自动带入上次的值） */}
             {!isFemale && (
               <div style={{ marginTop: 8, overflowX: "auto" }}>
+                <Divider style={{ margin: (reagent.kits || []).length > 0 ? "6px 0 8px" : "0 0 8px" }} />
+                <div style={{ fontSize: 12, color: "#999", marginBottom: 4 }}>定量试剂</div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", whiteSpace: "nowrap" }}>
                   <div title={QUANT_KIT_LABEL}
                     style={{ fontSize: 12, color: "#666", flex: "0 0 340px", width: 340,
                              whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    定量试剂 {QUANT_KIT_LABEL}
+                    {QUANT_KIT_LABEL}
                   </div>
                   <Input size="small" style={{ width: 140, flex: "0 0 140px" }} placeholder="批号"
                     value={reagent.quant_lot || ""}
