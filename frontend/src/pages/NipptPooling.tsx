@@ -55,6 +55,8 @@ export default function NipptPooling() {
   const [poolDate, setPoolDate] = useState<string>("");
   const [poolTime, setPoolTime] = useState<string>("");
   const [quantKit, setQuantKit] = useState("EQ121-02");
+  // 浓缩仪（2026-11-09）：整批一套，多选值用「、」拼接
+  const [concentrator, setConcentrator] = useState<string>("");
 
   // Pooling state
   const [poolingBase, setPoolingBase] = useState(DEFAULT_POOLING_AMOUNT);
@@ -97,6 +99,10 @@ const sortBySexThenPt = <T extends { ptId?: string; test_sample_id?: string; cat
 };
 
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
+
+/** 2026-11-09：文库定量 / Pooling 的设备 —— 浓缩仪（可多选）
+ *  这步不区分实验室，签收地不影响设备清单，厦门/香港都显示同样两个号 */
+const CONCENTRATOR_OPTIONS = ["YSFH-EI-036-01", "YSFH-EI-036-02（常用）"];
 
 /** 操作人/审核人：多选（数组）↔ 存储文本（顿号分隔；兼容历史单值） */
 const joinPersons = (v?: string[] | string | null): string =>
@@ -222,6 +228,17 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
   const fetchBatches = useCallback(async()=>{setLoading(true);try{const r=await(casesApi as any).listPoolingBatches();setBatches(r.data?.results||[])}catch{}finally{setLoading(false)}},[]);
   useEffect(()=>{fetchBatches()},[fetchBatches]);
 
+  /** 上次用过的浓缩仪（无地区区分） */
+  const poolDevRef = useRef<Record<string, { no?: string }>>({});
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await (casesApi as any).poolingDeviceDefaults?.();
+        poolDevRef.current = (r && r.data) || {};
+      } catch { /* 读不到就不带值 */ }
+    })();
+  }, []);
+
   const fetchDetail = async(id:string)=>{
     setBatchLoading(true);
     try{
@@ -236,6 +253,8 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       setPoolDate(pd.pool_date || (_plNotDone ? dayjs().format("YYYY-MM-DD") : ""));
       setPoolTime(pd.pool_time || (_plNotDone ? dayjs().format("HH:mm") : ""));
       setQuantKit(pd.quant_kit||"EQ121-02");
+      // 浓缩仪：本批次已存 > 上次用过的 > 空
+      setConcentrator(pd.dev_concentrator || poolDevRef.current?.concentrator?.no || "");
       setGroupBases(pd.groupBases||{});
       setGroupElutions(pd.groupElutions||{});
       const allSamples = [...(d.female_samples||[]),...(d.male_blood_samples||[]),...(d.male_other_samples||[])];
@@ -380,6 +399,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     aoa.push([`${selectedBatch.batch_number} — 文库定量及 Pooling 记录`]);
     aoa.push([]);
     aoa.push(["日期", poolDate || "", "时间", poolTime || ""]);
+    aoa.push(["浓缩仪", concentrator || ""]);
     aoa.push(["操作人", opName, "审核人", rvName]);
     aoa.push([]);
 
@@ -468,6 +488,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       const samples = rows.map(r=>({id:r.id,qc_status:r.qc,qc_note:""}));
       const pd = {
         quant_kit:quantKit,poolingBase,globalElutionVol,groupBases,groupElutions,manual_alloc:manualAlloc,customAmounts,hk_doubled:hkDoubled,
+        dev_concentrator: concentrator,
         rows:rows.map(r=>({id:r.id,concentration:r.concentration,elutionVolume:r.elutionVolume,yield:r.yield,poolingAmount:r.poolingAmount,poolingVolume:r.poolingVolume,eliminated:r.eliminated,qc:r.qc,mixOverride:r.mixOverride??null})),
         indexes:savedIndexes,
         pool_date:poolDate,pool_time:poolTime,
@@ -728,6 +749,14 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
               </div>
             ))}
             <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
+              <Text type="secondary">浓缩仪: </Text>
+              <Select size="small" mode="multiple" maxTagCount={1} allowClear
+                style={{ width: 250, minWidth: 250, marginRight: 12 }}
+                placeholder="选择设备号（可多选）"
+                value={concentrator.split("、").map(x=>x.trim()).filter(Boolean)}
+                onChange={(v: string[]) => setConcentrator(v.filter(Boolean).join("、"))}
+                options={Array.from(new Set([...CONCENTRATOR_OPTIONS, ...concentrator.split("、").map(x=>x.trim()).filter(Boolean)]))
+                  .map(o => ({ label: o, value: o }))} />
               <Text type="secondary">操作人: </Text>
               <Select size="small" mode="multiple" maxTagCount="responsive" placeholder="可选择多个"
                 style={{ width: 190, minWidth: 190 }}

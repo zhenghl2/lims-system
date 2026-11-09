@@ -285,6 +285,8 @@ export const casesApi = {
 
   listPoolingBatches: (params?: Record<string, unknown>) => api.get("/cases/pooling/", { params }),
   getPoolingBatch: (id: string) => api.get(`/cases/pooling/${id}/`),
+  /** 文库定量/Pooling：上次用过的浓缩仪（不区分地区） */
+  poolingDeviceDefaults: () => api.get("/cases/pooling/device_defaults/"),
   createPoolingBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/pooling/", data),
   pendingPooling: () => api.get("/cases/pooling/pending/"),
   savePooling: (id: string, data: any) => api.post(`/cases/pooling/${id}/save_processing/`, data),

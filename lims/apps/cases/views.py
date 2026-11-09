@@ -3929,7 +3929,7 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
             reg = str(ld.get("region") or "").strip().upper() or region_of.get(str(b.id), "")
             bucket = out.setdefault(reg if reg in ("XIAMEN", "HONGKONG") else "", {})
             for side in ("female", "male"):
-                for key in ("dev_stopper", "dev_pcr", "dev_concentrator", "dev_qubit"):
+                for key in ("dev_stopper", "dev_pcr", "dev_qubit"):
                     k = "%s_%s" % (key, side)
                     if k in bucket:
                         continue
@@ -4189,6 +4189,28 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
 
 
 class NipptPoolingViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
+    @action(detail=False, methods=["get"], url_path="device_defaults")
+    def device_defaults(self, request):
+        """文库定量 / Pooling 的设备：取全库最近一次填过的浓缩仪。
+
+        2026-11-09 用户要求：这步不区分实验室（签收地不影响设备），
+        只有浓缩仪一项，可多选 → {"concentrator": {"no": "036-01、036-02（常用）", ...}}
+        """
+        from .models import NipptPoolingBatch
+
+        for b in (NipptPoolingBatch.objects.order_by("-updated_at")
+                  .only("batch_number", "pooling_data", "updated_at")[:300]):
+            pd = b.pooling_data or {}
+            val = str(pd.get("dev_concentrator") or "").strip()
+            if val:
+                return Response({"concentrator": {
+                    "no": val,
+                    "batch_number": b.batch_number,
+                    "saved_at": b.updated_at.isoformat() if b.updated_at else None,
+                }})
+        return Response({})
+
+
     nippt_stage = "POOLING"
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
