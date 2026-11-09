@@ -71,6 +71,10 @@ const libJoinDev = (arr?: string[] | null): string => (arr || []).filter(Boolean
 
 // ── Reagent kits ──
 const LIB_KITS = [{value:"ND607-C2",label:"VAHTS Universal DNA Library Prep Kit for Illumina V5 (ND607-C2)"},{value:"ND801-02",label:"VAHTS Universal Plus DNA Library Prep Kit V4 (ND801-02)"}];
+/** 2026-11-09：固定名称的两种配套试剂（只填批号+有效期） */
+const BEADS_LABEL = "ZHIXUAN Purification Beads";
+const QUANT_REAGENT_LABEL = "VAHTS 1×dsDNA HS Assay Kit";
+
 const INDEX_KITS = [{value:"N34201",label:"VAHTS Maxi UDI Adapters Set1 (1-96) - Cat#N34201-01"},{value:"N34202",label:"VAHTS Maxi UDI Adapters Set2 (97-192) - Cat#N34202-01"},{value:"N34203",label:"VAHTS Maxi UDI Adapters Set3 (193-288) - Cat#N34203-01"},{value:"N34204",label:"VAHTS Maxi UDI Adapters Set4 (289-384) - Cat#N34204-01"}];
 
 type PlateCell = { vgId: string; index: string; sampleIdx?: number; isQC?: boolean; kind?: string;
@@ -99,6 +103,23 @@ export default function NipptLibrary() {
   const [batchNumberPreview, setBatchNumberPreview] = useState("");
   const [saving, setSaving] = useState(false);
   const [pendingLoc, setPendingLoc] = useState<string | undefined>(undefined);
+
+  // 2026-11-09：拉一次「纯化磁珠/定量试剂」按地区上次填过的值
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await (casesApi as any).libraryReagentDefaults?.();
+        libReagentRef.current = (r && r.data) || {};
+      } catch { /* 读不到就不带值 */ }
+    })();
+  }, []);
+
+  /** 该地区上次填过的 纯化磁珠/定量试剂 值（key: beads | quant） */
+  const reagentDefault = (key: "beads" | "quant", reg?: string) => {
+    const k = (reg || "").toUpperCase();
+    if (k !== "XIAMEN" && k !== "HONGKONG") return {};
+    return (libReagentRef.current?.[k] || {})[key] || {};
+  };
 
   // 2026-11-09：拉一次文库设备「按地区记住的上次选择」
   useEffect(() => {
@@ -155,6 +176,12 @@ export default function NipptLibrary() {
   const [indexKitDetails, setIndexKitDetails] = useState<Record<string,{lot:string;expiry:string}>>({});
   const [positiveControl, setPositiveControl] = useState("");
   const [negativeControl, setNegativeControl] = useState("");
+  // 2026-11-09：纯化磁珠 / 定量试剂（名称固定，批号+有效期；按地区默认带出上一批）
+  const [beadsLot, setBeadsLot] = useState("");
+  const [beadsExpiry, setBeadsExpiry] = useState("");
+  const [quantLot, setQuantLot] = useState("");
+  const [quantExpiry, setQuantExpiry] = useState("");
+  const libReagentRef = useRef<Record<string, any>>({});
   const [libForm] = Form.useForm();
 
   // ── Steps & photos ──
@@ -564,6 +591,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       if(Array.isArray(ld.lib_kits)){setLibKits(ld.lib_kits.map((k:any)=>k.kit));const ldt:any={};ld.lib_kits.forEach((k:any)=>{ldt[k.kit]={lot:k.lot||"",expiry:k.expiry||""}});setLibKitDetails(ldt)}
       else{setLibKits([]);setLibKitDetails({})}
       setPositiveControl(ld.positive_control||"");setNegativeControl(ld.negative_control||"");
+      { const _reg = ld.region || "XIAMEN";
+        const _b = reagentDefault("beads", _reg), _q2 = reagentDefault("quant", _reg);
+        setBeadsLot(ld.beads_lot || _b.lot || "");
+        setBeadsExpiry(ld.beads_expiry || _b.expiry || "");
+        setQuantLot(ld.quant_lot || _q2.lot || "");
+        setQuantExpiry(ld.quant_expiry || _q2.expiry || ""); }
       if(Array.isArray(ld.index_kits)){setSelectedIndexKits(ld.index_kits.map((k:any)=>k.kit));const dt:any={};ld.index_kits.forEach((k:any)=>{dt[k.kit]={lot:k.lot||"",expiry:k.expiry||""}});setIndexKitDetails(dt)}
       else{setSelectedIndexKits([]);setIndexKitDetails({})}
       setStepConfirmations(ld.step_confirmations||{});
@@ -749,6 +782,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       ])),
       index_kits:selectedIndexKits.map(k=>({kit:k,lot:indexKitDetails[k]?.lot||"",expiry:indexKitDetails[k]?.expiry||""})),
       positive_control:positiveControl,negative_control:negativeControl,
+      // 2026-11-09：纯化磁珠 / 定量试剂（名称固定，只存批号+有效期）
+      beads_lot: beadsLot, beads_expiry: beadsExpiry,
+      quant_lot: quantLot, quant_expiry: quantExpiry,
       lib_date_female: dateF || "", lib_time_female: timeF || "",
       lib_date_male: dateM || "", lib_time_male: timeM || "",
       ...libForm.getFieldsValue(),step_confirmations:stepConfirmations,sample_results:sampleResults,
@@ -845,6 +881,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       });
       rows.push(["阳性质控品", positiveControl || ""]);
       rows.push(["阴性质控品", negativeControl || ""]);
+      rows.push(["纯化磁珠", BEADS_LABEL, "批号", beadsLot || "", "有效期", beadsExpiry || ""]);
+      rows.push(["定量试剂", QUANT_REAGENT_LABEL, "批号", quantLot || "", "有效期", quantExpiry || ""]);
       rows.push([]);
       return rows;
     };
@@ -1507,6 +1545,18 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               <Row gutter={16} style={{marginTop:8}}>
                 <Col span={12}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontWeight:600,whiteSpace:"nowrap"}}>阳性质控品:</span><Input placeholder="批号/序列号" value={positiveControl} onChange={e=>setPositiveControl(e.target.value)}/></div></Col>
                 <Col span={12}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontWeight:600,whiteSpace:"nowrap"}}>阴性质控品:</span><Input placeholder="批号/序列号" value={negativeControl} onChange={e=>setNegativeControl(e.target.value)}/></div></Col>
+              </Row>
+
+              {/* 2026-11-09：纯化磁珠 / 定量试剂（名称固定，只填批号+有效期；按地区默认带出上一批） */}
+              <Row gutter={12} style={{marginTop:8}}>
+                <Col span={13}><div style={{padding:"4px 11px",lineHeight:"30px",border:"1px solid #d9d9d9",borderRadius:6,background:"#f5f5f5",color:"#1677ff",fontWeight:500,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>纯化磁珠 — {BEADS_LABEL}</div></Col>
+                <Col span={4}><Input placeholder="批号" value={beadsLot} onChange={e=>setBeadsLot(e.target.value)} /></Col>
+                <Col span={5}><DatePicker picker="month" placeholder="有效期" style={{width:"100%"}} format="YYYY-MM" value={beadsExpiry?dayjs(beadsExpiry):null} onChange={(d:any)=>setBeadsExpiry(d?d.format("YYYY-MM"):"")} /></Col>
+              </Row>
+              <Row gutter={12} style={{marginTop:8}}>
+                <Col span={13}><div style={{padding:"4px 11px",lineHeight:"30px",border:"1px solid #d9d9d9",borderRadius:6,background:"#f5f5f5",color:"#1677ff",fontWeight:500,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>定量试剂 — {QUANT_REAGENT_LABEL}</div></Col>
+                <Col span={4}><Input placeholder="批号" value={quantLot} onChange={e=>setQuantLot(e.target.value)} /></Col>
+                <Col span={5}><DatePicker picker="month" placeholder="有效期" style={{width:"100%"}} format="YYYY-MM" value={quantExpiry?dayjs(quantExpiry):null} onChange={(d:any)=>setQuantExpiry(d?d.format("YYYY-MM"):"")} /></Col>
               </Row>
             </Card>
 

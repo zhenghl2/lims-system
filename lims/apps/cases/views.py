@@ -3869,6 +3869,43 @@ def _nippt_log_library_conc_changes(batch, user):
 
 
 class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.ModelViewSet):
+    @action(detail=False, methods=["get"], url_path="reagent_defaults")
+    def reagent_defaults(self, request):
+        """纯化磁珠 / 定量试剂：按地区取「该地区最近一次填过」的批号+有效期。
+
+        2026-11-09 用户要求：这两种试剂名称固定，只需批号/有效期；
+        新建批次时默认带出该地区上一批（往前找最近一次填过的）的值。
+        返回 {"XIAMEN": {"beads": {...}, "quant": {...}}, "HONGKONG": {...}, "": {...}}
+        """
+        from .models import NipptLibraryBatch
+
+        qs = list(NipptLibraryBatch.objects
+                  .order_by("-updated_at")
+                  .only("id", "batch_number", "library_data", "updated_at")
+                  .prefetch_related("samples")[:500])
+        region_of = _nippt_batch_region_map(qs)
+        out = {"XIAMEN": {}, "HONGKONG": {}, "": {}}
+        for b in qs:
+            ld = b.library_data or {}
+            reg = str(ld.get("region") or "").strip().upper() or region_of.get(str(b.id), "")
+            bucket = out.setdefault(reg if reg in ("XIAMEN", "HONGKONG") else "", {})
+            for key, lot_key, exp_key in (
+                ("beads", "beads_lot", "beads_expiry"),
+                ("quant", "quant_lot", "quant_expiry"),
+            ):
+                if key in bucket:
+                    continue
+                lot = str(ld.get(lot_key) or "").strip()
+                exp = str(ld.get(exp_key) or "").strip()
+                if lot or exp:
+                    bucket[key] = {
+                        "lot": lot,
+                        "expiry": exp,
+                        "batch_number": b.batch_number,
+                        "saved_at": b.updated_at.isoformat() if b.updated_at else None,
+                    }
+        return Response(out)
+
     @action(detail=False, methods=["get"], url_path="device_defaults")
     def device_defaults(self, request):
         """文库构建设备：按地区（厦门/香港）分组取「该地区最近一次保存」的设备号。
