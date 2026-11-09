@@ -1,5 +1,6 @@
 // NipptReports.tsx — NIPPT 报告模块：按生信批次组织，配对级报告管理
 import { useState, useEffect, useRef } from "react";
+import { usePermissions } from "../hooks/usePermissions";
 import { Table, Tag, Spin, Typography, Space, Button, Card, Empty, Select, Input, DatePicker, AutoComplete, message, Tooltip, Modal, Popover, Alert, Switch, Dropdown } from "antd";
 import {
   FileTextOutlined, DownloadOutlined, EyeOutlined, UploadOutlined,
@@ -44,6 +45,9 @@ const { Text, Title } = Typography;
 interface UserItem { id: string; username: string; }
 
 export default function NipptReports() {
+  // 报告复核/审核属于 nippt_reports 模块的 edit
+  const { canEdit } = usePermissions();
+  const canAudit = canEdit("nippt_reports");
   const [batches, setBatches] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBatch, setSelectedBatch] = useState<any>(null);
@@ -283,7 +287,19 @@ export default function NipptReports() {
     if (okPairs.length === 0) { message.warning("本批次没有可出报告的配对（无结果或 QC 异常）"); return; }
     const miss = okPairs.filter((p: any) => !p.report_date);
     if (miss.length) { showMissingReportDate(miss); return; }
-    setGenPicked(okPairs.map((p: any) => p.id)); setGenResult(null);
+    // 2026-11-09：同一 PT 有多份样本时默认只勾 1 个（优先「已填结果」的那条），避免一份案出两份报告
+    const byPt: Record<string, any[]> = {};
+    okPairs.forEach((p: any) => {
+      // 同上：按（案例 + 疑父姓名）归组，不同疑父各占一组，互不影响
+      const cno = String(p.case_number || p.case || "").trim() || ("#" + p.id);
+      const who = String(p.father_name || "").trim() || ("#" + String(p.father_label || ""));
+      const k = `${cno}|${who}`;
+      (byPt[k] = byPt[k] || []).push(p);
+    });
+    const picked: string[] = Object.values(byPt).map(
+      (list) => (list.find((x: any) => !!x.result) || list[0]).id,
+    );
+    setGenPicked(picked); setGenResult(null);
     setGenOpen(true);
   };
 
@@ -712,6 +728,28 @@ export default function NipptReports() {
   // 2026-10-13：Word/PDF 任一格式即算已上传
   const hasAnyReport = (p: any) => !!(p?.report_file_url || p?.report_file_pdf_url);
   const reportMissing = reportable.filter((p: any) => !hasAnyReport(p));
+  // 2026-11-09：同一个人有多份样本（如 毛发/指甲，签收时共用同一个 PT）→ 只需一份进报告。
+  // ⚠️ 不能只按 pt_number 分组：pt_number 是「案例级 PT」，同一个案例的两个不同疑父
+  //    （HA / HB，不同人）也共用同一个 pt_number —— 那样会把两个人误判成"同一人两份样本"。
+  //    所以按（案例 + 疑父姓名）分组，姓名为空时退回（案例 + 标签）。
+  const dupPtGroups: { pt: string; key: string; list: any[]; types: string[] }[] = (() => {
+    const m = new Map<string, any[]>();
+    rp.forEach((p: any) => {
+      const cno = String(p.case_number || p.case || "").trim();
+      const who = String(p.father_name || "").trim() || ("#" + String(p.father_label || ""));
+      const k = `${cno}|${who}`;
+      if (!cno) return;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(p);
+    });
+    const out: { pt: string; key: string; list: any[]; types: string[] }[] = [];
+    m.forEach((list, key) => {
+      if (list.length < 2) return;
+      const types = Array.from(new Set(list.map((x: any) => x.father_sample_type || "").filter(Boolean)));
+      out.push({ pt: String(list[0].pt_number || ""), key, list, types });
+    });
+    return out;
+  })();
   const revVal = batRev ?? (selectedBatch?.report_reviewer || undefined);
   const audVal = batAud ?? (selectedBatch?.report_auditor || undefined);
   const uname = (id?: string) => users.find((u: UserItem) => u.id === id)?.username || "—";
@@ -1053,9 +1091,11 @@ ${histLine(h)}`}>
         const bad = notQualified(r);
         return (
           <Space size={4}>
-            <Button size="small" type="primary" ghost icon={<CheckCircleOutlined />} disabled={bad}
+            <Button size="small" type="primary" ghost icon={<CheckCircleOutlined />} disabled={bad || !canAudit}
+              title={!canAudit ? "无编辑权限，请联系管理员" : undefined}
               onClick={() => doSetReview(r, "review")}>复核</Button>
-            <Button size="small" icon={<CheckCircleOutlined />} disabled={bad}
+            <Button size="small" icon={<CheckCircleOutlined />} disabled={bad || !canAudit}
+              title={!canAudit ? "无编辑权限，请联系管理员" : undefined}
               onClick={() => doSetReview(r, "audit")}>审核</Button>
           </Space>
         );
@@ -1143,6 +1183,21 @@ ${histLine(h)}`}>
                 <Button type="primary" icon={<FileAddOutlined />} ghost onClick={openGenerate}>生成报告</Button>
               </Space>
             </div>
+            {dupPtGroups.length > 0 && (
+              <Alert type="warning" showIcon style={{ marginBottom: 10, padding: "5px 10px" }}
+                message={
+                  <div style={{ fontSize: 12, lineHeight: 1.8 }}>
+                    {dupPtGroups.map((g) => (
+                      <div key={g.key}>
+                        <Text code>{g.pt || "（无PT）"}</Text>
+                        {g.list[0]?.father_name ? ` ${g.list[0].father_name}` : ""} 有 <b>{g.list.length}</b> 份样本
+                        {g.types.length ? `（${g.types.join("、")}）` : ""}，同一个人的样本
+                        <b>只需选 1 份进报告</b>；点「生成报告」时默认只勾 1 个。
+                      </div>
+                    ))}
+                  </div>
+                } />
+            )}
             {/* 2026-10-30 性能：86 对 × 每行多个 antd 控件 = 400+ Select / 600+ input，
                 全量渲染首屏 ~1.5s。改分页（默认 25/页）只渲染当前页。 */}
             <Table
@@ -1204,7 +1259,7 @@ ${histLine(h)}`}>
               }
             >
               <Alert type="info" showIcon style={{ marginBottom: 10 }}
-                message={<span style={{ fontSize: 12 }}>报告按「案例的报告版本」自动选模板；结果为空/亲缘临界、或缺少位点附表(.last) 的配对会跳过并给出原因。默认全选。</span>} />
+                message={<span style={{ fontSize: 12 }}>报告按「案例的报告版本」自动选模板；结果为空/亲缘临界、或缺少位点附表(.last) 的配对会跳过并给出原因。默认每个 PT 只勾 1 个（同一人有多份样本时选一份即可）。</span>} />
               <Table
                 size="small" rowKey="id" pagination={false}
                 scroll={{ y: 320 }}
@@ -1215,6 +1270,10 @@ ${histLine(h)}`}>
                 }}
                 columns={[
                   { title: "PT编号", dataIndex: "pt_number", width: 130 },
+                  { title: "标签", dataIndex: "father_label", width: 56,
+                    render: (v: string) => (v ? <Tag style={{ margin: 0 }}>{v}</Tag> : "—") },
+                  { title: "男性样本类型", dataIndex: "father_sample_type", width: 110,
+                    render: (v: string) => v || "—" },
                   { title: "案例", dataIndex: "case_number", width: 170 },
                   { title: "孕妇", dataIndex: "mother_name", ellipsis: true },
                   { title: "结果", dataIndex: "result", width: 90,
