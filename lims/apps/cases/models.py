@@ -253,6 +253,20 @@ class Case(models.Model):
                 same_name = [c for c in same if (c.sample.patient_name or "").strip() == my_name]
                 if same_name:
                     same = same_name
+            # ── 2026-11-09（用户确认）：同一个人「一次收样多个样本、类型不同」
+            #    （如 精斑 + 毛发）应沿用同一个 PT，不是重采，不加 _R{n}。
+            #    只有当「同一人 + 同一类型」再次出现时，才按重采处理。
+            _src = (getattr(case_sample, "sample_source", "") or "").strip().upper()
+            _same_pt = [c for c in same
+                        if (c.test_sample_id or "").strip().upper() == candidate.strip().upper()]
+            if _src and _same_pt and all(
+                    (getattr(c, "sample_source", "") or "").strip().upper() != _src for c in _same_pt):
+                case_sample.test_sample_id = candidate
+                case_sample.resample_of = None
+                case_sample.resample_number = None
+                if save:
+                    case_sample.save(update_fields=["test_sample_id", "resample_of", "resample_number"])
+                return candidate
             # 原样本优先取「没重采过」的那条
             origin = next((c for c in same if not c.resample_number), same[0] if same else None)
             max_n = self.case_samples.filter(resample_number__isnull=False).aggregate(

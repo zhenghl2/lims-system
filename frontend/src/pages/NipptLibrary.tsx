@@ -1044,7 +1044,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   const thStyle:React.CSSProperties = {border:"1px solid #bbb",padding:"4px 6px",textAlign:"center",fontWeight:700,background:"#d5e8d4",fontSize:12,minWidth:32};
   const rowLabelStyle:React.CSSProperties = {border:"1px solid #bbb",padding:"4px 6px",textAlign:"center",fontWeight:600,fontSize:12,background:"#e8e8e8",width:24};
   const cellStyle:React.CSSProperties = {border:"1px solid #d9d9d9",padding:0,verticalAlign:"middle"};
-  const inputStyle:React.CSSProperties = {width:50,border:"none",borderRadius:0,textAlign:"center",padding:"2px 4px",fontSize:11,background:"#fffbe6",borderRight:"1px solid #e0e0e0"};
+  const inputStyle:React.CSSProperties = {width:44,border:"none",borderRadius:0,textAlign:"center",padding:"2px 3px",fontSize:11,background:"#fffbe6",borderRight:"1px solid #e0e0e0"};
   const vgIdStyle:React.CSSProperties = {fontSize:11,padding:"2px 4px",textAlign:"center",whiteSpace:"nowrap",maxWidth:80,background:"#fafafa",flex:1,display:"flex",alignItems:"center",justifyContent:"center"};
 
   // ── 拖拽换位：按住拖动交换两孔样本（vgId/sampleIdx/isQC 随样本走；Index 留在原孔）──
@@ -1335,7 +1335,17 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                     <div style={{display:"flex",alignItems:"stretch",minHeight:30}}>
                       <input type="text" data-ix-cell={row+"_"+col} disabled={selectedBatch?.status==="COMPLETED"} value={cell.index} onChange={e=>updateIndex(setter,row,col,e.target.value)} onKeyDown={(e)=>{ if(e.key==="Enter"){ e.preventDefault(); const ni=col*8+row+1; if(ni<96){ const nr=ni%8, nc=Math.floor(ni/8); const root=document.querySelector(`[data-plate-grid="${plateKey}"]`); const el=root?.querySelector(`[data-ix-cell="${nr}_${nc}"]`) as HTMLInputElement|null; if(el){ el.focus(); el.select(); } } } }} style={_dupList ? {...inputStyle, background:"#ffe58f", color:"#ad4e00", fontWeight:700, boxSizing:"border-box", border:"1px solid #faad14"} : inputStyle}
                         title={_dupList ? `Index ${cell.index} 重复：与 ${_dupOther} 相同` : undefined} placeholder="ix"/>
-                      <div style={{...vgIdStyle}}>{cell.vgId||""}{cell.isQC?<span style={{color:"#13c2c2",fontWeight:600,marginLeft:1}}>QC</span>:null}</div>
+                      {(() => {
+                        // 2026-11-09：PT 带后缀（_R1/_T1）时原来被裁成 "PT72567W_R"，按长度缩字号保证完整显示
+                        const _txt = cell.vgId || "";
+                        const _fs = (_txt.length + (cell.isQC ? 2 : 0)) >= 12 ? 9 : (_txt.length + (cell.isQC ? 2 : 0)) >= 10 ? 10 : 11;
+                        return (
+                          <div style={{...vgIdStyle, maxWidth:"none", minWidth:0, fontSize:_fs, padding:"2px 2px", overflow:"visible"}}
+                               title={_txt ? `${_txt}${cell.isQC ? " (QC)" : ""}` : undefined}>
+                            {_txt}{cell.isQC?<span style={{color:"#13c2c2",fontWeight:600,marginLeft:1,fontSize:_fs}}>QC</span>:null}
+                          </div>
+                        );
+                      })()}
                     </div>
                     )}
                   </Popover>

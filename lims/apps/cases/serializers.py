@@ -1685,7 +1685,15 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
                     vg = str(cell.get("vgId") or "").strip()
                     c = cell.get("conc")
                     if vg and isinstance(c, (int, float)):
-                        out.setdefault(vg, float(c))
+                        # 同一 PT 多条时存列表（与 index_map 同口径）
+                        _prev = out.get(vg)
+                        if _prev is None:
+                            out[vg] = float(c)
+                        else:
+                            _lst = _prev if isinstance(_prev, list) else [_prev]
+                            if float(c) not in _lst:
+                                _lst.append(float(c))
+                            out[vg] = _lst
 
         def any_plate(val):
             if not val:
@@ -1733,7 +1741,17 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
                 for row in plate:
                     for cell in row:
                         if isinstance(cell, dict) and cell.get("vgId") and cell.get("index"):
-                            index_map[cell["vgId"]] = cell["index"]
+                            # 2026-11-09：同一 PT 可能有多条（同一人不同类型样本，如 精斑+毛发），
+                            # 孔位号不能互相覆盖 → 重复时存成列表，前端按行顺序依次取用
+                            _vg, _ix = cell["vgId"], str(cell["index"])
+                            _prev = index_map.get(_vg)
+                            if _prev is None:
+                                index_map[_vg] = _ix
+                            else:
+                                _lst = _prev if isinstance(_prev, list) else [_prev]
+                                if _ix not in _lst:
+                                    _lst.append(_ix)
+                                index_map[_vg] = _lst
 
             def extract_any(val):
                 """兼容单板(8x12)与多板数组([8x12, ...])——2026-10-14 建库自动增板。

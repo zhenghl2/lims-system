@@ -250,22 +250,32 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       setHkDoubled(pd.hk_doubled ?? false);
       const savedRows = pd.rows||[];
       // 2026-11-06：建库「浓度板」填的浓度 → Pooling 浓度默认值（Pooling 已填过则以 Pooling 为准）
-      const libConc: Record<string, number> = (d as any).library_conc_map || {};
+      const libConc: Record<string, number | number[]> = (d as any).library_conc_map || {};
       const stripSfx = (v: string) => String(v || "").replace(/_(?:R|T)\d+$/i, "");
+      // 2026-11-09：同一 PT 可能有多条（同一人不同类型样本）→ 后端给列表，这里按行顺序依次取
+      const concQueue: Record<string, number[]> = {};
+      Object.entries(libConc).forEach(([k, v]) => { concQueue[k] = Array.isArray(v) ? [...v] : [v as number]; });
       const libConcOf = (pt: string): number | null => {
         if (!pt) return null;
-        const v = libConc[pt];
-        if (typeof v === "number") return v;
-        const b = libConc[stripSfx(pt)];
-        return typeof b === "number" ? b : null;
+        const take = (key: string): number | null => {
+          const q = concQueue[key];
+          if (!q || !q.length) return null;
+          return q.length > 1 ? (q.shift() as number) : (q[0] as number);
+        };
+        const v = take(pt);
+        if (v !== null) return v;
+        return take(stripSfx(pt));
       };
       // Index from library plate or saved data
       let savedIdx:Record<string,string> = pd.indexes||{};
-      const idxMap:Record<string,string> = d.library_index_map || {};
-      if (Object.keys(savedIdx).length === 0 && Object.keys(idxMap).length > 0) {
+      const idxMap:Record<string,string|string[]> = d.library_index_map || {};
+      const idxQueue:Record<string,string[]> = {};
+      Object.entries(idxMap).forEach(([k,v]) => { idxQueue[k] = Array.isArray(v) ? [...v] : [v]; });
+      if (Object.keys(savedIdx).length === 0 && Object.keys(idxQueue).length > 0) {
         const autoIdx:Record<string,string> = {};
         allSamples.forEach((s:SampleItem)=>{
-          autoIdx[s.id] = idxMap[s.test_sample_id||''] || '';
+          const q = idxQueue[s.test_sample_id||''];
+          autoIdx[s.id] = !q || !q.length ? '' : (q.length > 1 ? (q.shift() as string) : q[0]);
         });
         setSavedIndexes(autoIdx); savedIdx = autoIdx;
       } else {
@@ -273,7 +283,8 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       }
       const poolRows:PoolRow[] = allSamples.map((s:SampleItem,i)=>{
         const sr = savedRows[i]||{};
-        const _fromLib = sr.concentration == null ? libConcOf(s.test_sample_id||"") : null;
+        const _libC = libConcOf(s.test_sample_id||"");   // 总是消费一次，避免同 PT 队列错位
+        const _fromLib = sr.concentration == null ? _libC : null;
         const conc = sr.concentration ?? _fromLib ?? null;
         const elution = sr.elutionVolume??globalElutionVol??DEFAULT_ELUTION;
         const y = (conc??0)*elution;
