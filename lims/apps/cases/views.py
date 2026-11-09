@@ -3226,16 +3226,10 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
             if "remaining_sample_types" in sd:
                 _rv = sd.get("remaining_sample_types")
                 sp.remaining_override = list(_rv) if isinstance(_rv, (list, tuple)) else None
-            # 2026-11-09：实验样本类型不应同时出现在「剩余样本类型」里
-            #   （例外：MALE_BLOOD 选 BLOOD —— 血液可分 2-3 次实验，BLOOD 要保留在剩余中）
-            #   之前改过实验样本类型时旧的人工 remaining_override 不会重算，界面会出现
-            #   「实验用 烟头 / 剩余 牙刷、烟头」这种自相矛盾的显示
-            _exp = (sp.experiment_sample_type or "").strip()
-            if sp.remaining_override is not None and _exp and not (
-                    sp.category == "MALE_BLOOD" and _exp == "BLOOD"):
-                _clean = [t for t in sp.remaining_override if str(t) != _exp]
-                if _clean != sp.remaining_override:
-                    sp.remaining_override = _clean
+            # 2026-11-09 修正（用户反馈「剩余样本类型保存不了」）：
+            #   原先在这里把「实验样本类型」从人工值里剔除，导致实验室明确勾选的类型被静默丢掉。
+            #   默认值由前端 computeRemaining 保证（收到 − 实验用，男生血 BLOOD 例外），
+            #   人工值必须原样落库 —— 显示口径不该覆盖用户输入。
             sp.operator = request.user
             sp.processed_at = timezone.now()
             sp.save()
