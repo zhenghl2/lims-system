@@ -3869,6 +3869,43 @@ def _nippt_log_library_conc_changes(batch, user):
 
 
 class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.ModelViewSet):
+    @action(detail=False, methods=["get"], url_path="device_defaults")
+    def device_defaults(self, request):
+        """文库构建设备：按地区（厦门/香港）分组取「该地区最近一次保存」的设备号。
+
+        2026-11-09 用户要求：
+        · 厦门 打断仪 YSFH-EI-049；PCR仪 YSFH-EI-024-08/05/12/07（可多选）；Qubit YSFH-EI-021-04
+        · 香港 PCR仪 VBL-THC-01~04（可多选）；Qubit VBL-QB-03（无打断仪）
+        男女各一套 → key 带 _female / _male；多选值用「、」拼接。
+        地区取 library_data.region，缺省按样本签收地推。
+        """
+        from .models import NipptLibraryBatch
+
+        qs = list(NipptLibraryBatch.objects
+                  .order_by("-updated_at")
+                  .only("id", "batch_number", "library_data", "updated_at")
+                  .prefetch_related("samples")[:500])
+        region_of = _nippt_batch_region_map(qs)
+        out = {"XIAMEN": {}, "HONGKONG": {}, "": {}}
+        for b in qs:
+            ld = b.library_data or {}
+            reg = str(ld.get("region") or "").strip().upper() or region_of.get(str(b.id), "")
+            bucket = out.setdefault(reg if reg in ("XIAMEN", "HONGKONG") else "", {})
+            for side in ("female", "male"):
+                for key in ("dev_stopper", "dev_pcr", "dev_qubit"):
+                    k = "%s_%s" % (key, side)
+                    if k in bucket:
+                        continue
+                    val = str(ld.get(k) or "").strip()
+                    if val:
+                        bucket[k] = {
+                            "no": val,
+                            "batch_number": b.batch_number,
+                            "saved_at": b.updated_at.isoformat() if b.updated_at else None,
+                        }
+        return Response(out)
+
+
     nippt_stage = "LIBRARY_PREP"
 
     photos_namespace = "nippt_library"

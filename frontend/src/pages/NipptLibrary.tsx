@@ -48,9 +48,26 @@ const STEPS = [
   {key:"supplies_ready",label:"准备耗材"},{key:"end_repair",label:"末端修复/加A"},
   {key:"adapter_ligation",label:"接头连接"},{key:"pcr_amplification",label:"PCR扩增"},
 ];
-const EQUIPMENT_OPTIONS = [
-  {value:"PCR_ABI_9700",label:"PCR仪 - ABI 9700"},{value:"PCR_BioRad_T100",label:"PCR仪 - Bio-Rad T100"},
-];
+/** 文库构建设备（2026-11-09）：按签收地给设备号，PCR仪可多选
+ *  · 厦门 打断仪 YSFH-EI-049；PCR仪 YSFH-EI-024-08（孵育）/ 024-05 / 024-12 / 024-07；Qubit YSFH-EI-021-04
+ *  · 香港 PCR仪 VBL-THC-01~04；Qubit VBL-QB-03（无打断仪）
+ *  男女各一套：key 带 _female/_male，多选值用「、」拼接
+ */
+type LibDevItem = { key: "dev_stopper" | "dev_pcr" | "dev_qubit"; label: string; options: string[]; multi?: boolean; width?: number };
+const LIB_DEVICE_BY_REGION: Record<"XIAMEN" | "HONGKONG", LibDevItem[]> = {
+  XIAMEN: [
+    { key: "dev_stopper", label: "打断仪", options: ["YSFH-EI-049"], width: 170 },
+    { key: "dev_pcr", label: "PCR仪", options: ["YSFH-EI-024-08（孵育）", "YSFH-EI-024-05", "YSFH-EI-024-12", "YSFH-EI-024-07"], multi: true, width: 320 },
+    { key: "dev_qubit", label: "Qubit定量仪", options: ["YSFH-EI-021-04"], width: 170 },
+  ],
+  HONGKONG: [
+    { key: "dev_pcr", label: "PCR仪", options: ["VBL-THC-01", "VBL-THC-02", "VBL-THC-03", "VBL-THC-04"], multi: true, width: 320 },
+    { key: "dev_qubit", label: "Qubit定量仪", options: ["VBL-QB-03"], width: 170 },
+  ],
+};
+const libSplitDev = (v: any): string[] =>
+  Array.isArray(v) ? v.filter(Boolean) : String(v || "").split("、").map((x) => x.trim()).filter(Boolean);
+const libJoinDev = (arr?: string[] | null): string => (arr || []).filter(Boolean).join("、");
 
 // ── Reagent kits ──
 const LIB_KITS = [{value:"ND607-C2",label:"VAHTS Universal DNA Library Prep Kit for Illumina V5 (ND607-C2)"},{value:"ND801-02",label:"VAHTS Universal Plus DNA Library Prep Kit V4 (ND801-02)"}];
@@ -83,6 +100,39 @@ export default function NipptLibrary() {
   const [saving, setSaving] = useState(false);
   const [pendingLoc, setPendingLoc] = useState<string | undefined>(undefined);
 
+  // 2026-11-09：拉一次文库设备「按地区记住的上次选择」
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await (casesApi as any).libraryDeviceDefaults?.();
+        libDevRef.current = (r && r.data) || {};
+      } catch { /* 读不到就不带值 */ }
+    })();
+  }, []);
+
+  /** 该地区设备项（混地区 → 两地并集） */
+  const libDevItems = (reg?: string): LibDevItem[] => {
+    const k = (reg || "").toUpperCase();
+    if (k === "XIAMEN" || k === "HONGKONG") return LIB_DEVICE_BY_REGION[k];
+    const merged = new Map<string, LibDevItem>();
+    [...LIB_DEVICE_BY_REGION.XIAMEN, ...LIB_DEVICE_BY_REGION.HONGKONG].forEach((it) => {
+      const cur = merged.get(it.key);
+      if (!cur) merged.set(it.key, { ...it, options: [...it.options] });
+      else cur.options = Array.from(new Set([...cur.options, ...it.options]));
+    });
+    return Array.from(merged.values());
+  };
+  /** 取值：本批次已存 > 该地区上次保存 > 地区默认（唯一型号才默认） */
+  const libDevValue = (ld: any, key: string, side: "female" | "male", reg?: string) => {
+    const own = libSplitDev(ld?.[`${key}_${side}`]);
+    if (own.length) return libJoinDev(own);
+    const k = (reg || "").toUpperCase();
+    const mem = (k === "XIAMEN" || k === "HONGKONG") ? libSplitDev((libDevRef.current?.[k] || {})[`${key}_${side}`]?.no) : [];
+    if (mem.length) return libJoinDev(mem);
+    const it = libDevItems(reg).find((x) => x.key === key);
+    return it && it.options.length === 1 ? it.options[0] : "";
+  };
+
   // ── Region & coords ──
   const [region, setRegion] = useState("XIAMEN");
   // 起点状态已迁到 xiamenStarts / hkFemaleStarts / hkMaleStarts（每块板各自起点，2026-10-14）
@@ -94,6 +144,10 @@ export default function NipptLibrary() {
   // ── Reagents (NIPT-style) ──
 
   const [libKits, setLibKits] = useState<string[]>([]);
+  // 设备（2026-11-09，男女各一套）：key(dev_stopper/dev_pcr/dev_qubit) → 「、」拼接值
+  const [libDevF, setLibDevF] = useState<Record<string, string>>({});
+  const [libDevM, setLibDevM] = useState<Record<string, string>>({});
+  const libDevRef = useRef<Record<string, Record<string, { no?: string }>>>({});
   /** 2026-11-09：孔板标题上的试剂盒名（取「建库试剂盒及配套试剂」多选） */
   const libKitsText = libKits.map(k => LIB_KITS.find(x => x.value === k)?.label || k).join("、");
   const [libKitDetails, setLibKitDetails] = useState<Record<string,{lot:string;expiry:string}>>({});
@@ -499,6 +553,14 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       setHkFemaleStart(ld.hk_female_start||"");setHkMaleStart(ld.hk_male_start||"");
 
       setLibKitDetails({});
+      // 设备（2026-11-09）：本批次 > 该地区上次值 > 地区默认
+      { const _reg = ld.region || "XIAMEN";
+        const _f:any = {}, _m:any = {};
+        libDevItems(_reg).forEach((it) => {
+          _f[it.key] = libDevValue(ld, it.key, "female", _reg);
+          _m[it.key] = libDevValue(ld, it.key, "male", _reg);
+        });
+        setLibDevF(_f); setLibDevM(_m); }
       if(Array.isArray(ld.lib_kits)){setLibKits(ld.lib_kits.map((k:any)=>k.kit));const ldt:any={};ld.lib_kits.forEach((k:any)=>{ldt[k.kit]={lot:k.lot||"",expiry:k.expiry||""}});setLibKitDetails(ldt)}
       else{setLibKits([]);setLibKitDetails({})}
       setPositiveControl(ld.positive_control||"");setNegativeControl(ld.negative_control||"");
@@ -680,6 +742,11 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     return {region,female_start_coord:femaleStartCoord,male_start_coord:maleStartCoord,
       hk_female_start:hkFemaleStart,hk_male_start:hkMaleStart,
       lib_kits:libKits.map(k=>({kit:k,lot:libKitDetails[k]?.lot||"",expiry:libKitDetails[k]?.expiry||""})),
+      // 设备（2026-11-09）：男女各一套；厦门是合并批次 → 两侧写同一套
+      ...Object.fromEntries(libDevItems(region).flatMap((it) => [
+        [`${it.key}_female`, libDevF[it.key] || ""],
+        [`${it.key}_male`, region === "XIAMEN" ? (libDevF[it.key] || "") : (libDevM[it.key] || "")],
+      ])),
       index_kits:selectedIndexKits.map(k=>({kit:k,lot:indexKitDetails[k]?.lot||"",expiry:indexKitDetails[k]?.expiry||""})),
       positive_control:positiveControl,negative_control:negativeControl,
       lib_date_female: dateF || "", lib_time_female: timeF || "",
@@ -987,6 +1054,24 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
           <span style={{ color: "#666", marginLeft: 8 }}>时间:</span>
           <TimePicker size="small" style={{ width: 100 }} format="HH:mm" value={tv ? dayjs(tv, "HH:mm") : null}
             onChange={(d: any) => (side === "f" ? setTimeF : setTimeM)(d ? d.format("HH:mm") : "")} placeholder="选择时间" />
+        </div>
+        {/* 设备（2026-11-09）：打断仪 / PCR仪 / Qubit，男女各一套；PCR仪可多选 */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
+          {libDevItems(region).map((it) => {
+            const devMap = merged ? libDevF : (side === "f" ? libDevF : libDevM);
+            const setDev = merged ? setLibDevF : (side === "f" ? setLibDevF : setLibDevM);
+            const cur = libSplitDev(devMap[it.key]);
+            return (
+              <span key={it.key} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                <span style={{ color: "#666" }}>{it.label}:</span>
+                <Select size="small" mode="multiple" style={{ width: it.width || 200 }} maxTagCount={1} allowClear
+                  placeholder={it.options.length > 1 ? "选择设备号（可多选）" : "选择设备号"}
+                  value={cur}
+                  onChange={(v: string[]) => setDev((p) => ({ ...p, [it.key]: libJoinDev(v) }))}
+                  options={Array.from(new Set([...it.options, ...cur])).map((o) => ({ label: o, value: o }))} />
+              </span>
+            );
+          })}
         </div>
         {/* 已完成批次仍允许补传/删除照片（只解锁照片区与保存按钮，日期/操作人/审核人保持只读） */}
         <ConfigProvider componentDisabled={false}>
@@ -1393,7 +1478,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   <Radio.Group value={region} onChange={e=>setRegion(e.target.value)} optionType="button" options={[{value:"XIAMEN",label:"厦门"},{value:"HONGKONG",label:"香港"}]}/>
                 </Space>
                 <Form form={libForm} layout="inline" style={{flexWrap:"wrap",gap:8}}>
-                  <Form.Item name="equipment" label="设备"><Select size="small" style={{width:160}} options={EQUIPMENT_OPTIONS} placeholder="选择"/></Form.Item>
                   <Form.Item name="pcr_cycles" label="PCR cycles"><InputNumber size="small" style={{width:60}} min={0} max={30}/></Form.Item>
                 </Form>
               </Space>

@@ -259,6 +259,8 @@ export const casesApi = {
 
   listLibraryBatches: (params?: Record<string, unknown>) => api.get("/cases/library/", { params }),
   getLibraryBatch: (id: string) => api.get(`/cases/library/${id}/`),
+  /** 文库构建设备：按地区上次选择（厦门/香港） */
+  libraryDeviceDefaults: () => api.get("/cases/library/device_defaults/"),
   // 2026-10-30：按提取板列顺序列出本建库批次样本（含 SKIP 孔位），供「提取顺序填入」
   libraryExtractionOrder: (id: string) => api.get(`/cases/library/${id}/extraction-order/`),
   createLibraryBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/library/", data),
