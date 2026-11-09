@@ -56,11 +56,38 @@ const KIT_OPTIONS = [
   { value: "MAGEN_ROUND", label: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)" },
   { value: "MAGEN_CONICAL", label: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)" },
 ];
-/** 设备（2026-11-09）：金属浴 / Qubit定量仪 固定默认编号；「设备号」留空，填过就记住 */
-const DEVICE_ROWS = [
-  { key: "dev_metal", label: "金属浴", def: "YSFH-EI-010-03", w: 140 },
-  { key: "dev_qubit", label: "Qubit定量仪", def: "YSFH-EI-021-03", w: 140 },
-] as const;
+/** 设备（2026-11-09 改）：按签收地给不同设备号
+ *  · 厦门：金属浴 YSFH-EI-010-03、Qubit YSFH-EI-021-03（各一个）
+ *  · 香港：金属浴 VBL-DB-01 / VBL-TS-01（可多选）、Qubit VBL-QB-03、核酸提取仪 VBL-ANAES-01-圆底 / -02-锥底（可多选）
+ *  多选值用「、」拼接存储；def = 该地区没有历史值时的默认勾选（空 = 人工选）
+ */
+type DevItem = {
+  key: "dev_metal" | "dev_qubit" | "dev_extractor";
+  label: string;
+  options: string[];
+  def: string[];
+  multi?: boolean;
+  width?: number;
+};
+const DEVICE_BY_REGION: Record<"XIAMEN" | "HONGKONG", DevItem[]> = {
+  XIAMEN: [
+    { key: "dev_metal", label: "金属浴", options: ["YSFH-EI-010-03"], def: ["YSFH-EI-010-03"], width: 170 },
+    { key: "dev_qubit", label: "Qubit定量仪", options: ["YSFH-EI-021-03"], def: ["YSFH-EI-021-03"], width: 170 },
+  ],
+  HONGKONG: [
+    { key: "dev_metal", label: "金属浴", options: ["VBL-DB-01", "VBL-TS-01"], def: [], multi: true, width: 210 },
+    { key: "dev_qubit", label: "Qubit定量仪", options: ["VBL-QB-03"], def: ["VBL-QB-03"], width: 170 },
+    { key: "dev_extractor", label: "核酸提取仪", options: ["VBL-ANAES-01-圆底", "VBL-ANAES-02-锥底"],
+      def: [], multi: true, width: 300 },
+  ],
+};
+const DEVICE_ALL_LABEL: Record<string, string> = {
+  dev_metal: "金属浴", dev_qubit: "Qubit定量仪", dev_extractor: "核酸提取仪",
+};
+/** "、"拼接 ↔ 数组 */
+const splitDev = (v: any): string[] =>
+  Array.isArray(v) ? v.filter(Boolean) : String(v || "").split("、").map((x) => x.trim()).filter(Boolean);
+const joinDev = (arr?: string[] | null): string => (arr || []).filter(Boolean).join("、");
 
 /** 男性侧固定定量试剂（2026-11-09） */
 const QUANT_KIT_CODE = "VAHTS_DSDNA_HS";
@@ -203,7 +230,7 @@ export default function NipptExtraction() {
   const [maleMethod, setMaleMethod] = useState("");
   // 实验记录（设备/试剂盒/批号/有效期/温湿度）——男女各自一套（2026-10-19 解耦）
   type KitRow = { kit: string; lot: string; expiry?: any };
-  type ReagentInfo = { equipment?: string; dev_metal?: string; dev_qubit?: string; dev_extra?: string;
+  type ReagentInfo = { equipment?: string; dev_metal?: string; dev_qubit?: string; dev_extractor?: string; dev_extra?: string;
     kit_type?: any; reagent_lot?: string; reagent_expiry?: any;
     kits?: KitRow[]; quant_lot?: string; quant_expiry?: any;
     temperature?: number | null; humidity?: number | null };
@@ -229,6 +256,32 @@ export default function NipptExtraction() {
     if (!k) return {};
     return (kitLotsRef.current || {})[k] || {};
   };
+  /** 该批次的设备项（混地区/无签收地 → 两地并集，且不设默认值） */
+  const devItemsFor = (loc?: string): DevItem[] => {
+    const k = regionKeyOf(loc);
+    if (k) return DEVICE_BY_REGION[k];
+    const merged = new Map<string, DevItem>();
+    [...DEVICE_BY_REGION.XIAMEN, ...DEVICE_BY_REGION.HONGKONG].forEach((it) => {
+      const cur = merged.get(it.key);
+      if (!cur) merged.set(it.key, { ...it, def: [], options: [...it.options], multi: true });
+      else {
+        cur.options = Array.from(new Set([...cur.options, ...it.options]));
+        cur.multi = true;
+      }
+    });
+    return Array.from(merged.values());
+  };
+
+  /** 核酸提取仪与试剂盒联动（只有香港有）：圆底→01-圆底、锥底→02-锥底 */
+  const syncExtractor = (kits: KitRow[], loc?: string): string | undefined => {
+    if (regionKeyOf(loc) !== "HONGKONG") return undefined;
+    const has = (k: string) => (kits || []).some((r) => r.kit === k);
+    const want: string[] = [];
+    if (has("MAGEN_ROUND")) want.push("VBL-ANAES-01-圆底");
+    if (has("MAGEN_CONICAL")) want.push("VBL-ANAES-02-锥底");
+    return joinDev(want);
+  };
+
   /** 该地区上次的设备编号 */
   const deviceNosFor = (loc?: string): Record<string, { no?: string }> => {
     const k = regionKeyOf(loc);
@@ -380,13 +433,16 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         }));
       };
       const _dev = (sec: any) => {
-        // 2026-11-09：设备编号按批次签收地取（厦门/香港分别记忆）；混地区批次不取记忆
-        const mem = deviceNosFor(d.receipt_location);
-        return {
-          dev_metal: sec?.dev_metal || mem.dev_metal?.no || DEVICE_ROWS[0].def,
-          dev_qubit: sec?.dev_qubit || mem.dev_qubit?.no || DEVICE_ROWS[1].def,
-          // 旧批次的自由文本 equipment 已无对应栏位（用户要求删掉设备号），不再映射
-        };
+        // 2026-11-09：设备号按批次签收地取（厦门/香港各有自己的设备清单）
+        // 取值顺序：本批次已存的值 > 该地区上次保存的值 > 该地区默认（香港金属浴默认空）
+        const mem: any = deviceNosFor(d.receipt_location);
+        const out: any = {};
+        devItemsFor(d.receipt_location).forEach((it) => {
+          const own = splitDev(sec?.[it.key]);
+          const remembered = splitDev(mem?.[it.key]?.no);
+          out[it.key] = joinDev(own.length ? own : (remembered.length ? remembered : it.def));
+        });
+        return out;
       };
       const _devF = _dev(fed);
       const _devM = _dev(med);
@@ -537,8 +593,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
   /** 设备三项 → 兼容旧字段 equipment（导出/统计仍读它） */
   const devJoined = (rg: ReagentInfo) =>
-    DEVICE_ROWS
-      .map((d) => { const v = String((rg as any)[d.key] || "").trim(); return v ? `${d.label} ${v}` : ""; })
+    (["dev_metal", "dev_qubit", "dev_extractor"] as const)
+      .map((k) => { const v = String((rg as any)[k] || "").trim(); return v ? `${DEVICE_ALL_LABEL[k]} ${v}` : ""; })
       .filter(Boolean).join(" / ");
 
   /** 试剂盒多选 → 保存用数组（日期统一 YYYY-MM-DD） */
@@ -569,7 +625,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         const last = kitLotsFor(selectedBatch?.receipt_location)[v] || {};
         return { kit: v, lot: last.lot || "", expiry: last.expiry ? dayjs(last.expiry) : undefined };
       });
-      return { ...p, kits: next };
+      // 2026-11-09：香港核酸提取仪跟试剂盒联动（圆底→01-圆底，锥底→02-锥底）
+      const ex = syncExtractor(next, selectedBatch?.receipt_location);
+      return { ...p, kits: next, ...(ex === undefined ? {} : { dev_extractor: ex }) };
     });
   };
 
@@ -585,6 +643,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         extraction_date: dateF || "", extraction_time: timeF || "",
         equipment: devJoined(reagentF),
         dev_metal: reagentF.dev_metal || "", dev_qubit: reagentF.dev_qubit || "",
+        dev_extractor: reagentF.dev_extractor || "",
         kits: kitsForSave(reagentF),
         kit_type: (reagentF.kits?.[0]?.kit) || reagentF.kit_type || "",
         reagent_lot: (reagentF.kits?.[0]?.lot) || reagentF.reagent_lot || "",
@@ -599,6 +658,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         extraction_date: dateM || "", extraction_time: timeM || "",
         equipment: devJoined(reagentM),
         dev_metal: reagentM.dev_metal || "", dev_qubit: reagentM.dev_qubit || "",
+        dev_extractor: reagentM.dev_extractor || "",
         kits: kitsForSave(reagentM),
         quant_lot: reagentM.quant_lot || "",
         quant_expiry: reagentM.quant_expiry ? dayjs(reagentM.quant_expiry).format("YYYY-MM-DD") : "",
@@ -1212,15 +1272,21 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   onChange={(v) => setReagent((p: any) => ({ ...p, humidity: v }))} />
               </div>
               {/* 2026-11-09：设备拆成三行 —— 金属浴 / Qubit定量仪（默认带编号）+ 设备号（留空，填过就记住） */}
-              {DEVICE_ROWS.map((d) => (
-                <div key={d.key}>
-                  <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>{d.label}</div>
-                  <Input size="small" style={{ width: d.w }}
-                    placeholder="设备编号"
-                    value={String((reagent as any)[d.key] ?? "")}
-                    onChange={(e) => setReagent((p: any) => ({ ...p, [d.key]: e.target.value }))} />
-                </div>
-              ))}
+              {devItemsFor(selectedBatch?.receipt_location).map((d) => {
+                const cur = splitDev((reagent as any)[d.key]);
+                // 历史里手工填过的非标值也列进选项，避免显示成空白
+                const opts = Array.from(new Set([...d.options, ...cur]));
+                return (
+                  <div key={d.key}>
+                    <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>{d.label}</div>
+                    <Select size="small" mode="multiple" style={{ width: d.width || 200 }}
+                      placeholder="选择设备号" allowClear maxTagCount={1}
+                      value={cur}
+                      onChange={(v: string[]) => setReagent((p: any) => ({ ...p, [d.key]: joinDev(v) }))}
+                      options={opts.map((o) => ({ label: o, value: o }))} />
+                  </div>
+                );
+              })}
               <div>
                 <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>试剂盒（可多选）</div>
                 <Select mode="multiple" size="small" style={{ minWidth: 300 }} placeholder="选择（可多选）"
@@ -1415,7 +1481,10 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       aoa.push(["照片数量", photos.length]);
       aoa.push(["温度(℃)", rg.temperature ?? ""]);
       aoa.push(["湿度(%)", rg.humidity ?? ""]);
-      DEVICE_ROWS.forEach((d) => aoa.push([d.label, String((rg as any)[d.key] ?? "")]));
+      devItemsFor(selectedBatch?.receipt_location).forEach((d) => {
+        const v = String((rg as any)[d.key] || "").trim();
+        if (v) aoa.push([d.label, v]);
+      });
       const _kits = (rg.kits && rg.kits.length)
         ? rg.kits
         : (rg.kit_type ? [{ kit: rg.kit_type, lot: rg.reagent_lot, expiry: rg.reagent_expiry }] : []);

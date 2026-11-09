@@ -3499,7 +3499,7 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
             data = b.extraction_data or {}
             for side in ("female", "male"):
                 sec = data.get(side) or {}
-                for key in ("dev_metal", "dev_qubit"):
+                for key in ("dev_metal", "dev_qubit", "dev_extractor"):
                     if key in bucket:
                         continue
                     val = str(sec.get(key) or "").strip()
