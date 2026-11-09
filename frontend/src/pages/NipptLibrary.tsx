@@ -53,8 +53,6 @@ const EQUIPMENT_OPTIONS = [
 ];
 
 // ── Reagent kits ──
-const FEMALE_KITS = [{value:"F-KIT-A",label:"NIPPT Female Library Kit A"},{value:"F-KIT-B",label:"NIPPT Female Library Kit B"}];
-const MALE_KITS = [{value:"M-KIT-A",label:"NIPPT Male Library Kit A"},{value:"M-KIT-B",label:"NIPPT Male Library Kit B"}];
 const LIB_KITS = [{value:"ND607-C2",label:"VAHTS Universal DNA Library Prep Kit for Illumina V5 (ND607-C2)"},{value:"ND801-02",label:"VAHTS Universal Plus DNA Library Prep Kit V4 (ND801-02)"}];
 const INDEX_KITS = [{value:"N34201",label:"VAHTS Maxi UDI Adapters Set1 (1-96) - Cat#N34201-01"},{value:"N34202",label:"VAHTS Maxi UDI Adapters Set2 (97-192) - Cat#N34202-01"},{value:"N34203",label:"VAHTS Maxi UDI Adapters Set3 (193-288) - Cat#N34203-01"},{value:"N34204",label:"VAHTS Maxi UDI Adapters Set4 (289-384) - Cat#N34204-01"}];
 
@@ -94,9 +92,10 @@ export default function NipptLibrary() {
   const prevHkStartsRef = useRef<{f:string;m:string}>({f:"",m:""});
 
   // ── Reagents (NIPT-style) ──
-  const [femaleLibKit, setFemaleLibKit] = useState("");
-  const [maleLibKit, setMaleLibKit] = useState("");
+
   const [libKits, setLibKits] = useState<string[]>([]);
+  /** 2026-11-09：孔板标题上的试剂盒名（取「建库试剂盒及配套试剂」多选） */
+  const libKitsText = libKits.map(k => LIB_KITS.find(x => x.value === k)?.label || k).join("、");
   const [libKitDetails, setLibKitDetails] = useState<Record<string,{lot:string;expiry:string}>>({});
   const [selectedIndexKits, setSelectedIndexKits] = useState<string[]>([]);
   const [indexKitDetails, setIndexKitDetails] = useState<Record<string,{lot:string;expiry:string}>>({});
@@ -498,7 +497,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       const ld=d.library_data||{};
       setRegion(ld.region||"XIAMEN");setFemaleStartCoord(ld.female_start_coord||"");setMaleStartCoord(ld.male_start_coord||"");
       setHkFemaleStart(ld.hk_female_start||"");setHkMaleStart(ld.hk_male_start||"");
-      setFemaleLibKit(ld.female_lib_kit||"");setMaleLibKit(ld.male_lib_kit||"");
+
       setLibKitDetails({});
       if(Array.isArray(ld.lib_kits)){setLibKits(ld.lib_kits.map((k:any)=>k.kit));const ldt:any={};ld.lib_kits.forEach((k:any)=>{ldt[k.kit]={lot:k.lot||"",expiry:k.expiry||""}});setLibKitDetails(ldt)}
       else{setLibKits([]);setLibKitDetails({})}
@@ -680,7 +679,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     const sid = selectedBatch?.id || "";
     return {region,female_start_coord:femaleStartCoord,male_start_coord:maleStartCoord,
       hk_female_start:hkFemaleStart,hk_male_start:hkMaleStart,
-      female_lib_kit:femaleLibKit,male_lib_kit:maleLibKit,
       lib_kits:libKits.map(k=>({kit:k,lot:libKitDetails[k]?.lot||"",expiry:libKitDetails[k]?.expiry||""})),
       index_kits:selectedIndexKits.map(k=>({kit:k,lot:indexKitDetails[k]?.lot||"",expiry:indexKitDetails[k]?.expiry||""})),
       positive_control:positiveControl,negative_control:negativeControl,
@@ -766,7 +764,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     const sid = selectedBatch.id;
     const femSamples: SampleItem[] = selectedBatch.female_samples || [];
     const maleSamples: SampleItem[] = maleOrder<SampleItem>(selectedBatch);
-    const kitLabel = (list: { value: string; label: string }[], v: string) => list.find(x => x.value === v)?.label || v || "—";
 
     // 共用试剂（只在第一个 sheet 输出一次）
     const commonReagents = (): any[][] => {
@@ -835,10 +832,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     };
 
     // 实验记录（只含用户点名的：日期/时间/男女试剂盒/操作人/审核人）
-    const records = (who: string, date: string, time: string, kit: string, op: string, rev: string): any[][] => {
+    const records = (date: string, time: string, op: string, rev: string): any[][] => {
       const rows: any[][] = [["二、实验记录"]];
       rows.push(["日期", date || "", "时间", time || ""]);
-      rows.push([who ? `试剂盒(${who})` : "试剂盒", kitLabel(who === "男性" ? MALE_KITS : FEMALE_KITS, kit)]);
       rows.push(["操作人", op || ""]);
       rows.push(["审核人", rev || ""]);
       rows.push([]);
@@ -850,7 +846,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       // 厦门：单 sheet（合并板，人员/日期走女性那套，与网页一致）
       const aoa: any[][] = [[`${selectedBatch.batch_number} — 文库构建记录（厦门）`], []];
       aoa.push(...commonReagents());
-      aoa.push(...records("", dateF, timeF, femaleLibKit, joinPersons(operators[sid]), joinPersons(reviewers[sid])));
+      aoa.push(...records(dateF, timeF, joinPersons(operators[sid]), joinPersons(reviewers[sid])));
       // 2026-10-14：所有板依次列出（板1/板2/…）
       const xmMerges: any[] = [];
       let cursor = aoa.length;
@@ -871,10 +867,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         const aoa: any[][] = [[`${selectedBatch.batch_number} — ${isF ? "女性" : "男性"}文库构建记录`], []];
         if (isF) aoa.push(...commonReagents());
         aoa.push(...records(
-          isF ? "女性" : "男性",
           isF ? dateF : dateM,
           isF ? timeF : timeM,
-          isF ? femaleLibKit : maleLibKit,
           joinPersons((isF ? operators : operatorsM)[sid]),
           joinPersons((isF ? reviewers : reviewersM)[sid]),
         ));
@@ -1210,9 +1204,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     if (!plate) return;
     const sid = selectedBatch?.id || "";
     const sideName = scheme === "f" ? "女性板" : scheme === "m" ? "男性板" : "厦门96孔板";
-    // 试剂盒：香港板按板上的试剂盒；厦门板/未选时退回批次「文库构建Kit」多选列表
-    const sideKit = scheme === "f" ? femaleLibKit : scheme === "m" ? maleLibKit : "";
-    const kit = sideKit || libKits.map(k => LIB_KITS.find(x => x.value === k)?.label || k).join("、");
+    // 2026-11-09：头部两个试剂盒下拉已删除 → 统一用「建库试剂盒及配套试剂」里的多选
+    const kit = libKits.map(k => LIB_KITS.find(x => x.value === k)?.label || k).join("、");
     const ops = scheme === "m" ? operatorsM[sid] : scheme === "x" ? [...(operators[sid] || []), ...(operatorsM[sid] || [])] : operators[sid];
     const rvs = scheme === "m" ? reviewersM[sid] : scheme === "x" ? [...(reviewers[sid] || []), ...(reviewersM[sid] || [])] : reviewers[sid];
     const dateStr = (scheme === "m" ? dateM : dateF) || dayjs().format("YYYY-MM-DD");
@@ -1398,8 +1391,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                 <Space wrap>
                   <Text strong>地区：</Text>
                   <Radio.Group value={region} onChange={e=>setRegion(e.target.value)} optionType="button" options={[{value:"XIAMEN",label:"厦门"},{value:"HONGKONG",label:"香港"}]}/>
-                  <span>👩试剂盒:<Select size="small" style={{width:200}} value={femaleLibKit||undefined} onChange={setFemaleLibKit} options={FEMALE_KITS} placeholder="女性试剂盒"/></span>
-                  <span>👨试剂盒:<Select size="small" style={{width:200}} value={maleLibKit||undefined} onChange={setMaleLibKit} options={MALE_KITS} placeholder="男性试剂盒"/></span>
                 </Space>
                 <Form form={libForm} layout="inline" style={{flexWrap:"wrap",gap:8}}>
                   <Form.Item name="equipment" label="设备"><Select size="small" style={{width:160}} options={EQUIPMENT_OPTIONS} placeholder="选择"/></Form.Item>
@@ -1519,7 +1510,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   )}
                 </Space>
                 {femalePlates.flatMap((g,k)=>([
-                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeF==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeF==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeF==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcF?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("f")} title={sideIndexReady("f")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcF(v=>!v)}>🧪 填入浓度</Button></ConfigProvider><ConfigProvider componentDisabled={false}><Button size="small" style={{marginLeft:6}} onClick={()=>printPlate("f", k)}>🖨 打印</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {femaleLibKit||"未选"}</Text>}>
+                  <Card key={`f${k}`} size="small" title={<Space>{`👩 女性板${k+1}${femalePlates.length>1?`/共${femalePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeF==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkFemaleStarts[k]||""} onChange={e=>setHkFemaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeF==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeF==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcF?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("f")} title={sideIndexReady("f")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcF(v=>!v)}>🧪 填入浓度</Button></ConfigProvider><ConfigProvider componentDisabled={false}><Button size="small" style={{marginLeft:6}} onClick={()=>printPlate("f", k)}>🖨 打印</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {libKitsText||"未选"}</Text>}>
                     {renderNiptPlate(g, plateSetter("f", k), `f${k}`)}
                   </Card>,
                   showConcF ? (
@@ -1535,7 +1526,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   ) : null,
                 ]))}
                 {malePlates.flatMap((g,k)=>([
-                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeM==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeM==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeM==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcM?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("m")} title={sideIndexReady("m")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcM(v=>!v)}>🧪 填入浓度</Button></ConfigProvider><ConfigProvider componentDisabled={false}><Button size="small" style={{marginLeft:6}} onClick={()=>printPlate("m", k)}>🖨 打印</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {maleLibKit||"未选"}</Text>}>
+                  <Card key={`m${k}`} size="small" title={<Space>{`👨 男性板${k+1}${malePlates.length>1?`/共${malePlates.length}块`:""} — ${g.flat().filter((c:any)=>c?.vgId).length} 样本`}<Text type="secondary" style={{fontSize:11}}>（可拖动换位）</Text><Text type="secondary" style={{fontSize:11}}>{fillModeM==="extraction"?"起始列:":"起始:"}</Text><Input size="small" style={{width:50}} value={hkMaleStarts[k]||""} onChange={e=>setHkMaleStarts(p=>{const n=padStarts(p,k,""); n[k]=fillModeM==="extraction"?(e.target.value.replace(/[^0-9]/g,"").slice(0,2)):e.target.value.toUpperCase(); return n;})} placeholder={fillModeM==="extraction"?"1-12":"居中"}/><ConfigProvider componentDisabled={false}><Button size="small" type={showConcM?"primary":"default"} style={{marginLeft:8}} disabled={!sideIndexReady("m")} title={sideIndexReady("m")?undefined:"请先填完所有 Index，再录入浓度"} onClick={()=>setShowConcM(v=>!v)}>🧪 填入浓度</Button></ConfigProvider><ConfigProvider componentDisabled={false}><Button size="small" style={{marginLeft:6}} onClick={()=>printPlate("m", k)}>🖨 打印</Button></ConfigProvider></Space>} extra={<Text type="secondary">试剂盒: {libKitsText||"未选"}</Text>}>
                     {renderNiptPlate(g, plateSetter("m", k), `m${k}`)}
                   </Card>,
                   showConcM ? (
