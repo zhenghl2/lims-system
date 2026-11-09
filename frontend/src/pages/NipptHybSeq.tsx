@@ -540,10 +540,16 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                             onChange={v=>updateMixCell(i,"library_conc",v)}
                             onPressEnter={(e)=>{ e.preventDefault(); focusMixCell("conc", i+1); }}
                             style={{width:80}} placeholder="0"/></td>
-                          <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.input_amount} onChange={v=>updateMixCell(i,"input_amount",v)} style={{width:60}}/></td>
+                          <td style={td}><InputNumber id={`mix-amount-${i}`} size="small" min={0} step={0.1} value={r.input_amount}
+                            onChange={v=>updateMixCell(i,"input_amount",v)}
+                            onPressEnter={(e)=>{ e.preventDefault(); focusMixCell("amount", i+1); }}
+                            style={{width:60}} placeholder="0"/></td>
                           <td style={{...td,fontFamily:"monospace"}}>{r.input_vol>0?r.input_vol.toFixed(2):"-"}</td>
                           {i===0?<td style={{...td,background:"#e6f7ff",fontWeight:700}} rowSpan={mixRows.length}>{mixSums.theoryConc.toFixed(2)}</td>:null}
-                          <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.expected_conc} onChange={v=>updateMixCell(i,"expected_conc",v)} style={{width:60}}/></td>
+                          <td style={td}><InputNumber id={`mix-expect-${i}`} size="small" min={0} step={0.1} value={r.expected_conc}
+                            onChange={v=>updateMixCell(i,"expected_conc",v)}
+                            onPressEnter={(e)=>{ e.preventDefault(); focusMixCell("expect", i+1); }}
+                            style={{width:60}} placeholder="0"/></td>
                           <td style={{...td,fontFamily:"monospace"}}>{mixSums.water>0?mixSums.water.toFixed(2):"-"}</td>
                         </tr>
                       ))}
