@@ -60,7 +60,6 @@ const KIT_OPTIONS = [
 const DEVICE_ROWS = [
   { key: "dev_metal", label: "金属浴", def: "YSFH-EI-010-03", w: 140 },
   { key: "dev_qubit", label: "Qubit定量仪", def: "YSFH-EI-021-03", w: 140 },
-  { key: "dev_extra", label: "其他设备", def: "", w: 170 },
 ] as const;
 
 /** 男性侧固定定量试剂（2026-11-09） */
@@ -359,18 +358,16 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
           expiry: x.expiry ? dayjs(x.expiry) : undefined,
         }));
       };
-      const _dev = (sec: any, legacy: any) => {
+      const _dev = (sec: any) => {
         const mem = deviceNosRef.current || {};
-        const oldText = String((sec && sec.equipment) ?? legacy?.equipment ?? "").trim();
         return {
           dev_metal: sec?.dev_metal || mem.dev_metal?.no || DEVICE_ROWS[0].def,
           dev_qubit: sec?.dev_qubit || mem.dev_qubit?.no || DEVICE_ROWS[1].def,
-          // 旧批次只有一个自由文本设备框 → 放到「设备号」里，不丢历史
-          dev_extra: sec?.dev_extra || mem.dev_extra?.no || oldText || "",
+          // 旧批次的自由文本 equipment 已无对应栏位（用户要求删掉设备号），不再映射
         };
       };
-      const _devF = _dev(fed, ed);
-      const _devM = _dev(med, ed);
+      const _devF = _dev(fed);
+      const _devM = _dev(med);
       setReagentF({
         ..._devF,
         equipment: fed.equipment ?? ed.equipment ?? "",
@@ -566,7 +563,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         extraction_date: dateF || "", extraction_time: timeF || "",
         equipment: devJoined(reagentF),
         dev_metal: reagentF.dev_metal || "", dev_qubit: reagentF.dev_qubit || "",
-        dev_extra: reagentF.dev_extra || "",
         kits: kitsForSave(reagentF),
         kit_type: (reagentF.kits?.[0]?.kit) || reagentF.kit_type || "",
         reagent_lot: (reagentF.kits?.[0]?.lot) || reagentF.reagent_lot || "",
@@ -581,7 +577,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         extraction_date: dateM || "", extraction_time: timeM || "",
         equipment: devJoined(reagentM),
         dev_metal: reagentM.dev_metal || "", dev_qubit: reagentM.dev_qubit || "",
-        dev_extra: reagentM.dev_extra || "",
         kits: kitsForSave(reagentM),
         quant_lot: reagentM.quant_lot || "",
         quant_expiry: reagentM.quant_expiry ? dayjs(reagentM.quant_expiry).format("YYYY-MM-DD") : "",
@@ -1194,6 +1189,16 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   value={reagent.humidity as any}
                   onChange={(v) => setReagent((p: any) => ({ ...p, humidity: v }))} />
               </div>
+              {/* 2026-11-09：设备拆成三行 —— 金属浴 / Qubit定量仪（默认带编号）+ 设备号（留空，填过就记住） */}
+              {DEVICE_ROWS.map((d) => (
+                <div key={d.key}>
+                  <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>{d.label}</div>
+                  <Input size="small" style={{ width: d.w }}
+                    placeholder="设备编号"
+                    value={String((reagent as any)[d.key] ?? "")}
+                    onChange={(e) => setReagent((p: any) => ({ ...p, [d.key]: e.target.value }))} />
+                </div>
+              ))}
               <div>
                 <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>试剂盒（可多选）</div>
                 <Select mode="multiple" size="small" style={{ minWidth: 300 }} placeholder="选择（可多选）"
@@ -1210,24 +1215,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                 {isFemale ? "同男性侧" : "同女性侧"}
               </Button>
             </div>
-            {/* 2026-11-09：设备 = 设备名 + 各自的设备号（金属浴 / Qubit 默认带编号；其他设备留空，填过就记住） */}
-            <div style={{ marginTop: 2 }}>
-              <div style={{ fontSize: 12, color: "#999", marginBottom: 4 }}>设备</div>
-              <div style={{ display: "inline-block", border: "1px solid #f0f0f0", borderRadius: 4,
-                            padding: "6px 10px", background: "#fafafa" }}>
-                {DEVICE_ROWS.map((d, di) => (
-                  <div key={d.key} style={{ display: "flex", alignItems: "center", gap: 10,
-                                            marginBottom: di === DEVICE_ROWS.length - 1 ? 0 : 4,
-                                            whiteSpace: "nowrap" }}>
-                    <div style={{ width: 110, fontSize: 12, color: "#666" }}>{d.label}</div>
-                    <Input size="small" style={{ width: 170 }} placeholder="设备号"
-                      value={String((reagent as any)[d.key] ?? "")}
-                      onChange={(e) => setReagent((p: any) => ({ ...p, [d.key]: e.target.value }))} />
-                  </div>
-                ))}
-              </div>
-            </div>
-
             {/* 2026-11-09：多选试剂盒 → 每个试剂盒各自一行批号/有效期（选中时自动带入上次的值） */}
             {(reagent.kits || []).length > 0 && (
               <div style={{ marginTop: 8, overflowX: "auto" }}>
