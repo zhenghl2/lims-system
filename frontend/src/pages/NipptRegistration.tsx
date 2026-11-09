@@ -2,6 +2,7 @@
 // 2026-07-21: Complete rewrite with 首次/补充/重采 support
 
 import { useState, useEffect, useCallback } from "react";
+import { usePermissions } from "../hooks/usePermissions";
 import {
   Card, Form, Input, Select, AutoComplete, Button, message, Typography,
   Divider, Table, Tag, Modal, DatePicker, Row, Col,
@@ -124,6 +125,9 @@ const RISK_LABELS: [string, string][] = [
 ];
 
 export default function NipptRegistration() {
+  // 登记属于 nippt_register 模块
+  const { canEdit } = usePermissions();
+  const canRegister = canEdit("nippt_register");
   const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
   const [regType, setRegType] = useState<string>("FIRST");
@@ -620,10 +624,19 @@ export default function NipptRegistration() {
           // 已按重采处理，跳过补样提交；后续统一走表单清理
         } else {
         // 补充样本：极简表单一键提交
+        const _docs = (values.supp_docs || {}) as any;
+        const _typeDocs: Record<string, { id_card: string; tube_no: string }> = {};
+        ((values.supp_sample_type || ["BLOOD"]) as string[]).forEach((t: string) => {
+          const d = _docs[t] || {};
+          const idc = String(d.id_card || "").trim();
+          const tube = String(d.tube_no || "").trim();
+          if (idc || tube) _typeDocs[t] = { id_card: idc, tube_no: tube };
+        });
         await (casesApi as any).supplement?.(selectedCase.id, {
           role: values.supp_role,
           patient_name: values.supp_name,
           sample_types: values.supp_sample_type || ["BLOOD"],
+          type_docs: _typeDocs,
           arrival_date: values.supp_arrival_date
             ? dayjs(values.supp_arrival_date).format("YYYY-MM-DD") : undefined,
           notes: values.supp_notes || "",
@@ -1105,6 +1118,7 @@ export default function NipptRegistration() {
             <Row gutter={12} style={{ marginBottom: 0 }}>
               <Col flex="auto">
                 <Button type="primary" icon={<PlusOutlined />} loading={loading}
+                  disabled={!canRegister} title={!canRegister ? "无编辑权限，请联系管理员" : undefined}
                   onClick={handleSubmit} size="large" block>
                   提交登记
                 </Button>
@@ -1219,6 +1233,10 @@ export default function NipptRegistration() {
                     const m: Record<string, string> = { BLOOD: "血液", DBS: "血痕", HAIR: "毛发", SWAB: "口拭子", NAIL: "指甲", SEMEN: "精液", TOOTHBRUSH: "牙刷", CIGARETTE: "烟头", BOTTLE: "水瓶", BEARD: "胡须", FLOSS: "牙线", SEMSTAIN: "精斑", GUM: "口香糖" };
                     return m[v] || v || "-";
                   } },
+                { title: "证件号", dataIndex: "id_card", key: "idc", width: 110, ellipsis: true,
+                  render: (v: string) => v || "-" },
+                { title: "管号", dataIndex: "tube_no", key: "tno", width: 110, ellipsis: true,
+                  render: (v: string) => v || "-" },
                 { title: "采集日期", dataIndex: "collection_date", key: "cd", width: 100,
                   render: (v: string) => v || "-" },
                 { title: "状态", dataIndex: "sample_status", key: "status", width: 90,
@@ -1258,6 +1276,39 @@ export default function NipptRegistration() {
                 </Form.Item>
               </Col>
             </Row>
+
+            {/* 2026-11-09（巴西报告需要）：按样本类型分别登记 证件号(RG) / 管号(ID do tubo)，选填 */}
+            <Form.Item noStyle shouldUpdate={(p, c) => p.supp_sample_type !== c.supp_sample_type}>
+              {({ getFieldValue }) => {
+                const types: string[] = getFieldValue("supp_sample_type") || [];
+                if (!types.length) return null;
+                return (
+                  <div style={{ marginBottom: 8, padding: "6px 8px", background: "#fafafa", borderRadius: 6 }}>
+                    {types.map((t: string) => {
+                      const lb = (SAMPLE_TYPE_OPTIONS.find((o: any) => o.value === t) || {}).label || t;
+                      return (
+                        <Row gutter={8} key={t} align="middle" style={{ marginBottom: 6 }}>
+                          <Col xs={24} sm={4}>
+                            <Tag color="blue" style={{ margin: 0 }}>{lb}</Tag>
+                          </Col>
+                          <Col xs={12} sm={10}>
+                            <Form.Item name={["supp_docs", t, "id_card"]} noStyle>
+                              <Input size="small" placeholder="证件号（RG）" allowClear />
+                            </Form.Item>
+                          </Col>
+                          <Col xs={12} sm={10}>
+                            <Form.Item name={["supp_docs", t, "tube_no"]} noStyle>
+                              <Input size="small" placeholder="管号（ID do tubo）" allowClear />
+                            </Form.Item>
+                          </Col>
+                        </Row>
+                      );
+                    })}
+                    <Text type="secondary" style={{ fontSize: 11 }}>选填；巴西报告会用到这两项</Text>
+                  </div>
+                );
+              }}
+            </Form.Item>
 
             {/* 孕妇补样：孕周/单双胎（更新 Case 原值，空=不更新） */}
             <Form.Item noStyle shouldUpdate={(prev, cur) => prev.supp_role !== cur.supp_role}>

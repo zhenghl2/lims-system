@@ -621,6 +621,14 @@ class SupplementSerializer(serializers.Serializer):
     relationship_to_mother = serializers.CharField(max_length=50, required=False, allow_blank=True)
     notes = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="",
                                   help_text="备注，存 CaseSample.collection_notes")
+    # 2026-11-09（巴西报告需要）：补充样本也要登记证件号(RG) / 管号(ID do tubo)。
+    # 存在 Sample 上（报告取 mother_display/father_display）。
+    # · 多类型补样：type_docs = {"BLOOD": {"id_card": "...", "tube_no": "..."}, ...}
+    # · 单类型补样：也可直接传顶层 id_card / tube_no（兼容旧调用）
+    id_card = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
+    tube_no = serializers.CharField(max_length=100, required=False, allow_blank=True, default="")
+    type_docs = serializers.DictField(required=False, default=dict,
+                                      help_text="按样本类型分别给证件/管号")
     gestational_age_weeks = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=45,
                                                      help_text="孕妇补样：更新孕周（空=不更新）")
     gestational_age_days = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=6,
@@ -643,6 +651,9 @@ class SupplementSerializer(serializers.Serializer):
         ethnicity = validated_data.get("ethnicity", "")
         relationship = validated_data.get("relationship_to_mother", "")
         notes = validated_data.get("notes", "") or ""
+        _idc = (validated_data.get("id_card") or "").strip()
+        _tube = (validated_data.get("tube_no") or "").strip()
+        _type_docs = validated_data.get("type_docs") or {}
         ga_weeks = validated_data.get("gestational_age_weeks")
         ga_days = validated_data.get("gestational_age_days")
         mg = validated_data.get("multiple_gestation")
@@ -696,11 +707,17 @@ class SupplementSerializer(serializers.Serializer):
         for st in sample_types:
             # 每个类型创建独立的 Sample + CaseSample
             _sup_seq += 1
+            # 证件/管号：优先取该类型自己的，没有再退回顶层值
+            _doc = _type_docs.get(st) or _type_docs.get(str(st).upper()) or {}
+            _this_idc = str(_doc.get("id_card") or _idc or "").strip()
+            _this_tube = str(_doc.get("tube_no") or _tube or "").strip()
             s = Sample.objects.create(
                 sample_id=f"{_sup_prefix}{_sup_seq}",
                 sample_type=sample_type,
                 panel=case.panel,
                 patient_name=patient_name,
+                id_card=_this_idc,
+                tube_no=_this_tube,
                 external_id=external_id,
                 sample_source=case.origin_country(),
                 patient_sex="F" if role == "MOTHER" else "M",
