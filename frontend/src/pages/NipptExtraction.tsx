@@ -56,6 +56,10 @@ const KIT_OPTIONS = [
   { value: "MAGEN_ROUND", label: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)" },
   { value: "MAGEN_CONICAL", label: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)" },
 ];
+/** 男性侧固定定量试剂（2026-11-09） */
+const QUANT_KIT_CODE = "VAHTS_DSDNA_HS";
+const QUANT_KIT_LABEL = "VAHTS 1×dsDNA HS Assay Kit (EQ121-02)";
+
 const KIT_LABEL: Record<string, string> = KIT_OPTIONS.reduce(
   (m, o) => ({ ...m, [o.value]: o.label }), {} as Record<string, string>);
 
@@ -194,17 +198,21 @@ export default function NipptExtraction() {
   // 实验记录（设备/试剂盒/批号/有效期/温湿度）——男女各自一套（2026-10-19 解耦）
   type KitRow = { kit: string; lot: string; expiry?: any };
   type ReagentInfo = { equipment?: string; kit_type?: any; reagent_lot?: string; reagent_expiry?: any;
-    kits?: KitRow[]; temperature?: number | null; humidity?: number | null };
+    kits?: KitRow[]; quant_lot?: string; quant_expiry?: any;
+    temperature?: number | null; humidity?: number | null };
   const [reagentF, setReagentF] = useState<ReagentInfo>({});
   const [reagentM, setReagentM] = useState<ReagentInfo>({});
   // 每种试剂盒「全系统最近一次保存」的批号/有效期 → 选中时自动带入（用户可改，改了下次就用新的）
   const [kitLots, setKitLots] = useState<Record<string, { lot?: string; expiry?: string }>>({});
+  const kitLotsRef = useRef<Record<string, { lot?: string; expiry?: string }>>({});
   // 打开页面拉一次：选中试剂盒时自动带入上次的批号/有效期
   useEffect(() => {
     (async () => {
       try {
         const r = await (casesApi as any).extractionKitLots?.();
-        setKitLots((r && r.data) || {});
+        const data = (r && r.data) || {};
+        kitLotsRef.current = data;
+        setKitLots(data);
       } catch { /* 读不到就不带入，不影响手工填写 */ }
     })();
   }, []);
@@ -346,9 +354,14 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         temperature: fed.temperature ?? ed.temperature ?? null,
         humidity: fed.humidity ?? ed.humidity ?? null,
       });
+      const _q = kitLotsRef.current[QUANT_KIT_CODE] || {};
+      const _exNotDoneM = d.status !== "COMPLETED";
       setReagentM({
         equipment: med.equipment ?? ed.equipment ?? "",
         kits: pickKits(med, ed),
+        quant_lot: med.quant_lot || (_exNotDoneM ? (_q.lot || "") : ""),
+        quant_expiry: med.quant_expiry ? dayjs(med.quant_expiry)
+          : (_exNotDoneM && _q.expiry ? dayjs(_q.expiry) : undefined),
         kit_type: med.kit_type ?? ed.kit_type ?? undefined,
         reagent_lot: med.reagent_lot ?? ed.reagent_lot ?? "",
         reagent_expiry: med.reagent_expiry ? dayjs(med.reagent_expiry) : (ed.reagent_expiry ? dayjs(ed.reagent_expiry) : undefined),
@@ -532,6 +545,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         extraction_date: dateM || "", extraction_time: timeM || "",
         equipment: reagentM.equipment || "",
         kits: kitsForSave(reagentM),
+        quant_lot: reagentM.quant_lot || "",
+        quant_expiry: reagentM.quant_expiry ? dayjs(reagentM.quant_expiry).format("YYYY-MM-DD") : "",
         kit_type: (reagentM.kits?.[0]?.kit) || reagentM.kit_type || "",
         reagent_lot: (reagentM.kits?.[0]?.lot) || reagentM.reagent_lot || "",
         reagent_expiry: reagentM.kits?.[0]?.expiry ? dayjs(reagentM.kits[0].expiry).format("YYYY-MM-DD")
@@ -1185,6 +1200,24 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                 ))}
               </div>
             )}
+            {/* 2026-11-09：男性侧定量试剂（固定这一种，只需批号/有效期；自动带入上次的值） */}
+            {!isFemale && (
+              <div style={{ marginTop: 8, overflowX: "auto" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "nowrap", whiteSpace: "nowrap" }}>
+                  <div title={QUANT_KIT_LABEL}
+                    style={{ fontSize: 12, color: "#666", flex: "0 0 340px", width: 340,
+                             whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    定量试剂 {QUANT_KIT_LABEL}
+                  </div>
+                  <Input size="small" style={{ width: 140, flex: "0 0 140px" }} placeholder="批号"
+                    value={reagent.quant_lot || ""}
+                    onChange={(e) => setReagent((p: any) => ({ ...p, quant_lot: e.target.value }))} />
+                  <DatePicker size="small" style={{ width: 150, flex: "0 0 150px" }} placeholder="有效期"
+                    value={reagent.quant_expiry || null}
+                    onChange={(dd) => setReagent((p: any) => ({ ...p, quant_expiry: dd }))} />
+                </div>
+              </div>
+            )}
           </Space>
         </Card>
 
@@ -1333,6 +1366,11 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                     "批号", k.lot || "",
                     "有效期", k.expiry ? dayjs(k.expiry).format("YYYY-MM-DD") : ""]);
         });
+      }
+      if (!isF) {
+        aoa.push(["定量试剂", QUANT_KIT_LABEL,
+                  "批号", rg.quant_lot || "",
+                  "有效期", rg.quant_expiry ? dayjs(rg.quant_expiry).format("YYYY-MM-DD") : ""]);
       }
       if (method === "MANUAL") aoa.push(["备注", isF ? femaleManualNotes : maleManualNotes]);
       if (method === "AUTOMATED") aoa.push(["备注", isF ? femaleAutoNotes : maleAutoNotes]);

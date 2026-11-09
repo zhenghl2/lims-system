@@ -3483,6 +3483,15 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
                         "batch_number": b.batch_number,
                         "saved_at": b.updated_at.isoformat() if b.updated_at else None,
                     }
+                # 2026-11-09：男性侧「定量试剂」固定在 quant_lot / quant_expiry 两个字段里，
+                # 也当作一种试剂返回（key = VAHTS_DSDNA_HS），前端同样自动带入上次的值
+                if "VAHTS_DSDNA_HS" not in out and (sec.get("quant_lot") or sec.get("quant_expiry")):
+                    out["VAHTS_DSDNA_HS"] = {
+                        "lot": str(sec.get("quant_lot") or ""),
+                        "expiry": str(sec.get("quant_expiry") or ""),
+                        "batch_number": b.batch_number,
+                        "saved_at": b.updated_at.isoformat() if b.updated_at else None,
+                    }
         return Response(out)
 
     @action(detail=False, methods=["get"])
