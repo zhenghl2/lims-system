@@ -3094,6 +3094,40 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
             return NipptPreProcessingBatchCreateSerializer
         return NipptPreProcessingBatchDetailSerializer
 
+    @action(detail=False, methods=["get"], url_path="device_defaults")
+    def device_defaults(self, request):
+        """前处理离心机：按签收地（厦门/香港）分组取「该地区最近一次保存」的设备号。
+
+        2026-11-09 用户要求：
+        · 厦门 低速 YSFH-EI-003 / 高速 YSFH-EI-020-01、020-02（两台可多选）
+        · 香港 低速 VBL-TLD-01 / 高速 VBL-TG-01
+        男女各记一套 → key 带 _female / _male 后缀；多选值用「、」拼接。
+        """
+        from .models import NipptPreProcessingBatch
+
+        qs = list(NipptPreProcessingBatch.objects
+                  .order_by("-updated_at")
+                  .only("id", "batch_number", "processing_data", "updated_at")
+                  .prefetch_related("samples")[:500])
+        region_of = _nippt_batch_region_map(qs)
+        out = {"XIAMEN": {}, "HONGKONG": {}, "": {}}
+        for b in qs:
+            bucket = out.setdefault(region_of.get(str(b.id), ""), {})
+            pd = b.processing_data or {}
+            for side in ("female", "male"):
+                for key in ("dev_low", "dev_high"):
+                    k = "%s_%s" % (key, side)
+                    if k in bucket:
+                        continue
+                    val = str(pd.get(k) or "").strip()
+                    if val:
+                        bucket[k] = {
+                            "no": val,
+                            "batch_number": b.batch_number,
+                            "saved_at": b.updated_at.isoformat() if b.updated_at else None,
+                        }
+        return Response(out)
+
     @action(detail=False, methods=["get"])
     def pending(self, request):
         """Return samples waiting for pre-processing, grouped by person."""

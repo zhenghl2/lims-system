@@ -35,6 +35,32 @@ const SAMPLE_TYPE_OPTIONS = [
 
 /** 实验/剩余样本类型的可选项：只能从该样本「收到样本类型」里选（母亲也是血液，同样受限）。
  *  收到类型为空（旧数据）时回退全量，避免下拉为空无法操作。 */
+/** 前处理设备（2026-11-09）：按签收地给设备号；高速离心机可多选（厦门两台）
+ *  · 厦门 低速 YSFH-EI-003、高速 YSFH-EI-020-01 / YSFH-EI-020-02
+ *  · 香港 低速 VBL-TLD-01、高速 VBL-TG-01
+ */
+const PP_DEVICE_BY_REGION: Record<"XIAMEN" | "HONGKONG", { low: string[]; high: string[] }> = {
+  XIAMEN: {
+    low: ["YSFH-EI-003（低速）"],
+    high: ["YSFH-EI-020-01（高速）", "YSFH-EI-020-02（高速）"],
+  },
+  HONGKONG: {
+    low: ["VBL-TLD-01（低速）"],
+    high: ["VBL-TG-01（高速）"],
+  },
+};
+const ppSplitDev = (v: any): string[] =>
+  Array.isArray(v) ? v.filter(Boolean) : String(v || "").split("、").map((x) => x.trim()).filter(Boolean);
+const ppJoinDev = (arr?: string[] | null): string => (arr || []).filter(Boolean).join("、");
+/** 批次签收地 → 设备配置 key；混地区/未知 → ""（两地并集、不设默认） */
+const ppRegionKey = (loc?: string): "XIAMEN" | "HONGKONG" | "" => {
+  const t = String(loc || "");
+  if (!t || t.includes("/")) return "";
+  if (t.includes("香港") || t.toUpperCase().includes("HONGKONG")) return "HONGKONG";
+  if (t.includes("厦门") || t.toUpperCase().includes("XIAMEN")) return "XIAMEN";
+  return "";
+};
+
 const typeOptionsFor = (r: { received_sample_types?: string[]; experiment_sample_type?: string }) => {
   const received = (r.received_sample_types || []).filter(Boolean);
   if (!received.length) return SAMPLE_TYPE_OPTIONS;
@@ -169,6 +195,12 @@ const [operators, setOperators] = useState<Record<string,string[]>>({});
 const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
 // 男性操作人/审核人
 const [operatorsM, setOperatorsM] = useState<Record<string,string[]>>({});
+// 离心机设备（2026-11-09，男女各一套）：低速 / 高速可多选，多选用「、」拼
+const [devLowF, setDevLowF] = useState<string>("");
+const [devHighF, setDevHighF] = useState<string>("");
+const [devLowM, setDevLowM] = useState<string>("");
+const [devHighM, setDevHighM] = useState<string>("");
+const ppDevRef = useRef<Record<string, Record<string, { no?: string }>>>({});
 const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 // 照片 ref 镜像：保证保存/校验时读到最新值（防闭包旧快照）
 const photosFRef = useRef<string[]>([]);
@@ -201,6 +233,38 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
   }, []);
 
   useEffect(() => { fetchBatches(); }, [fetchBatches]);
+
+// 2026-11-09：拉一次离心机「按地区记住的上次选择」
+useEffect(() => {
+  (async () => {
+    try {
+      const r = await (casesApi as any).preprocessingDeviceDefaults?.();
+      ppDevRef.current = (r && r.data) || {};
+    } catch { /* 读不到就不带值，不影响手工选择 */ }
+  })();
+}, []);
+
+/** 该批次的设备选项（混地区/未知 → 两地并集） */
+const ppDevCfg = (loc?: string) => {
+  const k = ppRegionKey(loc);
+  if (k) return PP_DEVICE_BY_REGION[k];
+  return {
+    low: Array.from(new Set([...PP_DEVICE_BY_REGION.XIAMEN.low, ...PP_DEVICE_BY_REGION.HONGKONG.low])),
+    high: Array.from(new Set([...PP_DEVICE_BY_REGION.XIAMEN.high, ...PP_DEVICE_BY_REGION.HONGKONG.high])),
+  };
+};
+/** 取值顺序：本批次已存 > 该地区上次保存 > 该地区默认（只有唯一型号时才默认） */
+const ppDevValue = (pd: any, key: "dev_low" | "dev_high", side: "f" | "m", loc?: string) => {
+  const cfg = ppDevCfg(loc);
+  const sideKey = side === "f" ? "female" : "male";
+  const own = ppSplitDev(pd?.[`${key}_${sideKey}`]);
+  if (own.length) return ppJoinDev(own);
+  const regKey = ppRegionKey(loc);
+  const mem = regKey ? ppSplitDev((ppDevRef.current?.[regKey] || {})[`${key}_${sideKey}`]?.no) : [];
+  if (mem.length) return ppJoinDev(mem);
+  const opts = key === "dev_low" ? cfg.low : cfg.high;
+  return opts.length === 1 ? opts[0] : "";
+};
 
   const autoFillExperimentType = (batch: any) => {
     const allSamples = [...(batch.female_samples || []), ...(batch.male_other_samples || []), ...(batch.male_blood_samples || [])];
@@ -350,6 +414,12 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       setPpTime((pd.pp_time_female ?? pd.pp_time) || (_ppNotDone ? _ppT0 : ""));
       setPpDateM(pd.pp_date_male || (_ppNotDone ? _ppD0 : ""));
       setPpTimeM(pd.pp_time_male || (_ppNotDone ? _ppT0 : ""));
+      // 设备（2026-11-09）：本批次 > 该地区上次值 > 地区默认
+      const _ppLoc = res.data?.receipt_location;
+      setDevLowF(ppDevValue(pd, "dev_low", "f", _ppLoc));
+      setDevHighF(ppDevValue(pd, "dev_high", "f", _ppLoc));
+      setDevLowM(ppDevValue(pd, "dev_low", "m", _ppLoc));
+      setDevHighM(ppDevValue(pd, "dev_high", "m", _ppLoc));
       // 草稿恢复：人员（sessionStorage）+ 照片（IndexedDB，异步）
       const draft = loadPpDraft()[id];
       if (draft) {
@@ -544,6 +614,8 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
       reviewer_male: joinPersons(reviewersM[sid]),
       pp_date_female: ppDate, pp_time_female: ppTime,
       pp_date_male: ppDateM, pp_time_male: ppTimeM,
+      dev_low_female: devLowF, dev_high_female: devHighF,
+      dev_low_male: devLowM, dev_high_male: devHighM,
     };
   };
 
@@ -767,6 +839,27 @@ const setPhotosMSync = (next: string[]) => { photosMRef.current = next; setPhoto
           <span style={{ color: "#666", marginLeft: 8 }}>时间:</span>
           <TimePicker size="small" style={{ width: 100 }} format="HH:mm" value={(side === "f" ? ppTime : ppTimeM) ? dayjs(side === "f" ? ppTime : ppTimeM, "HH:mm") : null}
             onChange={(d: any) => (side === "f" ? setPpTime : setPpTimeM)(d ? d.format("HH:mm") : "")} placeholder="选择时间" />
+        </div>
+        {/* 设备（2026-11-09）：低速/高速离心机，男女各一套；高速可多选（厦门两台） */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 10, fontSize: 12 }}>
+          <span style={{ color: "#666" }}>低速离心机:</span>
+          <Select size="small" mode="multiple" style={{ minWidth: 210 }} maxTagCount={1} allowClear
+            placeholder="选择设备号"
+            value={ppSplitDev(side === "f" ? devLowF : devLowM)}
+            onChange={(v: string[]) => (side === "f" ? setDevLowF : setDevLowM)(ppJoinDev(v))}
+            options={Array.from(new Set([
+              ...ppDevCfg(selectedBatch?.receipt_location).low,
+              ...ppSplitDev(side === "f" ? devLowF : devLowM),
+            ])).map((o) => ({ label: o, value: o }))} />
+          <span style={{ color: "#666", marginLeft: 12 }}>高速离心机:</span>
+          <Select size="small" mode="multiple" style={{ minWidth: 270 }} maxTagCount={1} allowClear
+            placeholder="选择设备号（可多选）"
+            value={ppSplitDev(side === "f" ? devHighF : devHighM)}
+            onChange={(v: string[]) => (side === "f" ? setDevHighF : setDevHighM)(ppJoinDev(v))}
+            options={Array.from(new Set([
+              ...ppDevCfg(selectedBatch?.receipt_location).high,
+              ...ppSplitDev(side === "f" ? devHighF : devHighM),
+            ])).map((o) => ({ label: o, value: o }))} />
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
           {ph.map((url, i) => (

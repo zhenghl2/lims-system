@@ -235,6 +235,9 @@ export const casesApi = {
     api.post("/cases/preprocessing/", data),
   pendingPreprocessing: () =>
     api.get("/cases/preprocessing/pending/"),
+  /** 前处理离心机：按地区上次选择（厦门/香港） */
+  preprocessingDeviceDefaults: () =>
+    api.get("/cases/preprocessing/device_defaults/"),
   savePreprocessing: (id: string, data: Record<string, unknown>) =>
     api.post(`/cases/preprocessing/${id}/save_processing/`, data),
   deletePreprocessingBatch: (id: string) => api.delete(`/cases/preprocessing/${id}/`),
