@@ -51,17 +51,19 @@ const INDEX_LOOKUP: Record<string,{i7:string,i5:string}> = {
   "381":{i7:"CGCTAGTA",i5:"CTGATGAG"},"382":{i7:"AATGGACG",i5:"GTGAGACT"},"383":{i7:"GATAGCGA",i5:"CATCCAAG"},"384":{i7:"CGACCATT",i5:"TGATAGGC"}
 };
 
-const EQUIPMENT_OPTIONS = [
-  {value:"ILLUMINA_500",label:"illumina500"},{value:"ILLUMINA_550DX",label:"illumina550dx"},
-  {value:"SALUS_PRO",label:"Salus Pro"},{value:"SIKUN_2000",label:"Sikun2000"},{value:"MGI_G99",label:"MGI G99"},
+/** 2026-11-09：测序平台改为设备编号（用户指定两项） */
+const PLATFORM_OPTIONS = [
+  { value: "YSFH-EI-035-01", label: "YSFH-EI-035-01（Illumian）" },
+  { value: "YSFH-EI-035-02", label: "YSFH-EI-035-02（Salus）" },
 ];
-const CHIP_OPTIONS:Record<string,{value:string;label:string}[]> = {
-  ILLUMINA_500:[{value:"S1",label:"S1 Flow Cell"},{value:"S2",label:"S2 Flow Cell"},{value:"S4",label:"S4 Flow Cell"}],
-  ILLUMINA_550DX:[{value:"S1",label:"S1 Flow Cell"},{value:"S2",label:"S2 Flow Cell"}],
-  SALUS_PRO:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}],
-  SIKUN_2000:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}],
-  MGI_G99:[{value:"FCL",label:"FCL Chip"},{value:"FCS",label:"FCS Chip"}],
-};
+/** 2026-11-09：杂交及测序设备（整批一套，不分男女；多个可多选）
+ *  金属浴 YSFH-EI-010-02 / -07；PCR仪 YSFH-EI-024-05 / -12 / -07；Qubit YSFH-EI-021-02 */
+type SeqDevItem = { key: "dev_metal" | "dev_pcr" | "dev_qubit"; label: string; options: string[]; multi?: boolean; width?: number };
+const SEQ_DEVICES: SeqDevItem[] = [
+  { key: "dev_metal", label: "金属浴", options: ["YSFH-EI-010-02", "YSFH-EI-010-07"], multi: true, width: 260 },
+  { key: "dev_pcr", label: "PCR仪", options: ["YSFH-EI-024-05", "YSFH-EI-024-12", "YSFH-EI-024-07"], multi: true, width: 300 },
+  { key: "dev_qubit", label: "Qubit定量仪", options: ["YSFH-EI-021-02"], multi: true, width: 200 },
+];
 const READ_TYPE_OPTIONS = [{value:"PE75",label:"PE75"},{value:"PE100",label:"PE100"},{value:"PE150",label:"PE150"}];
 const STEPS = [
   {key:"clean_equip",label:"设备准备"},{key:"reagent_prep",label:"试剂准备"},
@@ -95,7 +97,8 @@ export default function NipptHybSeq() {
 
   // Sequencing state
   const [platform, setPlatform] = useState("");
-  const [chip, setChip] = useState("");
+  // 2026-11-09：芯片型号下拉已删除；杂交测序设备（整批一套，多选值「、」拼接）
+  const [seqDev, setSeqDev] = useState<Record<string, string>>({});
   const [readType, setReadType] = useState("");
   const [seqKit, setSeqKit] = useState("");
   const [stepConfirmations, setStepConfirmations] = useState<Record<string,boolean>>({});
@@ -152,11 +155,13 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       const r=await(casesApi as any).getHybSeqBatch(id);
       const d=r.data; setSelectedBatch(d);
       const sd=d.hyb_seq_data||{};
-      setPlatform(sd.platform||""); setChip(sd.chip||""); setReadType(sd.read_type||""); setSeqKit(sd.sequencing_kit||""); setStepConfirmations(sd.step_confirmations||{});
+      setPlatform(sd.platform||""); setReadType(sd.read_type||""); setSeqKit(sd.sequencing_kit||""); setStepConfirmations(sd.step_confirmations||{});
+      // 设备：本批次已存 > 唯一型号默认
+      setSeqDev(Object.fromEntries(SEQ_DEVICES.map(d => [d.key, sd[d.key] || (d.options.length === 1 ? d.options[0] : "")])));
       setMixRows(buildMixRowsFromServer(sd, d)); setFinalConc(sd.final_conc??0.783);
       form.setFieldsValue({
         seq_date:sd.seq_date?dayjs(sd.seq_date):dayjs(), seq_time:sd.seq_time?dayjs(sd.seq_time):dayjs(),
-        equipment:sd.equipment||"", chip:sd.chip||"", read_type:sd.read_type||"",
+        read_type:sd.read_type||"",
         chip_number:sd.chip_number||"",
       });
     }catch{message.error("加载失败")}finally{setBatchLoading(false)}
@@ -318,7 +323,9 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
 
   // 构建与保存一致的 hyb_seq_data（保存 / 完成前未保存检测共用）
   const buildSd = ():any => ({
-    platform, chip, read_type:readType, sequencing_kit:seqKit, step_confirmations:stepConfirmations,
+    platform, read_type:readType, sequencing_kit:seqKit, step_confirmations:stepConfirmations,
+    // 2026-11-09：杂交及测序设备（整批一套）
+    ...Object.fromEntries(SEQ_DEVICES.map(d => [d.key, seqDev[d.key] || ""])),
     ...form.getFieldsValue(), mix_rows:mixRows, final_conc:finalConc,
   });
 
@@ -501,20 +508,31 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
               <Space direction="vertical" style={{width:"100%"}}>
                 <Space wrap>
                   <Text strong>测序平台:</Text>
-                  <Select style={{width:180}} value={platform||undefined} onChange={setPlatform} options={EQUIPMENT_OPTIONS} placeholder="选择平台"/>
-                  {platform&&<>
-                    <Text>芯片:</Text>
-                    <Select style={{width:150}} options={CHIP_OPTIONS[platform]||[]} value={chip||undefined} onChange={v=>{setChip(v||"");form.setFieldsValue({chip:v})}} placeholder="选择"/>
-                  </>}
+                  <Select style={{width:230}} value={platform||undefined} onChange={setPlatform} options={PLATFORM_OPTIONS} placeholder="选择测序平台"/>
                   <Text>Read Type:</Text>
                   <Select style={{width:100}} options={READ_TYPE_OPTIONS} value={readType||undefined} onChange={v=>{setReadType(v||"");form.setFieldsValue({read_type:v})}} placeholder="选择"/>
                 </Space>
                 <Form form={form} layout="inline" style={{flexWrap:"wrap",gap:8}}>
                   <Form.Item name="seq_date" label="日期"><DatePicker size="small" style={{width:120}}/></Form.Item>
                   <Form.Item name="seq_time" label="时间"><TimePicker size="small" format="HH:mm" style={{width:90}}/></Form.Item>
-                  <Form.Item name="equipment" label="设备"><Select size="small" style={{width:160}} options={EQUIPMENT_OPTIONS} placeholder="选择"/></Form.Item>
                   <Form.Item name="chip_number" label="Chip号"><Input size="small" style={{width:120}} placeholder="chip编号"/></Form.Item>
                 </Form>
+                {/* 2026-11-09：设备（金属浴 / PCR仪 / Qubit），整批一套，多个可多选 */}
+                <Space wrap size={8}>
+                  {SEQ_DEVICES.map(d => {
+                    const cur = String(seqDev[d.key] || "").split("、").map(x => x.trim()).filter(Boolean);
+                    return (
+                      <span key={d.key} style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ color: "#666", fontSize: 12 }}>{d.label}:</span>
+                        <Select size="small" mode="multiple" style={{ width: d.width || 220 }} maxTagCount={1} allowClear
+                          placeholder="选择设备号（可多选）"
+                          value={cur}
+                          onChange={(v: string[]) => setSeqDev(p => ({ ...p, [d.key]: v.filter(Boolean).join("、") }))}
+                          options={Array.from(new Set([...d.options, ...cur])).map(o => ({ label: o, value: o }))} />
+                      </span>
+                    );
+                  })}
+                </Space>
               </Space>
             </Card>
 
