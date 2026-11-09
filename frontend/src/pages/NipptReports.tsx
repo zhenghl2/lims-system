@@ -40,6 +40,40 @@ function ClickToEdit({ text, children, placeholder, width, hint }: {
   );
 }
 
+/** 报告模块行内编辑：证件号(RG) / 管号(ID do tubo)。写在 Sample 上（一个人一份） */
+function DocsEditor({ batchId, row, side, onSaved, onCancel }: {
+  batchId?: string; row: any; side: "mother" | "father";
+  onSaved: () => void | Promise<void>; onCancel: () => void;
+}) {
+  const [idc, setIdc] = useState<string>((side === "mother" ? row.mother_id_card : row.father_id_card) || "");
+  const [tube, setTube] = useState<string>((side === "mother" ? row.mother_tube_no : row.father_tube_no) || "");
+  const [busy, setBusy] = useState(false);
+  const save = async () => {
+    if (!batchId) return;
+    setBusy(true);
+    try {
+      await api.post(`/cases/bioinfo/${batchId}/set-sample-docs/`,
+        { pair_ids: [row.id], side, id_card: idc, tube_no: tube });
+      message.success("已保存");
+      await onSaved();
+    } catch (e: any) {
+      message.error(e?.response?.data?.error || "保存失败");
+    } finally { setBusy(false); }
+  };
+  return (
+    <Space direction="vertical" size={4} style={{ width: 190 }}>
+      <Input size="small" autoFocus placeholder="证件号（RG）" value={idc}
+        onChange={(e) => setIdc(e.target.value)} />
+      <Input size="small" placeholder="管号（ID do tubo）" value={tube}
+        onChange={(e) => setTube(e.target.value)} />
+      <Space size={4}>
+        <Button size="small" type="primary" loading={busy} onClick={save}>保存</Button>
+        <Button size="small" onClick={onCancel}>取消</Button>
+      </Space>
+    </Space>
+  );
+}
+
 const { Text, Title } = Typography;
 
 interface UserItem { id: string; username: string; }
@@ -906,9 +940,25 @@ export default function NipptReports() {
         );
       } },
     { title: "孕妇 证件/管号", dataIndex: "mother_display", key: "mdisp", width: 170, ellipsis: true,
-      render: (v: string) => v || "—" },
+      render: (v: string, r: any) => canAudit ? (
+        <ClickToEdit width={165} hint="点击编辑：证件号（RG） / 管号"
+          text={v ? <span>{v}</span> : <span style={{ color: "#bfbfbf" }}>点击填写</span>}>
+          {(close) => (
+            <DocsEditor batchId={selectedBatch?.id} row={r} side="mother"
+              onSaved={async () => { await refreshDetail(); close(); }} onCancel={close} />
+          )}
+        </ClickToEdit>
+      ) : (v || "—") },
     { title: "疑父 证件/管号", dataIndex: "father_display", key: "fdisp", width: 170, ellipsis: true,
-      render: (v: string) => v || "—" },
+      render: (v: string, r: any) => canAudit ? (
+        <ClickToEdit width={165} hint="点击编辑：证件号（RG） / 管号"
+          text={v ? <span>{v}</span> : <span style={{ color: "#bfbfbf" }}>点击填写</span>}>
+          {(close) => (
+            <DocsEditor batchId={selectedBatch?.id} row={r} side="father"
+              onSaved={async () => { await refreshDetail(); close(); }} onCancel={close} />
+          )}
+        </ClickToEdit>
+      ) : (v || "—") },
     { title: "Mother", dataIndex: "mother_name", key: "mn", width: 110, ellipsis: true },
     { title: "Father", dataIndex: "father_name", key: "fn", width: 120, ellipsis: true },
     { title: "M.Het", dataIndex: "mother_het_ratio", key: "mh", width: 68, render: (v: any) => fmt2(v) },

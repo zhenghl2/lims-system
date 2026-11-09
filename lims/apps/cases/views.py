@@ -4747,6 +4747,86 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             "report_date": (new_date.isoformat() if new_date else "") if has_date else None,
         })
 
+    @action(detail=True, methods=["post"], url_path="set-sample-docs")
+    def set_sample_docs(self, request, pk=None):
+        """报告模块行内编辑：孕妇 / 疑父 的「证件号(RG) / 管号(ID do tubo)」。
+
+        body: {"pair_ids": ["..."], "side": "mother"|"father",
+               "id_card": "...", "tube_no": "..."}
+        · 写在 Sample 上（一个人一份）→ 同案例的其他配对一起显示新值
+        · 锁定（批次已完成 / 配对已审核）：只允许补空，不允许覆盖已有值（与报告日期一致）
+        """
+        batch = self.get_object()
+        ids = request.data.get("pair_ids") or []
+        side = str(request.data.get("side") or "").lower()
+        if side not in ("mother", "father"):
+            return Response({"error": "side 必须是 mother / father"}, status=400)
+        has_idc = "id_card" in request.data
+        has_tube = "tube_no" in request.data
+        if not (has_idc or has_tube):
+            return Response({"error": "没有要更新的字段（id_card / tube_no）"}, status=400)
+
+        pairs = list(batch.pairs.filter(id__in=ids).select_related("case")) if ids else []
+        if not pairs:
+            return Response({"error": "Pair not found"}, status=404)
+
+        new_idc = str(request.data.get("id_card") or "").strip()[:50]
+        new_tube = str(request.data.get("tube_no") or "").strip()[:100]
+
+        # 收集要改的 Sample（同一个人只改一次）
+        targets = {}
+        for p in pairs:
+            ns = p.mother_sample if side == "mother" else p.father_sample
+            if not ns:
+                continue
+            for cid in (getattr(ns, "case_sample_ids", None) or []):
+                cs = CaseSample.objects.select_related("sample").filter(id=cid).first()
+                if cs and cs.sample_id:
+                    targets[str(cs.sample_id)] = cs.sample
+        if not targets:
+            return Response({"error": "该配对没有可写证件/管号的样本"}, status=400)
+
+        locked = (batch.report_status == "COMPLETED") or any(p.report_audited_at for p in pairs)
+        if locked:
+            block = []
+            for sm in targets.values():
+                old_i = (sm.id_card or "").strip()
+                old_t = (sm.tube_no or "").strip()
+                if has_idc and old_i and old_i != new_idc:
+                    block.append("证件号已有值「%s」" % old_i)
+                if has_tube and old_t and old_t != new_tube:
+                    block.append("管号已有值「%s」" % old_t)
+            if block:
+                return Response({"error": "批次已完成或配对已审核，只能补填空白项：%s"
+                                          % "；".join(dict.fromkeys(block))}, status=400)
+
+        updated = []
+        changes = {}
+        for sm in targets.values():
+            if has_idc and (sm.id_card or "") != new_idc:
+                changes.setdefault("id_card", {"old": sm.id_card or "", "new": new_idc})
+                sm.id_card = new_idc
+            if has_tube and (sm.tube_no or "") != new_tube:
+                changes.setdefault("tube_no", {"old": sm.tube_no or "", "new": new_tube})
+                sm.tube_no = new_tube
+            sm.save()
+            updated.append(sm.sample_id)
+
+        if changes:
+            try:
+                log_audit(request, "UPDATE", pairs[0].case, changes=changes, entity_type="case",
+                          entity_repr=pairs[0].case.case_number if pairs[0].case else "")
+            except Exception:
+                pass
+
+        return Response({
+            "side": side,
+            "id_card": new_idc,
+            "tube_no": new_tube,
+            "display": " · ".join([x for x in (new_idc, new_tube) if x]),
+            "updated_samples": updated,
+        })
+
     @action(detail=True, methods=["post"], url_path="set-gender-info")
     def set_gender_info(self, request, pk=None):
         """报告模块直接改「额外信息」——案例管理基本信息里显示为 gender 的那一项。
