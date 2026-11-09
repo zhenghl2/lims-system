@@ -1417,33 +1417,12 @@ class CaseViewSet(viewsets.ModelViewSet):
         if case.all_samples_received and not case.pt_number:
             case.assign_pt_number()
             case.save(update_fields=["pt_number", "updated_at"])
-            # Generate test_sample_id suffix if not already set
-            # 按 patient_name 分組父亲，同一父亲多样本共用后缀
-            father_css = list(case.case_samples.filter(
-                role="ALLEGED_FATHER"
-            ).order_by("created_at").select_related("sample"))
-            father_names = []
-            for fcs in father_css:
-                name = fcs.sample.patient_name
-                if name not in father_names:
-                    father_names.append(name)
-
+            # 生成 test_sample_id（2026-11-09 改）：统一走 assign_supplement_test_id，
+            # 它内含「撞号判定」——同一人不同类型样本沿用同一 PT（精斑+毛发），
+            # 同类型再次出现才按重采 _R{n}。原来手写后缀会给两条样本同一个号且不带重采标记。
             for cs in case.case_samples.all():
                 if not cs.test_sample_id:
-                    base = case.pt_number
-                    if cs.role == "MOTHER":
-                        suffix = "W"
-                    elif cs.role == "ALLEGED_FATHER":
-                        my_name = cs.sample.patient_name
-                        idx = father_names.index(my_name) if my_name in father_names else 0
-                        if len(father_names) == 1:
-                            suffix = "H"
-                        else:
-                            suffix = f"H{chr(65 + idx)}"  # HA, HB, HC...
-                    else:
-                        suffix = "U"
-                    cs.test_sample_id = f"{base}{suffix}"
-                    cs.save(update_fields=["test_sample_id"])
+                    case.assign_supplement_test_id(cs)
 
             # Auto-create Run with NIPPT workflow protocol
             from lims.apps.workflows.models import SampleRun, WorkflowStep, WorkflowProtocol, RunSample
@@ -1812,9 +1791,18 @@ class CaseViewSet(viewsets.ModelViewSet):
                 # 重做沿用原样本的签收地，否则候选列表/批次里看不到 📍 标签
                 receipt_location=original_cs.receipt_location,
             )
-            new_cs.test_sample_id = case.generate_test_sample_id(
-                new_cs, resample_num=original_cs.resample_number, redo_num=next_n)
-            new_cs.save(update_fields=["test_sample_id"])
+            # 2026-11-09：同一 PT 可能有多条（同一人不同类型样本），两个样本各自重做会得到
+            # 同一个 _T1 → 这里递增到不撞号为止
+            _tn = next_n
+            _cand = case.generate_test_sample_id(
+                new_cs, resample_num=original_cs.resample_number, redo_num=_tn)
+            while CaseSample.objects.filter(case=case, test_sample_id=_cand).exclude(id=new_cs.id).exists():
+                _tn += 1
+                _cand = case.generate_test_sample_id(
+                    new_cs, resample_num=original_cs.resample_number, redo_num=_tn)
+            new_cs.redo_count = _tn
+            new_cs.test_sample_id = _cand
+            new_cs.save(update_fields=["test_sample_id", "redo_count"])
             
             register_redo_samples(original_cs, target_stage, new_cs, request.user, sample_source)
 
@@ -2506,8 +2494,7 @@ def public_register(request, token):
                 ethnicity=data.get("mother_ethnicity", ""),
                 sample_source=CaseSample.SampleSource.PERIPHERAL_BLOOD,
             )
-            pub_mother_cs.test_sample_id = case.generate_test_sample_id(pub_mother_cs)
-            pub_mother_cs.save(update_fields=["test_sample_id"])
+            case.assign_supplement_test_id(pub_mother_cs)   # 含撞号判定（2026-11-09）
 
         father_count = data.get("father_count", 1)
         for i in range(father_count):
@@ -2548,8 +2535,7 @@ def public_register(request, token):
                 relationship_to_mother=relationship,
                 sample_source=source,
             )
-            pub_father_cs.test_sample_id = case.generate_test_sample_id(pub_father_cs)
-            pub_father_cs.save(update_fields=["test_sample_id"])
+            case.assign_supplement_test_id(pub_father_cs)   # 含撞号判定（2026-11-09）
 
         case.registration_token = None
         case.registration_token_expires = None

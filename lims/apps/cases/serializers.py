@@ -1800,8 +1800,12 @@ class NipptPoolingBatchDetailSerializer(serializers.ModelSerializer):
 
             _norm = {}
             for _vg, _ix in index_map.items():
-                if _ix:
-                    _norm.setdefault(_strip_sfx(_vg), set()).add(_ix)
+                # 2026-11-09：同一 PT 多条时 _ix 是列表，逐个展开（直接 add(list) 会 TypeError）
+                if not _ix:
+                    continue
+                for _one in (_ix if isinstance(_ix, list) else [_ix]):
+                    if _one:
+                        _norm.setdefault(_strip_sfx(_vg), set()).add(str(_one))
             _cs_ids = []
             for _sp in obj.samples.all():
                 _cs_ids.extend(_sp.case_sample_ids or [])
