@@ -295,6 +295,8 @@ export const casesApi = {
 
   listHybSeqBatches: (params?: Record<string, unknown>) => api.get("/cases/hybseq/", { params }),
   getHybSeqBatch: (id: string) => api.get(`/cases/hybseq/${id}/`),
+  /** 杂交及测序：上一批填过的试剂/批号/有效期 */
+  hybSeqReagentDefaults: () => api.get("/cases/hybseq/reagent_defaults/"),
   createHybSeqBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/hybseq/", data),
   pendingHybSeqMixes: () => api.get("/cases/hybseq/pending_mixes/"),
   saveHybSeq: (id: string, data: any) => api.post(`/cases/hybseq/${id}/save_processing/`, data),

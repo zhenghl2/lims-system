@@ -4310,6 +4310,27 @@ class NipptPoolingViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
 
 class NipptHybSeqViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
     nippt_stage = "HYB_SEQ"
+
+    @action(detail=False, methods=["get"], url_path="reagent_defaults")
+    def reagent_defaults(self, request):
+        """杂交及测序 试剂：取全库「最近一批填过」的试剂/批号/有效期（不看地区、不分男女）。
+
+        2026-11-09 用户要求：新批次默认带出上一批的试剂与批号有效期。
+        返回扁平键：hyb_kit / quant_kit / sequencing_kit / reagent_<cat>_lot|expiry
+        """
+        from .models import NipptHybSeqBatch
+
+        keys = ["hyb_kit", "quant_kit", "sequencing_kit"]
+        for cat in ("probe", "blocker", "hyb", "seq", "quant"):
+            keys += ["reagent_%s_lot" % cat, "reagent_%s_expiry" % cat]
+        for b in (NipptHybSeqBatch.objects.order_by("-updated_at")
+                  .only("batch_number", "hyb_seq_data", "updated_at")[:300]):
+            sd = b.hyb_seq_data or {}
+            hit = {k: str(sd.get(k) or "").strip() for k in keys if str(sd.get(k) or "").strip()}
+            if hit:
+                hit["batch_number"] = b.batch_number
+                return Response(hit)
+        return Response({})
     permission_classes = [permissions.IsAuthenticated]
     filter_backends = [DjangoFilterBackend, OrderingFilter, SearchFilter]
     search_fields = ["batch_number"]

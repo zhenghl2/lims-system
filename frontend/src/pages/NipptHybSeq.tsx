@@ -1,7 +1,7 @@
 // NipptHybSeq.tsx — Hybridization & Sequencing (NIPT-style + Mix dilution table)
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { ConfigProvider, Card, Table, Button, Tag, Modal, message, Typography, Input, InputNumber,
-  Space, Popconfirm, Select, Checkbox, Form, DatePicker, TimePicker, Radio, Tooltip, Alert } from "antd";
+  Space, Popconfirm, Select, Checkbox, Form, DatePicker, TimePicker, Tooltip, Alert } from "antd";
 import { PlusOutlined, ReloadOutlined, CheckOutlined, MenuFoldOutlined, MenuUnfoldOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
 import { casesApi } from "../api";
 import api from "../api/client";
@@ -64,6 +64,35 @@ const SEQ_DEVICES: SeqDevItem[] = [
   { key: "dev_pcr", label: "PCR仪", options: ["YSFH-EI-024-05", "YSFH-EI-024-12", "YSFH-EI-024-07"], multi: true, width: 300 },
   { key: "dev_qubit", label: "Qubit定量仪", options: ["YSFH-EI-021-02"], multi: true, width: 200 },
 ];
+/** 2026-11-09：杂交及测序 试剂目录（名称 + 货号，页面合并成一列显示）
+ *  探针 / 封闭序列 / 定量试剂 是固定项；杂交试剂 2 选 1；测序试剂 6 选 1 */
+type ReagentOpt = { value: string; label: string; cat: string };
+const FIXED_REAGENTS = {
+  probe: { label: "NIPPT探针", cat: "定制" },
+  blocker: { label: "NadPrep NanoBlockers (for Illumina),96 rxn", cat: "1006102" },
+  quant: { label: "VAHTS 1×dsDNA HS Assay Kit", cat: "EQ121-02" },
+};
+const HYB_REAGENTS: ReagentOpt[] = [
+  { value: "1005421", label: "NadPrep Rapid Hybrid Capture Reagents v2,96 rxn", cat: "1005421" },
+  { value: "1005101", label: "NadPrep Hybrid Capture Reagents, 96 rxn", cat: "1005101" },
+];
+const SEQ_REAGENTS: ReagentOpt[] = [
+  { value: "PRM-PE150-150M", label: "Salus Pro测序试剂套装(PRM-PE150-150M)", cat: "PRM-PE150-150M" },
+  { value: "PRM-PE100-250M", label: "Salus Pro测序试剂套装(PRM-PE100-250M)", cat: "PRM-PE100-250M" },
+  { value: "PRM-PE75-500M", label: "Salus Pro测序试剂套装(PRM-PE75-500M)", cat: "PRM-PE75-500M" },
+  { value: "PRM-SE50-500M", label: "Salus Pro测序试剂套装(PRM-SE50-500M)", cat: "PRM-SE50-500M" },
+  { value: "20064346CN", label: "NextSeq 500/550 Mid Output Kit v2.5 (300 Cycles)", cat: "20064346 CN" },
+  { value: "20064344CN", label: "NextSeq 500/550 High Output Kit v2.5 (300 Cycles)", cat: "20064344 CN" },
+];
+const RG_CATS: { key: "probe" | "blocker" | "hyb" | "seq" | "quant"; name: string }[] = [
+  { key: "probe", name: "探针" },
+  { key: "blocker", name: "封闭序列" },
+  { key: "hyb", name: "杂交试剂" },
+  { key: "seq", name: "测序试剂" },
+  { key: "quant", name: "定量试剂" },
+];
+const rgOpts = (k: string): ReagentOpt[] => (k === "hyb" ? HYB_REAGENTS : k === "seq" ? SEQ_REAGENTS : []);
+
 const READ_TYPE_OPTIONS = [{value:"PE75",label:"PE75"},{value:"PE100",label:"PE100"},{value:"PE150",label:"PE150"}];
 const STEPS = [
   {key:"clean_equip",label:"设备准备"},{key:"reagent_prep",label:"试剂准备"},
@@ -101,6 +130,11 @@ export default function NipptHybSeq() {
   const [seqDev, setSeqDev] = useState<Record<string, string>>({});
   const [readType, setReadType] = useState("");
   const [seqKit, setSeqKit] = useState("");
+  // 2026-11-09：试剂（整批一套）—— kit：杂交/测序/定量选择；rgLots：各类批号+有效期
+  const [hybKit, setHybKit] = useState("");
+  const [quantKitH, setQuantKitH] = useState("");
+  const [rgLots, setRgLots] = useState<Record<string, { lot: string; expiry: string }>>({});
+  const rgMemRef = useRef<any>({});
   const [stepConfirmations, setStepConfirmations] = useState<Record<string,boolean>>({});
   const [mixRows, setMixRows] = useState<MixRow[]>([]);
   const [finalConc, setFinalConc] = useState(0.783);
@@ -149,6 +183,16 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     return rows;
   };
 
+  // 2026-11-09：拉「上一批填过的试剂」（全库最近一次，不看地区）
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await (casesApi as any).hybSeqReagentDefaults?.();
+        rgMemRef.current = (r && r.data) || {};
+      } catch { /* 读不到就不带值 */ }
+    })();
+  }, []);
+
   const fetchDetail = async(id:string)=>{
     setBatchLoading(true);
     try{
@@ -156,6 +200,18 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       const d=r.data; setSelectedBatch(d);
       const sd=d.hyb_seq_data||{};
       setPlatform(sd.platform||""); setReadType(sd.read_type||""); setSeqKit(sd.sequencing_kit||""); setStepConfirmations(sd.step_confirmations||{});
+      // 试剂：本批次已存 > 上一批填过的 > 空
+      { const mem = rgMemRef.current || {};
+        setHybKit(sd.hyb_kit || mem.hyb_kit || "");
+        setQuantKitH(sd.quant_kit || mem.quant_kit || "");
+        const lots: any = {};
+        RG_CATS.forEach(c => {
+          lots[c.key] = {
+            lot: sd[`reagent_${c.key}_lot`] || mem[`reagent_${c.key}_lot`] || "",
+            expiry: sd[`reagent_${c.key}_expiry`] || mem[`reagent_${c.key}_expiry`] || "",
+          };
+        });
+        setRgLots(lots); }
       // 设备：本批次已存 > 唯一型号默认
       setSeqDev(Object.fromEntries(SEQ_DEVICES.map(d => [d.key, sd[d.key] || (d.options.length === 1 ? d.options[0] : "")])));
       setMixRows(buildMixRowsFromServer(sd, d)); setFinalConc(sd.final_conc??0.783);
@@ -324,6 +380,11 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
   // 构建与保存一致的 hyb_seq_data（保存 / 完成前未保存检测共用）
   const buildSd = ():any => ({
     platform, read_type:readType, sequencing_kit:seqKit, step_confirmations:stepConfirmations,
+    // 2026-11-09：试剂（整批一套，名称固定/单选 + 批号有效期）
+    hyb_kit: hybKit, quant_kit: quantKitH,
+    ...Object.fromEntries(Object.entries(rgLots).flatMap(([k, v]: any) => [
+      [`reagent_${k}_lot`, v?.lot || ""], [`reagent_${k}_expiry`, v?.expiry || ""],
+    ])),
     // 2026-11-09：杂交及测序设备（整批一套）
     ...Object.fromEntries(SEQ_DEVICES.map(d => [d.key, seqDev[d.key] || ""])),
     ...form.getFieldsValue(), mix_rows:mixRows, final_conc:finalConc,
@@ -536,37 +597,52 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
               </Space>
             </Card>
 
-            {/* Reagents */}
+            {/* Reagents（2026-11-09 重写：试剂 | 名称（货号）| 批号 | 有效期，默认上一批） */}
             <Card size="small" title="🧪 试剂" style={{marginBottom:12}}>
-              <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
-                {/* 杂交捕获 */}
-                <div style={{flex:1,minWidth:320}}>
-                  <Text strong style={{fontSize:13}}>杂交捕获</Text>
-                  <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,marginTop:4}}>
-                    <thead><tr>
-                      <th style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"left",background:"#f5f5f5"}}>名称</th>
-                      <th style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center",background:"#f5f5f5",width:100}}>货号/备注</th>
-                    </tr></thead>
-                    <tbody>
-                      <tr><td style={{border:"1px solid #ddd",padding:"4px 8px"}}>NIPPT 探针</td><td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}><Tag>定制</Tag></td></tr>
-                      <tr><td style={{border:"1px solid #ddd",padding:"4px 8px"}}>NadPrep NanoBlockers (for Illumina), 96 rxn</td><td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}><Text code>1006102</Text></td></tr>
-                      <tr><td style={{border:"1px solid #ddd",padding:"4px 8px"}}>NadPrep Rapid Hybrid Capture Reagents v2, 96 rxn</td><td style={{border:"1px solid #ddd",padding:"4px 8px",textAlign:"center"}}><Text code>1005421</Text></td></tr>
-                    </tbody>
-                  </table>
-                </div>
-                {/* 测序 */}
-                <div style={{flex:1,minWidth:280}}>
-                  <Text strong style={{fontSize:13}}>测序 (三选一)</Text>
-                  <div style={{marginTop:4}}>
-                    <Radio.Group value={seqKit} onChange={e=>setSeqKit(e.target.value)}>
-                      <Space direction="vertical">
-                        <Radio value="PRM-PE150-150M">Sal us Pro 测序试剂套装 (PRM-PE150-150M)</Radio>
-                        <Radio value="PRM-PE100-250M">Sal us Pro 测序试剂套装 (PRM-PE100-250M)</Radio>
-                        <Radio value="PRM-PE75-500M">Sal us Pro 测序试剂套装 (PRM-PE75-500M)</Radio>
-                      </Space>
-                    </Radio.Group>
-                  </div>
-                </div>
+              <table style={{borderCollapse:"collapse",width:"100%",fontSize:13}}>
+                <thead><tr>
+                  {["试剂","试剂盒名称（货号）","批号","有效期"].map((h,i)=>(
+                    <th key={h} style={{border:"1px solid #ddd",padding:"6px 10px",background:"#f5f5f5",textAlign:i===0?"center":"left",width: i===0?110:(i===1?undefined:(i===2?180:150))}}>{h}</th>
+                  ))}
+                </tr></thead>
+                <tbody>
+                  {RG_CATS.map(cat=>{
+                    const opts = rgOpts(cat.key);
+                    const val = cat.key==="hyb" ? hybKit : cat.key==="seq" ? seqKit : cat.key==="quant" ? quantKitH : "";
+                    const setVal = cat.key==="hyb" ? setHybKit : cat.key==="seq" ? setSeqKit : cat.key==="quant" ? setQuantKitH : null;
+                    const fixed = !opts.length ? (FIXED_REAGENTS as any)[cat.key] : null;
+                    const cell = {border:"1px solid #ddd",padding:"4px 8px",verticalAlign:"middle" as const};
+                    return (
+                      <tr key={cat.key}>
+                        <td style={{...cell,textAlign:"center",fontWeight:600}}>{cat.name}</td>
+                        <td style={cell}>
+                          {opts.length? (
+                            <Select size="small" style={{width:"100%"}} allowClear
+                              value={val || undefined}
+                              onChange={(v:any)=>setVal && setVal(v||"")}
+                              placeholder="选择试剂（名称 / 货号）"
+                              options={opts.map(o=>({ value:o.value, label:`${o.label}（${o.cat}）` }))} />
+                          ) : (
+                            <span>{fixed.label}<Text code style={{marginLeft:6}}>{fixed.cat}</Text></span>
+                          )}
+                        </td>
+                        <td style={cell}>
+                          <Input size="small" placeholder="批号"
+                            value={rgLots[cat.key]?.lot || ""}
+                            onChange={e=>setRgLots(p=>({...p,[cat.key]:{...(p[cat.key]||{expiry:""}),lot:e.target.value}}))} />
+                        </td>
+                        <td style={cell}>
+                          <DatePicker size="small" picker="month" placeholder="有效期" format="YYYY-MM" style={{width:"100%"}}
+                            value={rgLots[cat.key]?.expiry?dayjs(rgLots[cat.key].expiry):null}
+                            onChange={(d:any)=>setRgLots(p=>({...p,[cat.key]:{...(p[cat.key]||{lot:""}),expiry:d?d.format("YYYY-MM"):""}}))} />
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div style={{marginTop:6,fontSize:11,color:"#999"}}>
+                批号 / 有效期可在同一行填写；新批次打开时自动带出上一批填过的值，可按需修改。
               </div>
             </Card>
 
