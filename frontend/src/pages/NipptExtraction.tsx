@@ -50,6 +50,15 @@ function maleOrder<T = any>(d: any): T[] {
 const { Text, Title } = Typography;
 const { TextArea } = Input;
 
+/** 2026-11-09：提取试剂盒支持多选（每个试剂盒各自一套批号/有效期） */
+const KIT_OPTIONS = [
+  { value: "MAGEN_CFDNA", label: "Magen cfDNA提取试剂盒 (12919w-480)" },
+  { value: "MAGEN_ROUND", label: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)" },
+  { value: "MAGEN_CONICAL", label: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)" },
+];
+const KIT_LABEL: Record<string, string> = KIT_OPTIONS.reduce(
+  (m, o) => ({ ...m, [o.value]: o.label }), {} as Record<string, string>);
+
 const EXTRACTION_METHODS = [
   { value: "MANUAL", label: "手工" },
   { value: "MAGNETIC_ROD", label: "磁棒法" },
@@ -183,9 +192,22 @@ export default function NipptExtraction() {
   const [femaleMethod, setFemaleMethod] = useState("");
   const [maleMethod, setMaleMethod] = useState("");
   // 实验记录（设备/试剂盒/批号/有效期/温湿度）——男女各自一套（2026-10-19 解耦）
-  type ReagentInfo = { equipment?: string; kit_type?: any; reagent_lot?: string; reagent_expiry?: any; temperature?: number | null; humidity?: number | null };
+  type KitRow = { kit: string; lot: string; expiry?: any };
+  type ReagentInfo = { equipment?: string; kit_type?: any; reagent_lot?: string; reagent_expiry?: any;
+    kits?: KitRow[]; temperature?: number | null; humidity?: number | null };
   const [reagentF, setReagentF] = useState<ReagentInfo>({});
   const [reagentM, setReagentM] = useState<ReagentInfo>({});
+  // 每种试剂盒「全系统最近一次保存」的批号/有效期 → 选中时自动带入（用户可改，改了下次就用新的）
+  const [kitLots, setKitLots] = useState<Record<string, { lot?: string; expiry?: string }>>({});
+  // 打开页面拉一次：选中试剂盒时自动带入上次的批号/有效期
+  useEffect(() => {
+    (async () => {
+      try {
+        const r = await (casesApi as any).extractionKitLots?.();
+        setKitLots((r && r.data) || {});
+      } catch { /* 读不到就不带入，不影响手工填写 */ }
+    })();
+  }, []);
   const [stepConfirmations, setStepConfirmations] = useState<Record<string, boolean>>({});
   // 照片（男女独立）
   const [photosF, setPhotosF] = useState<string[]>([]);
@@ -305,8 +327,19 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       setTimeF(fed.extraction_time ?? ed.extraction_time ?? (_exNotDone ? _exT0 : ""));
       setDateM(med.extraction_date ?? (_exNotDone ? _exD0 : ""));
       setTimeM(med.extraction_time ?? (_exNotDone ? _exT0 : ""));
+      // 试剂盒多选：新数据读 kits；旧数据（单选 kit_type + 一个批号/有效期）自动转成一行
+      const pickKits = (sec: any, legacy: any): KitRow[] => {
+        const arr = Array.isArray(sec?.kits) ? sec.kits.filter((x: any) => x && x.kit) : [];
+        const rows = arr.length ? arr : (sec?.kit_type ? [{ kit: sec.kit_type, lot: sec.reagent_lot, expiry: sec.reagent_expiry }]
+          : (legacy?.kit_type ? [{ kit: legacy.kit_type, lot: legacy.reagent_lot, expiry: legacy.reagent_expiry }] : []));
+        return rows.map((x: any) => ({
+          kit: x.kit, lot: x.lot || "",
+          expiry: x.expiry ? dayjs(x.expiry) : undefined,
+        }));
+      };
       setReagentF({
         equipment: fed.equipment ?? ed.equipment ?? "",
+        kits: pickKits(fed, ed),
         kit_type: fed.kit_type ?? ed.kit_type ?? undefined,
         reagent_lot: fed.reagent_lot ?? ed.reagent_lot ?? "",
         reagent_expiry: fed.reagent_expiry ? dayjs(fed.reagent_expiry) : (ed.reagent_expiry ? dayjs(ed.reagent_expiry) : undefined),
@@ -315,6 +348,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       });
       setReagentM({
         equipment: med.equipment ?? ed.equipment ?? "",
+        kits: pickKits(med, ed),
         kit_type: med.kit_type ?? ed.kit_type ?? undefined,
         reagent_lot: med.reagent_lot ?? ed.reagent_lot ?? "",
         reagent_expiry: med.reagent_expiry ? dayjs(med.reagent_expiry) : (ed.reagent_expiry ? dayjs(ed.reagent_expiry) : undefined),
@@ -441,6 +475,38 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     return o === "" ? undefined : o;
   };
 
+  /** 试剂盒多选 → 保存用数组（日期统一 YYYY-MM-DD） */
+  const kitsForSave = (rg: ReagentInfo) =>
+    (rg.kits || []).filter((k) => k && k.kit).map((k) => ({
+      kit: k.kit, lot: k.lot || "",
+      expiry: k.expiry ? dayjs(k.expiry).format("YYYY-MM-DD") : "",
+    }));
+
+  /** 改某个试剂盒那一行的批号/有效期 */
+  const updateKitRow = (side: "f" | "m", idx: number, patch: Partial<KitRow>) => {
+    const setter = side === "f" ? setReagentF : setReagentM;
+    setter((p: any) => {
+      const rows = [...(p.kits || [])];
+      rows[idx] = { ...rows[idx], ...patch };
+      return { ...p, kits: rows };
+    });
+  };
+
+  /** 选择试剂盒（多选）：新增的行自动带入上次批号/有效期；取消的行直接去掉 */
+  const changeKits = (side: "f" | "m", vals: string[]) => {
+    const setter = side === "f" ? setReagentF : setReagentM;
+    setter((p: any) => {
+      const cur: KitRow[] = p.kits || [];
+      const next: KitRow[] = vals.map((v) => {
+        const hit = cur.find((k) => k.kit === v);
+        if (hit) return hit;
+        const last = kitLots[v] || {};
+        return { kit: v, lot: last.lot || "", expiry: last.expiry ? dayjs(last.expiry) : undefined };
+      });
+      return { ...p, kits: next };
+    });
+  };
+
   // 构建与保存一致的 extraction_data（保存 / 完成前未保存检测共用）
   const buildExData = ():any => {
     const sid = selectedBatch?.id || "";
@@ -451,9 +517,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         magnetic_notes: femaleMagneticNotes.current,
         manual_notes: femaleManualNotes, auto_notes: femaleAutoNotes,
         extraction_date: dateF || "", extraction_time: timeF || "",
-        equipment: reagentF.equipment || "", kit_type: reagentF.kit_type || "",
-        reagent_lot: reagentF.reagent_lot || "",
-        reagent_expiry: reagentF.reagent_expiry ? dayjs(reagentF.reagent_expiry).format("YYYY-MM-DD") : "",
+        equipment: reagentF.equipment || "",
+        kits: kitsForSave(reagentF),
+        kit_type: (reagentF.kits?.[0]?.kit) || reagentF.kit_type || "",
+        reagent_lot: (reagentF.kits?.[0]?.lot) || reagentF.reagent_lot || "",
+        reagent_expiry: reagentF.kits?.[0]?.expiry ? dayjs(reagentF.kits[0].expiry).format("YYYY-MM-DD")
+          : (reagentF.reagent_expiry ? dayjs(reagentF.reagent_expiry).format("YYYY-MM-DD") : ""),
         temperature: reagentF.temperature ?? null, humidity: reagentF.humidity ?? null },
       male: { method: maleMethod, sample_results: maleResults, plate_skip_coords: maleSkipCoords,
         plate_kit_types: maleKitTypes,
@@ -461,14 +530,18 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         magnetic_notes: maleMagneticNotes.current,
         manual_notes: maleManualNotes, auto_notes: maleAutoNotes,
         extraction_date: dateM || "", extraction_time: timeM || "",
-        equipment: reagentM.equipment || "", kit_type: reagentM.kit_type || "",
-        reagent_lot: reagentM.reagent_lot || "",
-        reagent_expiry: reagentM.reagent_expiry ? dayjs(reagentM.reagent_expiry).format("YYYY-MM-DD") : "",
+        equipment: reagentM.equipment || "",
+        kits: kitsForSave(reagentM),
+        kit_type: (reagentM.kits?.[0]?.kit) || reagentM.kit_type || "",
+        reagent_lot: (reagentM.kits?.[0]?.lot) || reagentM.reagent_lot || "",
+        reagent_expiry: reagentM.kits?.[0]?.expiry ? dayjs(reagentM.kits[0].expiry).format("YYYY-MM-DD")
+          : (reagentM.reagent_expiry ? dayjs(reagentM.reagent_expiry).format("YYYY-MM-DD") : ""),
         temperature: reagentM.temperature ?? null, humidity: reagentM.humidity ?? null },
       // 顶层字段保留女性侧值：旧导出模板/报表仍按顶层读（向后兼容）
-      kit_type: reagentF.kit_type || "", equipment: reagentF.equipment || "",
-      reagent_lot: reagentF.reagent_lot || "",
-      reagent_expiry: reagentF.reagent_expiry ? dayjs(reagentF.reagent_expiry).format("YYYY-MM-DD") : "",
+      kit_type: (reagentF.kits?.[0]?.kit) || reagentF.kit_type || "", equipment: reagentF.equipment || "",
+      reagent_lot: (reagentF.kits?.[0]?.lot) || reagentF.reagent_lot || "",
+      reagent_expiry: reagentF.kits?.[0]?.expiry ? dayjs(reagentF.kits[0].expiry).format("YYYY-MM-DD")
+        : (reagentF.reagent_expiry ? dayjs(reagentF.reagent_expiry).format("YYYY-MM-DD") : ""),
       temperature: reagentF.temperature ?? undefined, humidity: reagentF.humidity ?? undefined,
       photos_female: photosFRef.current, photos_male: photosMRef.current,
       operator_female: joinPersons(operators[sid]), reviewer_female: joinPersons(reviewers[sid]),
@@ -1075,33 +1148,37 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   onChange={(e) => setReagent((p: any) => ({ ...p, equipment: e.target.value }))} />
               </div>
               <div>
-                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>试剂盒</div>
-                <Select size="small" style={{ minWidth: 260 }} placeholder="选择" allowClear
-                  value={reagent.kit_type || undefined}
-                  onChange={(v) => setReagent((p: any) => ({ ...p, kit_type: v }))}
-                  options={[
-                    { value: "MAGEN_CFDNA", label: "Magen cfDNA提取试剂盒 (12919w-480)" },
-                    { value: "MAGEN_ROUND", label: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)" },
-                    { value: "MAGEN_CONICAL", label: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)" },
-                  ]} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>批号</div>
-                <Input size="small" style={{ width: 110 }} placeholder="批号"
-                  value={reagent.reagent_lot || ""}
-                  onChange={(e) => setReagent((p: any) => ({ ...p, reagent_lot: e.target.value }))} />
-              </div>
-              <div>
-                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>有效期</div>
-                <DatePicker size="small" style={{ width: 140 }}
-                  value={reagent.reagent_expiry || null}
-                  onChange={(d) => setReagent((p: any) => ({ ...p, reagent_expiry: d }))} />
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>试剂盒（可多选）</div>
+                <Select mode="multiple" size="small" style={{ minWidth: 300 }} placeholder="选择（可多选）"
+                  allowClear maxTagCount={1}
+                  value={(reagent.kits || []).map((k) => k.kit)}
+                  onChange={(vals: string[]) => changeKits(isFemale ? "f" : "m", vals)}
+                  options={KIT_OPTIONS} />
               </div>
               <Button size="small" icon={<SwapOutlined />}
-                onClick={() => setReagent({ ...(isFemale ? reagentM : reagentF) })}>
+                onClick={() => {
+                  const src: ReagentInfo = isFemale ? reagentM : reagentF;
+                  setReagent({ ...src, kits: (src.kits || []).map((k) => ({ ...k })) });
+                }}>
                 {isFemale ? "同男性侧" : "同女性侧"}
               </Button>
             </div>
+            {/* 2026-11-09：多选试剂盒 → 每个试剂盒各自一行批号/有效期（选中时自动带入上次的值） */}
+            {(reagent.kits || []).length > 0 && (
+              <div style={{ marginTop: 8 }}>
+                {(reagent.kits || []).map((k, i) => (
+                  <div key={k.kit} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <div style={{ fontSize: 12, color: "#666", width: 260 }}>{KIT_LABEL[k.kit] || k.kit}</div>
+                    <Input size="small" style={{ width: 140 }} placeholder="批号"
+                      value={k.lot || ""}
+                      onChange={(e) => updateKitRow(isFemale ? "f" : "m", i, { lot: e.target.value })} />
+                    <DatePicker size="small" style={{ width: 150 }} placeholder="有效期"
+                      value={k.expiry || null}
+                      onChange={(d) => updateKitRow(isFemale ? "f" : "m", i, { expiry: d })} />
+                  </div>
+                ))}
+              </div>
+            )}
           </Space>
         </Card>
 
@@ -1206,12 +1283,6 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   const exportExcel = () => {
     if (!selectedBatch) return;
     const sid = selectedBatch.id;
-    const KIT_LABELS: Record<string, string> = {
-      MAGEN_CFDNA: "Magen cfDNA提取试剂盒 (12919w-480)",
-      MAGEN_ROUND: "Magen磁珠法DNA提取试剂盒-圆底 (MD5432-TL-06C)",
-      MAGEN_CONICAL: "Magen磁珠法DNA提取试剂盒-锥底 (MD5432-TL-06C)",
-    };
-    const kitLabelOf = (r: ReagentInfo) => KIT_LABELS[r.kit_type as string] || r.kit_type || "";
     const methodLabel = (m: string) => EXTRACTION_METHODS.find(x => x.value === m)?.label || m || "—";
     const parseSkip = (str: string) => new Set((str || "").split(",").map((x: string) => x.trim().toUpperCase()).filter((x: string) => /^[A-H](1[0-2]|[1-9])$/.test(x)));
     const buildSheet = (isF: boolean) => {
@@ -1243,9 +1314,20 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       aoa.push(["温度(℃)", rg.temperature ?? ""]);
       aoa.push(["湿度(%)", rg.humidity ?? ""]);
       aoa.push(["设备", rg.equipment || ""]);
-      aoa.push(["试剂盒", kitLabelOf(rg)]);
-      aoa.push(["批号", rg.reagent_lot || ""]);
-      aoa.push(["有效期", rg.reagent_expiry ? dayjs(rg.reagent_expiry).format("YYYY-MM-DD") : ""]);
+      const _kits = (rg.kits && rg.kits.length)
+        ? rg.kits
+        : (rg.kit_type ? [{ kit: rg.kit_type, lot: rg.reagent_lot, expiry: rg.reagent_expiry }] : []);
+      if (!_kits.length) {
+        aoa.push(["试剂盒", ""]);
+        aoa.push(["批号", ""]);
+        aoa.push(["有效期", ""]);
+      } else {
+        _kits.forEach((k: any, i: number) => {
+          aoa.push([i === 0 ? "试剂盒" : "", KIT_LABEL[k.kit] || k.kit || "",
+                    "批号", k.lot || "",
+                    "有效期", k.expiry ? dayjs(k.expiry).format("YYYY-MM-DD") : ""]);
+        });
+      }
       if (method === "MANUAL") aoa.push(["备注", isF ? femaleManualNotes : maleManualNotes]);
       if (method === "AUTOMATED") aoa.push(["备注", isF ? femaleAutoNotes : maleAutoNotes]);
       aoa.push([]);

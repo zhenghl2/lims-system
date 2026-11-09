@@ -3448,6 +3448,43 @@ class NipptExtractionViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.M
             return NipptExtractionBatchCreateSerializer
         return NipptExtractionBatchDetailSerializer
 
+    @action(detail=False, methods=["get"], url_path="kit_lots")
+    def kit_lots(self, request):
+        """每种提取试剂盒「全系统最近一次保存」的批号/有效期。
+
+        前端选中试剂盒时自动带入，实验室改过后下次就用改后的值。
+        · 按批次 updated_at 倒序扫，第一次出现的即最近一次
+        · 兼容旧数据（单数 kit_type + reagent_lot/reagent_expiry）
+        · 男女两侧都扫；同一批次里两侧都用了同一试剂盒 → 取女性侧优先（先扫 female）
+        """
+        from .models import NipptExtractionBatch
+
+        out = {}
+        qs = NipptExtractionBatch.objects.order_by("-updated_at").only(
+            "batch_number", "extraction_data", "updated_at")[:800]
+        for b in qs:
+            data = b.extraction_data or {}
+            for side in ("female", "male"):
+                sec = data.get(side) or {}
+                rows = sec.get("kits")
+                if not isinstance(rows, list) or not rows:
+                    kt = sec.get("kit_type")
+                    rows = ([{"kit": kt, "lot": sec.get("reagent_lot"),
+                              "expiry": sec.get("reagent_expiry")}] if kt else [])
+                for r in rows:
+                    if not isinstance(r, dict):
+                        continue
+                    k = str(r.get("kit") or "").strip()
+                    if not k or k in out:
+                        continue
+                    out[k] = {
+                        "lot": str(r.get("lot") or ""),
+                        "expiry": str(r.get("expiry") or ""),
+                        "batch_number": b.batch_number,
+                        "saved_at": b.updated_at.isoformat() if b.updated_at else None,
+                    }
+        return Response(out)
+
     @action(detail=False, methods=["get"])
     def pending(self, request):
         from .models import NipptExtractionBatch, NipptExtractionSample

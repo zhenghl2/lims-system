@@ -246,6 +246,8 @@ export const casesApi = {
   createExtractionBatch: (data: { case_sample_ids: string[] }) => api.post("/cases/extraction/", data),
   pendingExtraction: () => api.get("/cases/extraction/pending/"),
   getQCandidates: (search: string) => api.get(`/cases/extraction/qc_candidates/?search=${encodeURIComponent(search)}`),
+  /** 每种试剂盒「全系统最近一次保存」的批号/有效期（提取页自动带入） */
+  extractionKitLots: () => api.get("/cases/extraction/kit_lots/"),
   deleteExtractionBatch: (id: string) => api.delete(`/cases/extraction/${id}/`),
   saveExtraction: (id: string, data: any) => api.post(`/cases/extraction/${id}/save_processing/`, data),
   completeExtraction: (id: string) => api.post(`/cases/extraction/${id}/complete/`),
