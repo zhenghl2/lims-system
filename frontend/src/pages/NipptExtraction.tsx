@@ -1165,14 +1165,20 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
             </div>
             {/* 2026-11-09：多选试剂盒 → 每个试剂盒各自一行批号/有效期（选中时自动带入上次的值） */}
             {(reagent.kits || []).length > 0 && (
-              <div style={{ marginTop: 8 }}>
+              <div style={{ marginTop: 8, overflowX: "auto" }}>
                 {(reagent.kits || []).map((k, i) => (
-                  <div key={k.kit} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                    <div style={{ fontSize: 12, color: "#666", width: 260 }}>{KIT_LABEL[k.kit] || k.kit}</div>
-                    <Input size="small" style={{ width: 140 }} placeholder="批号"
+                  // 2026-11-09：试剂名称一行显示（不换行；列宽固定保证批号/有效期上下对齐）
+                  <div key={k.kit} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4,
+                                             flexWrap: "nowrap", whiteSpace: "nowrap" }}>
+                    <div title={KIT_LABEL[k.kit] || k.kit}
+                      style={{ fontSize: 12, color: "#666", flex: "0 0 340px", width: 340,
+                               whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      {KIT_LABEL[k.kit] || k.kit}
+                    </div>
+                    <Input size="small" style={{ width: 140, flex: "0 0 140px" }} placeholder="批号"
                       value={k.lot || ""}
                       onChange={(e) => updateKitRow(isFemale ? "f" : "m", i, { lot: e.target.value })} />
-                    <DatePicker size="small" style={{ width: 150 }} placeholder="有效期"
+                    <DatePicker size="small" style={{ width: 150, flex: "0 0 150px" }} placeholder="有效期"
                       value={k.expiry || null}
                       onChange={(d) => updateKitRow(isFemale ? "f" : "m", i, { expiry: d })} />
                   </div>
