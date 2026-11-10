@@ -4091,39 +4091,49 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
                 magnetic = method in ("MAGNETIC_ROD", "")   # 空=旧数据，按磁棒口径（两列）
                 plate_cols = (1, 7) if magnetic else tuple(range(1, 13))
 
-                # ① plate_layout 优先：仅当它覆盖的样本集合与本批次该侧完全一致
+                # ① plate_layout 优先：**按提取板上的真实孔位**摆放（用户 2026-11-10）
+                #    原来只在「layout 覆盖的样本集合 == 本批次该侧样本集合」时才用 layout，
+                #    一旦建库批次只挑了提取批次的一部分样本，就退化成「按顺序往 A1、B1… 塞」，
+                #    导致样本既丢了原列也丢了原行（PT72509H 原来在 A1，被排到 D1）。
+                #    现在：layout 里有的样本 → 用它原来的孔位；不在 layout 里的 → 再按规则补空孔。
                 well_map = {}
                 plate_count = 0
-                lay_ids = {str(v) for m in layout.values() for v in (m or {}).values() if v}
-                cur_ids = {str(e.id) for e in side_es}
-                if lay_ids and lay_ids == cur_ids:
-                    for pkey, m in layout.items():
-                        try:
-                            pidx = int(pkey)
-                        except (TypeError, ValueError):
+                placed_ids = set()
+                used_wells = set()
+                for pkey, m in layout.items():
+                    try:
+                        pidx = int(pkey)
+                    except (TypeError, ValueError):
+                        continue
+                    for well, sid in (m or {}).items():
+                        if not sid:
                             continue
-                        for well, sid in (m or {}).items():
-                            if sid:
-                                well_map[(pidx, str(well).upper())] = str(sid)
-                        plate_count = max(plate_count, pidx + 1)
-                else:
-                    # ② 规则排列
-                    i, pidx = 0, 0
-                    while i < len(side_es) and pidx < 96:
-                        placed = False
+                        wk = (pidx, str(well).upper())
+                        well_map[wk] = str(sid)
+                        used_wells.add(wk)
+                        if str(sid) in lib_by_es:
+                            placed_ids.add(str(sid))
+                    plate_count = max(plate_count, pidx + 1)
+
+                # ② layout 里没有的本批样本（无排板记录的）→ 按规则补进空孔
+                rest = [e for e in side_es if str(e.id) not in placed_ids
+                        and str(e.id) not in {v for v in well_map.values()}]
+                if rest:
+                    k = 0
+                    pidx = 0
+                    while k < len(rest) and pidx < 96:
                         for c in plate_cols:
                             for r in ROWS8:
-                                well = "%s%d" % (r, c)
-                                if well in skip_sets.get(pidx, set()):
+                                wk = (pidx, "%s%d" % (r, c))
+                                if wk in used_wells or wk[1] in skip_sets.get(pidx, set()):
                                     continue
-                                if i < len(side_es):
-                                    well_map[(pidx, well)] = str(side_es[i].id)
-                                    i += 1
-                                    placed = True
-                        if not placed:
-                            break
+                                if k < len(rest):
+                                    well_map[wk] = str(rest[k].id)
+                                    used_wells.add(wk)
+                                    placed_ids.add(str(rest[k].id))
+                                    k += 1
                         pidx += 1
-                    plate_count = pidx
+                    plate_count = max(plate_count, pidx)
 
                 # ③ 转成列序列（列内 A..H），整列无有效样本则不占位
                 for pidx in range(max(plate_count, 0)):
