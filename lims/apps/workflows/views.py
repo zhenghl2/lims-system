@@ -781,6 +781,9 @@ class SampleRunViewSet(NiptRunPhotosMixin, viewsets.ModelViewSet):
             },
             "library": {
                 "equipment": safe_get(last_run.library_data, "equipment", []),
+                # 2026-11-10：建库设备（PCR 仪多选 / Qubit 单选）
+                "dev_pcr": safe_get(last_run.library_data, "dev_pcr", ""),
+                "dev_qubit": safe_get(last_run.library_data, "dev_qubit", ""),
                 "lib_kit": safe_get(last_run.library_data, "lib_kit"),
                 "lib_kit_lot": safe_get(last_run.library_data, "lib_kit_lot"),
                 "lib_kit_expiry": safe_get(last_run.library_data, "lib_kit_expiry"),

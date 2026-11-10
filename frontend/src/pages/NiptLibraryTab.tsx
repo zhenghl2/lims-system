@@ -12,14 +12,19 @@ import { registerTabSaver } from "../utils/niptTabSave";
 // ── Library prep methods ──
 // REGIONS imported from ../utils/constants
 
-const EQUIPMENT_OPTIONS = [
-  { value: "PCR_ABI_9700", label: "PCR仪 - ABI 9700" },
-  { value: "PCR_ABI_Veriti", label: "PCR仪 - ABI Veriti" },
-  { value: "PCR_BioRad_T100", label: "PCR仪 - Bio-Rad T100" },
-  { value: "BSC_Thermo_1300", label: "生物安全柜 - Thermo 1300" },
-  { value: "BSC_HealForce", label: "生物安全柜 - Heal Force" },
-  { value: "LIQUID_HANDLER", label: "自动化移液工作站" },
-];
+/** 2026-11-10：建库设备按区域（PCR 仪多选、Qubit 单选，都必填）
+ *  厦门 PCR：YSFH-EI-024-08（孵育）/ -05 / -12 / -07；Qubit：YSFH-EI-021-04
+ *  香港 PCR：VBL-THC-01 ~ 04；Qubit：VBL-QB-03 */
+const LIB_DEVICES: Record<string, { pcr: string[]; qubit: string[] }> = {
+  XIAMEN: {
+    pcr: ["YSFH-EI-024-08（孵育）", "YSFH-EI-024-05", "YSFH-EI-024-12", "YSFH-EI-024-07"],
+    qubit: ["YSFH-EI-021-04"],
+  },
+  HONGKONG: {
+    pcr: ["VBL-THC-01", "VBL-THC-02", "VBL-THC-03", "VBL-THC-04"],
+    qubit: ["VBL-QB-03"],
+  },
+};
 
 // ── Reagent kits by region ──
 interface ReagentKit { value: string; label: string; }
@@ -104,6 +109,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   const [negativeControl, setNegativeControl] = useState("");
   const [method, setMethod] = useState(batch.library_method || "MULTI_CHANNEL");
   const [region, setRegion] = useState(batch.region || "");
+  const [devPcr, setDevPcr] = useState<string[]>([]);   // PCR 仪（多选）
+  const [devQubit, setDevQubit] = useState<string>(""); // Qubit（单选）
   const [photos, setPhotos] = useState<string[]>((batch.library_data?.photos as string[]) || []);
   const [startCoord, setStartCoord] = useState(batch.library_data?.start_coord || "");
   const [selectedKits, setSelectedKits] = useState<string[]>([]);
@@ -319,13 +326,15 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       setSteps(edata.step_confirmations || {});
       setPositiveControl(edata.positive_control || "");
       setNegativeControl(edata.negative_control || "");
+      { const sp = (v: any) => String(v || "").split("、").map((x) => x.trim()).filter(Boolean);
+        setDevPcr(edata.dev_pcr ? sp(edata.dev_pcr) : []);
+        setDevQubit(edata.dev_qubit || ""); }
       return;
     }
     // Has saved data → restore all fields
     form.setFieldsValue({
       lib_date: edata.lib_date ? dayjs(edata.lib_date) : dayjs(),
       lib_time: edata.lib_time || dayjs().format("HH:mm"),
-      equipment: edata.equipment || [],
       lib_kit: edata.lib_kit || undefined,
       quant_kit: edata.quant_kit || undefined,
       bead_kit: edata.bead_kit || undefined,
@@ -344,6 +353,9 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     setSteps(edata.step_confirmations || {});
     setPositiveControl(edata.positive_control || "");
     setNegativeControl(edata.negative_control || "");
+    { const sp = (v: any) => String(v || "").split("、").map((x) => x.trim()).filter(Boolean);
+      setDevPcr(edata.dev_pcr ? sp(edata.dev_pcr) : []);
+      setDevQubit(edata.dev_qubit || ""); }
     if (edata.start_coord) setStartCoord(edata.start_coord);
     if (batch.library_method) setMethod(batch.library_method);
   }, [edata, form]);
@@ -351,14 +363,15 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   // Pre-fill reagents/equipment from last batch (runs once per batch.id)
   useEffect(() => {
     if (!batch.id || !lastBatchLibData) return;
-    const hasData = !!(edata.lib_kit || (edata.equipment || []).length);
+    const hasData = !!(edata.lib_kit || (edata.dev_pcr || ""));
     if (hasData) return;
     if (defaultsFetchedRef.current) return;
 
     defaultsFetchedRef.current = true;
     const lib = lastBatchLibData;
+    setDevPcr(String(lib.dev_pcr || "").split("、").map((x: string) => x.trim()).filter(Boolean));
+    setDevQubit(lib.dev_qubit || "");
     form.setFieldsValue({
-      equipment: lib.equipment || [],
       lib_kit: lib.lib_kit || undefined,
       lib_kit_lot: lib.lib_kit_lot || "",
       lib_kit_expiry: lib.lib_kit_expiry ? dayjs(lib.lib_kit_expiry) : undefined,
@@ -484,6 +497,9 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     if (missingKitDetail) { message.warning("Please fill lot number for each Index kit"); return; }
     try {
       const vals = await form.validateFields();
+      // 2026-11-10：设备必填（PCR 多选 / Qubit 单选）
+      if (!devPcr.length) { message.warning("请先选择 PCR 仪"); return; }
+      if (!devQubit) { message.warning("请先选择 Qubit 定量仪"); return; }
       setSaving(true);
       // Convert plate to pure data (no functions)
       const plateData = plate.map(row =>
@@ -495,7 +511,8 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
         library_data: {
           lib_date: vals.lib_date?.format("YYYY-MM-DD"),
           lib_time: vals.lib_time,
-          equipment: vals.equipment,
+          dev_pcr: devPcr.join("、"),
+          dev_qubit: devQubit,
           lib_kit: vals.lib_kit,
           lib_kit_lot: vals.lib_kit_lot,
           lib_kit_expiry: vals.lib_kit_expiry?.format("YYYY-MM") || "",
@@ -652,6 +669,7 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
               onChange={async (v: string) => {
                 const prev = region;
                 setRegion(v);
+                setDevPcr([]); setDevQubit("");   // 2026-11-10 设备按区域，换区域清空
                 try {
                   await api.post(`${apiBase}/${batch.id}/save_library/`, { region: v });
                   message.success("Region 已保存");
@@ -704,8 +722,25 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
           <Col span={6}><Form.Item name="lib_date" label={t("nipt.extraction.experimentDate")} rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
           <Col span={6}><Form.Item name="lib_time" label={t("nipt.extraction.experimentTime")} rules={[{ required: true }]}><Input placeholder={t("nipt.extraction.timePlaceholder")} /></Form.Item></Col>
           <Col span={6}>
-            <Form.Item name="equipment" label={t("nipt.library.equipment")} rules={[{ required: true }]}>
-              <Select mode="multiple" options={EQUIPMENT_OPTIONS} placeholder={t("nipt.library.selectEquipment")} maxTagCount={2} />
+            <Form.Item label="PCR仪" required tooltip="可多选，用了几台就选几台"
+              validateStatus={!devPcr.length ? "error" : undefined}
+              help={!devPcr.length ? "请选择 PCR 仪" : undefined}>
+              <Select mode="multiple" allowClear value={devPcr}
+                disabled={!LIB_DEVICES[region]}
+                onChange={(v: string[]) => setDevPcr(v)}
+                placeholder={LIB_DEVICES[region] ? "选择设备（可多选）" : "请先选区域"}
+                options={(LIB_DEVICES[region]?.pcr || []).map((o) => ({ value: o, label: o }))} />
+            </Form.Item>
+          </Col>
+          <Col span={6}>
+            <Form.Item label="Qubit定量仪" required
+              validateStatus={!devQubit ? "error" : undefined}
+              help={!devQubit ? "请选择 Qubit 定量仪" : undefined}>
+              <Select allowClear value={devQubit || undefined}
+                disabled={!LIB_DEVICES[region]}
+                onChange={(v: string) => setDevQubit(v || "")}
+                placeholder={LIB_DEVICES[region] ? "选择设备" : "请先选区域"}
+                options={(LIB_DEVICES[region]?.qubit || []).map((o) => ({ value: o, label: o }))} />
             </Form.Item>
           </Col>
         </Row>
