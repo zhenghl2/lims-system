@@ -101,6 +101,17 @@ function SampleCell({ label, sampleIdx, results, onChange, cellStyle, tdProps }:
 
 export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase = "/runs" }: Props & { apiBase?: string }) {
   const { t } = useTranslation();
+  // 2026-11-10：提取设备（按区域，整批一套；香港金属浴/提取仪各两台可多选）
+  const EXT_DEVICES: Record<string, { metal: string[]; extractor: string[]; qubit: string[] }> = {
+    XIAMEN: { metal: ["YSFH-EI-010-03"], extractor: ["YSFH-EI-061（Smart 32）"], qubit: ["YSFH-EI-021-03"] },
+    HONGKONG: {
+      metal: ["VBL-DB-01", "VBL-TS-01"],
+      extractor: ["VBL-ANAES-01-圆底", "VBL-ANAES-02-锥底"],
+      qubit: ["VBL-QB-03"],
+    },
+  };
+  const devOpts = (kind: "metal" | "extractor" | "qubit") =>
+    (EXT_DEVICES[region]?.[kind] || []).map((v) => ({ value: v, label: v }));
   const extractionMethods = [
     { value: "MANUAL", label: t("nipt.extraction.manual") },
     { value: "MAGNETIC_ROD", label: t("nipt.extraction.magneticRod") },
@@ -110,6 +121,9 @@ export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase =
   const [steps, setSteps] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [method, setMethod] = useState(batch.extraction_method || "");
+  const [devMetal, setDevMetal] = useState<String[]>([]);
+  const [devExtractor, setDevExtractor] = useState<String[]>([]);
+  const [devQubit, setDevQubit] = useState<String[]>([]);
   const [manualNotes, setManualNotes] = useState("");
   const [photos, setPhotos] = useState<string[]>((batch.extraction_data?.photos as string[]) || []);
   const [plateSkipCoords, setPlateSkipCoords] = useState<Record<number, string>>((batch.extraction_data?.plate_skip_coords as any) || {});
@@ -135,7 +149,7 @@ export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase =
     form.setFieldsValue({
       extraction_date: edata.extraction_date ? dayjs(edata.extraction_date) : dayjs(),
       extraction_time: edata.extraction_time || dayjs().format("HH:mm"),
-      equipment: edata.equipment || "",
+
       kit_type: edata.kit_type || undefined,
       reagent_lot: edata.reagent_lot || "",
       reagent_expiry: edata.reagent_expiry ? dayjs(edata.reagent_expiry) : undefined,
@@ -144,6 +158,10 @@ export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase =
       temperature: edata.temperature ?? undefined,
       humidity: edata.humidity ?? undefined,
     });
+    { const sp = (v: any) => String(v || "").split("、").map((x) => x.trim()).filter(Boolean) as String[];
+      setDevMetal(sp(edata.dev_metal));
+      setDevExtractor(sp(edata.dev_extractor));
+      setDevQubit(sp(edata.dev_qubit)); }
     setSteps(edata.step_confirmations || {});
     setManualNotes(edata.manual_notes || "");
     setSampleResults(edata.sample_results || {});
@@ -157,11 +175,14 @@ export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase =
         const ext = res?.data?.extraction;
         if (ext) {
           form.setFieldsValue({
-            equipment: ext.equipment || "",
             kit_type: ext.kit_type || undefined,
             reagent_lot: ext.reagent_lot || "",
             reagent_expiry: ext.reagent_expiry ? dayjs(ext.reagent_expiry) : undefined,
           });
+          const sp = (v: any) => String(v || "").split("、").map((x) => x.trim()).filter(Boolean);
+          if (!edata.dev_metal) setDevMetal(sp(ext.dev_metal));
+          if (!edata.dev_extractor) setDevExtractor(sp(ext.dev_extractor));
+          if (!edata.dev_qubit) setDevQubit(sp(ext.dev_qubit));
         }
       }).catch(() => {});
     }
@@ -246,7 +267,9 @@ export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase =
         extraction_data: {
           extraction_date: vals.extraction_date?.format("YYYY-MM-DD"),
           extraction_time: vals.extraction_time,
-          equipment: vals.equipment || "",
+          dev_metal: devMetal.join("、"),
+          dev_extractor: devExtractor.join("、"),
+          dev_qubit: devQubit.join("、"),
           kit_type: vals.kit_type || "",
           reagent_lot: vals.reagent_lot || "",
           reagent_expiry: vals.reagent_expiry?.format("YYYY-MM") || "",
@@ -423,16 +446,43 @@ export default function NiptExtractionTab({ batch, samples, onRefresh, apiBase =
         </Col>
         <Col span={8}>
           <Form.Item label={t("nipt.extraction.region")} required>
-            <Select options={REGIONS} value={region || undefined} onChange={setRegion} placeholder={t("nipt.extraction.selectRegion")} />
+            <Select options={REGIONS} value={region || undefined} onChange={(v: string) => {
+              setRegion(v);
+              // 换区域 → 原设备不属于该区域，清空
+              setDevMetal([]); setDevExtractor([]); setDevQubit([]);
+            }} placeholder={t("nipt.extraction.selectRegion")} />
           </Form.Item>
         </Col>
       </Row>
+
+      {/* 2026-11-10：提取设备（按区域；香港金属浴/提取仪各两台可多选） */}
+      {EXT_DEVICES[region] && (
+        <Row gutter={16} style={{ marginBottom: 8 }}>
+          <Col span={8}>
+            <Form.Item label="金属浴">
+              <Select mode="multiple" allowClear placeholder="选择设备（可多选）" value={devMetal as string[]}
+                onChange={(v: string[]) => setDevMetal(v)} options={devOpts("metal")} />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item label="核酸提取仪">
+              <Select mode="multiple" allowClear placeholder="选择设备（可多选）" value={devExtractor as string[]}
+                onChange={(v: string[]) => setDevExtractor(v)} options={devOpts("extractor")} />
+            </Form.Item>
+          </Col>
+          <Col span={8}>
+            <Form.Item label="Qubit定量仪">
+              <Select mode="multiple" allowClear placeholder="选择设备" value={devQubit as string[]}
+                onChange={(v: string[]) => setDevQubit(v)} options={devOpts("qubit")} />
+            </Form.Item>
+          </Col>
+        </Row>
+      )}
 
       <Form form={form} layout="vertical">
         <Row gutter={16}>
           <Col span={6}><Form.Item name="extraction_date" label={t("nipt.extraction.experimentDate")} rules={[{ required: true }]}><DatePicker style={{ width: "100%" }} /></Form.Item></Col>
           <Col span={6}><Form.Item name="extraction_time" label={t("nipt.extraction.experimentTime")}><Input placeholder={t("nipt.extraction.timePlaceholder")} /></Form.Item></Col>
-          <Col span={6}><Form.Item name="equipment" label={t("nipt.extraction.equipment")}><Input placeholder={t("nipt.extraction.equipmentPlaceholder")} disabled /></Form.Item></Col>
           <Col span={6}><Form.Item name="kit_type" label={t("nipt.extraction.kitType")} rules={[{ required: true }]}><Select options={kits} placeholder={t("nipt.extraction.kitPlaceholder")} showSearch optionFilterProp="label" /></Form.Item></Col>
         </Row>
         <Row gutter={16}>

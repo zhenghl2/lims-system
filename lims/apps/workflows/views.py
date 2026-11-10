@@ -771,6 +771,10 @@ class SampleRunViewSet(NiptRunPhotosMixin, viewsets.ModelViewSet):
         return Response({
             "extraction": {
                 "equipment": safe_get(last_run.extraction_data, "equipment"),
+                # 2026-11-10：提取设备（金属浴 / 核酸提取仪 / Qubit）
+                "dev_metal": safe_get(last_run.extraction_data, "dev_metal"),
+                "dev_extractor": safe_get(last_run.extraction_data, "dev_extractor"),
+                "dev_qubit": safe_get(last_run.extraction_data, "dev_qubit"),
                 "kit_type": safe_get(last_run.extraction_data, "kit_type"),
                 "reagent_lot": safe_get(last_run.extraction_data, "reagent_lot"),
                 "reagent_expiry": safe_get(last_run.extraction_data, "reagent_expiry"),
