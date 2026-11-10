@@ -60,6 +60,96 @@ def _advance_sample_status(sample_ids, target):
     return moved
 
 
+# 生信失败 / QC 不合格的 qc_status 取值（这些样本不出报告）
+_BIO_FAIL_VALUES = {"FAIL", "低浓度", "高GC", "数据量不足", "多条染色体临界", "其他"}
+
+
+def _create_reports_for_bioinformatics(batch, user):
+    """2026-11-10：生信批次完成后，自动为样本建报告草稿（DRAFT），
+    这样样本直接出现在报告模块，可以直接审核并生成报告。
+    跳过：QC 质控样本、生信失败/QC 不合格样本。已存在报告的不重复建。"""
+    from datetime import date
+    from lims.apps.reports.models import Report, ReportTemplate
+    from lims.apps.organizations.models import Site
+
+    bio_all = batch.bioinformatics_data or {}
+    site = getattr(batch, "site", None) or (getattr(user, "site", None) if user else None) \
+        or Site.objects.filter(is_active=True).first()
+    today = date.today().strftime("%Y%m%d")
+    created, skipped, eligible = 0, [], []
+
+    # test_option → 模板 code（按面板/项目类型选模板）
+    TOPT_TEMPLATE = {"Plus": "nipt_plus_v1_zh", "Basic All": "nipt_basic_all_v1_zh"}
+
+    for bs in batch.samples.select_related("sample__panel"):
+        sample = bs.sample
+        if bs.is_qc:
+            skipped.append((sample.sample_id, "QC质控样本"))
+            continue
+        bio = bio_all.get(str(bs.id)) or {}
+        qc_val = str(bio.get("qc_status") or "").strip()
+        failed = (str(bs.qc_status or "").upper() == "FAIL"
+                  or str(bs.status or "") == "FAILED_QC"
+                  or str(sample.status or "") == "REJECTED"
+                  or qc_val in _BIO_FAIL_VALUES)
+        if failed:
+            skipped.append((sample.sample_id, "生信失败/QC不合格(%s)" % (qc_val or bs.qc_status)))
+            continue
+        if Report.objects.filter(sample=sample).exists():
+            skipped.append((sample.sample_id, "已存在报告"))
+            eligible.append(sample.id)   # 已有报告也算「可完成」
+            continue
+
+        code = TOPT_TEMPLATE.get(sample.test_option or "", "nipt_v1_zh")
+        tpl = ReportTemplate.objects.filter(code=code, is_active=True).first()
+        if not tpl:
+            tpl = ReportTemplate.objects.filter(panel=sample.panel, is_active=True).first()
+        if not tpl:
+            tpl = ReportTemplate.objects.create(
+                panel=sample.panel,
+                code="%s_v1_zh" % (sample.panel.code.lower() if sample.panel else "nipt"),
+                name="%s Report" % (sample.panel.name if sample.panel else "NIPT"),
+                language="zh", version=1,
+                template_content={"title": "NIPT Report", "version": 1},
+                site=site, created_by=user,
+            )
+
+        seq = Report.objects.filter(report_number__startswith="RPT-%s" % today).count() + 1
+        content = {
+            "batch_number": batch.batch_number,
+            "panel": sample.panel.code if sample.panel else "",
+            "test_option": sample.test_option or "",
+            "sample_barcode": sample.sample_id,
+            "patient_id": sample.patient_id,
+            "patient_name": sample.patient_name,
+            "patient_dob": str(sample.patient_dob) if sample.patient_dob else None,
+            "patient_sex": sample.patient_sex,
+            "collection_date": str(sample.collection_date) if sample.collection_date else None,
+            "receipt_date": str(sample.receipt_date) if sample.receipt_date else None,
+            "ordering_physician": sample.ordering_physician,
+            "ordering_facility": sample.ordering_facility,
+            # 生信结果（report_generator.build_context 与本流程共用同一套 key）
+            "results": bio,
+            "qc_status": qc_val or bs.qc_status or "",
+            "status": "DRAFT",
+            "version": 1,
+            "generated_at": timezone.now().isoformat(),
+            "generated_by": (("%s %s" % (user.first_name, user.last_name)).strip() or user.username) if user else "",
+        }
+        Report.objects.create(
+            report_number="RPT-%s-%04d" % (today, seq),
+            sample=sample,
+            run_sample=None,          # 新分步流程没有 RunSample
+            template=tpl,
+            site=site,
+            content=content,
+        )
+        created += 1
+        eligible.append(sample.id)
+
+    return created, skipped, eligible
+
+
 class _StepBatchViewSet(viewsets.GenericViewSet,
                         mixins.ListModelMixin, mixins.RetrieveModelMixin,
                         mixins.CreateModelMixin, mixins.DestroyModelMixin):
@@ -274,7 +364,19 @@ class _StepBatchViewSet(viewsets.GenericViewSet,
             batch.save(update_fields=["status", "updated_at"])
             moved = _advance_sample_status(
                 list(batch.samples.values_list("sample_id", flat=True)), self.COMPLETE_STATUS)
-        return Response({"id": str(batch.id), "status": batch.status, "samples_advanced": moved})
+            reports_created, reports_skipped, report_sample_ids = 0, [], []
+            if self.COMPLETE_STATUS == "BIOINFORMATICS":
+                # 2026-11-10：生信完成 → 自动生成报告草稿，样本进报告模块
+                reports_created, reports_skipped, report_sample_ids = \
+                    _create_reports_for_bioinformatics(batch, request.user)
+                # 只有真正出了报告的样本推进到 COMPLETED；QC/生信失败样本保持原状态
+                if report_sample_ids:
+                    Sample.objects.filter(id__in=report_sample_ids).update(
+                        status="COMPLETED", updated_at=timezone.now())
+        return Response({"id": str(batch.id), "status": batch.status,
+                         "samples_advanced": moved,
+                         "reports_created": reports_created,
+                         "reports_skipped": reports_skipped})
 
     @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):

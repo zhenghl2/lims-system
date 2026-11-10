@@ -144,6 +144,10 @@ def build_context(report):
         bio_all = run.bioinformatics_data or {}
         rs_id = str(report.run_sample.id)
         bio = bio_all.get(rs_id, {})
+    else:
+        # 2026-11-10：NIPT 分步流程（生信分析完成时自动建报告）没有 RunSample，
+        # 生信结果在建报告时已写进 report.content["results"]
+        bio = (report.content or {}).get("results") or {}
 
     ctx["Zscore21"] = bio.get("z21")
     ctx["Zscore18"] = bio.get("z18")
@@ -269,6 +273,10 @@ def generate_report(report):
         bio_all = run.bioinformatics_data or {}
         rs_id = str(report.run_sample.id)
         bio = bio_all.get(rs_id, {})
+    else:
+        # 2026-11-10：NIPT 分步流程（生信分析完成时自动建报告）没有 RunSample，
+        # 生信结果在建报告时已写进 report.content["results"]
+        bio = (report.content or {}).get("results") or {}
     has_no_result = any(
         str(bio.get(r, "") or "") in ("No Result", "无结果", "No Call")
         for r in RESULT_COLS
