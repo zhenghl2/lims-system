@@ -353,12 +353,18 @@ class CaseCreateSerializer(serializers.ModelSerializer):
     sample_id = serializers.CharField(write_only=True, required=False, allow_blank=True)
     mother_name = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
     mother_dob = serializers.DateField(write_only=True, required=False)
+    # 2026-11-10：登记时原样输入的出生日期文本（泰国报告按它出）
+    mother_dob_text = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
     father_names = serializers.ListField(
         child=serializers.CharField(), write_only=True, required=False, default=list
     )
     father_dobs = serializers.ListField(
         child=serializers.DateField(allow_null=True), required=False, default=list,
         write_only=True, help_text='每个父亲的出生日期，与 father_names 一一对应',
+    )
+    father_dob_texts = serializers.ListField(
+        child=serializers.CharField(allow_blank=True), required=False, default=list,
+        write_only=True, help_text='每个父亲出生日期的原样文本（与 father_names 一一对应）',
     )
     father_sample_types = serializers.ListField(
         child=serializers.ListField(
@@ -406,7 +412,8 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             "risk_warnings", "registration_type",
             "last_menstrual_period",
             "notes", "is_urgent", "expected_completion",
-            "mother_name", "mother_dob", "father_names", "father_dobs",
+            "mother_name", "mother_dob", "mother_dob_text",
+            "father_names", "father_dobs", "father_dob_texts",
             "father_sample_types",
             "external_id", "sample_source", "fedex_no",
             "female_arrival_date", "male_arrival_dates", "gender_info",
@@ -422,9 +429,11 @@ class CaseCreateSerializer(serializers.ModelSerializer):
         custom_sample_id = validated_data.pop("sample_id", "").strip()
         mother_name = validated_data.pop("mother_name", "") or ""
         mother_dob = validated_data.pop("mother_dob", None)
+        mother_dob_text = (validated_data.pop("mother_dob_text", "") or "").strip()[:32]
         father_names = validated_data.pop("father_names", [])
         father_sample_types = validated_data.pop("father_sample_types", [])
         father_dobs = validated_data.pop("father_dobs", []) or []
+        father_dob_texts = validated_data.pop("father_dob_texts", []) or []
         if not mother_name.strip() and not any((n or "").strip() for n in father_names):
             raise serializers.ValidationError("至少需要一个样本：孕妇或疑父（至少填写一个姓名）")
         external_id = validated_data.pop("external_id", "") or ""
@@ -488,6 +497,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
                 panel=panel,
                 patient_name=mother_name,
                 patient_dob=mother_dob,
+                patient_dob_text=mother_dob_text,
                 external_id=external_id,
                 sample_source=sample_source,
                 fedex_no=fedex_no,
@@ -512,6 +522,8 @@ class CaseCreateSerializer(serializers.ModelSerializer):
             # 获取该父亲的样本类型列表，默认["BLOOD"]
             types = father_sample_types[i-1] if i-1 < len(father_sample_types) else ["BLOOD"]
             f_dob = father_dobs[i-1] if i-1 < len(father_dobs) else None
+            f_dob_text = (father_dob_texts[i-1] if i-1 < len(father_dob_texts) else "") or ""
+            f_dob_text = f_dob_text.strip()[:32]
             arrival = male_arrivals[i-1] if i-1 < len(male_arrivals) else None
             for j, st in enumerate(types, 1):
                 father_sample = Sample.objects.create(
@@ -520,6 +532,7 @@ class CaseCreateSerializer(serializers.ModelSerializer):
                     panel=panel,
                     patient_name=name,
                     patient_dob=f_dob,
+                    patient_dob_text=f_dob_text,
                     external_id=father_external_id,
                     sample_source=sample_source,
                     collection_date=today,

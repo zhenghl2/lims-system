@@ -70,13 +70,15 @@ export function parseDateText(raw: string): Dayjs | null {
 type Props = {
   value?: Dayjs | null;
   onChange?: (v: Dayjs | null) => void;
+  /** 2026-11-10：用户原样输入的文本（如 14 Jul 1998 / 31/12/2005）。泰国报告要按它出。 */
+  onRawTextChange?: (raw: string) => void;
   placeholder?: string;
   size?: "small" | "middle";
   bordered?: boolean;
   style?: React.CSSProperties;
 };
 
-export default function SmartDateInput({ value, onChange, placeholder = "如 14.01.2005 或 27 Feb 1997", size = "small", bordered = false, style }: Props) {
+export default function SmartDateInput({ value, onChange, onRawTextChange, placeholder = "如 14.01.2005 或 27 Feb 1997", size = "small", bordered = false, style }: Props) {
   const [text, setText] = useState(value ? value.format("YYYY-MM-DD") : "");
   const [bad, setBad] = useState(false);
   const [open, setOpen] = useState(false);
@@ -89,18 +91,22 @@ export default function SmartDateInput({ value, onChange, placeholder = "如 14.
       lastValueRef.current = next;
       setText(next);
       setBad(false);
+      // 外部改动（点日历选的）→ 没有「原样文本」，报告端走默认格式
+      onRawTextChange?.("");
     }
   }, [value]);
 
   const commit = (raw: string) => {
     const t = (raw || "").trim();
-    if (!t) { setBad(false); lastValueRef.current = ""; onChange?.(null); return; }
+    if (!t) { setBad(false); lastValueRef.current = ""; onChange?.(null); onRawTextChange?.(""); return; }
     const dt = parseDateText(t);
     if (dt) {
       setBad(false);
       lastValueRef.current = dt.format("YYYY-MM-DD");
-      setText(dt.format("YYYY-MM-DD"));
+      // 2026-11-10：不再把输入框改写成 1998-07-14 —— 用户填什么就显示什么、报告也照这个出
+      setText(t.replace(/\s+/g, " "));
       onChange?.(dt);
+      onRawTextChange?.(t.replace(/\s+/g, " "));
     } else {
       setBad(true);
     }

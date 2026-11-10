@@ -65,6 +65,9 @@ class Sample(models.Model):
     patient_id = models.CharField(max_length=50, blank=True, db_index=True)
     patient_name = models.CharField(max_length=200, blank=True)
     patient_dob = models.DateField(null=True, blank=True)
+    # 2026-11-10：登记时用户「原样输入」的出生日期文本（如 "14 Jul 1998" / "31/12/2005"）。
+    # 泰国报告要按登记时的写法出，不能统一成 ISO；patient_dob 仍是解析后的日期（排序/年龄/导入用）。
+    patient_dob_text = models.CharField(max_length=32, blank=True, default="")
     gestational_weeks = models.PositiveSmallIntegerField(null=True, blank=True)
     id_card = models.CharField(max_length=50, blank=True, default="")
     tube_no = models.CharField(

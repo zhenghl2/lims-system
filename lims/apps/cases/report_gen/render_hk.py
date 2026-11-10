@@ -118,8 +118,17 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
     ctx["female_id"] = _mother_code or (ctx["pt_id"] + "W")
     ctx["male_id"] = _father_code or (ctx["pt_id"] + "H")
     ctx["report_id"] = "VGHK" + date_short + vg_id
-    ctx["f_DOB"] = fmt_date(ctx.get("f_DOB"), "%Y/%m/%d") or ""
-    ctx["m_DOB"] = fmt_date(ctx.get("m_DOB"), "%Y/%m/%d") or ""
+    # 2026-11-10（用户口径）：泰国报告的出生日期按「登记时怎么填就怎么出」。
+    # 登记时原样文本存在 sample.patient_dob_text（例：14 Jul 1998 / 31/12/2005）；
+    # 老数据没有原文 → 退回泰国习惯的 DD Mon YYYY。其它版本维持原格式不变。
+    if str(ctx.get("报告版本") or "").strip() == "泰国":
+        ctx["f_DOB"] = (str(ctx.get("f_DOB_text") or "").strip()
+                        or fmt_date(ctx.get("f_DOB"), "%d %b %Y") or "")
+        ctx["m_DOB"] = (str(ctx.get("m_DOB_text") or "").strip()
+                        or fmt_date(ctx.get("m_DOB"), "%d %b %Y") or "")
+    else:
+        ctx["f_DOB"] = fmt_date(ctx.get("f_DOB"), "%Y/%m/%d") or ""
+        ctx["m_DOB"] = fmt_date(ctx.get("m_DOB"), "%Y/%m/%d") or ""
 
     # 日期格式
     lang = DATE_LANG_BY_VERSION.get(version)

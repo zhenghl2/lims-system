@@ -524,8 +524,11 @@ export default function NipptRegistration() {
         const payload: any = {
           mother_name: values.mother_name || "",
           mother_dob: values.mother_dob ? dayjs(values.mother_dob).format("YYYY-MM-DD") : undefined,
+          mother_dob_text: (form.getFieldValue("mother_dob_text") || "").trim(),
           father_names: (values.males || []).map((m: any) => m.name).filter(Boolean),
           father_dobs: (values.males || []).map((m: any) => m.dob ? dayjs(m.dob).format("YYYY-MM-DD") : null),
+          father_dob_texts: (values.males || []).map((_m: any, i: number) =>
+            (form.getFieldValue(["males", i, "dob_text"]) || "").trim()),
           father_sample_types: (values.males || []).map((m: any) => m.sample_type || ["BLOOD"]),
           gestational_age_weeks: values.gestational_age_weeks,
           gestational_age_days: values.gestational_age_days,
@@ -872,7 +875,9 @@ export default function NipptRegistration() {
                   render: () => (
                     <Form.Item name="mother_dob" style={{ margin: 0 }}>
                       {/* 2026-10-21：可直接输入 14.01.2005 / 27 Feb 1997，右侧日历仍可点选 */}
-                      <SmartDateInput size="small" bordered={false} />
+                      {/* 2026-11-10：原文一并回传 → 泰国报告按登记时的写法出 */}
+                      <SmartDateInput size="small" bordered={false}
+                        onRawTextChange={(t) => form.setFieldValue("mother_dob_text", t)} />
                     </Form.Item>
                   ) },
                 { title: "民族", width: 100,
@@ -932,7 +937,8 @@ export default function NipptRegistration() {
                       render: (_r: any, row: any) => (
                         <Form.Item {...row.field} name={[row.field.name, "dob"]} style={{ margin: 0 }}>
                           {/* 2026-10-21：同母亲，支持手输识别 */}
-                          <SmartDateInput size="small" bordered={false} />
+                          <SmartDateInput size="small" bordered={false}
+                            onRawTextChange={(t) => form.setFieldValue(["males", row.field.name, "dob_text"], t)} />
                         </Form.Item>
                       ) },
                     { title: "", width: 100,

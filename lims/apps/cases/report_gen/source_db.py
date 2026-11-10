@@ -151,6 +151,9 @@ def build_row(pair):
         "FF": ff,   # 胎儿浓度 = M.Conc（母亲浓度）
         "f_DOB": ms.patient_dob if ms else None,
         "m_DOB": fs.patient_dob if fs else None,
+        # 2026-11-10：登记时原样输入的出生日期文本（泰国报告直接用它，保留 14 Jul 1998 / 31/12/2005 这种写法）
+        "f_DOB_text": (getattr(ms, "patient_dob_text", "") or "") if ms else "",
+        "m_DOB_text": (getattr(fs, "patient_dob_text", "") or "") if fs else "",
         "Date_of_Birth": ms.patient_dob if ms else None,
         "gender": sex,
         # 额外信息（2026-10-13）：案例管理基本信息里显示为 gender 的那项 → Yes 才出性别报告
