@@ -236,6 +236,11 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   const [fillModeM, setFillModeM] = useState<"pt" | "extraction">("pt");
   const [extOrder, setExtOrder] = useState<any>(null);
   const [extLoading, setExtLoading] = useState(false);
+  /** 2026-11-10：浓度板的「输入中」文本缓冲。
+   *  之前 value 直接绑 String(cell.conc)：输 85.4 时按到「.」→ Number("85.")=85 → 小数点当场被吞，
+   *  接着输 4 → "854"，保存成 854（同事反馈「第一次填小数点会丢，第二次才保留」）。
+   *  这里把编辑中的原始文本（允许 "85." 这种中间态）单独存一份，失焦/回车时再归一化。 */
+  const [concText, setConcText] = useState<Record<string, string>>({});
   // 2026-11-06：浓度板开关（按「起始」输入框后的按钮切换；点过才显示，默认不显示）
   const [showConcF, setShowConcF] = useState(false);
   const [showConcM, setShowConcM] = useState(false);
@@ -1285,7 +1290,12 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               {Array.from({length:12},(_,col)=>{
                 const cell = plate[row]?.[col]||{vgId:"",index:""};
                 const bg = cell.vgId ? "#e8f5e9" : "#fafafa";
-                const val = typeof cell.conc === "number" ? String(cell.conc) : "";
+                const cellKey = `${group}-${row}-${col}`;
+                const editing = concText[cellKey];
+                // 编辑中显示原始文本（保住 "85." 这种中间态），否则显示已保存的数字
+                const val = editing !== undefined
+                  ? editing
+                  : (typeof cell.conc === "number" ? String(cell.conc) : "");
                 return (
                   <td key={col} style={{...cellStyle, background:bg}}>
                     {cell.skip ? (
@@ -1299,11 +1309,32 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                           placeholder={cell.vgId ? "浓度" : ""}
                           title={cell.vgId ? (cell.index ? `孔位 ${label}${col+1} · Index ${cell.index}` : `孔位 ${label}${col+1}`) : undefined}
                           onChange={(e)=>{
-                            const raw = e.target.value.replace(/[^0-9.]/g, "");
+                            // 中文输入法下「．」「，」「。」都可能被打出来，统一当小数点，再剔掉非法字符
+                            let raw = e.target.value.replace(/[，,．。]/g, ".").replace(/[^0-9.]/g, "");
+                            // 只允许一个小数点：后面的点直接丢掉（保留第一个）
+                            const di = raw.indexOf(".");
+                            if (di >= 0) raw = raw.slice(0, di + 1) + raw.slice(di + 1).replace(/\./g, "");
+                            setConcText(prev => ({ ...prev, [cellKey]: raw }));
                             if (raw === "") { setPlateConc(setter, pi, row, col, null); return; }
-                            if (!/^\d*\.?\d*$/.test(raw)) return;
+                            // 中间态（"." / "85."）先不写回数字，否则小数点又没了
+                            if (raw === "." || raw.endsWith(".")) return;
                             const n = Number(raw);
-                            setPlateConc(setter, pi, row, col, Number.isFinite(n) ? n : null);
+                            if (Number.isFinite(n)) setPlateConc(setter, pi, row, col, n);
+                          }}
+                          onBlur={()=>{
+                            const cur = concText[cellKey];
+                            if (cur !== undefined) {
+                              const t = cur.trim();
+                              if (t === "") setPlateConc(setter, pi, row, col, null);
+                              else {
+                                const n = Number(t);
+                                if (Number.isFinite(n)) setPlateConc(setter, pi, row, col, n);
+                              }
+                              setConcText(prev => {
+                                if (!(cellKey in prev)) return prev;
+                                const nx = { ...prev }; delete nx[cellKey]; return nx;
+                              });
+                            }
                           }}
                           onKeyDown={(e:any)=>{ if(e.key==="Enter"){ e.preventDefault(); focusNextConcCell(group,row,col); } }}
                           data-conc-group={group} data-conc-row={row} data-conc-col={col}
