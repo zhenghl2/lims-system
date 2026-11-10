@@ -649,7 +649,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       if(mps) setMalePlates(mps);
       else setMalePlates(buildPlatesFromStart(maleOrder<SampleItem>(d), _mS, "M").plates);
       libForm.setFieldsValue({
-        equipment:ld.equipment||"",pcr_cycles:ld.pcr_cycles??12,cfDNA_volume:ld.cfDNA_volume??undefined,
+        equipment:ld.equipment||"",pcr_cycles:ld.pcr_cycles??11,cfDNA_volume:ld.cfDNA_volume??undefined,
         elution_volume:ld.elution_volume??undefined,temperature:ld.temperature??undefined,humidity:ld.humidity??undefined,
       });
     }catch{message.error("加载失败")}finally{setBatchLoading(false)}
