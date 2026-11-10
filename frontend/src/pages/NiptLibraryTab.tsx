@@ -112,6 +112,10 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
   const [devPcr, setDevPcr] = useState<string[]>([]);   // PCR 仪（多选）
   const [devQubit, setDevQubit] = useState<string>(""); // Qubit（单选）
   const [photos, setPhotos] = useState<string[]>((batch.library_data?.photos as string[]) || []);
+  // 2026-11-10：列表用 260px 缩略图（原图保留）。后端上传接口返回 thumb；老照片按命名约定推导。
+  const [photoThumbs, setPhotoThumbs] = useState<Record<string, string>>({});
+  const photosRef = useRef<string[]>((batch.library_data?.photos as string[]) || []);
+  const uploadChain = useRef<Promise<void>>(Promise.resolve());
   const [startCoord, setStartCoord] = useState(batch.library_data?.start_coord || "");
   const [selectedKits, setSelectedKits] = useState<string[]>([]);
   const [kitDetails, setKitDetails] = useState<Record<string, {lot: string, expiry: string}>>({});
@@ -453,24 +457,39 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
     }
   };
 
-  const beforeUpload = async (file: File) => {
-    const hide = message.loading("照片上传中…", 0);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("module", "library");
-      const res = await api.post(`${apiBase}/${batch.id}/photos/`, fd, { timeout: 120000 });
-      const next = [...photos, res.data.url as string];
-      setPhotos(next);
-      // 2026-10-21：上传成功即写进批次数据。原来只在「已完成」批次才落库，
-      // 草稿批次拍照后不保存就完成/换电脑 → 记录里没有照片（文件其实已在服务器上）。
-      await persistPhotosOnly(next);
-    } catch (e: any) {
-      message.error(e?.response?.data?.error || "照片上传失败");
-    } finally {
-      hide();
-    }
-    return false;
+  /** 老照片没有 thumb 字段时按命名约定推导：<md5>.jpg → <md5>.thumb.jpg */
+  const thumbOf = (url: string) => {
+    if (!url) return url;
+    if (photoThumbs[url]) return photoThumbs[url];
+    return url.replace(/(\.[A-Za-z0-9]+)$/, ".thumb$1");
+  };
+
+  // 2026-11-10：改成「串行队列 + photosRef」。
+  // 一次选多张时 antd 会同时调每个文件的 beforeUpload，原来用 state 里的 photos 拼 next，
+  // 并发下互相覆盖 → 实际只存下最后一张（同事反馈「传几张之后就不动了」的另一个成因）。
+  const beforeUpload = (file: File) => {
+    uploadChain.current = uploadChain.current.then(async () => {
+      const hide = message.loading(`照片上传中…（${file.name}）`, 0);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        fd.append("module", "library");
+        const res = await api.post(`${apiBase}/${batch.id}/photos/`, fd, { timeout: 180000 });
+        const url = res.data.url as string;
+        const thumb = (res.data.thumb as string) || "";
+        if (thumb) setPhotoThumbs(p => ({ ...p, [url]: thumb }));
+        const next = [...photosRef.current, url];
+        photosRef.current = next;
+        setPhotos(next);
+        // 上传成功即写进批次数据（草稿批次换电脑也能看到）
+        await persistPhotosOnly(next);
+      } catch (e: any) {
+        message.error(`${file.name} 上传失败：` + (e?.response?.data?.detail || e?.response?.data?.error || e?.message || "网络错误"));
+      } finally {
+        hide();
+      }
+    });
+    return false;   // 阻止 antd 自己上传
   };
   const removePhoto = async (uid: string) => {
     const url = photos[Number(uid)];
@@ -993,13 +1012,13 @@ export default function NiptLibraryTab({ batch, samples, onRefresh, lastBatchLib
       <Card size="small" title="实验照片" style={{ marginBottom: 16 }}>
         <Upload
           listType="picture-card"
-          fileList={photos.map((url, i) => ({ uid: String(i), name: `photo-${i}.jpg`, status: "done" as const, url }))}
+          fileList={photos.map((url, i) => ({ uid: String(i), name: `photo-${i}.jpg`, status: "done" as const, url, thumbUrl: thumbOf(url) }))}
           beforeUpload={beforeUpload}
           onRemove={(f) => removePhoto(f.uid)}
+          multiple
           accept="image/*"
-          maxCount={6}
         >
-          {photos.length < 6 && <div><PlusOutlined /><div style={{ marginTop: 8, fontSize: 12 }}>拍照/上传</div></div>}
+          <div><PlusOutlined /><div style={{ marginTop: 8, fontSize: 12 }}>拍照/上传<br />{photos.length} 张</div></div>
         </Upload>
       </Card>
 

@@ -11,6 +11,7 @@
 """
 import re
 
+from django.conf import settings
 from django.db import transaction
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
@@ -21,7 +22,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from lims.apps.samples.models import Sample
-from lims.apps.workflows.nipt_run_photos import delete_run_photo, store_run_photo
+from lims.apps.workflows.nipt_run_photos import delete_run_photo, ensure_thumb, store_run_photo
 from lims.apps.workflows.views import SampleRunViewSet
 
 from .models import (NiptBioinformaticsBatch, NiptBioinformaticsSample,
@@ -303,7 +304,13 @@ class _StepBatchViewSet(viewsets.GenericViewSet,
                 url = store_run_photo(module, str(batch.id), f)
             except ValueError as e:
                 return Response({"detail": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-            return Response({"url": url, "name": url.rsplit("/", 1)[-1]})
+            # 2026-11-10：附带 260px 缩略图（原图保留），前端列表用它，避免按原图解内存
+            rel = url.split(settings.MEDIA_URL, 1)[-1]
+            try:
+                thumb = ensure_thumb(rel)
+            except Exception:
+                thumb = ""
+            return Response({"url": url, "thumb": thumb, "name": url.rsplit("/", 1)[-1]})
         name = request.query_params.get("name") or ""
         if not name:
             return Response({"detail": "缺少 name"}, status=status.HTTP_400_BAD_REQUEST)

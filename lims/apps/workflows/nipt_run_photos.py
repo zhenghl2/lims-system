@@ -41,6 +41,50 @@ def _media_root():
     return str(settings.MEDIA_ROOT)
 
 
+THUMB_MAX = 260          # 缩略图长边像素（列表/板面预览用）
+THUMB_QUALITY = 80
+
+
+def thumb_rel_of(rel):
+    """原图相对路径 → 缩略图相对路径：<md5>.jpg → <md5>.thumb.jpg"""
+    root, ext = os.path.splitext(rel)
+    return "%s.thumb%s" % (root, ext or ".jpg")
+
+
+def ensure_thumb(rel):
+    """按需生成缩略图并返回其 URL；失败返回空串（前端回退用原图）。
+
+    2026-11-10：实验照片是手机原图（4000×3000 / 4624×3472，3.7~4.9MB），
+    浏览器把 6 张缩略图按原图解到内存 ≈ 300MB+，电脑 Chrome 也会卡到传不动第 7 张。
+    这里在上传时顺带压一张 260px 的小图给列表用，**原图原样保留**（用户要求不压缩原文件）。
+    """
+    trel = thumb_rel_of(rel)
+    tabspath = os.path.join(_media_root(), trel)
+    if os.path.exists(tabspath):
+        return "%s%s" % (settings.MEDIA_URL, trel)
+    src = os.path.join(_media_root(), rel)
+    try:
+        from PIL import Image, ImageOps
+    except Exception:
+        return ""
+    try:
+        os.makedirs(os.path.dirname(tabspath), exist_ok=True)
+        with Image.open(src) as im:
+            im = ImageOps.exif_transpose(im)
+            im.thumbnail((THUMB_MAX, THUMB_MAX))
+            if im.mode not in ("RGB", "L"):
+                im = im.convert("RGB")
+            im.save(tabspath, "JPEG", quality=THUMB_QUALITY, optimize=True)
+        return "%s%s" % (settings.MEDIA_URL, trel)
+    except Exception:
+        try:
+            if os.path.exists(tabspath):
+                os.remove(tabspath)
+        except Exception:
+            pass
+        return ""
+
+
 def store_run_photo(module, run_id, uploaded):
     """落盘并返回对外 URL。同内容（MD5 相同）已存在时直接复用，不重复写。"""
     raw = uploaded.read()
@@ -74,6 +118,10 @@ def delete_run_photo(module, run_id, name):
     try:
         os.remove(abspath)
     except FileNotFoundError:
+        pass
+    try:  # 缩略图一并删除
+        os.remove(os.path.join(root, thumb_rel_of(name)))
+    except OSError:
         pass
     except IsADirectoryError:
         return False
