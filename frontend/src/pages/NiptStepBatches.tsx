@@ -41,7 +41,13 @@ export default function NiptStepBatches() {
 
   const [rows, setRows] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");   // 2026-11-10 左右分栏：右侧显示的批次
+  const [selectedStep, setSelectedStep] = useState<string>(""); // 选中批次所属步骤（跨步骤立即失效）
+  // 只有「当前步骤」选中的批次才传给右侧，避免切换步骤时拿上一步的批次号去请求 → 加载失败
+  const activeId = selectedStep === step ? selectedId : "";
   const [listCollapsed, setListCollapsed] = useState(false);  // 2026-11-10：收起左侧列表，右侧占满
+
+  // 2026-11-10：切换步骤时必须清掉选中批次（上一步的批次号在新步骤里不存在 → 加载失败）
+  useEffect(() => { setSelectedId(""); }, [step]);
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState<{ count: number; results: any[] }>({ count: 0, results: [] });
   const [modalOpen, setModalOpen] = useState(false);
@@ -158,7 +164,7 @@ export default function NiptStepBatches() {
       setModalOpen(false); setPicked([]); setChipNo("");
       const nid = res.data?.id;
       fetchRows();
-      if (nid) setSelectedId(nid);   // 2026-11-10 分栏：新建后直接在右侧打开
+      if (nid) { setSelectedId(nid); setSelectedStep(step); }   // 2026-11-10 分栏：新建后直接在右侧打开
     } catch (e: any) {
       message.error(e?.response?.data?.error || e?.response?.data?.detail || "创建失败");
     } finally {
@@ -169,22 +175,27 @@ export default function NiptStepBatches() {
   const columns = useMemo(() => ([
     { title: "批次号", dataIndex: "no", key: "no",
       render: (v: string, r: any) => (
-        <Space size={4}>
-          <Text code style={{ fontSize: 11, whiteSpace: "nowrap" }}>{v}</Text>
+        <Space size={4} style={{ whiteSpace: "nowrap" }}>
+          <Text code style={{ fontSize: 11 }}>{v}</Text>
+          {/* 窄栏里长文字会撑破表格 → 用 +N 小标签，完整说明放 tooltip */}
           {step !== "extraction" && r.extra > 0 && (
-            <Tag color={r.extra > 1 ? "gold" : "default"}>汇入 {r.extra} 个上游批次</Tag>
+            <Tooltip title={`汇入 ${r.extra} 个上游批次`}>
+              <Tag color={r.extra > 1 ? "gold" : "default"} style={{ fontSize: 10, padding: "0 4px", marginInlineEnd: 0 }}>
+                +{r.extra}
+              </Tag>
+            </Tooltip>
           )}
         </Space>
       ) },
-    { title: "样本", dataIndex: "count", key: "c", width: 58, align: "center" as const, onHeaderCell: () => ({ style: { whiteSpace: "nowrap" } }) },
-    { title: "状态", dataIndex: "status", key: "st", width: 100,
+    { title: "样本", dataIndex: "count", key: "c", width: 46, align: "center" as const, onHeaderCell: () => ({ style: { whiteSpace: "nowrap" } }) },
+    { title: "状态", dataIndex: "status", key: "st", width: 88,
       render: (v: string, r: any) => (
         <Space size={4} wrap>
           <Tag color={STATUS_COLOR[v] || "default"}>{r.status_display || STATUS_TEXT[v] || v}</Tag>
           {r.photos_pending && <Tag color="orange" style={{ fontSize: 10 }}>📷 待补照片</Tag>}
         </Space>
       ) },
-    ...(step === "sequencing" ? [{ title: "", key: "act", width: 46,
+    ...(step === "sequencing" ? [{ title: "", key: "act", width: 34,
       render: (_: any, r: any) => (
         <Tooltip title={r.status === "COMPLETED" ? "已完成批次不能删除" : "删除该批次（样本回到待处理）"}>
           <Button danger type="link" size="small" icon={<DeleteOutlined />}
@@ -219,7 +230,7 @@ export default function NiptStepBatches() {
 
   return (
     <>
-      <Row gutter={12} align="top">
+      <Row gutter={12} align="top" wrap={false}>
       {listCollapsed ? (
         <Col flex="40px">
           <Tooltip title="展开批次列表" placement="right">
@@ -254,17 +265,18 @@ export default function NiptStepBatches() {
           size="small"
           loading={loading}
           pagination={{ pageSize: 20, size: "small" }}
+          scroll={{ x: "max-content" }}
           onRow={(r: any) => ({
-            onClick: () => setSelectedId(r.id),
-            style: { cursor: "pointer", background: r.id === selectedId ? "#e6f7ff" : undefined },
+            onClick: () => { setSelectedId(r.id); setSelectedStep(step); },
+            style: { cursor: "pointer", background: r.id === activeId ? "#e6f7ff" : undefined },
           })}
         />
       </Card>
       </Col>
       )}
-      <Col flex="auto">
-        {selectedId
-          ? <NiptStepDetail step={step} batchId={selectedId} onChanged={fetchRows} />
+      <Col flex="1 1 0" style={{ minWidth: 0 }}>
+        {activeId
+          ? <NiptStepDetail step={step} batchId={activeId} onChanged={fetchRows} />
           : <Card size="small" style={{ minHeight: 320 }}>
               <Empty description="点击左侧批次查看详情" image={Empty.PRESENTED_IMAGE_SIMPLE} />
             </Card>}

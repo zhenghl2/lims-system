@@ -47,11 +47,13 @@ export default function NiptStepDetail({ step, batchId, onChanged }: {
   const fetchDetail = useCallback(async () => {
     if (!batchId || !api) return;
     setLoading(true);
+    setDetail(null);            // 2026-11-10：先清空，避免上一条批次内容残留
     try {
       const res: any = await api.detail(batchId);
       setDetail(res.data);
     } catch {
       message.error("批次详情加载失败");
+      setDetail(null);
     } finally {
       setLoading(false);
     }
