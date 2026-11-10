@@ -29,7 +29,7 @@ class _StepSampleSerializer(serializers.ModelSerializer):
     sample_plasma_remaining = serializers.IntegerField(source="sample.plasma_remaining",
                                                        read_only=True, default=0)
     sample_retest_flag = serializers.CharField(source="sample.retest_flag", read_only=True, default="")
-    sample_report_code = serializers.CharField(source="sample.report_code", read_only=True, default="")
+    sample_report_code = serializers.SerializerMethodField()
     sample_pregnancy_history = serializers.SerializerMethodField()
     sample_diagnosis = serializers.CharField(source="sample.clinical_diagnosis", read_only=True, default="")
     sample_fetal_fraction = serializers.FloatField(source="sample.fetal_fraction", read_only=True, default=None)
@@ -37,6 +37,15 @@ class _StepSampleSerializer(serializers.ModelSerializer):
 
     def get_sample_patient_name(self, obj):
         return obj.patient_name or getattr(obj.sample, "patient_name", "") or ""
+
+    def get_sample_report_code(self, obj):
+        """2026-11-10：Report Code 在测序步生成（存 sequencing_data.index_samples），
+        从未写回 Sample.report_code → 优先 Sample 值，空了就用上游 index 表的 reportCode。"""
+        code = getattr(obj.sample, "report_code", "") or ""
+        if code:
+            return code
+        m = (self.context or {}).get("vg_report_map") or {}
+        return m.get(getattr(obj.sample, "vg_id", "") or "", "") or ""
 
     def get_sample_pregnancy_history(self, obj):
         s = obj.sample
@@ -182,6 +191,7 @@ class CreateLibraryBatchSerializer(serializers.Serializer):
 _BASE_SAMPLE_FIELDS = [
     "id", "batch", "sample",
     "sample_barcode", "sample_vg_id", "sample_patient_id", "sample_patient_name",
+    "sample_source",
     "sample_multiple_gestation", "sample_gestational_weeks", "sample_test_option",
     "sample_status", "sample_plasma_remaining", "sample_retest_flag", "sample_report_code",
     "sample_pregnancy_history", "sample_diagnosis", "sample_fetal_fraction", "sample_ivf",
@@ -336,7 +346,7 @@ class NiptBioinformaticsBatchListSerializer(_BatchListBase):
 
 
 class NiptBioinformaticsBatchDetailSerializer(NiptBioinformaticsBatchListSerializer):
-    samples = NiptBioinformaticsSampleSerializer(many=True, read_only=True)
+    samples = serializers.SerializerMethodField()
     run_samples = serializers.SerializerMethodField()
     sequencing_data = serializers.SerializerMethodField()
     pooling_data = serializers.SerializerMethodField()
@@ -348,8 +358,32 @@ class NiptBioinformaticsBatchDetailSerializer(NiptBioinformaticsBatchListSeriali
             "samples", "run_samples", "bioinformatics_data",
             "sequencing_data", "pooling_data", "library_data", "extraction_data"]
 
+    def get_samples(self, obj):
+        return NiptBioinformaticsSampleSerializer(
+            obj.samples.all(), many=True, context=self._sample_ctx(obj)).data
+
     def get_run_samples(self, obj):
-        return NiptBioinformaticsSampleSerializer(obj.samples.all(), many=True).data
+        return self.get_samples(obj)
+
+    def _report_map(self, obj):
+        """上游测序批次 sequencing_data.index_samples → {vgId: reportCode}"""
+        rows = self._seq_rows(obj)
+        if not rows:
+            return {}
+        ids = _upstream_batch_ids(NiptSequencingSample, "source_sequencing_sample_id", rows)
+        out = {}
+        for b in NiptSequencingBatch.objects.filter(id__in=ids):
+            for it in ((b.sequencing_data or {}).get("index_samples") or []):
+                vg = (it or {}).get("vgId") or ""
+                code = (it or {}).get("reportCode") or ""
+                if vg and code:
+                    out[vg] = code
+        return out
+
+    def _sample_ctx(self, obj):
+        ctx = dict(self.context or {})
+        ctx["vg_report_map"] = self._report_map(obj)
+        return ctx
 
     # ── 沿指针链往上抓（生信→测序→Pooling→建库→提取）──
     def _seq_rows(self, obj):
