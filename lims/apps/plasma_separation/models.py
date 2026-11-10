@@ -15,6 +15,20 @@ class PlasmaSeparationBatch(models.Model):
         max_length=50, blank=True, default="HIGH_SPEED",
         help_text="Comma-separated: HIGH_SPEED,LOW_SPEED"
     )
+    # 2026-11-10：区域（厦门 / 香港）+ 离心机设备号（低速单台、高速可多选）
+    region = models.CharField(
+        max_length=20, blank=True, default="",
+        choices=[("XIAMEN", "厦门"), ("HONGKONG", "香港")],
+        help_text="区域：XIAMEN=厦门 / HONGKONG=香港",
+    )
+    device_low = models.CharField(
+        max_length=100, blank=True, default="",
+        help_text="低速离心机设备号（如 YSFH-EI-003（低速））",
+    )
+    device_high = models.CharField(
+        max_length=200, blank=True, default="",
+        help_text="高速离心机设备号（多选用「、」分隔）",
+    )
     status = models.CharField(
         max_length=20,
         default="IN_PROGRESS",

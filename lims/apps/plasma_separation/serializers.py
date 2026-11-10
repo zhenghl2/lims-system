@@ -41,7 +41,8 @@ class PlasmaSeparationBatchListSerializer(serializers.ModelSerializer):
         model = PlasmaSeparationBatch
         fields = [
             "id", "batch_number", "experiment_date", "experiment_time",
-            "equipment_type", "status", "status_display",
+            "equipment_type", "region", "device_low", "device_high",
+            "status", "status_display",
             "sample_count", "operator_name", "notes", "created_at",
         ]
 
@@ -65,7 +66,8 @@ class PlasmaSeparationBatchDetailSerializer(serializers.ModelSerializer):
         model = PlasmaSeparationBatch
         fields = [
             "id", "batch_number", "experiment_date", "experiment_time",
-            "equipment_type", "status", "status_display",
+            "equipment_type", "region", "device_low", "device_high",
+            "status", "status_display",
             "operator", "operator_name", "operator_signature", "operator_signature_data",
             "reviewer", "reviewer_name", "reviewer_signature", "reviewer_signature_data",
             "notes", "batch_samples", "photos", "created_at", "updated_at",
@@ -92,6 +94,7 @@ class PlasmaSeparationBatchCreateSerializer(serializers.ModelSerializer):
         model = PlasmaSeparationBatch
         fields = [
             "experiment_date", "experiment_time", "equipment_type",
+            "region", "device_low", "device_high",
             "sample_ids", "notes",
         ]
 

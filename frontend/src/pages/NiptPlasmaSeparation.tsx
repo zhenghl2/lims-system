@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import {
   Table, Button, Tag, Space, Typography, Modal, Form,
   Input, InputNumber, TimePicker, DatePicker, message, Card, Empty, Row, Col,
-  Upload, Popconfirm, Image,
+  Upload, Popconfirm, Image, Select,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, DeleteOutlined,
@@ -16,6 +16,19 @@ import NiptSignerModal from "./NiptSignerModal";
 import { useTranslation } from "../i18n/useTranslation";
 
 const { Title, Text } = Typography;
+
+/** 2026-11-10：区域 + 离心机设备（用户给的表）
+ *  厦门 低速 YSFH-EI-003；高速 YSFH-EI-020-01 / -02（可多选）
+ *  香港 低速 VBL-TLD-01；高速 VBL-TG-01
+ *  设备按区域限定，整批一套（不分男女） */
+const PS_REGIONS = [
+  { value: "XIAMEN", label: "厦门" },
+  { value: "HONGKONG", label: "香港" },
+];
+const PS_DEVICES: Record<string, { low: string[]; high: string[] }> = {
+  XIAMEN: { low: ["YSFH-EI-003（低速）"], high: ["YSFH-EI-020-01（高速）", "YSFH-EI-020-02（高速）"] },
+  HONGKONG: { low: ["VBL-TLD-01（低速）"], high: ["VBL-TG-01（高速）"] },
+};
 
 export default function NiptPlasmaSeparation() {
   const { t } = useTranslation();
@@ -36,6 +49,7 @@ export default function NiptPlasmaSeparation() {
   const [createForm] = Form.useForm();
   const [availableSamples, setAvailableSamples] = useState<any[]>([]);
   const [createSelectedIds, setCreateSelectedIds] = useState<string[]>([]);
+  const [createRegion, setCreateRegion] = useState<string>("");   // 2026-11-10 区域（决定可选设备）
   const [sampleSearch, setSampleSearch] = useState("");
 
   // QC modal
@@ -129,6 +143,9 @@ export default function NiptPlasmaSeparation() {
         experiment_date: values.experiment_date.format("YYYY-MM-DD"),
         experiment_time: expTime ? expTime.format("HH:mm:ss") : dayjs().format("HH:mm:ss"),
         equipment_type: "HIGH_SPEED",
+        region: values.region || "",
+        device_low: values.device_low || "",
+        device_high: Array.isArray(values.device_high) ? values.device_high.join("、") : (values.device_high || ""),
         sample_ids: createSelectedIds,
         notes: values.notes || "",
       };
@@ -142,6 +159,24 @@ export default function NiptPlasmaSeparation() {
       message.error(e?.response?.data?.error || "Failed to create batch");
     } finally {
       setCreateLoading(false);
+    }
+  };
+
+  /** 2026-11-10：详情里改区域/设备 → 直接 PATCH 到批次 */
+  const updateDevice = async (field: "region" | "device_low" | "device_high", value: string) => {
+    if (!batchDetail) return;
+    const prev = { ...batchDetail };
+    // 换区域 → 原设备不属于该区域，一并清空
+    const payload: any = field === "region"
+      ? { region: value, device_low: "", device_high: "" }
+      : { [field]: value };
+    setBatchDetail((p: any) => ({ ...p, ...payload }));
+    try {
+      await api.patch(`/plasma-separation/${batchDetail.id}/`, payload);
+      message.success("已保存");
+    } catch {
+      setBatchDetail(prev);
+      message.error("保存失败");
     }
   };
 
@@ -271,6 +306,13 @@ export default function NiptPlasmaSeparation() {
       render: (v: string) => <Text code style={{ whiteSpace: "nowrap" }}>{v}</Text>,
     },
     {
+      title: "区域", dataIndex: "region", key: "region", width: 90,
+      render: (v: string) => v === "XIAMEN"
+        ? <Tag color="geekblue">厦门</Tag>
+        : v === "HONGKONG" ? <Tag color="magenta">香港</Tag>
+        : <Text type="secondary">-</Text>,
+    },
+    {
       title: t("nipt.plasmaSeparation.sampleCount"), dataIndex: "sample_count", key: "sample_count", width: 80,
     },
     {
@@ -379,11 +421,28 @@ export default function NiptPlasmaSeparation() {
               <Col><Text type="secondary">{t("nipt.plasmaSeparation.samples")}: </Text><Text strong>{batchDetail.batch_samples?.length || 0}</Text></Col>
             </Row>
 
-            {/* Equipment Type */}
-            <div style={{ marginBottom: 12, padding: "8px 12px", background: "#fafafa", borderRadius: 6, display: "flex", alignItems: "center", gap: 8 }}>
-              <Text type="secondary">{t("nipt.plasmaSeparation.equipment")}</Text>
-              <Tag color="blue">{t("nipt.plasmaSeparation.highSpeedCentrifuge")}</Tag>
-              <Tag color="orange">{t("nipt.plasmaSeparation.lowSpeedCentrifuge")}</Tag>
+            {/* 区域 + 离心机设备（2026-11-10：原来的「高速/低速」标签换成具体设备号，可改） */}
+            <div style={{ marginBottom: 12, padding: "8px 12px", background: "#fafafa", borderRadius: 6, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <Text type="secondary">区域:</Text>
+              <Select size="small" style={{ width: 110 }} allowClear placeholder="选择区域"
+                disabled={batchDetail.status === "COMPLETED"}
+                value={batchDetail.region || undefined}
+                onChange={(v: any) => updateDevice("region", v || "")}
+                options={PS_REGIONS} />
+              <Text type="secondary" style={{ marginLeft: 8 }}>低速离心机:</Text>
+              <Select size="small" style={{ width: 190 }} allowClear placeholder={batchDetail.region ? "选择设备" : "未填区域"}
+                disabled={!batchDetail.region || batchDetail.status === "COMPLETED"}
+                value={batchDetail.device_low || undefined}
+                onChange={(v: any) => updateDevice("device_low", v || "")}
+                options={(PS_DEVICES[batchDetail.region]?.low || []).map((o: string) => ({ value: o, label: o }))} />
+              <Text type="secondary" style={{ marginLeft: 8 }}>高速离心机:</Text>
+              <Select size="small" mode="multiple" style={{ minWidth: 300 }} allowClear placeholder={batchDetail.region ? "选择设备（可多选）" : "未填区域"}
+                disabled={!batchDetail.region || batchDetail.status === "COMPLETED"}
+                value={String(batchDetail.device_high || "").split("、").map((x: string) => x.trim()).filter(Boolean)}
+                onChange={(v: string[]) => updateDevice("device_high", v.filter(Boolean).join("、"))}
+                options={Array.from(new Set([...(PS_DEVICES[batchDetail.region]?.high || []),
+                  ...String(batchDetail.device_high || "").split("、").map((x: string) => x.trim()).filter(Boolean)]))
+                  .map((o: string) => ({ value: o, label: o }))} />
             </div>
 
             {/* Photos */}
@@ -603,6 +662,26 @@ export default function NiptPlasmaSeparation() {
             <Col span={12}>
               <Form.Item name="experiment_time" label="Experiment Time" rules={[{ required: true }]} initialValue={dayjs()}>
                 <TimePicker format="HH:mm" style={{ width: "100%" }} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={8}>
+              <Form.Item name="region" label="区域" rules={[{ required: true, message: "请选择区域" }]}>
+                <Select placeholder="厦门 / 香港" options={PS_REGIONS}
+                  onChange={(v: string) => { setCreateRegion(v); createForm.setFieldsValue({ device_low: undefined, device_high: [] }); }} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="device_low" label="低速离心机">
+                <Select placeholder={createRegion ? "选择设备" : "先选区域"} allowClear
+                  options={(PS_DEVICES[createRegion]?.low || []).map(o => ({ value: o, label: o }))} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item name="device_high" label="高速离心机（可多选）">
+                <Select mode="multiple" placeholder={createRegion ? "选择设备（可多选）" : "先选区域"} allowClear
+                  options={(PS_DEVICES[createRegion]?.high || []).map(o => ({ value: o, label: o }))} />
               </Form.Item>
             </Col>
           </Row>
