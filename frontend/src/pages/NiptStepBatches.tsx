@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Card, Table, Tag, Button, Typography, Space, message, Modal, Alert, Input, Tooltip, Row, Col, Empty } from "antd";
 import NiptStepDetail from "./NiptStepDetail";
-import { ReloadOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
+import { ReloadOutlined, PlusOutlined, DeleteOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from "@ant-design/icons";
 import {
   niptExtractionApi, niptLibraryApi, niptPoolingApi, niptSequencingApi, niptBioinformaticsApi,
 } from "../api";
@@ -41,6 +41,7 @@ export default function NiptStepBatches() {
 
   const [rows, setRows] = useState<any[]>([]);
   const [selectedId, setSelectedId] = useState<string>("");   // 2026-11-10 左右分栏：右侧显示的批次
+  const [listCollapsed, setListCollapsed] = useState(false);  // 2026-11-10：收起左侧列表，右侧占满
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState<{ count: number; results: any[] }>({ count: 0, results: [] });
   const [modalOpen, setModalOpen] = useState(false);
@@ -175,24 +176,22 @@ export default function NiptStepBatches() {
           )}
         </Space>
       ) },
-    { title: "样本", dataIndex: "count", key: "c", width: 56, align: "center" as const },
-    { title: "状态", dataIndex: "status", key: "st", width: 118,
+    { title: "样本", dataIndex: "count", key: "c", width: 58, align: "center" as const, onHeaderCell: () => ({ style: { whiteSpace: "nowrap" } }) },
+    { title: "状态", dataIndex: "status", key: "st", width: 100,
       render: (v: string, r: any) => (
         <Space size={4} wrap>
           <Tag color={STATUS_COLOR[v] || "default"}>{r.status_display || STATUS_TEXT[v] || v}</Tag>
           {r.photos_pending && <Tag color="orange" style={{ fontSize: 10 }}>📷 待补照片</Tag>}
         </Space>
       ) },
-    { title: "", key: "act", width: 46,
+    ...(step === "sequencing" ? [{ title: "", key: "act", width: 46,
       render: (_: any, r: any) => (
-        step === "sequencing" ? (
-          <Tooltip title={r.status === "COMPLETED" ? "已完成批次不能删除" : "删除该批次（样本回到待处理）"}>
-            <Button danger type="link" size="small" icon={<DeleteOutlined />}
-              disabled={r.status === "COMPLETED"}
-              onClick={(e) => { e.stopPropagation(); confirmDelete(r); }} />
-          </Tooltip>
-        ) : null
-      ) },
+        <Tooltip title={r.status === "COMPLETED" ? "已完成批次不能删除" : "删除该批次（样本回到待处理）"}>
+          <Button danger type="link" size="small" icon={<DeleteOutlined />}
+            disabled={r.status === "COMPLETED"}
+            onClick={(e) => { e.stopPropagation(); confirmDelete(r); }} />
+        </Tooltip>
+      ) }] : []),
   ]), [step, navigate, confirmDelete]);
 
   if (!meta || !api) return <Card><Text type="danger">未知步骤：{step}</Text></Card>;
@@ -221,7 +220,15 @@ export default function NiptStepBatches() {
   return (
     <>
       <Row gutter={12} align="top">
-      <Col span={9}>
+      {listCollapsed ? (
+        <Col flex="40px">
+          <Tooltip title="展开批次列表" placement="right">
+            <Button icon={<MenuUnfoldOutlined />} onClick={() => setListCollapsed(false)}
+              style={{ height: 72, width: 34, padding: 0, borderTopRightRadius: 0, borderBottomRightRadius: 0 }} />
+          </Tooltip>
+        </Col>
+      ) : (
+      <Col span={6}>
       <Card
         size="small"
         title={<Title level={5} style={{ margin: 0 }}>{meta.title}</Title>}
@@ -232,6 +239,9 @@ export default function NiptStepBatches() {
               新建批次{pending.count > 0 ? `（待处理 ${pending.count}）` : ""}
             </Button>
             <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={fetchRows}>刷新</Button>
+            <Tooltip title="收起批次列表（右侧占满）">
+              <Button size="small" icon={<MenuFoldOutlined />} onClick={() => setListCollapsed(true)} />
+            </Tooltip>
           </Space>
         }
       >
@@ -251,7 +261,8 @@ export default function NiptStepBatches() {
         />
       </Card>
       </Col>
-      <Col span={15}>
+      )}
+      <Col flex="auto">
         {selectedId
           ? <NiptStepDetail step={step} batchId={selectedId} onChanged={fetchRows} />
           : <Card size="small" style={{ minHeight: 320 }}>
