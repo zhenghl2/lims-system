@@ -10,6 +10,10 @@ from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessin
 
 
 _PT_FATHER_LABEL_RE = re.compile(r"^PT\d+H([A-Z])(?:_[RT]\d+)*$")
+# 2026-11-10：单个 H（PT72567H）也要认出来。原来只认 PTxxxxHA/HB，
+# 多疑父（H + HB）时父亲列表里 H 那一条匹配不到 → 退化成「按位置」给出 HA，
+# 与样本自身编号不符（附表/QC/结果对不上）。
+_PT_FATHER_LABEL_PLAIN_RE = re.compile(r"^PT\d+H(?:_[RT]\d+)*$")
 
 
 def father_label_of(bioinfo_sample, idx=0, total=1):
@@ -25,6 +29,8 @@ def father_label_of(bioinfo_sample, idx=0, total=1):
         m = _PT_FATHER_LABEL_RE.match(tid)
         if m:
             return "H" + m.group(1)
+        if _PT_FATHER_LABEL_PLAIN_RE.match(tid):
+            return "H"
     return "H" if total == 1 else "H" + chr(65 + idx)
 
 
@@ -2866,6 +2872,73 @@ class NipptBioinfoBatchDetailSerializer(serializers.ModelSerializer):
         return NipptBioinfoSampleSerializer(unpaired, many=True).data
 
 
+def nippt_mothers_resampled(mothers):
+    """本批次里的母亲样本是否为「重采」（CaseSample.resample_of 非空）。"""
+    ids = [cid for m in mothers for cid in (m.case_sample_ids or [])]
+    if not ids:
+        return False
+    return CaseSample.objects.filter(id__in=ids, resample_of__isnull=False).exists()
+
+
+def nippt_supplement_fathers_for_resampled_mother(batch, case_id, groups, created_sample_map, primary_hs):
+    """母亲被重采时，把该 case 其它「杂交 QC PASS 且还没进本批次」的疑父补进来，
+    并跟本批次的每位母亲建立配对。返回新增配对数（2026-11-10）。
+
+    背景（PT72567 卡在生信）：PT72567W 胎儿浓度低 → 母亲重采 W_R1；新杂交批次里只有
+    W_R1 + 新加的疑父 HB，旧疑父 H 只挂着「母亲 QC FAIL」的老配对 → 结果永远填不进去、
+    H 一直停在 BIOINFO。原来 Phase 2 的 `if has_mother and has_father: continue` 直接跳过，
+    跨批次补充那一段根本不会跑，于是补不上。
+    """
+    mothers = groups["MOTHER"]
+    fathers = groups["FATHER"]
+    case = Case.objects.get(id=case_id)
+
+    # 补齐父亲样本（本批次没有、但杂交 QC PASS 的 active 男性）
+    for cs in case.case_samples.filter(
+            role="ALLEGED_FATHER", is_active=True,
+            workflow_stage__in=["HYB_SEQ", "BIOINFO", "REPORT_DRAFT", "COMPLETED"],
+    ).select_related("sample"):
+        hss = NipptHybSeqSample.objects.filter(
+            case_sample_ids__contains=[str(cs.id)],
+            batch__status="COMPLETED", qc_status="PASS",
+        ).select_related("batch").first()
+        if not hss or str(hss.id) in created_sample_map:
+            continue
+        bs = NipptBioinfoSample.objects.create(
+            batch=batch, case=case,
+            patient_name=hss.patient_name, role="ALLEGED_FATHER",
+            category=hss.category,
+            case_sample_ids=hss.case_sample_ids,
+            source_hybseq_sample_id=str(hss.id),
+        )
+        created_sample_map[str(hss.id)] = bs
+        fathers.append(bs)
+
+    # 每位母亲 × 每位父亲（父亲标签取样本自身 PT 后缀 HA/HB…，与 Phase 1 一致）
+    added = 0
+    labeled = sorted(((father_label_of(f, i, len(fathers)), f) for i, f in enumerate(fathers)),
+                     key=lambda x: x[0])
+    for label, father in labeled:
+        for mother in mothers:
+            if NipptBioinfoPair.objects.filter(
+                    batch=batch, mother_sample=mother, father_sample=father).exists():
+                continue
+            m_hs = NipptHybSeqSample.objects.filter(id=mother.source_hybseq_sample_id).first()
+            f_hs = NipptHybSeqSample.objects.filter(id=father.source_hybseq_sample_id).first()
+            is_cross = bool((m_hs and str(m_hs.batch_id) != str(primary_hs.id)) or
+                            (f_hs and str(f_hs.batch_id) != str(primary_hs.id)))
+            NipptBioinfoPair.objects.create(
+                batch=batch, case_id=case_id,
+                mother_sample=mother, father_sample=father,
+                father_label=label,
+                is_cross_batch=is_cross,
+                mother_source_batch=m_hs.batch.batch_number if m_hs else "",
+                father_source_batch=f_hs.batch.batch_number if f_hs else "",
+            )
+            added += 1
+    return added
+
+
 class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
     hybseq_batch_id = serializers.UUIDField(write_only=True, required=False)
 
@@ -2947,6 +3020,22 @@ class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
                             mother_source_batch=primary_hs.batch_number,
                             father_source_batch=primary_hs.batch_number,
                         )
+
+            # Phase 1.5（2026-11-10）：母亲是重采样本 → 该 case 其它有效疑父也要跟新母亲配对。
+            # 用户口径：母亲重采后，之前那条「母亲 QC FAIL」的旧疑父必须能重新配上
+            #（本案例重采时还同时新增了另一个疑父 HB，两者都要配）。
+            resample_supplement_count = 0
+            for case_id, groups in case_samples_map.items():
+                if not groups["MOTHER"]:
+                    continue
+                if not nippt_mothers_resampled(groups["MOTHER"]):
+                    continue
+                try:
+                    resample_supplement_count += nippt_supplement_fathers_for_resampled_mother(
+                        batch, case_id, groups, created_sample_map, primary_hs)
+                except Exception:          # noqa: BLE001 —— 补充失败不能挡住建批次
+                    import logging
+                    logging.getLogger(__name__).exception("supplement pairs for resampled mother failed: %s", case_id)
 
             # Phase 2: cross-batch supplement
             for case_id, groups in case_samples_map.items():
@@ -3036,6 +3125,7 @@ class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
                 "source_hybseq_batch_number": primary_hs.batch_number,
                 "auto_paired": True,
                 "cross_batch_count": cross_batch_count,
+                "resample_supplement_count": resample_supplement_count,
             }
             batch.save(update_fields=["bioinfo_data"])
             # 进入生信批次：更新工作流阶段
