@@ -138,6 +138,9 @@ interface CaseSampleRow {
   image: string | null;
   ptBase: string;
   ptBaseOriginal: string;   // 载入时的原始值：用于「只校验本次改动」
+  /** 载入时定下的后缀（HB / HB_R1 / W…）：改 PT 基号时沿用它，
+   *  否则每敲一个字都会按当前列表重算，HB 退化 H、HB_R1 退化 HB（2026-11-10 用户报障） */
+  suffixHint?: string;
   received: boolean;
   receivedAt: string;
   receivedByName: string;
@@ -176,6 +179,27 @@ function persistReceivingDraft(d: ReceivingDraft) {
 }
 
 /** 模块级：角色后缀（母亲W / 父亲H/HA..）— 提升供恢复逻辑复用 */
+/** 从样本已有编号里取后缀：("PT72611HB_R1", "72611") → "HB_R1"；取不到返回 ""。
+ *  2026-11-10：收样页显示 H 而不是 HB 的根因就在后缀是「按名字位置重算」的，
+ *  一旦当前列表只剩一个疑父（待签收 tab / 搜索过滤），HB 就会退化成 H。 */
+function suffixFromCode(code: string, base: string): string {
+  if (!code) return "";
+  const m = String(code).match(/^PT(\d+)([A-Za-z].*)$/i);
+  if (!m) return "";                       // 纯数字（PT72611）没有后缀
+  if (base && m[1] !== base) return "";     // 编号里的数字与当前基号不一致 → 不沿用，按名字重算
+  return m[2];
+}
+
+/** 行后缀：优先沿用样本自己已有编号的后缀（H / HB / HB_R1 / W_R1…），
+ *  只有还没分配编号的样本，才按**整个案例**的疑父推算（不能只看当前筛选出来的行）。 */
+function resolveSuffix(row: CaseSampleRow, allCaseRows: CaseSampleRow[]): string {
+  if (row.suffixHint) return row.suffixHint;
+  const keep = suffixFromCode(row.testSampleId, row.ptBaseOriginal || "");
+  if (keep) return keep;
+  const fathers = allCaseRows.filter((x) => x.role === "ALLEGED_FATHER");
+  return generateSuffix(row.role, fathers, row.patientName);
+}
+
 function generateSuffix(role: string, allFathers: CaseSampleRow[], fatherName?: string): string {
   if (role === "MOTHER") return "W";
   const uniqueFathers: string[] = [];
@@ -192,6 +216,8 @@ function generateSuffix(role: string, allFathers: CaseSampleRow[], fatherName?: 
 
 export default function SampleReceiving() {
   const [data, setData] = useState<CaseSampleRow[]>([]);
+  /** 全部行（未按 tab / 未按行状态过滤）：算疑父后缀要看整个案例，不能用当前列表 */
+  const allRowsRef = useRef<CaseSampleRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("pending");
   /** 排序口径（2026-10-15 用户口径）：默认「最新登记」在最上，方便一眼看到刚登记的；
@@ -291,6 +317,13 @@ export default function SampleReceiving() {
           personTypes: personTypes[`${cs.role}|${rowPname}`] || [],
         });
       }
+      // 后缀快照（按「整个案例」的疑父姓名，不是当前筛选出来的几行）
+      const caseFatherRows = rows.filter((x) => x.caseId === c.id && x.role === "ALLEGED_FATHER");
+      for (const r of rows) {
+        if (r.caseId !== c.id) continue;
+        r.suffixHint = suffixFromCode(r.testSampleId, r.ptBaseOriginal)
+          || generateSuffix(r.role, caseFatherRows, r.patientName);
+      }
     }
     return rows;
   }, []);
@@ -325,6 +358,7 @@ export default function SampleReceiving() {
         filtered = filtered.filter((c: any) => c.registration_type === regTypeFilter);
       }
       const allRows = flatCases(filtered);
+      allRowsRef.current = allRows;
       // Tab 计数（跟随筛选，样本级）
       setTabCounts({
         pending: allRows.filter((r) => r.status === "REGISTERED").length,
@@ -349,11 +383,12 @@ export default function SampleReceiving() {
             for (const [caseId, ptBase] of ptEntries) {
               const caseRows = rows.filter((r) => r.caseId === caseId);
               if (!caseRows.length) continue;
-              const fathers = caseRows.filter((x) => x.role === "ALLEGED_FATHER");
+              const allCaseRows = (allRowsRef.current.length ? allRowsRef.current : rows)
+                .filter((x) => x.caseId === caseId);
               for (const r of caseRows) {
                 if (r.received || r.status !== "REGISTERED") continue;
                 r.ptBase = ptBase;
-                r.testSampleId = ptBase ? `PT${ptBase}${generateSuffix(r.role, fathers, r.patientName)}` : "";
+                r.testSampleId = ptBase ? `PT${ptBase}${resolveSuffix(r, allCaseRows)}` : "";
               }
             }
           }
@@ -398,8 +433,9 @@ export default function SampleReceiving() {
     setData((prev) =>
       prev.map((r) => {
         if (r.caseId === row.caseId) {
-          const fathers = prev.filter((x) => x.caseId === r.caseId && x.role === "ALLEGED_FATHER");
-          const suffix = generateSuffix(r.role, fathers, r.patientName);
+          const allCaseRows = (allRowsRef.current.length ? allRowsRef.current : prev)
+            .filter((x) => x.caseId === r.caseId);
+          const suffix = resolveSuffix(r, allCaseRows);
           const fullBase = newPtBase ? `PT${newPtBase}` : "";
           return { ...r, ptBase: newPtBase, testSampleId: newPtBase ? `${fullBase}${suffix}` : "" };
         }
@@ -533,7 +569,9 @@ export default function SampleReceiving() {
         setData((prev) =>
           prev.map((r) =>
             r.key === row.key
-              ? { ...r, received: true, status: "RECEIVED", receivedAt: rt, receivedByName: receiptPersons[row.key] || r.receivedByName, receiptLocation: receiptLocations[row.key] || r.receiptLocation }
+              ? { ...r, received: true, status: "RECEIVED", receivedAt: rt,
+                  testSampleId: (resp?.data?.test_sample_id || r.testSampleId),
+                  receivedByName: receiptPersons[row.key] || r.receivedByName, receiptLocation: receiptLocations[row.key] || r.receiptLocation }
               : r
           )
         );
@@ -651,11 +689,12 @@ export default function SampleReceiving() {
         const baseNum = String(ptNum).padStart(5, "0");  // 纯数字（ptBase 用）
         const base = `PT${baseNum}`;
         drafts[caseId] = baseNum;
-        const fathers = rows.filter((r) => r.role === "ALLEGED_FATHER");
+        const allCaseRows = (allRowsRef.current.length ? allRowsRef.current : rows)
+          .filter((x) => x.caseId === caseId);
         for (const row of rows) {
           const idx = updated.findIndex((r) => r.key === row.key);
           if (idx >= 0) {
-            const suffix = generateSuffix(row.role, fathers, row.patientName);
+            const suffix = resolveSuffix(row, allCaseRows);
             updated[idx] = {
               ...updated[idx],
               ptBase: baseNum,
