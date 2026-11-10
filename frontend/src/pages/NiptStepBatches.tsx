@@ -1,9 +1,9 @@
 // NiptStepBatches.tsx — NIPT 实验流程「分步批次」列表（阶段3：5 步全部走新表）
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Card, Table, Tag, Button, Typography, Space, message, Modal, Alert, Input, Tooltip } from "antd";
-import { ReloadOutlined, ArrowRightOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
-import dayjs from "dayjs";
+import { Card, Table, Tag, Button, Typography, Space, message, Modal, Alert, Input, Tooltip, Row, Col, Empty } from "antd";
+import NiptStepDetail from "./NiptStepDetail";
+import { ReloadOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import {
   niptExtractionApi, niptLibraryApi, niptPoolingApi, niptSequencingApi, niptBioinformaticsApi,
 } from "../api";
@@ -40,6 +40,7 @@ export default function NiptStepBatches() {
   const api = STEP_API[step];
 
   const [rows, setRows] = useState<any[]>([]);
+  const [selectedId, setSelectedId] = useState<string>("");   // 2026-11-10 左右分栏：右侧显示的批次
   const [loading, setLoading] = useState(false);
   const [pending, setPending] = useState<{ count: number; results: any[] }>({ count: 0, results: [] });
   const [modalOpen, setModalOpen] = useState(false);
@@ -156,7 +157,7 @@ export default function NiptStepBatches() {
       setModalOpen(false); setPicked([]); setChipNo("");
       const nid = res.data?.id;
       fetchRows();
-      if (nid) navigate(`/nipt/${step}/${nid}`);
+      if (nid) setSelectedId(nid);   // 2026-11-10 分栏：新建后直接在右侧打开
     } catch (e: any) {
       message.error(e?.response?.data?.error || e?.response?.data?.detail || "创建失败");
     } finally {
@@ -165,40 +166,32 @@ export default function NiptStepBatches() {
   };
 
   const columns = useMemo(() => ([
-    { title: "批次号", dataIndex: "no", key: "no", width: 250,
+    { title: "批次号", dataIndex: "no", key: "no",
       render: (v: string, r: any) => (
         <Space size={4}>
-          <Text code>{v}</Text>
+          <Text code style={{ fontSize: 11, whiteSpace: "nowrap" }}>{v}</Text>
           {step !== "extraction" && r.extra > 0 && (
             <Tag color={r.extra > 1 ? "gold" : "default"}>汇入 {r.extra} 个上游批次</Tag>
           )}
         </Space>
       ) },
-    { title: "样本", dataIndex: "count", key: "c", width: 70, align: "center" as const },
-    { title: "状态", dataIndex: "status", key: "st", width: 150,
+    { title: "样本", dataIndex: "count", key: "c", width: 56, align: "center" as const },
+    { title: "状态", dataIndex: "status", key: "st", width: 118,
       render: (v: string, r: any) => (
         <Space size={4} wrap>
           <Tag color={STATUS_COLOR[v] || "default"}>{r.status_display || STATUS_TEXT[v] || v}</Tag>
           {r.photos_pending && <Tag color="orange" style={{ fontSize: 10 }}>📷 待补照片</Tag>}
         </Space>
       ) },
-    { title: "创建时间", dataIndex: "created_at", key: "ca", width: 160,
-      render: (v: string) => (v ? dayjs(v).format("YYYY-MM-DD HH:mm") : "—") },
-    { title: "", key: "act", width: 150,
+    { title: "", key: "act", width: 46,
       render: (_: any, r: any) => (
-        <Space size={2}>
-          <Button type="link" size="small" icon={<ArrowRightOutlined />}
-            onClick={(e) => { e.stopPropagation(); navigate(`/nipt/${step}/${r.id}`); }}>
-            进入本步
-          </Button>
-          {step === "sequencing" && (
-            <Tooltip title={r.status === "COMPLETED" ? "已完成批次不能删除" : "删除该批次（样本回到待处理）"}>
-              <Button danger type="link" size="small" icon={<DeleteOutlined />}
-                disabled={r.status === "COMPLETED"}
-                onClick={(e) => { e.stopPropagation(); confirmDelete(r); }} />
-            </Tooltip>
-          )}
-        </Space>
+        step === "sequencing" ? (
+          <Tooltip title={r.status === "COMPLETED" ? "已完成批次不能删除" : "删除该批次（样本回到待处理）"}>
+            <Button danger type="link" size="small" icon={<DeleteOutlined />}
+              disabled={r.status === "COMPLETED"}
+              onClick={(e) => { e.stopPropagation(); confirmDelete(r); }} />
+          </Tooltip>
+        ) : null
       ) },
   ]), [step, navigate, confirmDelete]);
 
@@ -227,6 +220,8 @@ export default function NiptStepBatches() {
 
   return (
     <>
+      <Row gutter={12} align="top">
+      <Col span={9}>
       <Card
         size="small"
         title={<Title level={5} style={{ margin: 0 }}>{meta.title}</Title>}
@@ -240,7 +235,7 @@ export default function NiptStepBatches() {
           </Space>
         }
       >
-        <Alert type="info" showIcon style={{ marginBottom: 10 }}
+        <Alert type="info" showIcon style={{ marginBottom: 8, fontSize: 12 }}
           message={`${meta.hint}  待处理 ${pending.count} 个样本`} />
         <Table
           dataSource={rows}
@@ -249,9 +244,21 @@ export default function NiptStepBatches() {
           size="small"
           loading={loading}
           pagination={{ pageSize: 20, size: "small" }}
-          onRow={(r: any) => ({ onClick: () => navigate(`/nipt/${step}/${r.id}`), style: { cursor: "pointer" } })}
+          onRow={(r: any) => ({
+            onClick: () => setSelectedId(r.id),
+            style: { cursor: "pointer", background: r.id === selectedId ? "#e6f7ff" : undefined },
+          })}
         />
       </Card>
+      </Col>
+      <Col span={15}>
+        {selectedId
+          ? <NiptStepDetail step={step} batchId={selectedId} onChanged={fetchRows} />
+          : <Card size="small" style={{ minHeight: 320 }}>
+              <Empty description="点击左侧批次查看详情" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+            </Card>}
+      </Col>
+    </Row>
 
       <Modal
         open={modalOpen}

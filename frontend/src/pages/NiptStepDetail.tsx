@@ -1,9 +1,9 @@
 // NiptStepDetail.tsx — NIPT 分步批次详情（阶段3：5 步全部走新表）
 // 5 个实验组件原样挂载，仅通过 apiBase 换接口地址（默认 "/runs" → 旧页面行为不变）。
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { Card, Space, Button, Tag, Spin, Typography, message, Modal } from "antd";
-import { ArrowLeftOutlined, ReloadOutlined, LeftOutlined, RightOutlined, CheckOutlined, UndoOutlined } from "@ant-design/icons";
+import { ReloadOutlined, LeftOutlined, RightOutlined, CheckOutlined, UndoOutlined } from "@ant-design/icons";
 import {
   niptExtractionApi, niptLibraryApi, niptPoolingApi, niptSequencingApi, niptBioinformaticsApi,
 } from "../api";
@@ -27,9 +27,14 @@ const STEP_API: Record<string, any> = {
   bioinformatics: niptBioinformaticsApi,
 };
 
-export default function NiptStepDetail() {
+/** 2026-11-10：改成左右分栏（批次列表在左、详情在右），不再走独立路由。
+ *  step / batchId 由父组件 NiptStepBatches 传入；onChanged 用于完成后刷新左侧列表。 */
+export default function NiptStepDetail({ step, batchId, onChanged }: {
+  step: string;
+  batchId: string;
+  onChanged?: () => void;
+}) {
   const navigate = useNavigate();
-  const { step = "extraction", batchId = "" } = useParams();
   const meta = NIPT_STEP_META[step];
   const stepIdx = Math.max(0, STEP_ORDER.indexOf(step));
   const api = STEP_API[step];
@@ -74,6 +79,7 @@ export default function NiptStepDetail() {
       await api.complete(batchId);
       message.success("本步已完成");
       fetchDetail();
+      onChanged?.();
     } catch (e: any) {
       message.error(e?.response?.data?.error || "完成失败");
     } finally { setBusy(false); }
@@ -99,6 +105,7 @@ export default function NiptStepDetail() {
       await api.reopen(batchId);
       message.success("已撤销完成，可继续编辑");
       fetchDetail();
+      onChanged?.();
     } catch (e: any) {
       message.error(e?.response?.data?.error || "操作失败");
     } finally { setBusy(false); }
@@ -135,7 +142,6 @@ export default function NiptStepDetail() {
       size="small"
       title={
         <Space wrap>
-          <Button size="small" icon={<ArrowLeftOutlined />} onClick={() => navigate(`/nipt/${step}`)}>列表</Button>
           <Title level={5} style={{ margin: 0 }}>{meta.title}</Title>
           {detail?.batch_number && <Text code>{detail.batch_number}</Text>}
           {detail?.status && (
