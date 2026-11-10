@@ -60,6 +60,21 @@ def _advance_sample_status(sample_ids, target):
     return moved
 
 
+def _sync_index_report_codes(batch):
+    """把测序批次 index 表里的 Report Code 回写到样本（报告页 / 报告模板都用它）。
+    原来这个值只存在 sequencing_data.index_samples 里，Sample.report_code 一直是空。"""
+    idx = (getattr(batch, "sequencing_data", None) or {}).get("index_samples") or []
+    n = 0
+    for it in idx:
+        vg = (it or {}).get("vgId") or ""
+        code = (it or {}).get("reportCode") or ""
+        if not vg or not code:
+            continue
+        n += (Sample.objects.filter(vg_id=vg, panel__code__in=NIPT_PANELS)
+              .exclude(report_code=code).update(report_code=code))
+    return n
+
+
 # 生信失败 / QC 不合格的 qc_status 取值（这些样本不出报告）
 _BIO_FAIL_VALUES = {"FAIL", "低浓度", "高GC", "数据量不足", "多条染色体临界", "其他"}
 
@@ -659,7 +674,11 @@ class NiptSequencingViewSet(_ChainStepMixin, _StepBatchViewSet):
 
     @action(detail=True, methods=["post"], url_path="save_sequencing")
     def save_sequencing(self, request, pk=None):
-        return self._save_data(request)
+        resp = self._save_data(request)
+        # 2026-11-10：保存 index 表后，把 Report Code 回写到样本
+        if getattr(resp, "status_code", 500) < 400:
+            _sync_index_report_codes(self.get_object())
+        return resp
 
     @action(detail=True, methods=["post"], url_path="sequencing/sign")
     def sign_sequencing(self, request, pk=None):

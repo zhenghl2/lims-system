@@ -54,12 +54,17 @@ class ReportListSerializer(ReportSampleFieldsMixin, serializers.ModelSerializer)
     bio_data = serializers.SerializerMethodField()
 
     def get_bio_data(self, obj):
+        """2026-11-10：报告页结果列（T21/T18/T13/XO/XXX/XXY/XYY/FF/Z/QC）取这里。
+        旧 Run 流程从 run.bioinformatics_data 取；NIPT 分步流程没有 RunSample，
+        建报告时已把生信结果写进 content["results"]，需要兜底读它。"""
         if obj.run_sample and obj.run_sample.run:
             run = obj.run_sample.run
             bio = run.bioinformatics_data or {}
             rs_id = str(obj.run_sample.id)
-            return bio.get(rs_id, {})
-        return {}
+            got = bio.get(rs_id, {})
+            if got:
+                return got
+        return (obj.content or {}).get("results") or {}
 
     class Meta:
         model = Report
