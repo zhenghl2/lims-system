@@ -70,7 +70,7 @@ const libSplitDev = (v: any): string[] =>
 const libJoinDev = (arr?: string[] | null): string => (arr || []).filter(Boolean).join("、");
 
 // ── Reagent kits ──
-const LIB_KITS = [{value:"ND607-C2",label:"VAHTS Universal DNA Library Prep Kit for Illumina V5 (ND607-C2)"},{value:"ND801-02",label:"VAHTS Universal Plus DNA Library Prep Kit V4 (ND801-02)"}];
+const LIB_KITS = [{value:"ND607-02",label:"VAHTS Universal DNA Library Prep Kit for Illumina V3 (ND607-02)"},{value:"ND607-C2",label:"VAHTS Universal DNA Library Prep Kit for Illumina V5 (ND607-C2)"},{value:"ND801-02",label:"VAHTS Universal Plus DNA Library Prep Kit V4 (ND801-02)"}];
 /** 2026-11-09：固定名称的两种配套试剂（只填批号+有效期） */
 const BEADS_LABEL = "ZHIXUAN Purification Beads";
 const QUANT_REAGENT_LABEL = "VAHTS 1×dsDNA HS Assay Kit";
