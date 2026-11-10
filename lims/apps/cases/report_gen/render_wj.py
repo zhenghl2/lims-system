@@ -44,9 +44,22 @@ def render(row, appendix_path, tpl_dir, out_dir="."):
     code = str(ctx.get("万基编号", "") or "")
     if not code:
         return [], "缺少万基编号"
-    sm_id_num = code[2:]
     wq_label = str(ctx.get("编号", "") or "")[:2]
     is_wq = wq_label == "WQ"
+
+    # ── 样本编号 / 检案号码 的编号段（2026-11-10 修复）
+    # 模板里写死 "PT-{{ sm_id_num }}-W" / "PT-{{ sm_id_num }}-H"。
+    # 原来 sm_id_num = 万基编号[2:]，而万基编号是母亲号 "PT72615W" → "72615W"
+    # → 文档里成了 PT-72615W-W（多一个 W）；多疑父 HA/HB 两份报告的样本编号还完全一样，
+    #   看不出 a/b（文件名早就带 a/b 了，文档没带）。
+    # 正确口径（用户 2026-11-10 图片 + 历史报告文件核对）：
+    #   单疑父 → PT-72121-W / PT-72121-H（只留数字）
+    #   多疑父 → 数字 + 疑父字母小写：PT-72615a-W / PT-72615a-H（第二份 ...b-）
+    _m = re.search(r"PT(\d+)", code, re.I)
+    sm_id_num = _m.group(1) if _m else code[2:]
+    _flabel0 = str(ctx.get("father_label") or "").strip().upper()
+    if not is_wq and ctx.get("multi_father") and len(_flabel0) > 1 and _flabel0.startswith("H"):
+        sm_id_num = sm_id_num + _flabel0[-1].lower()
 
     # 检案号码 / sm_id_num
     app_date = ctx.get("申请日期")
