@@ -1,6 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from "react";
-import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography, Table } from "antd";
-import { PlusOutlined, DeleteOutlined, DownloadOutlined } from "@ant-design/icons";
+import { Form, Input, DatePicker, Select, Button, Card, Row, Col, Checkbox, Space, message, InputNumber, Typography, Table, Tag, Tooltip } from "antd";
+import { DownloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import { INDEX_LOOKUP } from "../utils/indexLookup";
 import api from "../api/client";
@@ -20,16 +20,13 @@ function parseIndexNum(index: string): string {
   return m ? m[1].padStart(3, "0") : "";
 }
 
-// ── Platform / Equipment ──
-const EQUIPMENT_OPTIONS = [{ value:"ILLUMINA_500",label:"illumina500" },{ value:"ILLUMINA_550DX",label:"illumina550dx" },{ value:"SALUS_PRO",label:"Salus Pro" },{ value:"SIKUN_2000",label:"Sikun2000" },{ value:"MGI_G99",label:"MGI G99" },{ value:"PCR_ABI_9700",label:"PCR仪 - ABI 9700" },{ value:"PCR_ABI_Veriti",label:"PCR仪 - ABI Veriti" },{ value:"PCR_BioRad_T100",label:"PCR仪 - Bio-Rad T100" }];
+// ── 平台 / 设备（2026-11-12：平台=测序仪直接选；实验设备照 NIPPT 三台） ──
 // 2026-11-05（用户口径）：芯片类型改为固定 3 种 PRM 规格，与平台无关
 const CHIP_TYPE_OPTIONS = [
   { value:"PRM-PE150-150M", label:"PRM-PE150-150M" },
   { value:"PRM-PE100-250M", label:"PRM-PE100-250M" },
   { value:"PRM-PE75-500M",  label:"PRM-PE75-500M"  },
 ];
-// 测序仪型 equipment 值（用于从「测序仪」推导平台；PCR 仪不在其中）
-const SEQUENCER_PLATFORMS = ["ILLUMINA_500","ILLUMINA_550DX","SALUS_PRO","SIKUN_2000","MGI_G99"];
 // 2026-11-05（用户口径）：补 PE100 / PE75 / SE50（原来只有 SE75 / SE100 / PE150）
 const READ_TYPE_OPTIONS = [
   { value:"PE75",  label:"PE75"  },
@@ -39,12 +36,70 @@ const READ_TYPE_OPTIONS = [
   { value:"SE75",  label:"SE75"  },
   { value:"SE100", label:"SE100" },
 ];
-const DEFAULT_REAGENT_TYPES = [{ key: "SEQUENCING", label: "测序试剂" }, { key: "CHIP_FLOWCELL", label: "芯片/Flow Cell" }, { key: "WASH_BUFFER", label: "清洗液" }];
-const REAGENT_OPTIONS = [{ key: "SEQUENCING", label: "测序试剂" }, { key: "CHIP_FLOWCELL", label: "芯片/Flow Cell" }, { key: "WASH_BUFFER", label: "清洗液" }, { key: "NAOH_DENATURE", label: "NaOH变性液" }, { key: "OTHER", label: "其他" }];
-const REAGENT_KITS_BY_PLATFORM: Record<string,Record<string,{value:string;label:string}[]>> = { ILLUMINA_500:{"测序试剂":[{value:"NextSeq500_High_v2.5",label:"NextSeq 500 High Output v2.5"}],"芯片/Flow Cell":[{value:"S1_FlowCell",label:"S1 Flow Cell"},{value:"S2_FlowCell",label:"S2 Flow Cell"}],"清洗液":[{value:"Wash_Buffer_A",label:"Wash Buffer A"}]},ILLUMINA_550DX:{"测序试剂":[{value:"NextSeq550_High_v2.5",label:"NextSeq 550 High Output v2.5"}],"芯片/Flow Cell":[{value:"S1_FlowCell",label:"S1 Flow Cell"},{value:"S2_FlowCell",label:"S2 Flow Cell"}],"清洗液":[{value:"Wash_Buffer_A",label:"Wash Buffer A"}]},SALUS_PRO:{"测序试剂":[{value:"Salus_Seq_Kit_v1",label:"Salus Pro Sequencing Kit v1"}],"芯片/Flow Cell":[{value:"FCL_Chip",label:"FCL Chip"},{value:"FCS_Chip",label:"FCS Chip"}],"清洗液":[{value:"Salus_Wash",label:"Salus Wash Buffer"}]},SIKUN_2000:{"测序试剂":[{value:"Sikun_Seq_Kit",label:"Sikun2000 Sequencing Kit"}],"芯片/Flow Cell":[{value:"FCL_Chip",label:"FCL Chip"},{value:"FCS_Chip",label:"FCS Chip"}],"清洗液":[{value:"Sikun_Wash",label:"Sikun Wash Buffer"}]},MGI_G99:{"测序试剂":[{value:"MGI_G99_Standard",label:"MGI G99 Standard Kit"}],"芯片/Flow Cell":[{value:"FCL_Chip",label:"FCL Chip"},{value:"FCS_Chip",label:"FCS Chip"}],"清洗液":[{value:"MGI_Wash",label:"MGI Wash Buffer"}]} };
+/** 2026-11-12（用户口径）：测序平台 = 测序仪编号，直接选，不再由「设备」推导 */
+const PLATFORM_OPTIONS = [
+  { value: "YSFH-EI-035-01", label: "YSFH-EI-035-01（Illumian）" },
+  { value: "YSFH-EI-035-02", label: "YSFH-EI-035-02（Salus）" },
+];
+/** 实验设备：完全照 NIPPT 杂交及测序（金属浴 / PCR仪 / Qubit，整批一套，可多选） */
+const SEQ_DEVICES: { key: "dev_metal" | "dev_pcr" | "dev_qubit"; label: string; options: string[]; width: number }[] = [
+  { key: "dev_metal", label: "金属浴", options: ["YSFH-EI-010-02", "YSFH-EI-010-07"], width: 260 },
+  { key: "dev_pcr", label: "PCR仪", options: ["YSFH-EI-024-05", "YSFH-EI-024-12", "YSFH-EI-024-07"], width: 300 },
+  { key: "dev_qubit", label: "Qubit定量仪", options: ["YSFH-EI-021-02"], width: 200 },
+];
+/** 试剂目录：完全照抄 NIPPT 五类（探针 / 封闭序列 / 杂交试剂 / 测序试剂 / 定量试剂） */
+type ReagentOpt = { value: string; label: string; cat: string };
+const FIXED_REAGENTS: Record<string, { label: string; cat: string }> = {
+  probe: { label: "NIPPT探针", cat: "定制" },
+  blocker: { label: "NadPrep NanoBlockers (for Illumina),96 rxn", cat: "1006102" },
+  quant: { label: "VAHTS 1×dsDNA HS Assay Kit", cat: "EQ121-02" },
+};
+const HYB_REAGENTS: ReagentOpt[] = [
+  { value: "1005421", label: "NadPrep Rapid Hybrid Capture Reagents v2,96 rxn", cat: "1005421" },
+  { value: "1005101", label: "NadPrep Hybrid Capture Reagents, 96 rxn", cat: "1005101" },
+];
+const SEQ_REAGENTS: ReagentOpt[] = [
+  { value: "PRM-PE150-150M", label: "Salus Pro测序试剂套装(PRM-PE150-150M)", cat: "PRM-PE150-150M" },
+  { value: "PRM-PE100-250M", label: "Salus Pro测序试剂套装(PRM-PE100-250M)", cat: "PRM-PE100-250M" },
+  { value: "PRM-PE75-500M", label: "Salus Pro测序试剂套装(PRM-PE75-500M)", cat: "PRM-PE75-500M" },
+  { value: "PRM-SE50-500M", label: "Salus Pro测序试剂套装(PRM-SE50-500M)", cat: "PRM-SE50-500M" },
+  { value: "20064346CN", label: "NextSeq 500/550 Mid Output Kit v2.5 (300 Cycles)", cat: "20064346 CN" },
+  { value: "20064344CN", label: "NextSeq 500/550 High Output Kit v2.5 (300 Cycles)", cat: "20064344 CN" },
+];
+const RG_CATS: { key: "probe" | "blocker" | "hyb" | "seq" | "quant"; name: string }[] = [
+  { key: "probe", name: "探针" },
+  { key: "blocker", name: "封闭序列" },
+  { key: "hyb", name: "杂交试剂" },
+  { key: "seq", name: "测序试剂" },
+  { key: "quant", name: "定量试剂" },
+];
+const rgOpts = (k: string): ReagentOpt[] => (k === "hyb" ? HYB_REAGENTS : k === "seq" ? SEQ_REAGENTS : []);
+
 const STEPS = [{ key:"clean_equip",label:"设备准备（清洗）" },{ key:"reagent_prep",label:"试剂准备（解冻、混匀、离心）" },{ key:"sample_prep",label:"样本准备" },{ key:"on_machine",label:"上机测序" },{ key:"cleanup",label:"实验结束（清洁台面、紫外 30min）" }];
 
-interface ReagentRow { id:number; type:string; kit:string; lot:string; expiry:string; }
+/** Mix 稀释行（与 NIPPT 杂交及测序同结构） */
+interface MixRow { mix_name:string; source:string; pooling_batch_id?:string; library_conc:number|null;
+  input_amount:number; input_vol:number; expected_conc:number; water_added:number; }
+
+/** Mix 稀释表初始行（2026-11-12 用户口径）：
+ *  优先用本批次已保存的 mix_rows；否则「新建批次时勾选的每个上游 Pooling 批次」各出一行，
+ *  文库浓度预填该 Pooling 批次的理论浓度（pooling_data.totals.theoryConc）。 */
+function buildMixRows(sd: any, b: any): MixRow[] {
+  const saved = sd?.mix_rows;
+  if (Array.isArray(saved) && saved.length) return saved as MixRow[];
+  const srcs: any[] = (b?.source_batches || []);
+  const chipNum = String(b?.batch_number || "").trim();
+  return srcs.map((s: any, i: number) => ({
+    mix_name: chipNum ? `${chipNum}Mix${i + 1}` : `mix${i + 1}`,
+    source: s.batch_number || "",
+    pooling_batch_id: s.id,
+    library_conc: (typeof s.theory_conc === "number" ? s.theory_conc : null),
+    input_amount: 10,
+    input_vol: (typeof s.theory_conc === "number" && s.theory_conc > 0) ? 10 / s.theory_conc : 0,
+    expected_conc: 0.8,
+    water_added: 0,
+  }));
+}
 interface Props { batch:any; onRefresh:()=>void; lastBatchSeqData?:any; }
 interface IndexRow { key:number; idx:number; vgId:string; index:string; i7:string; i5:string; batchNumber:string; uploadId:string; reportCode:string; }
 
@@ -57,12 +112,6 @@ function getSignStatus(edata:any, role:"operator"|"reviewer") {
 
 export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiBase="/runs"}:Props & { apiBase?: string }) {
   const { t } = useTranslation();
-  // Reagent type: English key ↔ Chinese label mapping (backward compat with saved data)
-  const reagentKeyToChinese: Record<string, string> = { SEQUENCING: "测序试剂", CHIP_FLOWCELL: "芯片/Flow Cell", WASH_BUFFER: "清洗液", NAOH_DENATURE: "NaOH变性液", OTHER: "其他" };
-  const chineseToReagentKey: Record<string, string> = {};
-  Object.entries(reagentKeyToChinese).forEach(([k, v]) => { chineseToReagentKey[v] = k; });
-  const translateReagentType = (v: string) => chineseToReagentKey[v] || v;
-  const reagentOptionsTL = REAGENT_OPTIONS.map(o => ({ value: o.key, label: t(`nipt.sequencing.${o.key === "SEQUENCING" ? "seqReagent" : o.key === "CHIP_FLOWCELL" ? "chipFlowCell" : o.key === "WASH_BUFFER" ? "washBuffer" : o.key === "NAOH_DENATURE" ? "naohDenature" : "otherReagent"}`) }));
   const [form]=Form.useForm();
   const edata=useMemo(()=>batch.sequencing_data||{},[batch.sequencing_data]);
   // 2026-11-05（用户口径）：顶部「测序平台」与基本信息里的「测序仪」重复 → 删掉平台下拉，
@@ -72,30 +121,31 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
   const [saving,setSaving]=useState(false);
   const [opModal,setOpModal]=useState(false);
   const [rvModal,setRvModal]=useState(false);
-  const counterRef=useRef(100);
   const saveOkRef = useRef(false);   // 保存是否成功（签名前先保存用）
   const defaultsFetchedRef=useRef(false);
   useEffect(() => { defaultsFetchedRef.current = false; }, [batch.id]);
   const {signed:opSigned,name:opSigner}=getSignStatus(edata,"operator");
   const {signed:rvSigned,name:rvSigner}=getSignStatus(edata,"reviewer");
 
-  const [reagents,setReagents]=useState<ReagentRow[]>(()=>{
-    if(edata.reagents&&Array.isArray(edata.reagents)) return edata.reagents.map((r:any,i:number)=>({id:i+1,type:translateReagentType(r.type)||"",kit:r.kit||"",lot:r.lot||"",expiry:r.expiry||""}));
-    return DEFAULT_REAGENT_TYPES.map((t,i)=>({id:i+1,type:t.key,kit:"",lot:"",expiry:""}));
-  });
-
-  // 测序仪 → 平台映射：取第一个「测序仪」型选项（PCR 仪器不算）
-  const equipmentWatch = Form.useWatch("equipment", form);
-  useEffect(() => {
-    const list = Array.isArray(equipmentWatch) ? equipmentWatch : [];
-    const seq = list.find((v: string) => SEQUENCER_PLATFORMS.includes(v));
-    if (seq) setPlatform(seq);
-    else if (list.length > 0) setPlatform("");   // 只选了 PCR 等非测序仪 → 清空
-    // list 为空时保持原平台不动：老批次可能只存了 platform、没存 equipment
-  }, [equipmentWatch]);
-
-
-  const reagentKits=useMemo(()=>REAGENT_KITS_BY_PLATFORM[platform]||{},[platform]);
+  // ── 2026-11-12：Mix 稀释表 / 设备 / 试剂（照 NIPPT 杂交及测序） ──
+  const [mixRows,setMixRows]=useState<MixRow[]>(()=>buildMixRows(edata, batch));
+  const [finalConc,setFinalConc]=useState<number>(Number(edata.final_conc ?? 0.783));
+  const [hybKit,setHybKit]=useState<string>(edata.hyb_kit || "");
+  const [seqKit,setSeqKit]=useState<string>(edata.sequencing_kit || "");
+  const [quantKitH,setQuantKitH]=useState<string>(edata.quant_kit || "");
+  const [rgLots,setRgLots]=useState<Record<string,{lot:string;expiry:string}>>(()=>Object.fromEntries(
+    RG_CATS.map(c=>[c.key,{lot:edata[`reagent_${c.key}_lot`]||"",expiry:edata[`reagent_${c.key}_expiry`]||""}])));
+  const [seqDev,setSeqDev]=useState<Record<string,string>>(()=>Object.fromEntries(
+    SEQ_DEVICES.map(d=>[d.key, edata[d.key] || (d.options.length===1 ? d.options[0] : "")])));
+  // 批次切换：按新批次的上游 Pooling 批次重建（已保存过 mix_rows 的批次保持原样）
+  useEffect(()=>{
+    const sd = batch.sequencing_data || {};
+    setMixRows(buildMixRows(sd, batch));
+    setFinalConc(Number(sd.final_conc ?? 0.783));
+    setHybKit(sd.hyb_kit||""); setSeqKit(sd.sequencing_kit||""); setQuantKitH(sd.quant_kit||"");
+    setRgLots(Object.fromEntries(RG_CATS.map(c=>[c.key,{lot:sd[`reagent_${c.key}_lot`]||"",expiry:sd[`reagent_${c.key}_expiry`]||""}])));
+    setSeqDev(Object.fromEntries(SEQ_DEVICES.map(d=>[d.key, sd[d.key] || (d.options.length===1?d.options[0]:"")])));
+  },[batch.id]);
 
   // ── Build index table from pooling data ──
   const poolSamples: any[] = useMemo(() => {
@@ -170,25 +220,46 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
   // Pre-fill platform/equipment/chip from last batch (runs once per batch.id)
   useEffect(()=>{
     if(!batch.id||!lastBatchSeqData)return;
-    const hasData=!!(edata.platform||(edata.equipment||[]).length);
+    const hasData=!!(edata.platform||(edata.equipment||[]).length||edata.dev_metal||edata.dev_pcr||edata.dev_qubit);
     if(hasData)return;
     if(defaultsFetchedRef.current)return;
     defaultsFetchedRef.current=true;
     const seq=lastBatchSeqData;
     if(seq.platform)setPlatform(seq.platform);
-    form.setFieldsValue({
-      equipment:seq.equipment||[],
-      chip:seq.chip||undefined,
-    });
-    if(seq.reagents&&Array.isArray(seq.reagents)&&seq.reagents.length>0){
-      setReagents(seq.reagents.map((r:any,i:number)=>({id:i+1,type:translateReagentType(r.type)||"",kit:r.kit||"",lot:r.lot||"",expiry:r.expiry||""})));
-    }
+    form.setFieldsValue({ chip:seq.chip||undefined });
+    // 设备：上一批填过的号带过来（与 NIPPT 一致）
+    setSeqDev(Object.fromEntries(SEQ_DEVICES.map(d=>[d.key, seq[d.key] || (d.options.length===1 ? d.options[0] : "")])));
+    // 试剂：名称/批号/有效期取上一批（与 NIPPT「默认带上一批」一致）
+    setHybKit(seq.hyb_kit||""); setSeqKit(seq.sequencing_kit||""); setQuantKitH(seq.quant_kit||"");
+    setRgLots(Object.fromEntries(RG_CATS.map(c=>[c.key,{
+      lot:seq[`reagent_${c.key}_lot`]||"", expiry:seq[`reagent_${c.key}_expiry`]||"",
+    }])));
   },[batch.id,lastBatchSeqData]);
 
   const toggleStep=(key:string)=>setSteps(prev=>({...prev,[key]:!prev[key]}));
-  const addReagent=()=>{const id=++counterRef.current;setReagents(prev=>[...prev,{id,type:"",kit:"",lot:"",expiry:""}]);};
-  const removeReagent=(id:number)=>{setReagents(prev=>prev.filter(r=>r.id!==id));};
-  const updateReagent=(id:number,field:keyof ReagentRow,value:string)=>{setReagents(prev=>prev.map(r=>r.id===id?{...r,[field]:value}:r));};
+  const addMixRow=()=>setMixRows(prev=>[...prev,{mix_name:`mix${prev.length+1}`,source:"",library_conc:null,
+    input_amount:10,input_vol:0,expected_conc:0.8,water_added:0}]);
+  const updateMixCell=(i:number,field:string,val:any)=>{
+    setMixRows(prev=>{
+      const next=[...prev]; const r={...next[i]} as any;
+      r[field]=val;
+      // 投入体积 = 投入量 / 文库浓度（与 NIPPT 同一口径）
+      if(field==="library_conc") r.input_vol=(r.input_amount??0)/(val||1);
+      if(field==="input_amount") r.input_vol=val/(r.library_conc||1);
+      next[i]=r; return next;
+    });
+  };
+  /** Mix 汇总（口径照抄 NIPPT 2026-10-16）：
+   *  理论浓度=Σ投入量/Σ投入体积；加水量=(理论浓度/预期浓度-1)×Σ投入体积，预期浓度取第一行 */
+  const mixSums=useMemo(()=>{
+    const totalInput=mixRows.reduce((s,r)=>s+(r.input_amount??0),0);
+    const totalVol=mixRows.reduce((s,r)=>s+(r.input_vol??0),0);
+    const theoryConc=totalVol>0?totalInput/totalVol:0;
+    const expectedConc=Number((mixRows[0] as any)?.expected_conc ?? 0.8)||0;
+    const water=(expectedConc>0&&totalVol>0)?(theoryConc/expectedConc-1)*totalVol:0;
+    return {totalInput,totalVol,theoryConc:Math.round(theoryConc*100)/100,expectedConc,
+            water:Math.round(water*100)/100};
+  },[mixRows]);
 
   const save=async(opts?:{refresh?:boolean})=>{
     saveOkRef.current = false;
@@ -199,9 +270,14 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
         platform,
         seq_date:vals.seq_date?.format("YYYY-MM-DD"),
         seq_time:vals.seq_time,
-        equipment:vals.equipment,
         chip:vals.chip,
-        reagents:reagents.filter(r=>r.type),
+        // 2026-11-12：Mix 稀释表 + 实验设备 + 五类试剂（键名与 NIPPT 一致）
+        mix_rows:mixRows, final_conc:finalConc,
+        hyb_kit:hybKit, sequencing_kit:seqKit, quant_kit:quantKitH,
+        ...Object.fromEntries(Object.entries(rgLots).flatMap(([k,v]:any)=>[
+          [`reagent_${k}_lot`, v?.lot||""], [`reagent_${k}_expiry`, v?.expiry||""],
+        ])),
+        ...Object.fromEntries(SEQ_DEVICES.map(d=>[d.key, seqDev[d.key]||""])),
         conc_ng_ul:vals.conc_ng_ul,
         read_type:vals.read_type,
         target_reads:vals.target_reads,
@@ -249,8 +325,9 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
     { title:"Report Code",dataIndex:"reportCode",key:"reportCode",width:110,render:(v:string)=><Text style={{fontSize:12}}>{v||<Text type="secondary">-</Text>}</Text> },
   ];
 
-  const thStyle:React.CSSProperties={border:"1px solid #bbb",padding:"6px 8px",textAlign:"center",fontWeight:700,background:"#d5e8d4",fontSize:12};
-  const tdStyle:React.CSSProperties={border:"1px solid #d9d9d9",padding:0,minHeight:32};
+  // Mix 稀释表（与 NIPPT 杂交及测序同款表头/单元格）
+  const th:React.CSSProperties={border:"1px solid #bbb",padding:"4px 8px",textAlign:"center",fontWeight:700,background:"#d5e8d4",fontSize:12};
+  const td:React.CSSProperties={border:"1px solid #d9d9d9",padding:"4px 6px",textAlign:"center",fontSize:12};
 
   const handleDownloadCsv = () => {
     // Header: Sample_ID (renamed from upload_ID), Index1_i7, Index2_i5, Mismatch
@@ -268,13 +345,78 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
 
   return (
     <div>
+      {/* ── Mix 稀释表（2026-11-12 新增，照 NIPPT 杂交及测序）── */}
+      <Card size="small" title="🧪 Mix 稀释表" style={{marginBottom:12}}>
+        <div style={{overflowX:"auto"}}>
+          <table style={{borderCollapse:"collapse",width:"100%",fontSize:12,tableLayout:"fixed"}}>
+            <thead><tr>
+              <th style={{...th,width:90}}>mix编号</th>
+              <th style={{...th,width:170}}>mix来源（上游 Pooling 批次）</th>
+              <th style={{...th,width:90}}>文库浓度</th>
+              <th style={{...th,width:65}}>投入量</th>
+              <th style={{...th,width:80}}>投入体积</th>
+              <th style={{...th,width:85}}>理论浓度</th>
+              <th style={{...th,width:70}}>预期浓度</th>
+              <th style={{...th,width:80}}>加水量</th>
+            </tr></thead>
+            <tbody>
+              {mixRows.length===0&&(
+                <tr><td style={td} colSpan={8}>
+                  <Text type="secondary" style={{fontSize:12}}>本批次没有上游 Pooling 批次（或未保存过 Mix 表），点下面「＋ 新增行」手工填</Text>
+                </td></tr>
+              )}
+              {mixRows.map((r,i)=>(
+                <tr key={i} style={{background:"#e8f5e9"}}>
+                  <td style={td}><Tag color="blue">{r.mix_name}</Tag></td>
+                  <td style={{...td,overflow:"hidden"}}>
+                    {i < (batch.source_batches||[]).length
+                      ? <Tooltip title={r.source||""}><div style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.source||"-"}</div></Tooltip>
+                      : <Input size="small" value={r.source} placeholder="填写来源/备注"
+                          onChange={(e)=>updateMixCell(i,"source",e.target.value)} style={{width:"100%"}}/>}
+                  </td>
+                  <td style={td}><InputNumber size="small" min={0} step={0.01} value={r.library_conc as any}
+                    onChange={v=>updateMixCell(i,"library_conc",v)} style={{width:80}} placeholder="0"/></td>
+                  <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.input_amount}
+                    onChange={v=>updateMixCell(i,"input_amount",v)} style={{width:60}} placeholder="0"/></td>
+                  <td style={{...td,fontFamily:"monospace"}}>{r.input_vol>0?r.input_vol.toFixed(2):"-"}</td>
+                  {i===0?<td style={{...td,background:"#e6f7ff",fontWeight:700}} rowSpan={Math.max(mixRows.length,1)}>{mixSums.theoryConc.toFixed(2)}</td>:null}
+                  <td style={td}><InputNumber size="small" min={0} step={0.1} value={r.expected_conc}
+                    onChange={v=>updateMixCell(i,"expected_conc",v)} style={{width:60}} placeholder="0"/></td>
+                  <td style={{...td,fontFamily:"monospace"}}>{mixSums.water>0?mixSums.water.toFixed(2):"-"}</td>
+                </tr>
+              ))}
+              <tr style={{background:"#f5f5f5"}}>
+                <td style={td} colSpan={8}>
+                  <Button size="small" type="dashed" onClick={addMixRow} style={{width:"100%"}}>＋ 新增行</Button>
+                </td>
+              </tr>
+              <tr style={{background:"#fffbe6",fontWeight:600}}>
+                <td style={td} colSpan={6}>
+                  最终检测浓度: <InputNumber size="small" min={0} step={0.001} value={finalConc}
+                    onChange={v=>v!==null&&setFinalConc(v)} style={{width:80}}/>
+                </td>
+                <td style={td} colSpan={2}>
+                  总投入: {mixSums.totalInput.toFixed(2)} ng | 总体积: {mixSums.totalVol.toFixed(2)} μL
+                  {mixSums.expectedConc?<> | 按预期浓度 {mixSums.expectedConc} 计算加水量</>:null}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
       <Form form={form} layout="vertical">
         {/* Basic info */}
         <Card size="small" title={t("nipt.sequencing.basicInfo")} style={{marginBottom:12}}>
           <Row gutter={[16,8]}>
             <Col span={6}><Form.Item name="seq_date" label={t("nipt.extraction.experimentDate")} rules={[{required:true}]} style={{marginBottom:0}}><DatePicker style={{width:"100%"}}/></Form.Item></Col>
             <Col span={6}><Form.Item name="seq_time" label={t("nipt.extraction.experimentTime")} rules={[{required:true}]} style={{marginBottom:0}}><Input placeholder="例：09:00"/></Form.Item></Col>
-            <Col span={6}><Form.Item name="equipment" label={t("nipt.sequencing.equipment")} rules={[{required:true}]} style={{marginBottom:0}}><Select mode="multiple" options={EQUIPMENT_OPTIONS} placeholder={t("nipt.sequencing.equipmentPlaceholder")} maxTagCount={2}/></Form.Item></Col>
+            <Col span={6}><Form.Item label={t("nipt.sequencing.equipment")} required style={{marginBottom:0}}>
+              <Select value={platform||undefined} onChange={v=>setPlatform(v||"")}
+                options={Array.from(new Set([...PLATFORM_OPTIONS.map(o=>o.value), platform].filter(Boolean)))
+                  .map(v=>({ value:v, label: (PLATFORM_OPTIONS.find(o=>o.value===v)||{label:v}).label }))}
+                placeholder="选择测序仪（平台）"/>
+            </Form.Item></Col>
             <Col span={6}><Form.Item name="chip" label={t("nipt.sequencing.chipType")} rules={[{required:true}]} style={{marginBottom:0}}>
               <Select options={CHIP_TYPE_OPTIONS} placeholder={t("nipt.sequencing.selectChip")}/>
             </Form.Item></Col>
@@ -284,6 +426,21 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
             <Col span={6}><Form.Item name="temperature" label={t("nipt.extraction.temperature")} style={{marginBottom:0}}><InputNumber min={0} max={50} step={0.1} style={{width:"100%"}}/></Form.Item></Col>
             <Col span={6}><Form.Item name="humidity" label={t("nipt.extraction.humidity")} style={{marginBottom:0}}><InputNumber min={0} max={100} style={{width:"100%"}}/></Form.Item></Col>
           </Row>
+          {/* 实验设备：金属浴 / PCR仪 / Qubit（整批一套，可多选） */}
+          <Space wrap size={8} style={{marginTop:10}}>
+            {SEQ_DEVICES.map(d=>{
+              const cur=String(seqDev[d.key]||"").split("、").map(x=>x.trim()).filter(Boolean);
+              return (
+                <span key={d.key} style={{display:"inline-flex",alignItems:"center",gap:4}}>
+                  <span style={{color:"#666",fontSize:12}}>{d.label}:</span>
+                  <Select size="small" mode="multiple" style={{width:d.width}} maxTagCount={1} allowClear
+                    placeholder="选择设备号（可多选）" value={cur}
+                    onChange={(v:string[])=>setSeqDev(p=>({...p,[d.key]:v.filter(Boolean).join("、")}))}
+                    options={Array.from(new Set([...d.options,...cur])).map(o=>({label:o,value:o}))}/>
+                </span>
+              );
+            })}
+          </Space>
         </Card>
       </Form>
 
@@ -300,28 +457,44 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
         </Card>
       )}
 
-      {/* Reagents */}
-      <Card size="small" title={t("nipt.sequencing.reagents")} extra={<Button size="small" icon={<PlusOutlined/>} onClick={addReagent}>{t("nipt.sequencing.addReagent")}</Button>} style={{marginBottom:12}}>
-        {reagents.length===0?(
-          <div style={{textAlign:"center",padding:16,color:"#999",fontSize:12}}>{t("nipt.sequencing.noReagents")}</div>
-        ):(
-          <div style={{overflowX:"auto"}}>
-            <table style={{borderCollapse:"collapse",width:"100%",fontSize:12}}>
-              <thead><tr><th style={thStyle}>{t("nipt.sequencing.reagentName")}</th><th style={thStyle}>{t("nipt.sequencing.reagentKit")}</th><th style={thStyle}>{t("nipt.sequencing.lotNumber")}</th><th style={thStyle}>{t("nipt.extraction.expiry")}</th><th style={{...thStyle,width:40}}></th></tr></thead>
-              <tbody>
-                {reagents.map(r=>{const kits=reagentKits[reagentKeyToChinese[r.type]||r.type]||[];return(
-                  <tr key={r.id}>
-                    <td style={tdStyle}><Select size="small" value={r.type||undefined} onChange={v=>{updateReagent(r.id,"type",v);updateReagent(r.id,"kit","");}} options={reagentOptionsTL} placeholder={t("nipt.sequencing.reagentType")} style={{"width":"100%"}} bordered={false}/></td>
-                    <td style={tdStyle}><Select size="small" value={r.kit||undefined} onChange={v=>updateReagent(r.id,"kit",v)} options={kits} placeholder={t("nipt.extraction.kitPlaceholder")} style={{"width":"100%",minWidth:120}} bordered={false} showSearch optionFilterProp="label" popupMatchSelectWidth={false}/></td>
-                    <td style={tdStyle}><Input size="small" value={r.lot} onChange={e=>updateReagent(r.id,"lot",e.target.value)} placeholder={t("nipt.extraction.lotPlaceholder")} bordered={false} style={{"textAlign":"center"}}/></td>
-                    <td style={tdStyle}><DatePicker size="small" picker="month" value={r.expiry?dayjs(r.expiry):null} onChange={d=>updateReagent(r.id,"expiry",d?.format("YYYY-MM")||"")} placeholder={t("nipt.extraction.expiryPlaceholder")} style={{"width":"100%"}} bordered={false} format="YYYY-MM"/></td>
-                    <td style={tdStyle}><Button type="link" danger size="small" icon={<DeleteOutlined/>} onClick={()=>removeReagent(r.id)}/></td>
-                  </tr>
-                );})}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {/* 试剂（2026-11-12：照 NIPPT 五类固定目录，整批一套，默认带上一批） */}
+      <Card size="small" title="🧪 试剂" style={{marginBottom:12}}>
+        <table style={{borderCollapse:"collapse",width:"100%",fontSize:13}}>
+          <thead><tr>
+            {["试剂","试剂盒名称（货号）","批号","有效期"].map((h,i)=>(
+              <th key={h} style={{border:"1px solid #ddd",padding:"6px 10px",background:"#f5f5f5",textAlign:i===0?"center":"left",width:i===0?110:(i===1?undefined:(i===2?180:150))}}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {RG_CATS.map(cat=>{
+              const opts=rgOpts(cat.key);
+              const val=cat.key==="hyb"?hybKit:cat.key==="seq"?seqKit:cat.key==="quant"?quantKitH:"";
+              const setVal=cat.key==="hyb"?setHybKit:cat.key==="seq"?setSeqKit:cat.key==="quant"?setQuantKitH:null;
+              const fixed=!opts.length?(FIXED_REAGENTS as any)[cat.key]:null;
+              const cell:React.CSSProperties={border:"1px solid #ddd",padding:"4px 8px",verticalAlign:"middle"};
+              const lot=rgLots[cat.key]||{lot:"",expiry:""};
+              const setLot=(patch:any)=>setRgLots(p=>({...p,[cat.key]:{...(p[cat.key]||{lot:"",expiry:""}),...patch}}));
+              return (
+                <tr key={cat.key}>
+                  <td style={{...cell,textAlign:"center",fontWeight:600}}>{cat.name}</td>
+                  <td style={cell}>
+                    {opts.length?(
+                      <Select size="small" style={{width:"100%"}} allowClear value={val||undefined}
+                        onChange={(v:any)=>setVal&&setVal(v||"")} placeholder="选择试剂（名称 / 货号）"
+                        options={opts.map(o=>({value:o.value,label:`${o.label}（${o.cat}）`}))}/>
+                    ):(
+                      <span>{fixed.label}<Text code style={{marginLeft:6}}>{fixed.cat}</Text></span>
+                    )}
+                  </td>
+                  <td style={cell}><Input size="small" value={lot.lot} onChange={e=>setLot({lot:e.target.value})} placeholder="批号" bordered={false}/></td>
+                  <td style={cell}><DatePicker size="small" picker="month" value={lot.expiry?dayjs(lot.expiry):null}
+                    onChange={d=>setLot({expiry:d?d.format("YYYY-MM"):""})} placeholder="有效期" bordered={false} style={{width:"100%"}} format="YYYY-MM"/></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div style={{marginTop:6,fontSize:11,color:"#999"}}>探针 / 封闭序列 / 定量试剂为固定项；杂交试剂 2 选 1；测序试剂 6 选 1。默认带上一批的批号与有效期。</div>
       </Card>
 
       {/* Step Confirmations */}

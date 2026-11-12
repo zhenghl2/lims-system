@@ -310,10 +310,13 @@ class NiptSequencingBatchDetailSerializer(NiptSequencingBatchListSerializer):
     run_samples = serializers.SerializerMethodField()
     pooling_data = serializers.SerializerMethodField()
     notes = serializers.SerializerMethodField()
+    # 2026-11-12：Mix 稀释表按「上游 Pooling 批次」出行
+    source_batches = serializers.SerializerMethodField()
 
     class Meta(NiptSequencingBatchListSerializer.Meta):
         fields = NiptSequencingBatchListSerializer.Meta.fields + [
-            "samples", "run_samples", "sequencing_data", "pooling_data", "notes"]
+            "samples", "run_samples", "sequencing_data", "pooling_data", "notes",
+            "source_batches"]
 
     def get_run_samples(self, obj):
         return NiptSequencingSampleSerializer(obj.samples.all(), many=True).data
@@ -324,6 +327,30 @@ class NiptSequencingBatchDetailSerializer(NiptSequencingBatchListSerializer):
             return {}
         ids = _upstream_batch_ids(NiptPoolingSample, "source_pooling_sample_id", rows)
         return _merge_upstream_json(NiptPoolingBatch, ids, "pooling_data")
+
+    def get_source_batches(self, obj):
+        """本批次汇入的每个上游 Pooling 批次（2026-11-12：NIPT 测序页 Mix 稀释表按它出行）。
+
+        每个 Pooling 批次 = 一管 pool = Mix 稀释表的一行；
+        theory_conc 取该批次 pooling_data.totals.theoryConc，页面上预填成「文库浓度」。
+        """
+        rows = [s.source_pooling_sample_id for s in obj.samples.all() if s.source_pooling_sample_id]
+        if not rows:
+            return []
+        out = {}
+        for r in NiptPoolingSample.objects.filter(id__in=rows).select_related("batch"):
+            b = r.batch
+            totals = ((b.pooling_data or {}).get("totals") or {})
+            d = out.setdefault(str(b.id), {
+                "id": str(b.id),
+                "batch_number": b.batch_number,
+                "sample_count": 0,
+                "theory_conc": totals.get("theoryConc"),
+                "total_vol": totals.get("totalVol"),
+                "total_mass": totals.get("totalMass"),
+            })
+            d["sample_count"] += 1
+        return sorted(out.values(), key=lambda x: x["batch_number"])
 
     def get_notes(self, obj):
         return ""
