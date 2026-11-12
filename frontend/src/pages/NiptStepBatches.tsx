@@ -67,6 +67,7 @@ export default function NiptStepBatches() {
         id: b.id, no: b.batch_number, count: b.sample_count,
         status: b.status, status_display: b.status_display,
         extra: b.source_batch_count ?? b.source_extraction_batch_count,
+        chips: b.source_chips || [],
         photos_pending: b.photos_pending,
         created_at: b.created_at,
       })));
@@ -190,6 +191,18 @@ export default function NiptStepBatches() {
           )}
         </Space>
       ) },
+    // 2026-11-12：生信批次显示上游测序 Chip 号
+    ...(step === "bioinformatics" ? [{
+      title: "测序Chip号", dataIndex: "chips", key: "chip", width: 110,
+      render: (v: string[]) => (v && v.length
+        ? <Tooltip title={v.join("、")}>
+            <Space size={4} style={{ whiteSpace: "nowrap" }}>
+              <Text code style={{ fontSize: 11 }}>{v[0]}</Text>
+              {v.length > 1 && <Tag color="gold" style={{ fontSize: 10, padding: "0 4px", marginInlineEnd: 0 }}>+{v.length - 1}</Tag>}
+            </Space>
+          </Tooltip>
+        : <Text type="secondary" style={{ fontSize: 11 }}>-</Text>),
+    }] : []),
     { title: "样本", dataIndex: "count", key: "c", width: 46, align: "center" as const, onHeaderCell: () => ({ style: { whiteSpace: "nowrap" } }) },
     { title: "状态", dataIndex: "status", key: "st", width: 88,
       render: (v: string, r: any) => (

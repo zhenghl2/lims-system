@@ -149,6 +149,10 @@ export default function NiptStepDetail({ step, batchId, onChanged }: {
           {detail?.status && (
             <Tag color={isCompleted ? "green" : "blue"}>{detail.status_display || detail.status}</Tag>
           )}
+          {/* 2026-11-12：生信批次显示上游测序 Chip 号 */}
+          {(detail?.source_chips || []).length > 0 && (
+            <Tag color="geekblue">测序 Chip {detail.source_chips.join("、")}</Tag>
+          )}
           {detail?.photos_pending && <Tag color="orange">📷 待补照片</Tag>}
           {detail && <Text type="secondary" style={{ fontSize: 12 }}>{samples.length} 个样本</Text>}
         </Space>

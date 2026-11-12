@@ -358,18 +358,30 @@ class NiptSequencingBatchDetailSerializer(NiptSequencingBatchListSerializer):
 
 class NiptBioinformaticsBatchListSerializer(_BatchListBase):
     source_batch_count = serializers.SerializerMethodField()
+    # 2026-11-12（用户口径）：批次信息里带上「测序 Chip 号」
+    source_chips = serializers.SerializerMethodField()
 
     class Meta:
         model = NiptBioinformaticsBatch
         fields = ["id", "batch_number", "status", "status_display", "sample_count",
-                  "source_batch_count", "pipeline", "region", "operator_name", "reviewer",
-                  "created_at", "updated_at"]
+                  "source_batch_count", "source_chips", "pipeline", "region", "operator_name",
+                  "reviewer", "created_at", "updated_at"]
 
     def get_source_batch_count(self, obj):
         ids = [s.source_sequencing_sample_id for s in obj.samples.all() if s.source_sequencing_sample_id]
         if not ids:
             return 0
         return NiptSequencingSample.objects.filter(id__in=ids).values("batch_id").distinct().count()
+
+    def get_source_chips(self, obj):
+        """上游测序批次的 Chip 号（测序批次号就是 chip 号；一个生信批次可能汇入多个）。"""
+        ids = [s.source_sequencing_sample_id for s in obj.samples.all() if s.source_sequencing_sample_id]
+        if not ids:
+            return []
+        return sorted(set(
+            NiptSequencingSample.objects.filter(id__in=ids)
+            .values_list("batch__batch_number", flat=True)
+        ))
 
 
 class NiptBioinformaticsBatchDetailSerializer(NiptBioinformaticsBatchListSerializer):
