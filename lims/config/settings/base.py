@@ -11,6 +11,7 @@ env = environ.Env(
     LIMS_SITE_CODE=(str, "DEFAULT"),
     WECHAT_APPID=(str, ""),
     WECHAT_SECRET=(str, ""),
+    UI_PERM_ENFORCE=(bool, False),
 )
 
 # Build paths
@@ -22,6 +23,9 @@ CORE_DIR = BASE_DIR / "lims" / "core"
 SECRET_KEY = env("DJANGO_SECRET_KEY")
 DEBUG = env("DJANGO_DEBUG")
 ALLOWED_HOSTS = env("DJANGO_ALLOWED_HOSTS")
+
+# 前端菜单/按钮按角色权限收口（默认关闭；也可用 lims/config/.ui_perm_enforce 标记文件开启）
+UI_PERM_ENFORCE = env("UI_PERM_ENFORCE")
 
 # Application definition
 DJANGO_APPS = [
@@ -207,6 +211,17 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "UTC"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
+
+# ── 定时任务（2026-11-12）：NIPPT 报告到期提醒 ──
+# 服务器时区 UTC：00:00 UTC = 08:00 CST
+from celery.schedules import crontab  # noqa: E402
+
+CELERY_BEAT_SCHEDULE = {
+    "nippt-due-reminders-daily": {
+        "task": "lims.apps.notifications.tasks.send_nippt_due_reminders",
+        "schedule": crontab(hour=0, minute=0),
+    },
+}
 
 # Logging
 LOGGING = {

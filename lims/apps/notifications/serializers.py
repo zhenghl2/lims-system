@@ -1,6 +1,6 @@
 """Notifications serializers."""
 from rest_framework import serializers
-from .models import Notification
+from .models import Notification, ReminderLog, ReminderRoute
 
 
 class NotificationSerializer(serializers.ModelSerializer):
@@ -21,3 +21,20 @@ class NotificationCreateSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         validated_data["user"] = self.context["request"].user
         return super().create(validated_data)
+
+
+class ReminderRouteSerializer(serializers.ModelSerializer):
+    user_name = serializers.CharField(source="user.first_name", read_only=True)
+    email = serializers.CharField(source="user.email", read_only=True)
+
+    class Meta:
+        model = ReminderRoute
+        fields = ["id", "source", "user", "user_name", "email", "is_active", "note",
+                  "created_at", "updated_at"]
+
+
+class ReminderLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ReminderLog
+        fields = ["id", "case_number", "milestone", "due_date", "recipient",
+                  "status", "error", "sent_at"]

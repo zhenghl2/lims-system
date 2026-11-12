@@ -71,3 +71,6 @@ lims/apps/settings_patch.py
 
 # 导出/备份产物（不入库）
 exports/
+
+# SMTP/密钥文件（不进仓库）
+/secrets/

@@ -1,3 +1,4 @@
+import json
 import os
 """Production settings."""
 from .base import *  # noqa
@@ -28,11 +29,31 @@ ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=[])
 
 # Email
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
-EMAIL_HOST = env("SMTP_HOST", default="")
-EMAIL_PORT = env.int("SMTP_PORT", default=587)
-EMAIL_USE_TLS = True
-EMAIL_HOST_USER = env("SMTP_USER", default="")
-EMAIL_HOST_PASSWORD = env("SMTP_PASSWORD", default="")
+
+# SMTP 凭据：优先环境变量；环境变量没配时读 secrets/smtp.json（不进 git / 不进 compose）
+# 2026-11-12：容器 environment 是写死在 compose 里的，改 .env 不生效；
+# 用文件兜底可以免重建容器（改文件 → docker restart 即可）。
+_SMTP_FILE = env("SMTP_CONFIG_FILE", default="/app/secrets/smtp.json")
+_smtp_cfg = {}
+try:
+    if os.path.exists(_SMTP_FILE):
+        with open(_SMTP_FILE, encoding="utf-8") as _fh:
+            _smtp_cfg = json.load(_fh) or {}
+except Exception:  # 配置坏掉不能让整站起不来
+    _smtp_cfg = {}
+
+EMAIL_HOST = env("SMTP_HOST", default="") or _smtp_cfg.get("host", "")
+EMAIL_PORT = env.int("SMTP_PORT", default=int(_smtp_cfg.get("port") or 587))
+# 465 = SMTPS（腾讯企业邮常用），此时必须 SSL 且不能再开 STARTTLS
+EMAIL_USE_SSL = env.bool("SMTP_USE_SSL", default=bool(_smtp_cfg.get("use_ssl", EMAIL_PORT == 465)))
+EMAIL_USE_TLS = env.bool("SMTP_USE_TLS", default=(not EMAIL_USE_SSL))
+EMAIL_TIMEOUT = env.int("SMTP_TIMEOUT", default=20)
+EMAIL_HOST_USER = env("SMTP_USER", default="") or _smtp_cfg.get("user", "")
+EMAIL_HOST_PASSWORD = env("SMTP_PASSWORD", default="") or _smtp_cfg.get("password", "")
+DEFAULT_FROM_EMAIL = (env("DEFAULT_FROM_EMAIL", default="")
+                      or _smtp_cfg.get("from")
+                      or EMAIL_HOST_USER
+                      or "no-reply@localhost")
 
 # CORS
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=[])
