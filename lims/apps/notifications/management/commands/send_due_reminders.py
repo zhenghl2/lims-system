@@ -23,12 +23,14 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="只打印清单，不发信")
         parser.add_argument("--days", default="3,1", help="提醒里程碑（默认 3,1）")
         parser.add_argument("--force", action="store_true", help="忽略幂等（联调用）")
+        parser.add_argument("--only", default="", choices=["", "cases", "samples"],
+                            help="只处理 NIPPT 案例(cases) 或 NIPT 样本(samples)")
         parser.add_argument("--json", action="store_true", help="输出 JSON")
 
     def handle(self, *args, **opts):
         days = tuple(sorted({int(x) for x in str(opts["days"]).split(",") if x.strip()}, reverse=True))
         if opts["dry_run"]:
-            built = build_plan(days=days, ignore_logs=opts['force'])
+            built = build_plan(days=days, ignore_logs=opts['force'], only=(opts['only'] or None))
             if opts["json"]:
                 print(json.dumps({k: v for k, v in built.items() if k != "plan"} |
                                  {"plan": [{kk: vv for kk, vv in p.items() if kk not in ("html",)}
@@ -46,7 +48,7 @@ class Command(BaseCommand):
             return
 
         # --force：忽略幂等真的重发（用于格式调整后补发），日志按原记录保留
-        result = send(days=days, dry_run=False, force=opts["force"])
+        result = send(days=days, dry_run=False, force=opts["force"], only=(opts["only"] or None))
         self.stdout.write(f"发送完成：成功 {len(result['sent'])} 封，失败 {len(result['failed'])} 封，"
                           f"未路由来源 {result['unrouted']}，今日案例 {result['total_cases']}")
         for f in result["failed"]:

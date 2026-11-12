@@ -152,6 +152,7 @@ def _sample_line(sample):
     due = parse_due_date(sample.report_due_date)
     return {
         "external_id": sample.external_id or "-",
+        "vg_id": sample.vg_id or "-",
         "panel": sample.panel.code if sample.panel else "",
         "name": sample.patient_name or "",
         "source": sample.sample_source or "-",
@@ -192,7 +193,8 @@ def _render(recipient_name, milestone, cases, samples):
         text.append("")
         for idx, i in enumerate(samples, 1):
             text += [
-                f"{idx}) {i['external_id']}    项目：{i['panel']}    加急：{'是' if i['urgent'] else '否'}",
+                f"{idx}) {i['external_id']}    VG ID：{i['vg_id']}    "
+                f"项目：{i['panel']}    加急：{'是' if i['urgent'] else '否'}",
                 f"   姓名：{i['name'] or '-'}（{i['source']}）",
                 f"   收样日期：{i['receipt_date']}    当前状态：{i['status']}    "
                 f"报告截止：{i['due']}",
@@ -235,6 +237,7 @@ def _render(recipient_name, milestone, cases, samples):
         rows = "".join(
             "<tr>"
             f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap;font-family:monospace'>{i['external_id']}</td>"
+            f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap;font-family:monospace'>{i['vg_id']}</td>"
             f"{TDN}{i['panel']}</td>"
             f"{TD}{i['name'] or '-'}</td>"
             f"{TDN}{i['source']}</td>"
@@ -248,7 +251,7 @@ def _render(recipient_name, milestone, cases, samples):
         html.append(
             "<table style='border-collapse:collapse;font-size:12px;width:100%'>"
             "<thead><tr>"
-            f"{THN}样本编号</th>{THN}项目</th>{THN}姓名</th>{THN}来源</th>"
+            f"{THN}样本编号</th>{THN}VG ID</th>{THN}项目</th>{THN}姓名</th>{THN}来源</th>"
             f"{THN}收样日期</th>{THN}当前状态</th>{THN}报告截止</th>{THN}加急</th>"
             f"</tr></thead><tbody>{rows}</tbody></table>"
         )
@@ -261,7 +264,7 @@ def _render(recipient_name, milestone, cases, samples):
 
 
 # ── 主流程 ────────────────────────────────────────────
-def build_plan(days=(3, 1), ignore_logs=False):
+def build_plan(days=(3, 1), ignore_logs=False, only=None):
     """生成待发清单（不发信）：按 (销售, 里程碑) 聚合，NIPPT 案例 + NIPT 样本分开列。"""
     exact, prefix = _route_map()
     today = timezone.localdate()
@@ -269,7 +272,7 @@ def build_plan(days=(3, 1), ignore_logs=False):
     unrouted = defaultdict(int)
     skipped_already = 0
 
-    for case, milestone, left in collect_due_cases(days):
+    for case, milestone, left in ([] if only == "samples" else collect_due_cases(days)):
         route = _resolve_route(case.origin_country(), exact, prefix)
         if route is None or not (route.user and route.user.email):
             unrouted["NIPPT:" + (case.origin_country() or "(未填来源)")] += 1
@@ -282,7 +285,7 @@ def build_plan(days=(3, 1), ignore_logs=False):
             continue
         groups[(route.user_id, milestone)]["cases"].append((case, milestone, left))
 
-    for sample, milestone, left in collect_due_samples(days):
+    for sample, milestone, left in ([] if only == "cases" else collect_due_samples(days)):
         route = _resolve_route(sample.sample_source, exact, prefix)
         if route is None or not (route.user and route.user.email):
             unrouted["NIPT:" + (sample.sample_source or "(未填来源)")] += 1
@@ -332,9 +335,9 @@ def build_plan(days=(3, 1), ignore_logs=False):
     }
 
 
-def send(days=(3, 1), dry_run=False, force=False):
+def send(days=(3, 1), dry_run=False, force=False, only=None):
     """生成并发送；dry_run=True 只返回清单。force=True 忽略幂等（补发/联调用）。"""
-    built = build_plan(days, ignore_logs=force)
+    built = build_plan(days, ignore_logs=force, only=only)
     result = {
         "today": built["today"],
         "unrouted": built["unrouted"],
