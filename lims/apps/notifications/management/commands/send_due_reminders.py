@@ -27,7 +27,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, **opts):
         days = tuple(sorted({int(x) for x in str(opts["days"]).split(",") if x.strip()}, reverse=True))
-        if opts["dry_run"] or opts["force"]:
+        if opts["dry_run"]:
             built = build_plan(days=days, ignore_logs=opts['force'])
             if opts["json"]:
                 print(json.dumps({k: v for k, v in built.items() if k != "plan"} |
@@ -43,7 +43,8 @@ class Command(BaseCommand):
                 self.stdout.write(p["text"])
             return
 
-        result = send(days=days, dry_run=False)
+        # --force：忽略幂等真的重发（用于格式调整后补发），日志按原记录保留
+        result = send(days=days, dry_run=False, force=opts["force"])
         self.stdout.write(f"发送完成：成功 {len(result['sent'])} 封，失败 {len(result['failed'])} 封，"
                           f"未路由来源 {result['unrouted']}，今日案例 {result['total_cases']}")
         for f in result["failed"]:
