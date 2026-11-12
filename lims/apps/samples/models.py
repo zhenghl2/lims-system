@@ -98,6 +98,8 @@ class Sample(models.Model):
     balance = models.CharField(max_length=50, blank=True, default="", help_text="Balance (Brazil-specific)")
     gender_info = models.CharField(max_length=50, blank=True, default="", help_text="Gender info / fetal gender (Brazil-specific)")
     report_due_date = models.CharField(max_length=50, blank=True, default="", help_text="Report due date (Brazil-specific)")
+    # 2026-11-12（用户口径）：巴西送检表 WD / Remarks 写「10/11 DIAS ÚTEIS」= 加急（标准 15）
+    is_urgent = models.BooleanField(default=False, db_index=True, help_text="Rush / urgent (Brazil planilha prazo)")
     acceptance_date = models.DateField(null=True, blank=True, help_text="Sample acceptance date")
     test_option = models.CharField(max_length=20, blank=True, default="", help_text="Test option (basic/basic_all/plus)")
     zscore_21 = models.FloatField(null=True, blank=True, help_text="Z-score for chromosome 21")

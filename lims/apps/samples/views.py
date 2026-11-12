@@ -699,6 +699,8 @@ class SampleViewSet(viewsets.ModelViewSet):
                     "gender_info": data.get("fetal_gender", ""),
                     "report_due_date": data.get("report_due_date", ""),
                     "panel_code": panel_code,
+                    # 2026-11-12：WD/Remarks 的 10-11 DIAS ÚTEIS → 加急
+                    "is_urgent": bool(data.get("is_urgent")),
                 }
 
                 # Default dates to today if missing

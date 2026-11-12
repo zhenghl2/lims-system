@@ -57,6 +57,11 @@ COL_FEDEX = 24
 COL_DUE_DATE = 27
 COL_GENDER = 31
 COL_REMARKS = 32
+COL_WD = 18          # WD / PRAZO 列：'15 DIAS ÚTEIS' / '11 DIAS ÚTEIS'（11 = 加急）
+
+# 加急阈值：巴西标准 15 个工作日；WD / Remarks 出现 10 或 11 个工作日即加急
+RUSH_DAYS_MAX = 11
+DAYS_RE = re.compile(r"(\d{1,2})\s*DIAS", re.I)
 
 
 class NipptPlanilhaParseError(Exception):
@@ -161,6 +166,26 @@ def _translate_notes(remarks):
         matched = next((cn for pt, cn in NOTE_TRANSLATIONS if pt in up), None)
         out.append(matched or p)
     return "；".join(out)
+
+
+def _is_rush(wd, remarks):
+    """WD / Remarks 里的 'N DIAS (ÚTEIS)'：N <= 11 → 加急（2026-11-12 用户口径）
+
+    实验室把期限写在 WD 列（'11 DIAS ÚTEIS'），有时也写在 Remarks（'PRAZO: 11 DIAS ÚTEIS'），
+    两处都认；标准是 15（17 也出现过），不标记。
+    """
+    for raw in (wd, remarks):
+        s = _to_text(raw)
+        if not s:
+            continue
+        m = DAYS_RE.search(s)
+        if m:
+            try:
+                if int(m.group(1)) <= RUSH_DAYS_MAX:
+                    return True
+            except ValueError:
+                continue
+    return False
 
 
 def _assign_sales_agent(seq, src_code):
@@ -302,7 +327,11 @@ def extract_brazil_planilha(file_path, source="巴西万基"):
             "report_due_date": _first_part(_to_date_str(r[COL_DUE_DATE] if len(r) > COL_DUE_DATE else "")),
             "remarks_raw": _to_text(r[COL_REMARKS] if len(r) > COL_REMARKS else ""),
             "remarks": _translate_notes(r[COL_REMARKS] if len(r) > COL_REMARKS else ""),
-            "wd": "",
+            "wd": _to_text(r[COL_WD] if len(r) > COL_WD else ""),
+            "is_urgent": _is_rush(
+                r[COL_WD] if len(r) > COL_WD else "",
+                r[COL_REMARKS] if len(r) > COL_REMARKS else "",
+            ),
             "source_file": file_path.split("/")[-1],
         })
 

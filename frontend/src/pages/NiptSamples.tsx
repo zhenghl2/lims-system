@@ -67,6 +67,8 @@ const ALL_COLUMNS: Array<{key:string;title:string;dataIndex:string;width:number;
   { key: "source", title: "Sample Source",dataIndex: "sample_source", visible: true, width: 100, render: (v: string) => v === "巴西" ? "巴西万基" : (v || "-") },
   { key: "test_option", title: "Test Option", dataIndex: "test_option", visible: true, width: 100, render: (v: string) => TEST_OPTION_LABELS[v] || v || "-" },
   { key: "external_id", title: "Accessioning ID", dataIndex: "external_id", visible: true, width: 140, ellipsis: true, render: (v: string) => v ? <Tooltip title={v}><span style={{ cursor: "default" }}>{v}</span></Tooltip> : "-" },
+  // 2026-11-12：加急（送检表 WD/Remarks 写 10/11 DIAS ÚTEIS）
+  { key: "urgent", title: "加急", dataIndex: "is_urgent", visible: true, width: 60, render: (v: boolean) => v ? <Tag color="red" style={{fontSize:11}}>加急</Tag> : "-" },
   { key: "collection_date", title: "Collection Date", dataIndex: "collection_date", visible: true, width: 110, render: (v: string) => v || "-" },
   { key: "acceptance_date", title: "Acceptance Date", dataIndex: "acceptance_date", visible: true, width: 110, render: (v: string) => v || "-" },
   { key: "physician", title: "Physician", dataIndex: "physician", visible: true, width: 100, render: (v: string, r: any) => r?.ordering_physician || v || "-" },
