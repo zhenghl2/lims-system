@@ -42,9 +42,8 @@ const PLATFORM_OPTIONS = [
   { value: "YSFH-EI-035-02", label: "YSFH-EI-035-02（Salus）" },
 ];
 /** 实验设备：完全照 NIPPT 杂交及测序（金属浴 / PCR仪 / Qubit，整批一套，可多选） */
-const SEQ_DEVICES: { key: "dev_metal" | "dev_pcr" | "dev_qubit"; label: string; options: string[]; width: number }[] = [
-  { key: "dev_metal", label: "金属浴", options: ["YSFH-EI-010-02", "YSFH-EI-010-07"], width: 260 },
-  { key: "dev_pcr", label: "PCR仪", options: ["YSFH-EI-024-05", "YSFH-EI-024-12", "YSFH-EI-024-07"], width: 300 },
+// 2026-11-12（用户口径）：NIPT 测序只需 Qubit定量仪；金属浴 / PCR仪 已去掉
+const SEQ_DEVICES: { key: "dev_qubit"; label: string; options: string[]; width: number }[] = [
   { key: "dev_qubit", label: "Qubit定量仪", options: ["YSFH-EI-021-02"], width: 200 },
 ];
 /** 试剂目录：完全照抄 NIPPT 五类（探针 / 封闭序列 / 杂交试剂 / 测序试剂 / 定量试剂） */
@@ -66,10 +65,10 @@ const SEQ_REAGENTS: ReagentOpt[] = [
   { value: "20064346CN", label: "NextSeq 500/550 Mid Output Kit v2.5 (300 Cycles)", cat: "20064346 CN" },
   { value: "20064344CN", label: "NextSeq 500/550 High Output Kit v2.5 (300 Cycles)", cat: "20064344 CN" },
 ];
-const RG_CATS: { key: "probe" | "blocker" | "hyb" | "seq" | "quant"; name: string }[] = [
-  { key: "probe", name: "探针" },
-  { key: "blocker", name: "封闭序列" },
-  { key: "hyb", name: "杂交试剂" },
+// 2026-11-12（用户口径）：NIPT 测序只填 测序试剂 + 定量试剂；
+// 探针 / 封闭序列 / 杂交试剂 已去掉（库里旧的 reagent_probe_* / reagent_blocker_* /
+// reagent_hyb_* / hyb_kit 不删，保存时也不覆盖）
+const RG_CATS: { key: "seq" | "quant"; name: string }[] = [
   { key: "seq", name: "测序试剂" },
   { key: "quant", name: "定量试剂" },
 ];
@@ -130,7 +129,6 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
   // ── 2026-11-12：Mix 稀释表 / 设备 / 试剂（照 NIPPT 杂交及测序） ──
   const [mixRows,setMixRows]=useState<MixRow[]>(()=>buildMixRows(edata, batch));
   const [finalConc,setFinalConc]=useState<number>(Number(edata.final_conc ?? 0.783));
-  const [hybKit,setHybKit]=useState<string>(edata.hyb_kit || "");
   const [seqKit,setSeqKit]=useState<string>(edata.sequencing_kit || "");
   const [quantKitH,setQuantKitH]=useState<string>(edata.quant_kit || "");
   const [rgLots,setRgLots]=useState<Record<string,{lot:string;expiry:string}>>(()=>Object.fromEntries(
@@ -142,7 +140,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
     const sd = batch.sequencing_data || {};
     setMixRows(buildMixRows(sd, batch));
     setFinalConc(Number(sd.final_conc ?? 0.783));
-    setHybKit(sd.hyb_kit||""); setSeqKit(sd.sequencing_kit||""); setQuantKitH(sd.quant_kit||"");
+    setSeqKit(sd.sequencing_kit||""); setQuantKitH(sd.quant_kit||"");
     setRgLots(Object.fromEntries(RG_CATS.map(c=>[c.key,{lot:sd[`reagent_${c.key}_lot`]||"",expiry:sd[`reagent_${c.key}_expiry`]||""}])));
     setSeqDev(Object.fromEntries(SEQ_DEVICES.map(d=>[d.key, sd[d.key] || (d.options.length===1?d.options[0]:"")])));
   },[batch.id]);
@@ -230,7 +228,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
     // 设备：上一批填过的号带过来（与 NIPPT 一致）
     setSeqDev(Object.fromEntries(SEQ_DEVICES.map(d=>[d.key, seq[d.key] || (d.options.length===1 ? d.options[0] : "")])));
     // 试剂：名称/批号/有效期取上一批（与 NIPPT「默认带上一批」一致）
-    setHybKit(seq.hyb_kit||""); setSeqKit(seq.sequencing_kit||""); setQuantKitH(seq.quant_kit||"");
+    setSeqKit(seq.sequencing_kit||""); setQuantKitH(seq.quant_kit||"");
     setRgLots(Object.fromEntries(RG_CATS.map(c=>[c.key,{
       lot:seq[`reagent_${c.key}_lot`]||"", expiry:seq[`reagent_${c.key}_expiry`]||"",
     }])));
@@ -273,7 +271,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
         chip:vals.chip,
         // 2026-11-12：Mix 稀释表 + 实验设备 + 五类试剂（键名与 NIPPT 一致）
         mix_rows:mixRows, final_conc:finalConc,
-        hyb_kit:hybKit, sequencing_kit:seqKit, quant_kit:quantKitH,
+        sequencing_kit:seqKit, quant_kit:quantKitH,
         ...Object.fromEntries(Object.entries(rgLots).flatMap(([k,v]:any)=>[
           [`reagent_${k}_lot`, v?.lot||""], [`reagent_${k}_expiry`, v?.expiry||""],
         ])),
@@ -356,8 +354,8 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
           <tbody>
             {RG_CATS.map(cat=>{
               const opts=rgOpts(cat.key);
-              const val=cat.key==="hyb"?hybKit:cat.key==="seq"?seqKit:cat.key==="quant"?quantKitH:"";
-              const setVal=cat.key==="hyb"?setHybKit:cat.key==="seq"?setSeqKit:cat.key==="quant"?setQuantKitH:null;
+              const val=cat.key==="seq"?seqKit:quantKitH;
+              const setVal=cat.key==="seq"?setSeqKit:setQuantKitH;
               const fixed=!opts.length?(FIXED_REAGENTS as any)[cat.key]:null;
               const cell:React.CSSProperties={border:"1px solid #ddd",padding:"4px 8px",verticalAlign:"middle"};
               const lot=rgLots[cat.key]||{lot:"",expiry:""};
@@ -382,7 +380,7 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
             })}
           </tbody>
         </table>
-        <div style={{marginTop:6,fontSize:11,color:"#999"}}>探针 / 封闭序列 / 定量试剂为固定项；杂交试剂 2 选 1；测序试剂 6 选 1。默认带上一批的批号与有效期。</div>
+        <div style={{marginTop:6,fontSize:11,color:"#999"}}>定量试剂为固定项；测序试剂 6 选 1。默认带上一批的批号与有效期。</div>
       </Card>
 
       {/* ── Mix 稀释表（2026-11-12 新增，照 NIPPT 杂交及测序）── */}
