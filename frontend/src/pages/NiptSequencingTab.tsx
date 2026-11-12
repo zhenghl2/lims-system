@@ -345,6 +345,46 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
 
   return (
     <div>
+      {/* 试剂（2026-11-12：照 NIPPT 五类固定目录，整批一套，默认带上一批） */}
+      <Card size="small" title="🧪 试剂" style={{marginBottom:12}}>
+        <table style={{borderCollapse:"collapse",width:"100%",fontSize:13}}>
+          <thead><tr>
+            {["试剂","试剂盒名称（货号）","批号","有效期"].map((h,i)=>(
+              <th key={h} style={{border:"1px solid #ddd",padding:"6px 10px",background:"#f5f5f5",textAlign:i===0?"center":"left",width:i===0?110:(i===1?undefined:(i===2?180:150))}}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {RG_CATS.map(cat=>{
+              const opts=rgOpts(cat.key);
+              const val=cat.key==="hyb"?hybKit:cat.key==="seq"?seqKit:cat.key==="quant"?quantKitH:"";
+              const setVal=cat.key==="hyb"?setHybKit:cat.key==="seq"?setSeqKit:cat.key==="quant"?setQuantKitH:null;
+              const fixed=!opts.length?(FIXED_REAGENTS as any)[cat.key]:null;
+              const cell:React.CSSProperties={border:"1px solid #ddd",padding:"4px 8px",verticalAlign:"middle"};
+              const lot=rgLots[cat.key]||{lot:"",expiry:""};
+              const setLot=(patch:any)=>setRgLots(p=>({...p,[cat.key]:{...(p[cat.key]||{lot:"",expiry:""}),...patch}}));
+              return (
+                <tr key={cat.key}>
+                  <td style={{...cell,textAlign:"center",fontWeight:600}}>{cat.name}</td>
+                  <td style={cell}>
+                    {opts.length?(
+                      <Select size="small" style={{width:"100%"}} allowClear value={val||undefined}
+                        onChange={(v:any)=>setVal&&setVal(v||"")} placeholder="选择试剂（名称 / 货号）"
+                        options={opts.map(o=>({value:o.value,label:`${o.label}（${o.cat}）`}))}/>
+                    ):(
+                      <span>{fixed.label}<Text code style={{marginLeft:6}}>{fixed.cat}</Text></span>
+                    )}
+                  </td>
+                  <td style={cell}><Input size="small" value={lot.lot} onChange={e=>setLot({lot:e.target.value})} placeholder="批号" bordered={false}/></td>
+                  <td style={cell}><DatePicker size="small" picker="month" value={lot.expiry?dayjs(lot.expiry):null}
+                    onChange={d=>setLot({expiry:d?d.format("YYYY-MM"):""})} placeholder="有效期" bordered={false} style={{width:"100%"}} format="YYYY-MM"/></td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+        <div style={{marginTop:6,fontSize:11,color:"#999"}}>探针 / 封闭序列 / 定量试剂为固定项；杂交试剂 2 选 1；测序试剂 6 选 1。默认带上一批的批号与有效期。</div>
+      </Card>
+
       {/* ── Mix 稀释表（2026-11-12 新增，照 NIPPT 杂交及测序）── */}
       <Card size="small" title="🧪 Mix 稀释表" style={{marginBottom:12}}>
         <div style={{overflowX:"auto"}}>
@@ -456,46 +496,6 @@ export default function NiptSequencingTab({batch,onRefresh,lastBatchSeqData,apiB
           </div>
         </Card>
       )}
-
-      {/* 试剂（2026-11-12：照 NIPPT 五类固定目录，整批一套，默认带上一批） */}
-      <Card size="small" title="🧪 试剂" style={{marginBottom:12}}>
-        <table style={{borderCollapse:"collapse",width:"100%",fontSize:13}}>
-          <thead><tr>
-            {["试剂","试剂盒名称（货号）","批号","有效期"].map((h,i)=>(
-              <th key={h} style={{border:"1px solid #ddd",padding:"6px 10px",background:"#f5f5f5",textAlign:i===0?"center":"left",width:i===0?110:(i===1?undefined:(i===2?180:150))}}>{h}</th>
-            ))}
-          </tr></thead>
-          <tbody>
-            {RG_CATS.map(cat=>{
-              const opts=rgOpts(cat.key);
-              const val=cat.key==="hyb"?hybKit:cat.key==="seq"?seqKit:cat.key==="quant"?quantKitH:"";
-              const setVal=cat.key==="hyb"?setHybKit:cat.key==="seq"?setSeqKit:cat.key==="quant"?setQuantKitH:null;
-              const fixed=!opts.length?(FIXED_REAGENTS as any)[cat.key]:null;
-              const cell:React.CSSProperties={border:"1px solid #ddd",padding:"4px 8px",verticalAlign:"middle"};
-              const lot=rgLots[cat.key]||{lot:"",expiry:""};
-              const setLot=(patch:any)=>setRgLots(p=>({...p,[cat.key]:{...(p[cat.key]||{lot:"",expiry:""}),...patch}}));
-              return (
-                <tr key={cat.key}>
-                  <td style={{...cell,textAlign:"center",fontWeight:600}}>{cat.name}</td>
-                  <td style={cell}>
-                    {opts.length?(
-                      <Select size="small" style={{width:"100%"}} allowClear value={val||undefined}
-                        onChange={(v:any)=>setVal&&setVal(v||"")} placeholder="选择试剂（名称 / 货号）"
-                        options={opts.map(o=>({value:o.value,label:`${o.label}（${o.cat}）`}))}/>
-                    ):(
-                      <span>{fixed.label}<Text code style={{marginLeft:6}}>{fixed.cat}</Text></span>
-                    )}
-                  </td>
-                  <td style={cell}><Input size="small" value={lot.lot} onChange={e=>setLot({lot:e.target.value})} placeholder="批号" bordered={false}/></td>
-                  <td style={cell}><DatePicker size="small" picker="month" value={lot.expiry?dayjs(lot.expiry):null}
-                    onChange={d=>setLot({expiry:d?d.format("YYYY-MM"):""})} placeholder="有效期" bordered={false} style={{width:"100%"}} format="YYYY-MM"/></td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-        <div style={{marginTop:6,fontSize:11,color:"#999"}}>探针 / 封闭序列 / 定量试剂为固定项；杂交试剂 2 选 1；测序试剂 6 选 1。默认带上一批的批号与有效期。</div>
-      </Card>
 
       {/* Step Confirmations */}
       <Card title={t("nipt.extraction.stepConfirm")} size="small" style={{marginBottom:16}}>
