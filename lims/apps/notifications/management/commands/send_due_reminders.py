@@ -35,11 +35,13 @@ class Command(BaseCommand):
                                            for p in built["plan"]]}, ensure_ascii=False, indent=1))
                 return
             self.stdout.write(f"今天 {built['today']} | 待发 {len(built['plan'])} 人/组 | "
-                              f"案例 {built['total_cases']} | 未路由来源 {built['unrouted']} | "
+                              f"项目 {built['total_cases']} | 未路由来源 {built['unrouted']} | "
                               f"已发过 {built['skipped_already_sent']}")
             for p in built["plan"]:
                 self.stdout.write("")
-                self.stdout.write(f"→ {p['user_name']} <{p['email']}> {p['milestone']} · {p['count']} 个案例")
+                self.stdout.write(
+                    f"→ {p['user_name']} <{p['email']}> {p['milestone']} · {p['count']} 项"
+                    f"（NIPPT 案例 {p['case_count']} / NIPT 样本 {p['sample_count']}）")
                 self.stdout.write(p["text"])
             return
 

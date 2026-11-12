@@ -118,3 +118,6 @@ LIMS_API_KEY = _env_or_file("LIMS_API_KEY")
 CRM_WEBHOOK_URL = _env_or_file("CRM_WEBHOOK_URL")
 CRM_WEBHOOK_KEY = _env_or_file("CRM_WEBHOOK_KEY")
 INSTALLED_APPS.append("lims.apps.integration")
+
+# 到期提醒的抄送留档（可选，配在 secrets/smtp.json 的 "bcc" 或环境变量）
+REMINDER_BCC = env("REMINDER_BCC", default=_smtp_cfg.get("bcc", ""))

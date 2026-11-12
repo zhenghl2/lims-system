@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
-"""NIPPT 报告到期提醒（邮件）
+"""报告到期提醒（邮件）— NIPPT 案例 + NIPT 样本
 
-规则（用户 2026-11-12 确认）：
-- 只做 NIPPT 子系统；里程碑 T-3（到期前 3 天）与 T-1（到期前 1 天），首版不发逾期
-- 一人一封汇总邮件，按「样本来源」路由到销售（例：巴西 / 泰国 → 吴梦婷）
-- 幂等：ReminderLog 唯一键 (case, milestone, due_date) —— 同一案例同一里程碑当天只发一次
-- 已完成 / 已取消 的案例不提醒
+规则（用户 2026-11-12 确认，2026-11-12 追加 NIPT）：
+- 里程碑 T-3（到期前 3 天）、T-1（到期前 1 天）；首版不发逾期
+- 一人一封汇总邮件，按「样本来源」路由到销售（巴西 / 巴西万基 / 泰国 → 吴梦婷）
+- NIPPT：按 Case.expected_completion（DateField）
+- NIPT：按 Sample.report_due_date（文本，DD/MM/YYYY），限定 panel ∈ NIPT / NIPT_PLUS，
+        巴西万基的 NIPPT 样本不在此列（走 Case 口径，避免重复提醒）
+- 已完成 / 已取消 / 已拒绝 不提醒
+- 幂等：ReminderLog 唯一键 (subject_type, subject_id, milestone, due_date)
 
 入口：
-- Celery 定时任务：apps.notifications.tasks.send_nippt_due_reminders（每天 08:00 CST）
-- 手动：POST /api/v1/reminder-routes/send/  （支持 dry_run 预览，不发信）
+- 管理命令 send_due_reminders（宿主 cron 每天 08:00 CST）
+- API：/api/v1/notifications/reminder-routes/preview/ 、/send_now/
 """
 from __future__ import annotations
 
@@ -22,21 +25,42 @@ from django.db import transaction
 from django.utils import timezone
 
 from lims.apps.cases.models import Case
+from lims.apps.samples.models import Sample
 
 from .models import ReminderLog, ReminderRoute
 
 MILESTONES = {3: "T3", 1: "T1"}
-EXCLUDE_STATUS = ("COMPLETED", "CANCELLED")
+CASE_EXCLUDE_STATUS = ("COMPLETED", "CANCELLED")
+SAMPLE_EXCLUDE_STATUS = ("COMPLETED", "REJECTED")
+NIPT_PANELS = ("NIPT", "NIPT_PLUS")
+DATE_FORMATS = ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d/%m/%y", "%Y/%m/%d")
+
+TD = "<td style='padding:4px 6px;border:1px solid #ddd'>"
+TDN = "<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>"
+THN = "<th style='padding:4px 6px;border:1px solid #eee;white-space:nowrap;background:#f5f5f5'>"
+
+
+def parse_due_date(text):
+    """NIPT 的 report_due_date 是自由文本，按常见格式解析；解析不了返回 None。"""
+    if not text:
+        return None
+    raw = str(text).strip().replace(".", "/")
+    for fmt in DATE_FORMATS:
+        try:
+            return datetime.datetime.strptime(raw, fmt).date()
+        except ValueError:
+            continue
+    return None
 
 
 # ── 收集 ──────────────────────────────────────────────
 def collect_due_cases(days=(3, 1)):
-    """返回 [(case, milestone, days_left)]，只含未完成案例。"""
+    """NIPPT：[(case, milestone, days_left)]"""
     today = timezone.localdate()
     due_dates = {today + datetime.timedelta(days=d): d for d in days}
     qs = (
         Case.objects.filter(expected_completion__in=list(due_dates.keys()))
-        .exclude(status__in=EXCLUDE_STATUS)
+        .exclude(status__in=CASE_EXCLUDE_STATUS)
         .prefetch_related("case_samples__sample")
         .order_by("expected_completion", "case_number")
     )
@@ -44,14 +68,33 @@ def collect_due_cases(days=(3, 1)):
     for case in qs:
         left = (case.expected_completion - today).days
         milestone = MILESTONES.get(left)
-        if not milestone:
-            continue
-        out.append((case, milestone, left))
+        if milestone:
+            out.append((case, milestone, left))
+    return out
+
+
+def collect_due_samples(days=(3, 1)):
+    """NIPT：[(sample, milestone, days_left)]，只看 NIPT / NIPT_PLUS 的样本。"""
+    today = timezone.localdate()
+    targets = {today + datetime.timedelta(days=d): d for d in days}
+    qs = (
+        Sample.objects.filter(is_deleted=False, panel__code__in=NIPT_PANELS)
+        .exclude(status__in=SAMPLE_EXCLUDE_STATUS)
+        .exclude(report_due_date="")
+        .exclude(report_due_date__isnull=True)
+        .select_related("panel")
+        .order_by("report_due_date", "external_id")
+    )
+    out = []
+    for sample in qs:
+        due = parse_due_date(sample.report_due_date)
+        if due in targets:
+            out.append((sample, MILESTONES[targets[due]], targets[due]))
     return out
 
 
 def _route_map():
-    """来源 → (user, route)；精确匹配优先，其次前缀匹配（'巴西万基' 命中 '巴西'）。"""
+    """来源 → route；精确匹配优先，其次前缀匹配（'巴西万基' 命中 '巴西'）。"""
     exact, prefix = {}, []
     for r in ReminderRoute.objects.select_related("user").filter(is_active=True):
         src = (r.source or "").strip()
@@ -74,9 +117,9 @@ def _resolve_route(source, exact, prefix):
     return None
 
 
-# ── 渲染 ──────────────────────────────────────────────
+# ── 行数据 ────────────────────────────────────────────
 def _case_line(case):
-    """一行 = 一个案例。外部编号/收样日期取母样本，缺失时退到任一有值的样本。"""
+    """NIPPT 一行 = 一个案例。外部编号/收样日期取母样本，缺失时退到任一有值的样本。"""
     mother = ""
     mother_sample = None
     fallback_sample = None
@@ -105,85 +148,131 @@ def _case_line(case):
     }
 
 
-def _render(recipient_name, milestone, items):
-    if milestone == "T3":
-        title = "【报告到期提醒】3 天后到期"
-        when = "3 天后（T-3）"
+def _sample_line(sample):
+    due = parse_due_date(sample.report_due_date)
+    return {
+        "external_id": sample.external_id or "-",
+        "panel": sample.panel.code if sample.panel else "",
+        "name": sample.patient_name or "",
+        "source": sample.sample_source or "-",
+        "receipt_date": sample.receipt_date.isoformat() if sample.receipt_date else "-",
+        "status": sample.get_status_display(),
+        "due": due.isoformat() if due else "",
+        "urgent": bool(getattr(sample, "is_urgent", False)),
+    }
+
+
+# ── 渲染 ──────────────────────────────────────────────
+def _render(recipient_name, milestone, cases, samples):
+    when = "3 天后（T-3）" if milestone == "T3" else "明天（T-1）"
+    title = "【报告到期提醒】3 天后到期" if milestone == "T3" else "【报告到期提醒】明天到期"
+    total = len(cases) + len(samples)
+    if cases and samples:
+        subject = f"{title} · 共 {total} 个（NIPPT 案例 {len(cases)} / NIPT 样本 {len(samples)}）"
+    elif cases:
+        subject = f"{title} · NIPPT 案例 {len(cases)} 个"
     else:
-        title = "【报告到期提醒】明天到期"
-        when = "明天（T-1）"
-    subject = f"{title} · 共 {len(items)} 个案例"
+        subject = f"{title} · NIPT 样本 {len(samples)} 个"
 
-    lines = [
-        f"{recipient_name}，您好：",
-        "",
-        f"以下 {len(items)} 个 NIPPT 案例的报告将于{when}到期，请及时跟进：",
-        "",
-    ]
-    for idx, i in enumerate(items, 1):
-        lines += [
-            f"{idx}) {i['case_number']}    外部编号：{i['external_id']}    "
-            f"PT编号：{i['pt_number'] or '-'}    加急：{'是' if i['urgent'] else '否'}",
-            f"   孕妇：{i['mother'] or '-'}（{i['source']}）",
-            f"   收样日期：{i['receipt_date']}    当前状态：{i['status']}    "
-            f"报告截止：{i['due']}",
-            "",
-        ]
-    lines += [
-        "",
+    text = [f"{recipient_name}，您好：", ""]
+    if cases:
+        text.append(f"■ NIPPT 案例 {len(cases)} 个（{when}到期）")
+        text.append("")
+        for idx, i in enumerate(cases, 1):
+            text += [
+                f"{idx}) {i['case_number']}    外部编号：{i['external_id']}    "
+                f"PT编号：{i['pt_number'] or '-'}    加急：{'是' if i['urgent'] else '否'}",
+                f"   孕妇：{i['mother'] or '-'}（{i['source']}）",
+                f"   收样日期：{i['receipt_date']}    当前状态：{i['status']}    "
+                f"报告截止：{i['due']}",
+                "",
+            ]
+    if samples:
+        text.append(f"■ NIPT 样本 {len(samples)} 个（{when}到期）")
+        text.append("")
+        for idx, i in enumerate(samples, 1):
+            text += [
+                f"{idx}) {i['external_id']}    项目：{i['panel']}    加急：{'是' if i['urgent'] else '否'}",
+                f"   姓名：{i['name'] or '-'}（{i['source']}）",
+                f"   收样日期：{i['receipt_date']}    当前状态：{i['status']}    "
+                f"报告截止：{i['due']}",
+                "",
+            ]
+    text += [
         "说明：本邮件由 LIMS 系统自动发送（每天 08:00），仅在 T-3 / T-1 提醒；"
-        "逾期案例不在本邮件范围。如需调整提醒规则，请联系实验室管理员。",
+        "逾期案例/样本不在本邮件范围。如需调整提醒规则，请联系实验室管理员。",
     ]
-    text = "\n".join(lines)
 
-    rows = "".join(
-        "<tr>"
-        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['case_number']}</td>"
-        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap;font-family:monospace'>{i['external_id']}</td>"
-        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['pt_number'] or '-'}</td>"
-        f"<td style='padding:4px 6px;border:1px solid #ddd'>{i['mother'] or '-'}</td>"
-        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['source']}</td>"
-        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['receipt_date']}</td>"
-        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['status']}</td>"
-        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['due']}</td>"
-        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{'<b style=color:#c00>是</b>' if i['urgent'] else '否'}</td>"
-        "</tr>"
-        for i in items
+    html = [f"<p>{recipient_name}，您好：</p>"]
+    html.append(f"<p>以下共 <b>{total}</b> 个需在<b>{when}</b>交付，请及时跟进：</p>")
+
+    if cases:
+        html.append(f"<h4 style='margin:14px 0 6px'>NIPPT 案例（{len(cases)} 个）</h4>")
+        rows = "".join(
+            "<tr>"
+            f"{TDN}{i['case_number']}</td>"
+            f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap;font-family:monospace'>{i['external_id']}</td>"
+            f"{TDN}{i['pt_number'] or '-'}</td>"
+            f"{TD}{i['mother'] or '-'}</td>"
+            f"{TDN}{i['source']}</td>"
+            f"{TDN}{i['receipt_date']}</td>"
+            f"{TDN}{i['status']}</td>"
+            f"{TDN}{i['due']}</td>"
+            f"{TDN}{'<b style=color:#c00>是</b>' if i['urgent'] else '否'}</td>"
+            "</tr>"
+            for i in cases
+        )
+        html.append(
+            "<table style='border-collapse:collapse;font-size:12px;width:100%'>"
+            "<thead><tr>"
+            f"{THN}案例编号</th>{THN}外部编号</th>{THN}PT编号</th>{THN}孕妇姓名</th>"
+            f"{THN}来源</th>{THN}收样日期</th>{THN}当前状态</th>{THN}截止日期</th>{THN}加急</th>"
+            f"</tr></thead><tbody>{rows}</tbody></table>"
+        )
+
+    if samples:
+        html.append(f"<h4 style='margin:16px 0 6px'>NIPT 样本（{len(samples)} 个）</h4>")
+        rows = "".join(
+            "<tr>"
+            f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap;font-family:monospace'>{i['external_id']}</td>"
+            f"{TDN}{i['panel']}</td>"
+            f"{TD}{i['name'] or '-'}</td>"
+            f"{TDN}{i['source']}</td>"
+            f"{TDN}{i['receipt_date']}</td>"
+            f"{TDN}{i['status']}</td>"
+            f"{TDN}{i['due']}</td>"
+            f"{TDN}{'<b style=color:#c00>是</b>' if i['urgent'] else '否'}</td>"
+            "</tr>"
+            for i in samples
+        )
+        html.append(
+            "<table style='border-collapse:collapse;font-size:12px;width:100%'>"
+            "<thead><tr>"
+            f"{THN}样本编号</th>{THN}项目</th>{THN}姓名</th>{THN}来源</th>"
+            f"{THN}收样日期</th>{THN}当前状态</th>{THN}报告截止</th>{THN}加急</th>"
+            f"</tr></thead><tbody>{rows}</tbody></table>"
+        )
+
+    html.append(
+        "<p style='color:#888;font-size:12px'>本邮件由 LIMS 自动发送（每天 08:00），"
+        "仅在 T-3 / T-1 提醒；逾期项目不在本邮件范围。</p>"
     )
-    html = (
-        f"<p>{recipient_name}，您好：</p>"
-        f"<p>以下 <b>{len(items)}</b> 个 NIPPT 案例的报告将于<b>{when}</b>到期，请及时跟进：</p>"
-        "<table style='border-collapse:collapse;font-size:12px;width:100%'>"
-        "<thead><tr style='background:#f5f5f5'>"
-        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>案例编号</th>"
-        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>外部编号</th>"
-        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>PT编号</th>"
-        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>孕妇姓名</th>"
-        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>来源</th>"
-        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>收样日期</th>"
-        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>当前状态</th>"
-        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>截止日期</th>"
-        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>加急</th>"
-        f"</tr></thead><tbody>{rows}</tbody></table>"
-        "<p style='color:#888;font-size:12px'>本邮件由 LIMS 自动发送（每天 08:00），仅在 T-3 / T-1 提醒；"
-        "逾期案例不在本邮件范围。</p>"
-    )
-    return subject, text, html
+    return subject, "\n".join(text), "".join(html)
 
 
 # ── 主流程 ────────────────────────────────────────────
 def build_plan(days=(3, 1), ignore_logs=False):
-    """生成待发清单（不发信）：按 (销售, 里程碑) 聚合。"""
+    """生成待发清单（不发信）：按 (销售, 里程碑) 聚合，NIPPT 案例 + NIPT 样本分开列。"""
     exact, prefix = _route_map()
     today = timezone.localdate()
-    groups = defaultdict(list)
+    groups = defaultdict(lambda: {"cases": [], "samples": []})
     unrouted = defaultdict(int)
     skipped_already = 0
 
     for case, milestone, left in collect_due_cases(days):
         route = _resolve_route(case.origin_country(), exact, prefix)
         if route is None or not (route.user and route.user.email):
-            unrouted[case.origin_country() or "(未填来源)"] += 1
+            unrouted["NIPPT:" + (case.origin_country() or "(未填来源)")] += 1
             continue
         if not ignore_logs and ReminderLog.objects.filter(
             subject_type="case", subject_id=case.id, milestone=milestone,
@@ -191,26 +280,47 @@ def build_plan(days=(3, 1), ignore_logs=False):
         ).exists():
             skipped_already += 1
             continue
-        groups[(route.user_id, milestone)].append((case, milestone, left))
+        groups[(route.user_id, milestone)]["cases"].append((case, milestone, left))
+
+    for sample, milestone, left in collect_due_samples(days):
+        route = _resolve_route(sample.sample_source, exact, prefix)
+        if route is None or not (route.user and route.user.email):
+            unrouted["NIPT:" + (sample.sample_source or "(未填来源)")] += 1
+            continue
+        due = parse_due_date(sample.report_due_date)
+        if not ignore_logs and ReminderLog.objects.filter(
+            subject_type="sample", subject_id=sample.id, milestone=milestone, due_date=due,
+        ).exists():
+            skipped_already += 1
+            continue
+        groups[(route.user_id, milestone)]["samples"].append((sample, milestone, left))
 
     plan = []
-    for (user_id, milestone), rows in groups.items():
+    for (user_id, milestone), bucket in groups.items():
+        if not bucket["cases"] and not bucket["samples"]:
+            continue
         route = ReminderRoute.objects.select_related("user").filter(user_id=user_id).first()
-        items = [_case_line(c) for c, _m, _left in rows]
-        subject, text, html = _render(route.user.first_name or route.user.username, milestone, items)
+        case_items = [_case_line(c) for c, _m, _l in bucket["cases"]]
+        sample_items = [_sample_line(s) for s, _m, _l in bucket["samples"]]
+        name = route.user.first_name or route.user.username
+        subject, text, html = _render(name, milestone, case_items, sample_items)
         plan.append({
             "user_id": str(user_id),
-            "user_name": route.user.first_name or route.user.username,
+            "user_name": name,
             "email": route.user.email,
             "milestone": milestone,
-            "count": len(items),
-            "items": items,
+            "count": len(case_items) + len(sample_items),
+            "case_count": len(case_items),
+            "sample_count": len(sample_items),
+            "items": case_items + sample_items,
+            "cases": [{"case_id": str(c.id), "case_number": c.case_number, "milestone": m}
+                      for c, m, _l in bucket["cases"]],
+            "samples": [{"sample_id": str(s.id), "external_id": s.external_id,
+                         "milestone": m, "due": parse_due_date(s.report_due_date).isoformat()}
+                        for s, m, _l in bucket["samples"]],
             "subject": subject,
             "text": text,
             "html": html,
-            # 只放可序列化字段（API 直接返回这份 plan）
-            "cases": [{"case_id": str(c.id), "case_number": c.case_number, "milestone": m}
-                      for c, m, _l in rows],
         })
     plan.sort(key=lambda p: (p["milestone"], p["email"]))
     return {
@@ -223,7 +333,7 @@ def build_plan(days=(3, 1), ignore_logs=False):
 
 
 def send(days=(3, 1), dry_run=False, force=False):
-    """生成并发送；dry_run=True 只返回清单。force=True 忽略幂等（重发测试用）。"""
+    """生成并发送；dry_run=True 只返回清单。force=True 忽略幂等（补发/联调用）。"""
     built = build_plan(days, ignore_logs=force)
     result = {
         "today": built["today"],
@@ -239,12 +349,11 @@ def send(days=(3, 1), dry_run=False, force=False):
         return result
 
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", None) or settings.EMAIL_HOST_USER
+    bcc = [getattr(settings, "REMINDER_BCC", "")] if getattr(settings, "REMINDER_BCC", "") else []
     for p in built["plan"]:
         mail = EmailMultiAlternatives(
-            subject=p["subject"],
-            body=p["text"],
-            from_email=from_email,
-            to=[p["email"]],
+            subject=p["subject"], body=p["text"], from_email=from_email,
+            to=[p["email"]], bcc=bcc,
         )
         mail.attach_alternative(p["html"], "text/html")
         try:
@@ -258,17 +367,20 @@ def send(days=(3, 1), dry_run=False, force=False):
             for item in p["cases"]:
                 case = Case.objects.only("id", "case_number", "expected_completion").get(id=item["case_id"])
                 ReminderLog.objects.get_or_create(
-                    subject_type="case",
-                    subject_id=case.id,
-                    milestone=item["milestone"],
-                    due_date=case.expected_completion,
-                    defaults={
-                        "subject_repr": case.case_number,
-                        "recipient": p["email"],
-                        "status": "SENT",
-                        "case_number": case.case_number,
-                    },
+                    subject_type="case", subject_id=case.id,
+                    milestone=item["milestone"], due_date=case.expected_completion,
+                    defaults={"subject_repr": case.case_number, "recipient": p["email"],
+                              "status": "SENT", "case_number": case.case_number},
+                )
+            for item in p["samples"]:
+                sample = Sample.objects.only("id", "external_id", "patient_name").get(id=item["sample_id"])
+                ReminderLog.objects.get_or_create(
+                    subject_type="sample", subject_id=sample.id,
+                    milestone=item["milestone"], due_date=item["due"],
+                    defaults={"subject_repr": sample.external_id or "", "recipient": p["email"],
+                              "status": "SENT", "case_number": sample.external_id or ""},
                 )
         result["sent"].append({"email": p["email"], "milestone": p["milestone"],
-                               "count": p["count"], "subject": p["subject"]})
+                               "count": p["count"], "case_count": p["case_count"],
+                               "sample_count": p["sample_count"], "subject": p["subject"]})
     return result
