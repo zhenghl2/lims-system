@@ -21,11 +21,13 @@ function parseIndexNum(index: string): string {
 }
 
 // ── 平台 / 设备（2026-11-12：平台=测序仪直接选；实验设备照 NIPPT 三台） ──
-// 2026-11-05（用户口径）：芯片类型改为固定 3 种 PRM 规格，与平台无关
+// 2026-11-05（用户口径）：芯片类型改为固定 PRM 规格，与平台无关
+// 2026-11-12（用户口径）：新增 SE50-500M（命名与其他项一致，带 PRM- 前缀，同 NIPPT）
 const CHIP_TYPE_OPTIONS = [
   { value:"PRM-PE150-150M", label:"PRM-PE150-150M" },
   { value:"PRM-PE100-250M", label:"PRM-PE100-250M" },
   { value:"PRM-PE75-500M",  label:"PRM-PE75-500M"  },
+  { value:"PRM-SE50-500M",  label:"PRM-SE50-500M"  },
 ];
 // 2026-11-05（用户口径）：补 PE100 / PE75 / SE50（原来只有 SE75 / SE100 / PE150）
 const READ_TYPE_OPTIONS = [
