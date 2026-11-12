@@ -95,9 +95,11 @@ export default function NiptStepBatches() {
     plasma: r.plasma_remaining,
   })), [pending.results]);
 
-  /** 2026-11-05：测序步骤按「上游 Pooling 批次」整组勾选 —— 56 个样本变成 7 组，
-   *  等价于 NIPPT 按 mix 勾选（NIPT 一次 pooling 实验 = 一管）。 */
-  const poolGroups = useMemo(() => {
+  /** 需要「按上游批次整组勾选」的步骤：
+   *  - 测序：按上游 Pooling 批次（一次 pooling = 一管 = 一个 mix）
+   *  - 生信：按上游测序批次（2026-11-12 用户口径：新建批次按测序批次选，不按样本） */
+  const groupByUpstream = step === "sequencing" || step === "bioinformatics";
+  const upstreamGroups = useMemo(() => {
     const m = new Map<string, any[]>();
     pendingRows.forEach((r: any) => {
       const k = r.source || "未分组";
@@ -115,13 +117,13 @@ export default function NiptStepBatches() {
     }));
   }, [pendingRows]);
 
-  /** 本次真正要提交的样本行：测序按组展开，其它步骤按勾选的样本 */
+  /** 本次真正要提交的样本行：按批次勾的步骤（测序 / 生信）整组展开，其它步骤按勾选的样本 */
   const pickedRows = useMemo(() => {
-    if (step !== "sequencing") return pendingRows.filter((r: any) => picked.includes(r.key));
+    if (!groupByUpstream) return pendingRows.filter((r: any) => picked.includes(r.key));
     const keys = new Set<string>();
-    poolGroups.forEach((g: any) => { if (picked.includes(g.key)) g.sampleKeys.forEach((k: string) => keys.add(k)); });
+    upstreamGroups.forEach((g: any) => { if (picked.includes(g.key)) g.sampleKeys.forEach((k: string) => keys.add(k)); });
     return pendingRows.filter((r: any) => keys.has(r.key));
-  }, [step, pendingRows, picked, poolGroups]);
+  }, [step, pendingRows, picked, upstreamGroups]);
 
   const confirmDelete = (r: any) => {
     Modal.confirm({
@@ -143,7 +145,8 @@ export default function NiptStepBatches() {
   const createBatch = async () => {
     if (!api) return;
     if (!pickedRows.length) {
-      message.warning(step === "sequencing" ? "请先勾选要上机的上游批次" : "请先勾选要加入批次的样本");
+      message.warning(!groupByUpstream ? "请先勾选要加入批次的样本"
+        : step === "sequencing" ? "请先勾选要上机的上游批次" : "请先勾选要分析的上游测序批次");
       return;
     }
     setCreating(true);
@@ -314,18 +317,20 @@ export default function NiptStepBatches() {
             ? "勾选的样本会进入同一块 96 孔板的提取批次。"
             : step === "sequencing"
               ? "按上游 Pooling 批次整组勾选（一次 pooling = 一管）；勾中某个批次，该批全部样本进入本次上机。"
-              : "可跨上游批次勾选：勾中的样本进同一个批次，上游批次谱系自动记录。"} />
+              : step === "bioinformatics"
+                ? "按上游测序批次整组勾选；勾中某个批次，该批全部样本进入本次分析（谱系自动记录）。"
+                : "可跨上游批次勾选：勾中的样本进同一个批次，上游批次谱系自动记录。"} />
         {pendingRows.length === 0 ? (
           <Alert type="success" showIcon message="暂无待处理样本（上游已全部进批次）" />
-        ) : step === "sequencing" ? (
+        ) : groupByUpstream ? (
           <Table
             size="small"
-            dataSource={poolGroups as any}
+            dataSource={upstreamGroups as any}
             rowKey="key"
             pagination={false}
             rowSelection={{ selectedRowKeys: picked, onChange: (k) => setPicked(k as string[]) }}
             columns={[
-              { title: "上游 Pooling 批次", dataIndex: "batch", key: "g1",
+              { title: step === "sequencing" ? "上游 Pooling 批次" : "上游测序批次", dataIndex: "batch", key: "g1",
                 render: (v: string) => <Text code>{v}</Text> },
               { title: "样本数", dataIndex: "count", key: "g2", width: 80, align: "center" as const },
               { title: "VG ID", dataIndex: "vgPreview", key: "g3", ellipsis: true },
