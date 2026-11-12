@@ -83,12 +83,18 @@ def _map_gender(g):
 
 
 def _map_sample_types(sm):
-    """'SANGUE/FTA' / 'SANGUE / FTA' → ['BLOOD','DBS']；'-'/空 → ['BLOOD']"""
-    s = _to_text(sm).upper()
+    """'SANGUE/FTA' / 'SANGUE, FTA' / 'FTA;SWAB' → ['BLOOD','DBS']…；'-'/空 → ['BLOOD']
+
+    2026-11-12：实验室新表把多种样本写成逗号分隔（"SANGUE, FTA"），
+    原来只按 / + 拆分，整格匹配不上就回退成只有 BLOOD → FTA/SWAB 样本丢失。
+    """
+    s = _to_text(sm).upper().replace("，", ",").replace("、", ",")
     if not s or s == "-":
         return ["BLOOD"]
     result = []
-    for part in re.split(r"[/+]", s):
+    # 统一分隔符：, ; + 都当 / （空格不动，'FIO DENTAL' 这类带空格的名称不能被拆）
+    s = re.sub(r"[,;+]", "/", s)
+    for part in s.split("/"):
         part = part.strip()
         # 常见带修饰词: 'SANGUE PERIFERICO' → SANGUE
         for key in ("FIO DENTAL", "PONTA DE CIGARRO"):
@@ -100,6 +106,15 @@ def _map_sample_types(sm):
             if base in SAMPLE_TYPE_MAP:
                 result.append(SAMPLE_TYPE_MAP[base])
     return result if result else ["BLOOD"]
+
+
+URGENT_RE = re.compile(r"10\s*DIAS", re.I)
+
+
+def _is_urgent(remarks):
+    """备注里出现 '10 DIAS UTEIS' / 'PRAZO: 10 DIAS UTEIS' → 加急（用户 2026-11-12 口径）"""
+    s = _to_text(remarks)
+    return bool(s) and s != "-" and bool(URGENT_RE.search(s))
 
 
 def _translate_notes(remarks):
@@ -194,6 +209,7 @@ def parse_xlsx_bytes(data, filename=""):
         due = norm(r[27]) if len(r) > 27 else ""
         gender = _map_gender(norm(r[31])) if len(r) > 31 else ""
         remarks = norm(r[32]) if len(r) > 32 else ""
+        urgent = _is_urgent(remarks)
         # 备注里引用原案例编号（排除本行自己的 Client Code）
         _own = client_code.strip().upper()
         reuse_ids = [x.upper() for x in REUSE_ID_RE.findall(remarks) if x.upper() != _own]
@@ -229,6 +245,8 @@ def parse_xlsx_bytes(data, filename=""):
                 existing["notes"] = _translate_notes(remarks)
             if not existing.get("reuse_external_id") and reuse_ids:
                 existing["reuse_external_id"] = reuse_ids[0]
+            if urgent:
+                existing["is_urgent"] = True
             continue
 
         cases.append({
@@ -249,6 +267,7 @@ def parse_xlsx_bytes(data, filename=""):
             "fedex_no": fedex,
             "notes": _translate_notes(remarks),
             "remarks_raw": remarks,
+            "is_urgent": urgent,
             "reuse_external_id": reuse_ids[0] if reuse_ids else "",
             "expected_completion": _first_part(due),
         })

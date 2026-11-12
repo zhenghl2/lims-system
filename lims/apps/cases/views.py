@@ -841,6 +841,9 @@ class CaseViewSet(viewsets.ModelViewSet):
                                 sup.is_valid(raise_exception=True)
                                 sup.save()
                                 created_father += 1
+                        if item.get("is_urgent") and not case.is_urgent:
+                            case.is_urgent = True
+                            case.save(update_fields=["is_urgent", "updated_at"])
                         merged.append({"seq": seq, "case_number": case.case_number, "kind": kind})
                 except Exception as e:
                     errors.append({"seq": seq, "error": str(e)[:300]})
@@ -864,6 +867,9 @@ class CaseViewSet(viewsets.ModelViewSet):
                         with transaction.atomic():
                             made, dup_skipped = _add_father_supplements(
                                 request, target_case, item, seq)
+                            if item.get("is_urgent") and not target_case.is_urgent:
+                                target_case.is_urgent = True
+                                target_case.save(update_fields=["is_urgent", "updated_at"])
                             if made:
                                 log_audit(request, "UPDATE", target_case, changes={
                                     "来源": {"old": "", "new": "巴西导入：复用原案例材料（男性补充样本）"},
@@ -904,6 +910,8 @@ class CaseViewSet(viewsets.ModelViewSet):
                         "external_id": seq,
                         "registration_type": "FIRST",
                     }
+                    if item.get("is_urgent"):
+                        create_data["is_urgent"] = True
                     if mother_dob:
                         create_data["mother_dob"] = mother_dob.isoformat()
                     create_serializer = CaseCreateSerializer(data=create_data, context={"request": request})
