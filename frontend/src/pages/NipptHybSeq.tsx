@@ -429,7 +429,15 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       delete (sdFresh as any).pooling_batch_id; delete (sdFresh as any).pooling_batch_ids;
       if (sdFresh.seq_date == null) delete (sdCur as any).seq_date;
       if (sdFresh.seq_time == null) delete (sdCur as any).seq_time;
-      return JSON.stringify(canon(sdCur)) !== JSON.stringify(canon(sdFresh))
+      // 2026-11-12：只比较「前端负责的键」。
+      // hyb_seq_data 里还有建批次时后端写入的派生键（chip / mix_ids / mix_sources /
+      // pooling_batch_* 等），前端保存时不会重建它们，全量对比会永远判定「有未保存」
+      // —— 用户报障 batch 20261112-01-001：点了保存再点完成仍提示未保存。
+      const _curObj: any = canon(sdCur) || {};
+      const _freObj: any = canon(sdFresh) || {};
+      const _freCmp: any = {};
+      Object.keys(_curObj).forEach((k) => { if (_freObj[k] !== undefined) _freCmp[k] = _freObj[k]; });
+      return JSON.stringify(_curObj) !== JSON.stringify(_freCmp)
         || curOp !== (fresh.operator_name || "") || curRv !== (fresh.reviewer || "");
     } catch { return false; /* 拉取失败不阻塞 */ }
   };
