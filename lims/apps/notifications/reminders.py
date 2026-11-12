@@ -76,16 +76,29 @@ def _resolve_route(source, exact, prefix):
 
 # ── 渲染 ──────────────────────────────────────────────
 def _case_line(case):
+    """一行 = 一个案例。外部编号/收样日期取母样本，缺失时退到任一有值的样本。"""
     mother = ""
+    mother_sample = None
+    fallback_sample = None
     for cs in case.case_samples.all():
-        if cs.role == "MOTHER" and cs.sample:
+        if not cs.sample:
+            continue
+        if cs.role == "MOTHER":
             mother = cs.sample.patient_name or ""
+            mother_sample = cs.sample
             break
+        if fallback_sample is None and cs.sample.external_id:
+            fallback_sample = cs.sample
+    src = mother_sample or fallback_sample
+    external_id = (src.external_id if src and src.external_id else "")
+    receipt = src.receipt_date if src and src.receipt_date else None
     return {
         "case_number": case.case_number,
+        "external_id": external_id or "-",
         "pt_number": case.pt_number or "",
         "mother": mother,
         "source": case.origin_country() or "-",
+        "receipt_date": receipt.isoformat() if receipt else "-",
         "status": case.get_status_display(),
         "due": case.expected_completion.isoformat() if case.expected_completion else "",
         "urgent": bool(getattr(case, "is_urgent", False)),
@@ -106,14 +119,16 @@ def _render(recipient_name, milestone, items):
         "",
         f"以下 {len(items)} 个 NIPPT 案例的报告将于{when}到期，请及时跟进：",
         "",
-        "案例编号 | PT编号 | 孕妇姓名 | 来源 | 当前状态 | 截止日期 | 加急",
-        "-" * 78,
     ]
-    for i in items:
-        lines.append(
-            f"{i['case_number']} | {i['pt_number'] or '-'} | {i['mother'] or '-'} | "
-            f"{i['source']} | {i['status']} | {i['due']} | {'是' if i['urgent'] else '否'}"
-        )
+    for idx, i in enumerate(items, 1):
+        lines += [
+            f"{idx}) {i['case_number']}    外部编号：{i['external_id']}    "
+            f"PT编号：{i['pt_number'] or '-'}    加急：{'是' if i['urgent'] else '否'}",
+            f"   孕妇：{i['mother'] or '-'}（{i['source']}）",
+            f"   收样日期：{i['receipt_date']}    当前状态：{i['status']}    "
+            f"报告截止：{i['due']}",
+            "",
+        ]
     lines += [
         "",
         "说明：本邮件由 LIMS 系统自动发送（每天 08:00），仅在 T-3 / T-1 提醒；"
@@ -123,28 +138,32 @@ def _render(recipient_name, milestone, items):
 
     rows = "".join(
         "<tr>"
-        f"<td style='padding:4px 8px;border:1px solid #ddd'>{i['case_number']}</td>"
-        f"<td style='padding:4px 8px;border:1px solid #ddd'>{i['pt_number'] or '-'}</td>"
-        f"<td style='padding:4px 8px;border:1px solid #ddd'>{i['mother'] or '-'}</td>"
-        f"<td style='padding:4px 8px;border:1px solid #ddd'>{i['source']}</td>"
-        f"<td style='padding:4px 8px;border:1px solid #ddd'>{i['status']}</td>"
-        f"<td style='padding:4px 8px;border:1px solid #ddd'>{i['due']}</td>"
-        f"<td style='padding:4px 8px;border:1px solid #ddd'>{'<b style=color:#c00>是</b>' if i['urgent'] else '否'}</td>"
+        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['case_number']}</td>"
+        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap;font-family:monospace'>{i['external_id']}</td>"
+        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['pt_number'] or '-'}</td>"
+        f"<td style='padding:4px 6px;border:1px solid #ddd'>{i['mother'] or '-'}</td>"
+        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['source']}</td>"
+        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['receipt_date']}</td>"
+        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['status']}</td>"
+        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{i['due']}</td>"
+        f"<td style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>{'<b style=color:#c00>是</b>' if i['urgent'] else '否'}</td>"
         "</tr>"
         for i in items
     )
     html = (
         f"<p>{recipient_name}，您好：</p>"
         f"<p>以下 <b>{len(items)}</b> 个 NIPPT 案例的报告将于<b>{when}</b>到期，请及时跟进：</p>"
-        "<table style='border-collapse:collapse;font-size:13px'>"
+        "<table style='border-collapse:collapse;font-size:12px;width:100%'>"
         "<thead><tr style='background:#f5f5f5'>"
-        "<th style='padding:4px 8px;border:1px solid #ddd'>案例编号</th>"
-        "<th style='padding:4px 8px;border:1px solid #ddd'>PT编号</th>"
-        "<th style='padding:4px 8px;border:1px solid #ddd'>孕妇姓名</th>"
-        "<th style='padding:4px 8px;border:1px solid #ddd'>来源</th>"
-        "<th style='padding:4px 8px;border:1px solid #ddd'>当前状态</th>"
-        "<th style='padding:4px 8px;border:1px solid #ddd'>截止日期</th>"
-        "<th style='padding:4px 8px;border:1px solid #ddd'>加急</th>"
+        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>案例编号</th>"
+        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>外部编号</th>"
+        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>PT编号</th>"
+        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>孕妇姓名</th>"
+        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>来源</th>"
+        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>收样日期</th>"
+        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>当前状态</th>"
+        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>截止日期</th>"
+        "<th style='padding:4px 6px;border:1px solid #ddd;white-space:nowrap'>加急</th>"
         f"</tr></thead><tbody>{rows}</tbody></table>"
         "<p style='color:#888;font-size:12px'>本邮件由 LIMS 自动发送（每天 08:00），仅在 T-3 / T-1 提醒；"
         "逾期案例不在本邮件范围。</p>"
@@ -153,7 +172,7 @@ def _render(recipient_name, milestone, items):
 
 
 # ── 主流程 ────────────────────────────────────────────
-def build_plan(days=(3, 1)):
+def build_plan(days=(3, 1), ignore_logs=False):
     """生成待发清单（不发信）：按 (销售, 里程碑) 聚合。"""
     exact, prefix = _route_map()
     today = timezone.localdate()
@@ -166,7 +185,7 @@ def build_plan(days=(3, 1)):
         if route is None or not (route.user and route.user.email):
             unrouted[case.origin_country() or "(未填来源)"] += 1
             continue
-        if ReminderLog.objects.filter(
+        if not ignore_logs and ReminderLog.objects.filter(
             subject_type="case", subject_id=case.id, milestone=milestone,
             due_date=case.expected_completion,
         ).exists():
@@ -205,7 +224,7 @@ def build_plan(days=(3, 1)):
 
 def send(days=(3, 1), dry_run=False, force=False):
     """生成并发送；dry_run=True 只返回清单。force=True 忽略幂等（重发测试用）。"""
-    built = build_plan(days)
+    built = build_plan(days, ignore_logs=force)
     result = {
         "today": built["today"],
         "unrouted": built["unrouted"],

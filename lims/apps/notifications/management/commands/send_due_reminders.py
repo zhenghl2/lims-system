@@ -28,7 +28,7 @@ class Command(BaseCommand):
     def handle(self, *args, **opts):
         days = tuple(sorted({int(x) for x in str(opts["days"]).split(",") if x.strip()}, reverse=True))
         if opts["dry_run"] or opts["force"]:
-            built = build_plan(days=days)
+            built = build_plan(days=days, ignore_logs=opts['force'])
             if opts["json"]:
                 print(json.dumps({k: v for k, v in built.items() if k != "plan"} |
                                  {"plan": [{kk: vv for kk, vv in p.items() if kk not in ("html",)}
