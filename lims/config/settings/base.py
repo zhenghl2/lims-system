@@ -188,7 +188,11 @@ REST_FRAMEWORK = {
 # Simple JWT
 from datetime import timedelta
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    # 2026-11-13（用户要求）：15 → 60 分钟。
+    # 原因：香港同事签收批量上传图片，每 15 分钟必撞一次令牌过期；前端虽有
+    # 401 单飞刷新+重试，但过期瞬间正在传的图片要白传一次（0.45MB 重传），
+    # 主观感受就是"上传卡住/失败"。60 分钟把中断从每小时 4 次降到 1 次。
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
