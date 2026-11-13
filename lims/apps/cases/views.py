@@ -3936,12 +3936,17 @@ class NipptLibraryViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewsets.Mode
             ld = b.library_data or {}
             reg = str(ld.get("region") or "").strip().upper() or region_of.get(str(b.id), "")
             bucket = out.setdefault(reg if reg in ("XIAMEN", "HONGKONG") else "", {})
+            # 2026-11-13：地区与设备号前缀校验，防止历史脏值继续被带出
+            # （香港设备 VBL-*、厦门设备 YSFH-*；不确定的桶不做限制）
+            _want = {"XIAMEN": "YSFH-", "HONGKONG": "VBL-"}.get(reg, "")
             for side in ("female", "male"):
                 for key in ("dev_stopper", "dev_pcr", "dev_qubit"):
                     k = "%s_%s" % (key, side)
                     if k in bucket:
                         continue
                     val = str(ld.get(k) or "").strip()
+                    if val and _want and _want not in val.upper():
+                        continue
                     if val:
                         bucket[k] = {
                             "no": val,

@@ -156,6 +156,10 @@ export default function NipptLibrary() {
 
   // ── Region & coords ──
   const [region, setRegion] = useState("XIAMEN");
+  // 2026-11-13（用户要求）：地区按所选样本的签收地自动判定；混地区按方案 A —— 
+  // 不自动带任何设备/试剂默认值，且必须手动选过地区才能保存
+  const regionTouchedRef = useRef(false);
+  const [regionMixed, setRegionMixed] = useState(false);
   // 起点状态已迁到 xiamenStarts / hkFemaleStarts / hkMaleStarts（每块板各自起点，2026-10-14）
   // 孔板重排基准：记录"进入批次时"的起点/地区值，只有用户真的改了才重排（否则会覆盖拖动的板面）
   const plateBaseRef = useRef<string>("");
@@ -183,6 +187,38 @@ export default function NipptLibrary() {
   const [quantExpiry, setQuantExpiry] = useState("");
   const libReagentRef = useRef<Record<string, any>>({});
   const [libForm] = Form.useForm();
+
+  /** 2026-11-13：切换 / 自动判定地区后，按该地区重算设备与试剂默认值（旧地区的值一律丢弃） */
+  const applyRegion = (reg: string, touched = false) => {
+    if (touched) regionTouchedRef.current = true;
+    setRegion(reg);
+    // touched=true（手动改地区）时不再采用本批次已存的旧地区数值，否则会把厦门仪器带到香港
+    const ld: any = touched ? {} : ((selectedBatch as any)?.library_data || {});
+    const f: any = {}, m: any = {};
+    libDevItems(reg).forEach((it) => {
+      f[it.key] = libDevValue(ld, it.key, "female", reg);
+      m[it.key] = reg === "XIAMEN" ? f[it.key] : libDevValue(ld, it.key, "male", reg);
+    });
+    setLibDevF(f); setLibDevM(m);
+    const b: any = reagentDefault("beads", reg) || {}, q: any = reagentDefault("quant", reg) || {};
+    setBeadsLot(b.lot || ""); setBeadsExpiry(b.expiry || "");
+    setQuantLot(q.lot || ""); setQuantExpiry(q.expiry || "");
+  };
+
+  /** 混地区且用户还没手选地区时，清空设备/试剂（方案 A：不带任何默认值） */
+  const clearRegionValues = () => {
+    setLibDevF({}); setLibDevM({});
+    setBeadsLot(""); setBeadsExpiry(""); setQuantLot(""); setQuantExpiry("");
+  };
+
+  /** 地区与设备号前缀校验（厦门 YSFH-* / 香港 VBL-*） */
+  const regionDeviceMismatch = () => {
+    const v = [...Object.values(libDevF || {}), ...Object.values(libDevM || {})]
+      .map((x) => String(x || "")).join(" ").toUpperCase();
+    if (region === "HONGKONG" && v.indexOf("YSFH-") >= 0) return "香港批次不能使用厦门设备（YSFH-*），请重新选择设备";
+    if (region === "XIAMEN" && v.indexOf("VBL-") >= 0) return "厦门批次不能使用香港设备（VBL-*），请重新选择设备";
+    return "";
+  };
 
   // ── Steps & photos ──
   const [stepConfirmations, setStepConfirmations] = useState<Record<string,boolean>>({});
@@ -581,23 +617,30 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
       const d=r.data;setSelectedBatch(d);plateBaseRef.current="";
       setFillModeF("pt"); setFillModeM("pt"); setExtOrder(null);   // 换批次：回到默认排列
       const ld=d.library_data||{};
-      setRegion(ld.region||"XIAMEN");setFemaleStartCoord(ld.female_start_coord||"");setMaleStartCoord(ld.male_start_coord||"");
+      // 2026-11-13：没存过地区时按批次样本签收地推导（香港批次不再默认厦门）；混地区 → 标记并清空默认值
+      const _locD = String((d as any).receipt_location || "");
+      const _regD = ld.region || (_locD === "香港" ? "HONGKONG" : "XIAMEN");
+      const _mixD = !ld.region && _locD.indexOf("/") >= 0;
+      regionTouchedRef.current = true; setRegionMixed(_mixD);
+      setRegion(_regD);setFemaleStartCoord(ld.female_start_coord||"");setMaleStartCoord(ld.male_start_coord||"");
       setHkFemaleStart(ld.hk_female_start||"");setHkMaleStart(ld.hk_male_start||"");
 
       setLibKitDetails({});
       // 设备（2026-11-09）：本批次 > 该地区上次值 > 地区默认
-      { const _reg = ld.region || "XIAMEN";
-        const _f:any = {}, _m:any = {};
-        libDevItems(_reg).forEach((it) => {
-          _f[it.key] = libDevValue(ld, it.key, "female", _reg);
-          _m[it.key] = libDevValue(ld, it.key, "male", _reg);
-        });
-        setLibDevF(_f); setLibDevM(_m); }
+      { const _reg = _regD;
+        if (_mixD) { setLibDevF({}); setLibDevM({}); }
+        else {
+          const _f:any = {}, _m:any = {};
+          libDevItems(_reg).forEach((it) => {
+            _f[it.key] = libDevValue(ld, it.key, "female", _reg);
+            _m[it.key] = libDevValue(ld, it.key, "male", _reg);
+          });
+          setLibDevF(_f); setLibDevM(_m);
+        } }
       if(Array.isArray(ld.lib_kits)){setLibKits(ld.lib_kits.map((k:any)=>k.kit));const ldt:any={};ld.lib_kits.forEach((k:any)=>{ldt[k.kit]={lot:k.lot||"",expiry:k.expiry||""}});setLibKitDetails(ldt)}
       else{setLibKits([]);setLibKitDetails({})}
       setPositiveControl(ld.positive_control||"");setNegativeControl(ld.negative_control||"");
-      { const _reg = ld.region || "XIAMEN";
-        const _b = reagentDefault("beads", _reg), _q2 = reagentDefault("quant", _reg);
+      { const _b:any = _mixD ? {} : reagentDefault("beads", _regD), _q2:any = _mixD ? {} : reagentDefault("quant", _regD);
         setBeadsLot(ld.beads_lot || _b.lot || "");
         setBeadsExpiry(ld.beads_expiry || _b.expiry || "");
         setQuantLot(ld.quant_lot || _q2.lot || "");
@@ -681,6 +724,7 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
   };
 
   const openNewBatch = async()=>{
+    regionTouchedRef.current = false; setRegionMixed(false);   // 新批次：重新按样本判定地区
     try{
       const r=await(casesApi as any).pendingLibrary();const d=r.data;setPendingData(d);
       const all=new Set<string>();const qcAll=new Set<string>();d.entries.filter((e:any)=>!pendingLoc||e.receipt_location===pendingLoc).forEach((e:any)=>{ if(e.is_qc) qcAll.add(e.qc_source_id); else e.case_sample_ids.forEach((id:string)=>all.add(id)); });setSelectedKeys(all);setSelectedQCSrc(qcAll);
@@ -803,8 +847,33 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     };
   };
 
+  // 2026-11-13：新批次按所选样本的签收地自动判定地区（用户手动选过就不再覆盖）
+  useEffect(() => {
+    if (!pendingData || selectedBatch) return;
+    const regs = new Set<string>();
+    for (const e of ((pendingData as any).entries || [])) {
+      if (e.is_qc) continue;
+      const ids: string[] = e.case_sample_ids || [];
+      if (!ids.some((id) => selectedKeys.has(id))) continue;
+      const r = String(e.receipt_location || "").toUpperCase();
+      if (r === "XIAMEN" || r === "HONGKONG") regs.add(r);
+    }
+    if (!regs.size) return;
+    if (regs.size > 1) {                       // 混地区：方案 A —— 不带默认值，等用户手选
+      setRegionMixed(true);
+      if (!regionTouchedRef.current) clearRegionValues();
+      return;
+    }
+    setRegionMixed(false);
+    const only = Array.from(regs)[0];
+    if (!regionTouchedRef.current && only !== region) applyRegion(only);
+  }, [selectedKeys, pendingData, selectedBatch]);
+
   const saveProcessing = async(side: "f" | "m" | "all" = "all")=>{
     if(!selectedBatch)return;
+    if (regionMixed && !regionTouchedRef.current) { message.warning("本批含两地样本，请先手动选择地区（厦门/香港）"); return; }
+    const _devBad = regionDeviceMismatch();
+    if (_devBad) { message.warning(_devBad); return; }
     const who = region === "XIAMEN" ? "" : (side === "f" ? "女性" : side === "m" ? "男性" : "");
     // 竞态修复：等待所有照片读取/压缩完成再提交
     if (pendingUploads.current.length) {
@@ -835,6 +904,9 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
   const doCompleteBatch = async()=>{
     if(!selectedBatch)return;
+    if (regionMixed && !regionTouchedRef.current) { message.warning("完成前请先：手动选择地区（厦门/香港）"); return; }
+    const _devBad2 = regionDeviceMismatch();
+    if (_devBad2) { message.warning("完成前请先：" + _devBad2); return; }
     // 完成前校验：① 保存要求全满足（日期+操作人+审核人；照片不再强制）
     const miss = validateBeforeSave("all");
     if (miss.length) { message.warning(`完成前请先：${miss.join("、")}`); return; }
@@ -1544,8 +1616,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
               <Space direction="vertical" style={{width:"100%"}}>
                 <Space wrap>
                   <Text strong>地区：</Text>
-                  <Radio.Group value={region} onChange={e=>setRegion(e.target.value)} optionType="button" options={[{value:"XIAMEN",label:"厦门"},{value:"HONGKONG",label:"香港"}]}/>
+                  <Radio.Group value={region} onChange={e=>applyRegion(e.target.value, true)} optionType="button" options={[{value:"XIAMEN",label:"厦门"},{value:"HONGKONG",label:"香港"}]}/>
+                  <Text type="secondary" style={{fontSize:11}}>{regionTouchedRef.current ? "（手动指定，切地区会按该地区重填设备）" : "（按所选样本签收地自动判定）"}</Text>
                 </Space>
+                {regionMixed && (
+                  <Alert type="warning" showIcon style={{ padding: "2px 8px" }}
+                    message="本批含厦门与香港两地样本：已清空设备/试剂默认值，请先手动选择本批使用的地区，再填设备与试剂" />
+                )}
                 <Form form={libForm} layout="inline" style={{flexWrap:"wrap",gap:8}}>
                   <Form.Item name="pcr_cycles" label="PCR cycles"><InputNumber size="small" style={{width:60}} min={0} max={30}/></Form.Item>
                 </Form>
