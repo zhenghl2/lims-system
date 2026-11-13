@@ -16,6 +16,7 @@ import re
 from docxtpl import DocxTemplate
 
 from core import (SEX_M_THRESHOLD, check_consistency, fmt_date, fmt_date_lang,
+                  strip_mother_w,
                   norm_result, parse_appendix, pt_prefix_of, pt_suffix_of, translate_posi)
 
 DATE_COLS = ["report_date", "collection_date", "received_date"]
@@ -117,7 +118,10 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
     ctx["pt_suffix_upper"] = suffix_upper
     ctx["female_id"] = _mother_code or (ctx["pt_id"] + "W")
     ctx["male_id"] = _father_code or (ctx["pt_id"] + "H")
-    ctx["report_id"] = "VGHK" + date_short + vg_id
+    # 2026-11-13（用户口径）：Test ID 去掉母亲号 W 后缀
+    #   VGHK202610PT72528W → VGHK202610PT72528（Sample ID 列仍保留 W/H）
+    _tid_code = strip_mother_w(vg_id)
+    ctx["report_id"] = "VGHK" + date_short + _tid_code
     # 2026-11-10（用户口径）：泰国报告的出生日期按「登记时怎么填就怎么出」。
     # 登记时原样文本存在 sample.patient_dob_text（例：14 Jul 1998 / 31/12/2005）；
     # 老数据没有原文 → 退回泰国习惯的 DD Mon YYYY。其它版本维持原格式不变。
@@ -137,7 +141,7 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
     if version == "泰国":
         for col in ("f_DOB", "m_DOB"):
             ctx[col] = fmt_date(ctx.get(col), "%Y/%m/%d")
-        ctx["test_id_date"] = "VGpt-" + date_short + "-" + vg_id
+        ctx["test_id_date"] = "VGpt-" + date_short + "-" + _tid_code
         m = re.findall(r"\d.+", str(ctx.get("case_id", "")))
         ctx["case_id_s"] = m[0] if m else str(ctx.get("case_id", ""))
 

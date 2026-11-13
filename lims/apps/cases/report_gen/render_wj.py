@@ -15,6 +15,7 @@ import re
 from docxtpl import DocxTemplate
 
 from core import (check_consistency, fmt_date, norm_result, parse_appendix,
+                  strip_mother_w,
                   translate_posi)
 
 TEMPLATE_FILES = {
@@ -91,6 +92,10 @@ def render(row, appendix_path, tpl_dir, out_dir="."):
     # 2026-11-03（用户口径）：同一案例多疑父（HA/HB…）时文件名会完全相同 →
     # 第二个被 Django 加 _7位随机串。改为「母编号去掉尾部字母 + 疑父标签小写」：
     # WJPT72570W + HA → WJPT72570a；单疑父保持原样 WJPT72570W
+    # 2026-11-13（用户口径）：文件名里的母亲号去掉 W 后缀
+    #   PT72573W → PT72573；PT72573W_R1 → PT72573_R1；WQ 编号不受影响
+    base_code = strip_mother_w(base_code)
+
     _flabel = str(ctx.get("father_label") or "").strip().upper()
     if ctx.get("multi_father") and _flabel and not is_wq:
         _letter = _flabel[-1].lower()

@@ -88,6 +88,20 @@ def pt_suffix_of(code, default="H"):
     return suffix, suffix_upper
 
 
+def strip_mother_w(code):
+    """去掉母亲样本号的 W 后缀（只去紧跟 PT 数字的那个 W）。
+
+    2026-11-13 用户口径：巴西/国内报告文件名、海外报告 Test ID 都不要 W。
+        PT72499W      → PT72499
+        PT72502W_T1   → PT72502_T1   （重做标记保留）
+        PT72573W_R1   → PT72573_R1   （重采标记保留）
+        PT72528H / PT72528HA → 原样（父亲号不动）
+    """
+    s = str(code or "").strip()
+    m = re.match(r"^(.*?PT\d+)W((?:_[RT]\d+)*)$", s, re.I)
+    return (m.group(1) + m.group(2)) if m else s
+
+
 def find_appendix(samples_code, search_dir=".", kind="unif"):
     """按 PT 号 + 后缀 + '.unif' 找附表文件。
 
