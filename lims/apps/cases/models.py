@@ -85,8 +85,9 @@ class Case(models.Model):
         help_text="孕周计算方式: lmp=末次月经, ultrasound=B超")
     twin_type = models.CharField(
         max_length=20, blank=True, default="",
-        choices=[("monozygotic", "同卵"), ("dizygotic", "异卵")],
-        help_text="双胎类型（仅 multiple_gestation=True 时有意义）: monozygotic=同卵, dizygotic=异卵")
+        # 2026-11-17：新增 unknown —— 知道是双胎但不确定同卵/异卵（用户要求）
+        choices=[("monozygotic", "同卵"), ("dizygotic", "异卵"), ("unknown", "未知")],
+        help_text="双胎类型（仅 multiple_gestation=True 时有意义）: monozygotic=同卵, dizygotic=异卵, unknown=未知")
     application_date = models.DateField(
         null=True, blank=True, help_text="申请日期（申请单上的日期，区别于样本采集日期 collection_date）")
 

@@ -508,6 +508,12 @@ export default function NipptRegistration() {
 
   // Submit registration
   const handleSubmit = async () => {
+    // 2026-11-17（用户要求）：选「双胎」时双胎类型必选（同卵 / 异卵 / 未知），三个都不预选。
+    // 放在整体校验之前，否则会被别的必填项（报告版本）的「必填」提示淹没。
+    if (form.getFieldValue("multiple_gestation") === true && !form.getFieldValue("twin_type")) {
+      message.warning("请选择双胎类型（同卵 / 异卵 / 未知）");
+      return;
+    }
     const values = await form.validateFields();
     // 首次登记：至少一个样本（孕妇或任一男性姓名）
     if (regType === "FIRST") {
@@ -1054,10 +1060,12 @@ export default function NipptRegistration() {
                 <Form.Item noStyle shouldUpdate={(prev, cur) => prev.multiple_gestation !== cur.multiple_gestation}>
                   {({ getFieldValue }) =>
                     getFieldValue("multiple_gestation") === true ? (
-                      <Form.Item name="twin_type" label="双胎类型" style={{ marginTop: 0, marginBottom: 0 }} initialValue="dizygotic">
+                      <Form.Item name="twin_type" label="双胎类型" style={{ marginTop: 0, marginBottom: 0 }}>
                         <Radio.Group size="small">
                           <Radio value="monozygotic">同卵</Radio>
                           <Radio value="dizygotic">异卵</Radio>
+                          {/* 2026-11-17：知道是双胎但不确定同卵/异卵 → 未知（不再默认预选异卵） */}
+                          <Radio value="unknown">未知</Radio>
                         </Radio.Group>
                       </Form.Item>
                     ) : null
@@ -1187,7 +1195,7 @@ export default function NipptRegistration() {
                     {draftSummary.values?.multiple_gestation === true ? "双胎"
                       : draftSummary.values?.multiple_gestation === false ? "单胎" : "客户未填"}
                     {draftSummary.values?.multiple_gestation === true
-                      ? (draftSummary.values?.twin_type === "monozygotic" ? "（同卵）" : draftSummary.values?.twin_type === "dizygotic" ? "（异卵）" : "") : ""}
+                      ? (draftSummary.values?.twin_type === "monozygotic" ? "（同卵）" : draftSummary.values?.twin_type === "dizygotic" ? "（异卵）" : draftSummary.values?.twin_type === "unknown" ? "（未知）" : "") : ""}
                   </Descriptions.Item>
                   <Descriptions.Item label="申请日期" span={1}>
                     {draftSummary.values?.collection_date ? dayjs(draftSummary.values.collection_date).format("YYYY-MM-DD") : "—"}
