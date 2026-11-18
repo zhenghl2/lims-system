@@ -2911,7 +2911,9 @@ def nippt_supplement_fathers_for_resampled_mother(batch, case_id, groups, create
     # 补齐父亲样本（本批次没有、但杂交 QC PASS 的 active 男性）
     for cs in case.case_samples.filter(
             role="ALLEGED_FATHER", is_active=True,
-            workflow_stage__in=["HYB_SEQ", "BIOINFO", "REPORT_DRAFT", "COMPLETED"],
+            # 2026-11-18：加入 BIOINFO_FAILED —— 旧配对被判失败后男性会停在「生信失败」，
+        # 原来这里不含该阶段，母亲重采/补样后他就补不进新批次（PT72611H 就是这么卡住的）
+        workflow_stage__in=["HYB_SEQ", "BIOINFO", "BIOINFO_FAILED", "REPORT_DRAFT", "COMPLETED"],
     ).select_related("sample"):
         hss = NipptHybSeqSample.objects.filter(
             case_sample_ids__contains=[str(cs.id)],
@@ -3062,7 +3064,9 @@ class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
 
                 case = Case.objects.get(id=case_id)
                 all_cs = case.case_samples.filter(
-                    workflow_stage__in=["HYB_SEQ", "BIOINFO", "REPORT_DRAFT", "COMPLETED"],
+                    # 2026-11-18：加入 BIOINFO_FAILED（失败后需重新配对的男性）
+                    workflow_stage__in=["HYB_SEQ", "BIOINFO", "BIOINFO_FAILED",
+                                        "REPORT_DRAFT", "COMPLETED"],
                     is_active=True,
                 ).select_related("sample")
 

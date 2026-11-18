@@ -5559,6 +5559,119 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         return Response(NipptBioinfoPairSerializer(pair).data, status=201)
 
     @action(detail=True, methods=["get"])
+    def appendable_samples(self, request, pk=None):
+        """本批次「可以补做配对」的疑父样本（2026-11-18）。
+
+        场景：旧配对因女性浓度低失败 → 男性退回 BIOINFO；母亲重采/补样后建的新批次
+        在创建时他还没回到 BIOINFO（当时是 BIOINFO_FAILED），没被带进去；批次完成后再也进不来。
+        """
+        from .models import NipptHybSeqSample
+        batch = self.get_object()
+        case_ids = set(batch.samples.values_list("case_id", flat=True))
+        case_ids |= set(batch.pairs.values_list("case_id", flat=True))
+        in_batch = set()
+        for smp in batch.samples.all():
+            for cid in (smp.case_sample_ids or []):
+                in_batch.add(str(cid))
+        items = []
+        for cs in (CaseSample.objects
+                   .filter(case_id__in=case_ids, is_active=True, role="ALLEGED_FATHER",
+                           workflow_stage__in=["BIOINFO", "BIOINFO_FAILED"])
+                   .select_related("case", "sample")):
+            if str(cs.id) in in_batch:
+                continue
+            hs = (NipptHybSeqSample.objects
+                  .filter(case_sample_ids__contains=[str(cs.id)],
+                          batch__status="COMPLETED", qc_status="PASS")
+                  .select_related("batch").first())
+            if hs is None:
+                continue
+            mother = NipptBioinfoSample.objects.filter(
+                batch=batch, case_id=cs.case_id, role="MOTHER").first()
+            items.append({
+                "case_sample_id": str(cs.id),
+                "test_sample_id": cs.test_sample_id or "",
+                "patient_name": getattr(cs.sample, "patient_name", "") or hs.patient_name,
+                "case_number": cs.case.case_number,
+                "pt_number": cs.case.pt_number or "",
+                "workflow_stage": cs.workflow_stage,
+                "hybseq_batch": hs.batch.batch_number,
+                "has_mother_in_batch": bool(mother),
+            })
+        return Response({"batch": batch.batch_number, "count": len(items), "items": items})
+
+    @action(detail=True, methods=["post"])
+    def append_pair(self, request, pk=None):
+        """把待分析的疑父补进本批次并与本批次母亲配对（允许已完成批次，2026-11-18）。"""
+        from .models import NipptHybSeqSample, NipptBioinfoPair
+        from .serializers import father_label_of
+
+        batch = self.get_object()
+        cs_id = str(request.data.get("case_sample_id") or "").strip()
+        if not cs_id:
+            return Response({"error": "case_sample_id required"}, status=400)
+        cs = (CaseSample.objects.filter(id=cs_id, is_active=True)
+              .select_related("case", "sample").first())
+        if cs is None:
+            return Response({"error": "案例样本不存在或已停用"}, status=404)
+        if cs.role != "ALLEGED_FATHER":
+            return Response({"error": "只能补疑父样本"}, status=400)
+        if cs.workflow_stage not in ("BIOINFO", "BIOINFO_FAILED"):
+            return Response({"error": "该样本当前阶段为 %s，只有待分析/生信失败的样本需要补做"
+                                      % cs.workflow_stage}, status=400)
+        hs = (NipptHybSeqSample.objects
+              .filter(case_sample_ids__contains=[str(cs.id)],
+                      batch__status="COMPLETED", qc_status="PASS")
+              .select_related("batch").first())
+        if hs is None:
+            return Response({"error": "找不到该样本已完成的杂交测序记录"}, status=400)
+        mother = NipptBioinfoSample.objects.filter(
+            batch=batch, case_id=cs.case_id, role="MOTHER").first()
+        if mother is None:
+            return Response({"error": "本批次里没有该案例的母亲样本，无法配对"}, status=400)
+
+        father = None
+        for smp in NipptBioinfoSample.objects.filter(
+                batch=batch, case_id=cs.case_id, role="ALLEGED_FATHER"):
+            if str(cs.id) in [str(x) for x in (smp.case_sample_ids or [])]:
+                father = smp
+                break
+        created_sample = False
+        if father is None:
+            father = NipptBioinfoSample.objects.create(
+                batch=batch, case=cs.case,
+                patient_name=getattr(cs.sample, "patient_name", "") or hs.patient_name,
+                role="ALLEGED_FATHER", category=hs.category,
+                case_sample_ids=hs.case_sample_ids,
+                source_hybseq_sample_id=str(hs.id),
+            )
+            created_sample = True
+        if NipptBioinfoPair.objects.filter(
+                batch=batch, mother_sample=mother, father_sample=father).exists():
+            return Response({"error": "该配对已存在"}, status=400)
+
+        label = father_label_of(father)
+        m_hs = NipptHybSeqSample.objects.filter(
+            id=mother.source_hybseq_sample_id).select_related("batch").first()
+        src_hs_id = str((batch.bioinfo_data or {}).get("source_hybseq_batch_id") or "")
+        pair = NipptBioinfoPair.objects.create(
+            batch=batch, case=cs.case, mother_sample=mother, father_sample=father,
+            father_label=label,
+            is_cross_batch=(str(hs.batch_id) != src_hs_id),
+            mother_source_batch=(m_hs.batch.batch_number if m_hs else ""),
+            father_source_batch=hs.batch.batch_number,
+        )
+        try:
+            log_audit(request, "APPEND_PAIR", batch, {
+                "pair_id": str(pair.id), "case": cs.case.case_number,
+                "sample": cs.test_sample_id, "label": label,
+                "created_sample": created_sample, "father_from": hs.batch.batch_number,
+            })
+        except Exception:      # 审计失败不影响补对
+            pass
+        return Response(NipptBioinfoPairSerializer(pair).data, status=201)
+
+    @action(detail=True, methods=["get"])
     def export_template(self, request, pk=None):
         """Download CSV template with pair info pre-filled (including metric columns)"""
         batch = self.get_object()

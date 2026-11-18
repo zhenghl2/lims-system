@@ -135,6 +135,10 @@ export default function NipptBioinformatics() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [appendixModalOpen, setAppendixModalOpen] = useState(false);
   const [appendixErrors, setAppendixErrors] = useState<any[]>([]);
+  // 2026-11-18：补做配对（已完成批次里补进待分析疑父）
+  const [appendOpen, setAppendOpen] = useState(false);
+  const [appendLoading, setAppendLoading] = useState(false);
+  const [appendItems, setAppendItems] = useState<any[]>([]);
   const appendixFileRef = useRef<HTMLInputElement>(null);
 const PERSONS = ["郑海灵","祝兴强","吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 // 生信模块默认操作人/审核人（后端建批次时也会写入，这里兜底显示空批次）
@@ -330,6 +334,35 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
       else { const m = { ...manualPairMother }; delete m[fatherId || ""]; setManualPairMother(m); }
       fetchDetail(selectedBatch.id);
     } catch (e: any) { message.error(e.response?.data?.error || "Failed"); }
+  };
+
+  /** 2026-11-18：补做配对 —— 列出本批次里可补的疑父（待分析/生信失败） */
+  const openAppend = async () => {
+    if (!selectedBatch) return;
+    setAppendOpen(true);
+    setAppendLoading(true);
+    setAppendItems([]);
+    try {
+      const r = await api.get(`/cases/bioinfo/${selectedBatch.id}/appendable_samples/`);
+      setAppendItems(r.data?.items || []);
+    } catch (e: any) {
+      message.error(e.response?.data?.error || "读取可补样本失败");
+    } finally { setAppendLoading(false); }
+  };
+
+  /** 2026-11-18：把一个待分析疑父补进本批次并配对 */
+  const doAppend = async (caseSampleId: string, label: string) => {
+    if (!selectedBatch) return;
+    setAppendLoading(true);
+    try {
+      await api.post(`/cases/bioinfo/${selectedBatch.id}/append_pair/`, { case_sample_id: caseSampleId });
+      message.success(`已补入 ${label}，请填 Result / QC 后点「修改并保存」`);
+      const r = await api.get(`/cases/bioinfo/${selectedBatch.id}/appendable_samples/`);
+      setAppendItems(r.data?.items || []);
+      fetchDetail(selectedBatch.id);
+    } catch (e: any) {
+      message.error(e.response?.data?.error || "补入失败");
+    } finally { setAppendLoading(false); }
   };
 
   /** 附表(.last)上传：按 PT 号匹配本批次配对（与 CSV/xlsx 导入同一入口，按扩展名自动分流） */
@@ -658,6 +691,8 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
                 <Alert type="success" message="Batch completed" showIcon />
                 {/* 2026-10-30：完成后允许改 Result / 备注 / QC，保存时必须填「人员 + 原因」并写审计 */}
                 <Button type="primary" icon={<EditOutlined />} loading={saving} onClick={handleSave}>修改并保存</Button>
+                {/* 2026-11-18：补做配对 —— 旧配对因女性浓度低失败、男性退回待分析时用 */}
+                <Button icon={<LinkOutlined />} onClick={openAppend}>补做配对</Button>
                 <Text type="secondary" style={{ fontSize: 12 }}>已完成批次可修改 Result / 备注 / QC（实验指标锁定）；保存时需填写人员与原因，并记入审计历史</Text>
               </Space>)}
             <div style={{ marginTop: 12, padding: 8, background: "#fafafa", borderRadius: 4, fontSize: 12 }}>
@@ -694,6 +729,31 @@ const [reviewers, setReviewers] = useState<Record<string,string>>({});
         ) : (
           <div style={{ textAlign: "center", paddingTop: 100, color: "#999" }}><Title level={5} type="secondary">Select a batch</Title><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>New Batch</Button></div>)}
       </div>
+
+      {/* 补做配对弹窗（2026-11-18） */}
+      <Modal title="补做配对" open={appendOpen} onCancel={() => setAppendOpen(false)} footer={null} width={860}>
+        <Alert type="info" showIcon style={{ marginBottom: 10 }}
+          message={<span style={{ fontSize: 12 }}>
+            列出<b>本批次各案例</b>里仍停在「待分析 / 生信失败」的疑父（本批次里还没有他的样本）。
+            补入后他会与本批次的母亲配对，填 Result / QC 再点「修改并保存」即可推进到报告阶段。
+          </span>} />
+        <Table size="small" rowKey="case_sample_id" loading={appendLoading}
+          dataSource={appendItems} pagination={false}
+          locale={{ emptyText: "没有需要补做的疑父" }}
+          columns={[
+            { title: "PT 号", dataIndex: "test_sample_id", width: 130 },
+            { title: "案例", dataIndex: "case_number", width: 190 },
+            { title: "姓名", dataIndex: "patient_name", width: 110 },
+            { title: "当前阶段", dataIndex: "workflow_stage", width: 130,
+              render: (v: string) => <Tag color={v === "BIOINFO_FAILED" ? "red" : "blue"}>{v}</Tag> },
+            { title: "来源杂交批次", dataIndex: "hybseq_batch", width: 150 },
+            { title: "母亲", dataIndex: "has_mother_in_batch", width: 90,
+              render: (v: boolean) => v ? <Tag color="green">本批次有</Tag> : <Tag color="red">缺母亲</Tag> },
+            { title: "", key: "op", width: 90, render: (_: any, r: any) => (
+              <Button size="small" type="primary" disabled={!r.has_mother_in_batch || appendLoading}
+                onClick={() => doAppend(r.case_sample_id, r.test_sample_id)}>补入</Button>) },
+          ]} />
+      </Modal>
 
       {/* Create Modal */}
       <Modal title="New Bioinformatics Batch" open={createModalOpen} onOk={handleCreate} onCancel={() => setCreateModalOpen(false)} okText="Create" confirmLoading={pendingLoading}>
