@@ -208,6 +208,8 @@ export default function Cases() {
       CASE_EDIT_FIELDS.forEach((f) => { fm[f] = (selectedCase as any)[f] ?? null; });
       fm.notes = (selectedCase as any).notes ?? "";
       fm.external_id = (st as any).external_id ?? "";   // 外部编号（案例级，写在样本上）
+      // 2026-11-18：gender（额外信息）= 母亲样本 gender_info；报告模块该列同一字段
+      fm.gender_info = (st as any).gender_info ?? "";
       setEditForm(fm);
       const sm: any = {};
       (st.samples || []).forEach((s: any) => {
@@ -240,6 +242,7 @@ export default function Cases() {
       CASE_EDIT_FIELDS.forEach((f) => { payload[f] = editForm[f]; });
       payload.notes = editForm.notes ?? "";
       payload.external_id = editForm.external_id ?? "";   // 外部编号
+      payload.gender_info = editForm.gender_info ?? "";   // gender（额外信息 Yes/No）
       payload.case_samples = Object.keys(editSamples).map((csId) => {
         const s = editSamples[csId];
         const out: any = { id: csId, collection_notes: s.collection_notes ?? "" };
@@ -721,6 +724,22 @@ export default function Cases() {
                                   : <Text type="secondary" style={{ fontSize: 11 }}>
                                       写入样本 {(editState as any)?.external_id_target || "-"}
                                     </Text>}
+                              </Space>
+                            </Descriptions.Item>
+                            <Descriptions.Item label="gender（额外信息）" span={2}>
+                              <Space size={10} wrap>
+                                <Radio.Group size="small" value={editForm.gender_info ?? ""}
+                                  disabled={!(editState as any)?.gender_editable}
+                                  onChange={(e: any) => setEditForm({ ...editForm, gender_info: e.target.value })}>
+                                  <Radio value="Yes">是</Radio>
+                                  <Radio value="No">否</Radio>
+                                  <Radio value="">未填</Radio>
+                                </Radio.Group>
+                                <Text type="secondary" style={{ fontSize: 11 }}>
+                                  {(editState as any)?.gender_editable
+                                    ? `写入母亲样本 ${(editState as any)?.gender_target}；报告模块「额外信息」列同一字段，选「是」才会出性别报告`
+                                    : "该案例没有母亲样本，额外信息不可改"}
+                                </Text>
                               </Space>
                             </Descriptions.Item>
                             <Descriptions.Item label="孕周(周)">

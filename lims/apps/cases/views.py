@@ -427,6 +427,10 @@ class CaseViewSet(viewsets.ModelViewSet):
                 "lock_reason": self._sample_lock_reason(case, cs) or "",
             })
         case_locked = all(s["locked"] for s in samples) if samples else False
+        # 2026-11-18：额外信息落点 = 母亲样本（与报告模块 set-gender-info 同一口径）
+        _mom = case.case_samples.filter(role="MOTHER").select_related("sample").first()
+        _graw = ((_mom.sample.gender_info or "").strip() if (_mom and _mom.sample_id) else "")
+        _gval = _graw if _graw in ("Yes", "No") else ""
         # 外部编号（案例级）：写在目标样本上，单独一把更宽松的锁
         _tgt = self._external_id_target(case)
         _ext_reason = self._sample_matched_reason(case, _tgt) if _tgt else None
@@ -437,6 +441,11 @@ class CaseViewSet(viewsets.ModelViewSet):
             "external_id_locked": bool(_ext_reason),
             "external_id_lock_reason": _ext_reason or "",
             "external_id_target": (_tgt.sample.sample_id if _tgt else ""),
+            # 2026-11-18：gender（= 报告模块「额外信息」列同一字段，存母亲样本 gender_info）。
+            #   只认 Yes/No，其它值一律当未填（报告引擎只认 Yes 才出性别报告）。
+            "gender_info": _gval,
+            "gender_target": (_mom.sample.sample_id if (_mom and _mom.sample_id) else ""),
+            "gender_editable": bool(_mom and _mom.sample_id),
             "samples": samples,
         })
 
@@ -537,7 +546,20 @@ class CaseViewSet(viewsets.ModelViewSet):
                     })
                 ext_plan = (_tgt, _old, _new)
 
-        if not case_plan and not sample_plan and not ext_plan:
+        # gender（额外信息）：写母亲样本 gender_info。与报告模块 set-gender-info 同一口径
+        #   —— 不受样本锁定限制（报告模块随时可改），但改动一定进审计。
+        gender_plan = None
+        if "gender_info" in request.data:
+            _raw = str(request.data.get("gender_info") or "").strip()
+            _new = _raw if _raw in ("Yes", "No") else ""
+            _mom = case.case_samples.filter(role="MOTHER").select_related("sample").first()
+            # 没有母亲样本 → 静默跳过（不能让「改别的字段」被这个字段卡成 400）
+            if _mom is not None and _mom.sample_id:
+                _old = (_mom.sample.gender_info or "").strip()
+                if _old != _new:
+                    gender_plan = (_mom.sample, _old, _new)
+
+        if not case_plan and not sample_plan and not ext_plan and not gender_plan:
             return Response({"updated": 0, "changes": {}, "message": "没有变更"})
 
         # ── 阶段二：写入 ──
@@ -576,6 +598,12 @@ class CaseViewSet(viewsets.ModelViewSet):
                 _tgt.sample.save(update_fields=["external_id", "updated_at"])
                 changes["external_id"] = {"old": _old, "new": _new}
 
+            if gender_plan:
+                _sp, _old, _new = gender_plan
+                _sp.gender_info = _new
+                _sp.save(update_fields=["gender_info", "updated_at"])
+                changes["gender_info"] = {"old": _old, "new": _new}
+
             changes["edited_by"] = {"old": "", "new": edited_by}
             changes["source"] = {"old": "", "new": "case_manage_edit"}
             log_audit(
@@ -584,7 +612,7 @@ class CaseViewSet(viewsets.ModelViewSet):
             )
 
         return Response({"updated": len(case_plan) + sum(len(p) for _, p in sample_plan)
-                         + (1 if ext_plan else 0),
+                         + (1 if ext_plan else 0) + (1 if gender_plan else 0),
                          "changes": changes})
 
     def partial_update(self, request, *args, **kwargs):
