@@ -11,7 +11,7 @@ import dayjs from "dayjs";
 import { confirmBatchDelete } from "../utils/batchDelete";
 const { Text, Title } = Typography;
 
-const SAMPLE_TYPE_LABELS:Record<string,string>={BLOOD:"血液",DBS:"血痕",HAIR:"毛发",NAIL:"指甲",SWAB:"口拭子",SEMEN:"精液",TOOTHBRUSH:"牙刷",CIGARETTE:"烟头",BOTTLE:"水瓶",BEARD:"胡须",FLOSS:"牙线",SEMSTAIN:"精斑",GUM:"口香糖"};
+const SAMPLE_TYPE_LABELS:Record<string,string>={BLOOD:"血液",BLOODSTAIN:"血痕",DBS:"血痕",HAIR:"毛发",NAIL:"指甲",SWAB:"口拭子",SEMEN:"精液",TOOTHBRUSH:"牙刷",CIGARETTE:"烟头",BOTTLE:"水瓶",BEARD:"胡须",FLOSS:"牙线",SEMSTAIN:"精斑",GUM:"口香糖"};
 const DEFAULT_POOLING_AMOUNT=0;
 const YIELD_THRESHOLD=300;   // 淘汰阈值(ng)：产量 = 浓度 × 洗脱体积，低于此值判为淘汰
 const DEFAULT_ELUTION=40;    // 2026-11-09 用户要求：默认洗脱体积 40 μL（原 30）
@@ -45,7 +45,7 @@ export default function NipptPooling() {
   const [batchLoading, setBatchLoading] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
-  const [dueSort, setDueSort] = useState(false);  // 新建弹窗：按到期时间排序
+  const [sortMode, setSortMode] = useState<"PT" | "DUE">("PT");  // 新建弹窗排序：PT=按 PT 编号（默认）/ DUE=按到期时间
   const [pendingData, setPendingData] = useState<any>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   // QC 质控样本单独记录（用上游行 id 建行，避免与母亲样本合并）
@@ -71,33 +71,52 @@ export default function NipptPooling() {
  *  2026-11-06（用户要求）：排序**忽略重采/重做后缀**（_R1 / _T2 / _R1_T2），
  *  例如 PT72301W_R1 按 PT72301W 的位置排；显示仍是原编号，不做任何改写。
  *  同一编号的原样本排在重采之前（PT72250W → PT72250W_R1 → PT72250W_R2）。 */
-const sortBySexThenPt = <T extends { ptId?: string; test_sample_id?: string; category?: string }>(arr: T[]): T[] => {
-  const pt = (o: any) => String(o?.ptId || o?.test_sample_id || "");
-  // 去掉 _R{n}/_T{n}（可叠加），只用于排序比较
-  const baseOf = (s: string) => s.replace(/^PT/i, "").replace(/(?:_(?:R|T)\d+)+$/i, "");
-  const keyOf = (s: string) => {
-    const b = baseOf(s);
-    const m = /^(\d+)(.*)$/.exec(b);
-    return {
-      numLen: m ? m[1].length : Number.MAX_SAFE_INTEGER,
-      num: m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER,
-      rest: (m ? m[2] : b).toUpperCase(),
-      full: s,
-      hasSuffix: /_(?:R|T)\d+/i.test(s),
-    };
+/** PT 编号排序键（2026-11-18 抽出为模块级：弹窗与表格共用同一口径）
+ *  忽略重采/重做后缀（_R1 / _T2 / _R1_T2）后比较主编号。 */
+const ptKeyOf = (raw: string) => {
+  const base = String(raw || "").replace(/^PT/i, "").replace(/(?:_(?:R|T)\d+)+$/i, "");
+  const m = /^(\d+)(.*)$/.exec(base);
+  return {
+    numLen: m ? m[1].length : Number.MAX_SAFE_INTEGER,
+    num: m ? parseInt(m[1], 10) : Number.MAX_SAFE_INTEGER,
+    rest: (m ? m[2] : base).toUpperCase(),
+    full: String(raw || ""),
+    hasSuffix: /_(?:R|T)\d+/i.test(String(raw || "")),
   };
-  return [...arr].sort((a, b) => {
+};
+
+/** 两个 PT 编号比较（不含性别维度）：位数 → 数值 → W/H → 原样本优先于 _R1/_R2 */
+const cmpPt = (a?: string | null, b?: string | null): number => {
+  const ka = ptKeyOf(String(a || "")), kb = ptKeyOf(String(b || ""));
+  if (ka.numLen !== kb.numLen) return ka.numLen - kb.numLen;
+  if (ka.num !== kb.num) return ka.num - kb.num;
+  if (ka.rest !== kb.rest) return ka.rest.localeCompare(kb.rest, "en");
+  if (ka.hasSuffix !== kb.hasSuffix) return ka.hasSuffix ? 1 : -1;
+  return ka.full.localeCompare(kb.full, "en", { numeric: true });
+};
+
+/** 只按 PT 升序（弹窗里「女性」「男性」两段各自内部用；男性不分样本类型） */
+const sortByPtOnly = <T,>(arr: T[], getPt: (x: T) => string): T[] =>
+  [...arr].sort((a, b) => cmpPt(getPt(a), getPt(b)));
+
+/** 按截止日期排序（2026-11-18 用户口径，见示例板块 3）
+ *  无日期（空 / "-"）排最前 → 日期升序 → 同日期按 PT 升序 */
+const sortByDueThenPt = <T,>(arr: T[], getDue: (x: T) => string, getPt: (x: T) => string): T[] =>
+  [...arr].sort((a, b) => {
+    const da = String(getDue(a) || "").trim(), db = String(getDue(b) || "").trim();
+    const ea = !da || da === "-", eb = !db || db === "-";
+    if (ea !== eb) return ea ? -1 : 1;
+    if (da !== db) return da < db ? -1 : 1;
+    return cmpPt(getPt(a), getPt(b));
+  });
+
+const sortBySexThenPt = <T extends { ptId?: string; test_sample_id?: string; category?: string }>(arr: T[]): T[] =>
+  [...arr].sort((a, b) => {
     const fa = a.category === "FEMALE_BLOOD" ? 0 : 1;
     const fb = b.category === "FEMALE_BLOOD" ? 0 : 1;
     if (fa !== fb) return fa - fb;
-    const ka = keyOf(pt(a)), kb = keyOf(pt(b));
-    if (ka.numLen !== kb.numLen) return ka.numLen - kb.numLen;      // 位数优先（与后端按 PT 位数口径一致）
-    if (ka.num !== kb.num) return ka.num - kb.num;                  // 主编号
-    if (ka.rest !== kb.rest) return ka.rest.localeCompare(kb.rest, "en");  // W / H / HA / HB
-    if (ka.hasSuffix !== kb.hasSuffix) return ka.hasSuffix ? 1 : -1;       // 原样本在前，_R1/_R2 在后
-    return ka.full.localeCompare(kb.full, "en", { numeric: true });
+    return cmpPt(String(a.ptId || a.test_sample_id || ""), String(b.ptId || b.test_sample_id || ""));
   });
-};
 
 const PERSONS = ["吴书凌","叶丽婷","何家宇","胡煜敏","付慧珠","杜兴琼","龙雨青","张斯栋","郭爽洁","林琦","林洋鸿","杨思婷","李彩娟"];
 
@@ -258,7 +277,19 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       setConcentrator(pd.dev_concentrator || poolDevRef.current?.concentrator?.no || "");
       setGroupBases(pd.groupBases||{});
       setGroupElutions(pd.groupElutions||{});
-      const allSamples = [...(d.female_samples||[]),...(d.male_blood_samples||[]),...(d.male_other_samples||[])];
+      const allSamplesRaw = [...(d.female_samples||[]),...(d.male_blood_samples||[]),...(d.male_other_samples||[])];
+      // 2026-11-18（用户口径）：新建/未保存批次默认「先女后男 + PT 升序」，mix 分配即按此顺序切片
+      //   → mix1 拿最小 PT，mix2 接着；男性不分血液/其他。已保存批次按 pooling_data.rows 的样本顺序还原，
+      //   保证历史批次的 mix 编号不因排序规则变化而改变。
+      const _savedOrder: Record<string, number> = {};
+      ((pd.rows||[]) as any[]).forEach((sr:any, i:number)=>{ if (sr && sr.id) _savedOrder[String(sr.id)] = i; });
+      const allSamples: any[] = ((pd.rows||[]) as any[]).length
+        ? [...allSamplesRaw].sort((a:any, b:any)=>{
+            const ia = _savedOrder[String(a.id)] ?? Number.MAX_SAFE_INTEGER;
+            const ib = _savedOrder[String(b.id)] ?? Number.MAX_SAFE_INTEGER;
+            return ia - ib;
+          })
+        : sortBySexThenPt(allSamplesRaw as any[]);
       // Init manual alloc from saved or default
       const savedAlloc = pd.manual_alloc;
       if (savedAlloc && savedAlloc.length > 0) {
@@ -269,6 +300,9 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       setCustomAmounts(pd.customAmounts||{});
       setHkDoubled(pd.hk_doubled ?? false);
       const savedRows = pd.rows||[];
+      // 2026-11-18：已存行按「样本 id」匹配（原来按下标 savedRows[i]，行序一变就串数据）
+      const savedById: Record<string, any> = {};
+      savedRows.forEach((sr:any)=>{ if (sr && sr.id) savedById[String(sr.id)] = sr; });
       // 2026-11-06：建库「浓度板」填的浓度 → Pooling 浓度默认值（Pooling 已填过则以 Pooling 为准）
       const libConc: Record<string, number | number[]> = (d as any).library_conc_map || {};
       const stripSfx = (v: string) => String(v || "").replace(/_(?:R|T)\d+$/i, "");
@@ -301,8 +335,8 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       } else {
         setSavedIndexes(savedIdx);
       }
-      const poolRows:PoolRow[] = allSamples.map((s:SampleItem,i)=>{
-        const sr = savedRows[i]||{};
+      const poolRows:PoolRow[] = allSamples.map((s:SampleItem)=>{
+        const sr = savedById[String(s.id)] || {};
         const _libC = libConcOf(s.test_sample_id||"");   // 总是消费一次，避免同 PT 队列错位
         const _fromLib = sr.concentration == null ? _libC : null;
         const conc = sr.concentration ?? _fromLib ?? null;
@@ -790,24 +824,29 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       <Modal title="新建文库定量及Pooling批次" open={modalOpen} onOk={createBatch} onCancel={()=>setModalOpen(false)} width={700} okText={`创建批次 (${selectedKeys.size}个样本)`}>
         {pendingData&&(<div>
           <div style={{marginBottom:12,padding:"8px 12px",background:"#f6ffed",borderRadius:6}}><Text strong>批次号：</Text><Text code style={{fontSize:16}}>{batchNumberPreview}</Text></div>
-          <Space style={{marginBottom:8}} wrap><Tag color="magenta">👩 {visCount(true)}</Tag><Tag color="blue">👨 {visCount(false)}</Tag><Button size="small" onClick={()=>setDueSort(v=>!v)}>{dueSort?"恢复原排序":"按到期时间排序"}</Button>
+          <Space style={{marginBottom:8}} wrap><Tag color="magenta">👩 {visCount(true)}</Tag><Tag color="blue">👨 {visCount(false)}</Tag>
+            {/* 2026-11-18（用户口径）：排序二选一，默认按 PT 编号 */}
+            <Button size="small" type={sortMode==="PT"?"primary":"default"} onClick={()=>setSortMode("PT")}>按 PT 编号</Button>
+            <Button size="small" type={sortMode==="DUE"?"primary":"default"} onClick={()=>setSortMode("DUE")}>按到期时间</Button>
             <Select placeholder="全部签收地" style={{ width: 140 }} value={pendingLoc} allowClear
               onChange={(v: string | undefined) => { setPendingLoc(v); setSelectedKeys(new Set()); }} options={LOC_OPTIONS} />
             <Button size="small" onClick={() => toggleAll(true)}>全选</Button>
             <Button size="small" onClick={() => toggleAll(false)}>取消全选</Button></Space>
           <div style={{maxHeight:350,overflow:"auto"}}>
-            {(["FEMALE_BLOOD","MALE_BLOOD","MALE_OTHER"] as const).map(cat=>{
-              const rawEntries = pendingData.entries.filter((e:any)=>e.category===cat && (!pendingLoc || e.receipt_location === pendingLoc));
-              const entries = dueSort ? [...rawEntries].sort((a:any,b:any)=>{const da=a.expected_completion||"",db=b.expected_completion||"";if(da&&db){if(da!==db)return da<db?-1:1;}else if(da)return -1;else if(db)return 1;return String(a.test_sample_id||"").localeCompare(String(b.test_sample_id||""),undefined,{numeric:true});}) : rawEntries;
+            {(([["FEMALE_BLOOD","👩 女性"],["MALE","👨 男性"]]) as [string,string][]).map(([sec,label])=>{
+              // 2026-11-18（用户口径）：男性不分样本类型（血液/口拭/血痕一起按 PT 排），不再拆两段
+              const rawEntries = pendingData.entries.filter((e:any)=>(sec==="FEMALE_BLOOD" ? e.category==="FEMALE_BLOOD" : e.category!=="FEMALE_BLOOD") && (!pendingLoc || e.receipt_location === pendingLoc));
+              const entries = sortMode==="DUE"
+                ? sortByDueThenPt(rawEntries, (e:any)=>e.expected_completion, (e:any)=>e.test_sample_id)
+                : sortByPtOnly(rawEntries, (e:any)=>e.test_sample_id);
               if(!entries.length)return null;
-              const labels:Record<string,string>={FEMALE_BLOOD:"👩 女性",MALE_BLOOD:"🩸 男性血液",MALE_OTHER:"🧬 男性其他"};
 
-  return (<div key={cat}><Text strong style={{fontSize:13}}>{labels[cat]} ({entries.length})</Text>
+  return (<div key={sec}><Text strong style={{fontSize:13}}>{label} ({entries.length})</Text>
                 {entries.map((e:any)=>{const allIn=e.is_qc?selectedQCSrc.has(e.qc_source_id):e.case_sample_ids.every((id:string)=>selectedKeys.has(id)),someIn=e.is_qc?selectedQCSrc.has(e.qc_source_id):e.case_sample_ids.some((id:string)=>selectedKeys.has(id));
 
   return (<div key={e.is_qc ? ("qc_"+e.qc_source_id) : e.case_sample_ids.join(",")} style={{padding:"4px 8px",borderBottom:"1px solid #f0f0f0",display:"flex",alignItems:"center",gap:8}}>
                     <Checkbox checked={allIn} indeterminate={!allIn&&someIn} onChange={()=>{ if(e.is_qc){ setSelectedQCSrc(prev=>{const n=new Set(prev); if(n.has(e.qc_source_id)) n.delete(e.qc_source_id); else n.add(e.qc_source_id); return n;}); return; } setSelectedKeys(prev=>{const n=new Set(prev);if(allIn)e.case_sample_ids.forEach((id:string)=>n.delete(id));else e.case_sample_ids.forEach((id:string)=>n.add(id));return n})}}/>
-                    <Text code style={{fontSize:11,width:150,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.case_number}</Text><div style={{width:104,flexShrink:0}}>{e.test_sample_id&&<Tag color="blue" style={{fontSize:11,maxWidth:104,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{e.test_sample_id}</Tag>}</div><Tooltip title={e.patient_name}><div style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:600}}>{e.patient_name}</div></Tooltip>{e.receipt_location&&<Tag color={e.receipt_location==="HONGKONG"?"geekblue":"volcano"} style={{fontSize:10,marginRight:0,flexShrink:0}}>📍{LOC_LABEL[e.receipt_location]||e.receipt_location}</Tag>}<Tooltip title={e.expected_completion||""}><div style={{width:84,flexShrink:0,textAlign:"right",fontSize:11,color:"rgba(0,0,0,0.45)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.expected_completion||""}</div></Tooltip></div>)})}</div>)
+                    <Text code style={{fontSize:11,width:150,flexShrink:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.case_number}</Text><div style={{width:104,flexShrink:0}}>{e.test_sample_id&&<Tag color="blue" style={{fontSize:11,maxWidth:104,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",verticalAlign:"middle"}}>{e.test_sample_id}</Tag>}</div><Tooltip title={e.patient_name}><div style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontWeight:600}}>{e.patient_name}</div></Tooltip>{sec!=="FEMALE_BLOOD"&&(e.sample_types||[]).length>0&&<Tag color="purple" style={{fontSize:10,marginRight:0,flexShrink:0}}>{(e.sample_types||[]).map((t:string)=>SAMPLE_TYPE_LABELS[t]||t).join("/")}</Tag>}{e.receipt_location&&<Tag color={e.receipt_location==="HONGKONG"?"geekblue":"volcano"} style={{fontSize:10,marginRight:0,flexShrink:0}}>📍{LOC_LABEL[e.receipt_location]||e.receipt_location}</Tag>}<Tooltip title={e.expected_completion||""}><div style={{width:84,flexShrink:0,textAlign:"right",fontSize:11,color:"rgba(0,0,0,0.45)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.expected_completion||""}</div></Tooltip></div>)})}</div>)
             })}
           </div>
         </div>)}
