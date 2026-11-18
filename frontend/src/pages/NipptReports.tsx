@@ -112,7 +112,7 @@ export default function NipptReports() {
   // ── 生成报告（2026-10-12）──
   const [genOpen, setGenOpen] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
-  // 2026-11-18：只补性别报告（不动主报告）
+  // 2026-11-18：只补额外报告（不动主报告）
   const [sexBusy, setSexBusy] = useState(false);
   const [sexRowBusy, setSexRowBusy] = useState<any>({});
   const [genPicked, setGenPicked] = useState<string[]>([]);
@@ -252,7 +252,7 @@ export default function NipptReports() {
         pair_ids: [row.id], gender_info: val,
       });
       message.success(val ? `额外信息已设为「${val === "Yes" ? "是" : "否"}」（该案例全部配对生效）`
-                          : "额外信息已清空（未填 → 不出性别报告）");
+                          : "额外信息已清空（未填 → 不出额外报告）");
       await refreshDetail();
     } catch (e: any) {
       message.error(e?.response?.data?.detail || e?.response?.data?.error || "设置失败");
@@ -375,7 +375,7 @@ export default function NipptReports() {
     } finally { setGenRowBusy((p) => ({ ...p, [pairId]: false })); }
   };
 
-  /** 2026-11-18：只补性别报告 —— 单个 */
+  /** 2026-11-18：只补额外报告 —— 单个 */
   const genSexOne = async (pairId: string) => {
     if (!selectedBatch) return;
     setSexRowBusy((p: any) => ({ ...p, [pairId]: true }));
@@ -383,28 +383,28 @@ export default function NipptReports() {
       const r = await api.post(`/cases/bioinfo/${selectedBatch.id}/generate_sex_reports/`,
         { pair_ids: [pairId] }, { timeout: 300000 });
       const g = (r.data?.generated || []).length, why = r.data?.skipped?.[0]?.reason;
-      if (g) { message.success("性别报告已补出（主报告未改动）"); refreshDetail(); }
+      if (g) { message.success("额外报告已补出（主报告未改动）"); refreshDetail(); }
       else message.warning("未生成：" + (why || "未知原因"));
     } catch (e: any) {
-      message.error("补性别报告失败：" + (e?.response?.data?.detail || e?.message || ""));
+      message.error("补额外报告失败：" + (e?.response?.data?.detail || e?.message || ""));
     } finally { setSexRowBusy((p: any) => ({ ...p, [pairId]: false })); }
   };
 
-  /** 2026-11-18：只补性别报告 —— 本批次全部可补的 */
+  /** 2026-11-18：只补额外报告 —— 本批次全部可补的 */
   const genSexAll = async () => {
     if (!selectedBatch) return;
     const ids = (selectedBatch.pairs || []).filter((p: any) => p.sex_report_ready).map((p: any) => p.id);
-    if (!ids.length) { message.warning("本批次没有可补的性别报告（额外信息不是「是」/性别临界/版本无模板）"); return; }
+    if (!ids.length) { message.warning("本批次没有可补的额外报告（额外信息不是「是」/性别无法判定/版本无模板）"); return; }
     setSexBusy(true);
     try {
       const r = await api.post(`/cases/bioinfo/${selectedBatch.id}/generate_sex_reports/`,
         { pair_ids: ids }, { timeout: 600000 });
       const n = r.data?.count || 0, sk = r.data?.skipped_count || 0;
-      if (n) message.success(`已补出 ${n} 份性别报告${sk ? `（${sk} 个跳过）` : ""}；主报告未改动`);
-      else message.warning(`没有补出性别报告${sk ? `（${sk} 个跳过）` : ""}`);
+      if (n) message.success(`已补出 ${n} 份额外报告${sk ? `（${sk} 个跳过）` : ""}；主报告未改动`);
+      else message.warning(`没有补出额外报告${sk ? `（${sk} 个跳过）` : ""}`);
       refreshDetail();
     } catch (e: any) {
-      message.error("补性别报告失败：" + (e?.response?.data?.detail || e?.message || ""));
+      message.error("补额外报告失败：" + (e?.response?.data?.detail || e?.message || ""));
     } finally { setSexBusy(false); }
   };
 
@@ -1098,10 +1098,12 @@ ${histLine(h)}`}>
         return (
           <Space size={4}>
             {enabled ? (
-              <Tag color="purple" style={{ margin: 0, fontSize: 11 }}>性别</Tag>
+              <Tooltip title="额外信息=是 → 可自动补出额外报告">
+                <Tag color="green" style={{ margin: 0, fontSize: 11 }}>是</Tag>
+              </Tooltip>
             ) : (
-              <Tooltip title="「额外信息」不是「是」→ 自动生成不会出性别报告；仍可手工上传额外报告">
-                <Tag color="orange" style={{ margin: 0, fontSize: 11 }}>未开启</Tag>
+              <Tooltip title="额外信息不是「是」→ 自动生成不会出额外报告；仍可手工上传">
+                <Tag style={{ margin: 0, fontSize: 11 }}>否</Tag>
               </Tooltip>
             )}
             {r.report_file_sex_url ? (
@@ -1111,13 +1113,14 @@ ${histLine(h)}`}>
             ) : (
               <Space size={2}>
                 {r.sex_report_ready ? (
-                  <Tooltip title="只补性别报告（不动主报告、不改主报告 PDF）">
+                  <Tooltip title="只补额外报告（不动主报告、不改主报告 PDF）">
                     <Button size="small" type="primary" ghost loading={!!sexRowBusy[r.id]}
                       onClick={() => genSexOne(r.id)}>补</Button>
                   </Tooltip>
                 ) : (
-                  <Tooltip title={r.sex_report_hint || "自动生成性别报告的条件不满足，可手工上传"}>
-                    <Button size="small" disabled>补</Button>
+                  // disabled 按钮不触发鼠标事件 → 外层包 span，tooltip 才能显示
+                  <Tooltip title={r.sex_report_hint || "自动生成额外报告的条件不满足，可手工上传"}>
+                    <span><Button size="small" disabled>补</Button></span>
                   </Tooltip>
                 )}
                 <Tooltip title="上传额外报告 Word（.docx）">
@@ -1280,8 +1283,8 @@ ${histLine(h)}`}>
                   ) : null;
                 })()}
                 <Button type="primary" icon={<FileAddOutlined />} ghost onClick={openGenerate}>生成报告</Button>
-                <Tooltip title="只补「孕期胎儿性别报告」，主报告一个字不改、不标记 PDF 过期">
-                  <Button loading={sexBusy} disabled={!selectedBatch} onClick={genSexAll}>补性别报告</Button>
+                <Tooltip title="只补额外报告（如孕期胎儿性别报告），主报告一个字不改、不标记 PDF 过期">
+                  <Button loading={sexBusy} disabled={!selectedBatch} onClick={genSexAll}>补额外报告</Button>
                 </Tooltip>
               </Space>
             </div>

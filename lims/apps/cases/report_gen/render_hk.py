@@ -200,7 +200,7 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
     # 兼容旧输入：离线/文件源没有 gender_info 键时，沿用原有逻辑（按 y_ratio 的 M/F）。
     _gi = ctx.get("gender_info", None)
     if _gi is not None and str(_gi).strip() != "Yes":
-        return generated, "额外信息未选「是」→ 不出性别报告"
+        return generated, "额外信息未选「是」→ 不出额外报告"
     sex_val = sex_override if sex_override is not None else str(ctx.get("gender", "") or "").strip()
     if sex_val == "uncertain":
         return generated, "临界(uncertain)：未出性别报告"
@@ -224,9 +224,9 @@ def render_sex_only(row, tpl_dir, out_dir):
     """
     version = (row.get("报告版本") or "").strip()
     if version not in SEX_BY_VERSION:
-        return None, "报告版本 %r 没有性别报告模板" % (version or "空")
+        return None, "报告版本 %r 没有额外报告模板" % (version or "空")
     if str(row.get("gender_info") or "").strip() != "Yes":
-        return None, "「额外信息」不是「是」→ 不出性别报告"
+        return None, "「额外信息」不是「是」→ 不出额外报告"
     sex = str(row.get("gender") or "").strip()
     if sex not in ("M", "F"):
         return None, "性别无法判定（%s）" % ("临界" if sex == "uncertain" else (sex or "空"))

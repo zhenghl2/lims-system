@@ -5298,7 +5298,7 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             rv = (pair.case.report_version or "").strip()
             ch = _rs.channel_of(rv)
             if ch not in ("hk", "br"):
-                skipped.append(dict(base, reason="报告版本 %r 没有性别报告模板" % (rv or "空")))
+                skipped.append(dict(base, reason="报告版本 %r 没有额外报告模板" % (rv or "空")))
                 continue
             row = build_row(pair)
             tpl_dir = os.path.join(_rs.TEMPLATES_DIR, ch)

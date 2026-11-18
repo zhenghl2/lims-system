@@ -98,7 +98,7 @@ def render_sex_only(row, tpl_dir, out_dir):
     不跑 REQUIRED_COLS 校验（管号 ID 等主报告必填项与性别报告无关）。
     """
     if str(row.get("gender_info") or "").strip() != "Yes":
-        return None, "「额外信息」不是「是」→ 不出性别报告"
+        return None, "「额外信息」不是「是」→ 不出额外报告"
     sex = str(row.get("gender") or "").strip()
     if sex not in ("M", "F"):
         return None, "性别无法判定（%s）" % ("临界" if sex == "uncertain" else (sex or "空"))

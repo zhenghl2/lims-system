@@ -2336,11 +2336,11 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             return False, "案例未设置报告版本"
         ch = channel_of(rv)
         if ch == "wj":
-            return False, "国内报告没有性别报告模板"
+            return False, "国内报告没有额外报告模板"
         if ch == "hk" and rv not in SEX_BY_VERSION:
-            return False, "报告版本 %r 没有性别报告模板" % rv
+            return False, "报告版本 %r 没有额外报告模板" % rv
         if ch not in ("hk", "br"):
-            return False, "报告版本 %r 不支持性别报告" % rv
+            return False, "报告版本 %r 不支持额外报告" % rv
         if str(obj.case.mother_gender_info() or "").strip() != "Yes":
             return False, "「额外信息」不是「是」"
         sex = fetal_sex_from_y_ratio(getattr(obj, "mother_y_ratio", None))
