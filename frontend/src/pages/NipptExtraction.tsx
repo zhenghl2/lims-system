@@ -273,8 +273,10 @@ export default function NipptExtraction() {
   };
 
   /** 核酸提取仪与试剂盒联动（只有香港有）：圆底→01-圆底、锥底→02-锥底 */
-  const syncExtractor = (kits: KitRow[], loc?: string): string | undefined => {
+  const syncExtractor = (kits: KitRow[], loc?: string, method?: string): string | undefined => {
     if (regionKeyOf(loc) !== "HONGKONG") return undefined;
+    // 2026-11-18：手工提取不需要核酸提取仪 → 不参与试剂盒联动（清空，避免残留旧值）
+    if (method === "MANUAL") return "";
     const has = (k: string) => (kits || []).some((r) => r.kit === k);
     const want: string[] = [];
     if (has("MAGEN_ROUND")) want.push("VBL-ANAES-01-圆底");
@@ -432,20 +434,23 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
           expiry: x.expiry ? dayjs(x.expiry) : undefined,
         }));
       };
-      const _dev = (sec: any) => {
+      const _dev = (sec: any, method?: string) => {
         // 2026-11-09：设备号按批次签收地取（厦门/香港各有自己的设备清单）
         // 取值顺序：本批次已存的值 > 该地区上次保存的值 > 该地区默认（香港金属浴默认空）
         const mem: any = deviceNosFor(d.receipt_location);
         const out: any = {};
         devItemsFor(d.receipt_location).forEach((it) => {
           const own = splitDev(sec?.[it.key]);
-          const remembered = splitDev(mem?.[it.key]?.no);
-          out[it.key] = joinDev(own.length ? own : (remembered.length ? remembered : it.def));
+          // 2026-11-18：手工提取的批次不带入「上次记忆的核酸提取仪」（手工不用仪器）
+          const noMemo = (method === "MANUAL" && it.key === "dev_extractor");
+          const remembered = noMemo ? [] : splitDev(mem?.[it.key]?.no);
+          const fallback = noMemo ? [] : it.def;
+          out[it.key] = joinDev(own.length ? own : (remembered.length ? remembered : fallback));
         });
         return out;
       };
-      const _devF = _dev(fed);
-      const _devM = _dev(med);
+      const _devF = _dev(fed, fed.method);
+      const _devM = _dev(med, med.method);
       setReagentF({
         ..._devF,
         equipment: fed.equipment ?? ed.equipment ?? "",
@@ -626,7 +631,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
         return { kit: v, lot: last.lot || "", expiry: last.expiry ? dayjs(last.expiry) : undefined };
       });
       // 2026-11-09：香港核酸提取仪跟试剂盒联动（圆底→01-圆底，锥底→02-锥底）
-      const ex = syncExtractor(next, selectedBatch?.receipt_location);
+      const ex = syncExtractor(next, selectedBatch?.receipt_location,
+        side === "f" ? femaleMethod : maleMethod);
       return { ...p, kits: next, ...(ex === undefined ? {} : { dev_extractor: ex }) };
     });
   };
@@ -1255,7 +1261,13 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
           <Space direction="vertical" style={{ width: "100%" }}>
             <div>
               <Text strong style={{ marginRight: 12 }}>🧪 提取方法：</Text>
-              <Radio.Group value={method} onChange={e => setMethod(e.target.value)} options={EXTRACTION_METHODS} optionType="button" />
+              <Radio.Group value={method} options={EXTRACTION_METHODS} optionType="button"
+                onChange={e => {
+                  const v = e.target.value;
+                  setMethod(v);
+                  // 2026-11-18：手工提取不需要核酸提取仪 → 切到手工时清空该侧（仍可手工再选）
+                  if (v === "MANUAL") setReagent((p: any) => ({ ...p, dev_extractor: "" }));
+                }} />
             </div>
             {/* 实验记录：设备/试剂盒/批号/有效期/温湿度 —— 男女各自独立（2026-10-19） */}
             <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap" }}>
@@ -1280,7 +1292,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
                   <div key={d.key}>
                     <div style={{ fontSize: 12, color: "#666", marginBottom: 2 }}>{d.label}</div>
                     <Select size="small" mode="multiple" style={{ width: d.width || 200 }}
-                      placeholder="选择设备号" allowClear maxTagCount={1}
+                      placeholder={d.key === "dev_extractor" && manualHide ? "手工提取可不选" : "选择设备号"}
+                      allowClear maxTagCount={1}
                       value={cur}
                       onChange={(v: string[]) => setReagent((p: any) => ({ ...p, [d.key]: joinDev(v) }))}
                       options={opts.map((o) => ({ label: o, value: o }))} />
