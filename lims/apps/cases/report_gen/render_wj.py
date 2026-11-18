@@ -59,8 +59,12 @@ def render(row, appendix_path, tpl_dir, out_dir="."):
     _m = re.search(r"PT(\d+)", code, re.I)
     sm_id_num = _m.group(1) if _m else code[2:]
     _flabel0 = str(ctx.get("father_label") or "").strip().upper()
-    if not is_wq and ctx.get("multi_father") and len(_flabel0) > 1 and _flabel0.startswith("H"):
-        sm_id_num = sm_id_num + _flabel0[-1].lower()
+    # 2026-11-18：字母统一走 ctx["father_suffix"]（跨批次多疑父 + 撞名退化）
+    _suf0 = str(ctx.get("father_suffix") or "")
+    if not _suf0 and ctx.get("multi_father") and len(_flabel0) > 1 and _flabel0.startswith("H"):
+        _suf0 = _flabel0[-1].lower()
+    if not is_wq and _suf0:
+        sm_id_num = sm_id_num + _suf0
 
     # 检案号码 / sm_id_num
     app_date = ctx.get("申请日期")
@@ -97,9 +101,11 @@ def render(row, appendix_path, tpl_dir, out_dir="."):
     base_code = strip_mother_w(base_code)
 
     _flabel = str(ctx.get("father_label") or "").strip().upper()
-    if ctx.get("multi_father") and _flabel and not is_wq:
-        _letter = _flabel[-1].lower()
-        base_code = re.sub(r"[A-Za-z]+$", "", str(base_code)) + _letter
+    _suf = str(ctx.get("father_suffix") or "")
+    if not _suf and ctx.get("multi_father") and _flabel:
+        _suf = _flabel[-1].lower()
+    if _suf and not is_wq:
+        base_code = re.sub(r"[A-Za-z]+$", "", str(base_code)) + _suf
     out_name = "WJ%s-%s-%s%s.docx" % (base_code, ctx.get("申请人", ""), result, report_name_date)
 
     # 代孕判定

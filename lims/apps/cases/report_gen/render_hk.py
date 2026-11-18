@@ -168,7 +168,9 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
     #   目标格式（用户截图 / 下游批量上传可识别）：HK_report_EN_PT72482a-Y.docx
     #   字母必须在 PT 号后面、结果(-Y/-N)前面，否则批量上传解析不出角色，多疑父会匹配失败。
     _flabel = str(ctx.get("father_label") or "").strip().upper()
-    _lsuf = _flabel[-1].lower() if (ctx.get("multi_father") and _flabel) else ""
+    _lsuf = str(ctx.get("father_suffix") or "")
+    if not _lsuf and ctx.get("multi_father") and _flabel:
+        _lsuf = _flabel[-1].lower()
     # 文件名里的 PT 号：vg_id 是母亲号（PT72482W / PT72206W_R1），下游要的是纯 PT数字
     _name_pt = pt_prefix_of(vg_id) or vg_id
     if version == "英繁":

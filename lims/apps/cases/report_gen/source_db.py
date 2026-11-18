@@ -65,13 +65,80 @@ def case_client_id(case):
     return ""
 
 
-def _multi_father(pair):
-    """同一批次内该案例是否存在「父方样本不同」的另一条配对（多疑父 HA/HB…）。"""
+def _father_identity(pair):
+    """父方的「人」的标识：该疑父条目对应的 CaseSample 集合。
+
+    同一父亲在两个批次各配一次（母亲重采/补样后常见）→ 身份相同，不算多疑父；
+    父方 bioinfo 条目在每批次都是新行，不能用 father_sample_id 判身份。
+    """
     try:
-        return pair.batch.pairs.filter(case_id=pair.case_id) \
-            .exclude(father_sample_id=pair.father_sample_id).exists()
+        ids = tuple(sorted(str(x) for x in (pair.father_sample.case_sample_ids or [])))
+    except Exception:                              # noqa: BLE001
+        ids = ()
+    return ids or ("__row__" + str(pair.father_sample_id),)
+
+
+def _multi_father(pair):
+    """该案例是否存在「父方不同」的另一条配对（多疑父 HA/HB…）。
+
+    2026-11-18 修：原来只查同批次（pair.batch.pairs）。母亲跨批次配对上线后，
+    一个案例的两个疑父会分处不同批次 → multi_father 恒为 False，
+    报告文件名与文档里的样本编号/检案号码都不带 a/b（用户报障：PT72572 的 HB 报告）。
+    改为跨批次、按父亲身份去重判定。
+    """
+    try:
+        me = _father_identity(pair)
+        for q in NipptBioinfoPair.objects.filter(case_id=pair.case_id).select_related("father_sample"):
+            if _father_identity(q) != me:
+                return True
+        return False
     except Exception:                              # noqa: BLE001
         return False
+
+
+def _father_suffix(pair):
+    """多疑父时文件名/文档编号里的单字母后缀。
+
+    2026-11-18：多疑父判定已改为跨批次（见 _multi_father）；
+    标签末位小写（HA→a、HB→b、裸 H→h），与历史报告一致。
+    若同一案例的两个疑父标签相同（都叫 H → 都是 h，会撞名，PT72294 就是），
+    退化为按案例内顺序 a/b/c —— 2026-11-03「多疑父文件名必须能区分」的初衷。
+    """
+    try:
+        if not _multi_father(pair):
+            return ""
+        label = str(getattr(pair, "father_label", "") or "").strip().upper()
+        mine = label[-1].lower() if label else ""
+        me = _father_identity(pair)
+
+        siblings, seen = [], {me}
+        for q in (NipptBioinfoPair.objects.filter(case_id=pair.case_id)
+                  .select_related("father_sample").order_by("father_label")):
+            k = _father_identity(q)
+            if k in seen:
+                continue
+            seen.add(k)
+            siblings.append(q)
+        taken = {str(getattr(q, "father_label", "") or "").strip().upper()[-1:].lower()
+                 for q in siblings}
+        taken.discard("")
+        if mine and mine not in taken:
+            return mine
+
+        ordered, seen2 = [], set()
+        for q in (NipptBioinfoPair.objects.filter(case_id=pair.case_id)
+                  .select_related("father_sample")
+                  .order_by("father_label", "father_sample__patient_name")):
+            k = _father_identity(q)
+            if k in seen2:
+                continue
+            seen2.add(k)
+            ordered.append(k)
+        if me in ordered:
+            return chr(97 + min(ordered.index(me), 25))
+        return mine
+    except Exception:                              # noqa: BLE001
+        return ""
 
 
 def build_row(pair):
@@ -118,6 +185,8 @@ def build_row(pair):
         # 2026-11-03：多疑父（同案例多条配对、父方样本不同）→ 国内报告名加 a/b 区分
         "father_label": (getattr(pair, "father_label", "") or ""),
         "multi_father": _multi_father(pair),
+        # 多疑父时的单字母后缀（HB→b / 裸 H→h；撞名时退化 a/b/c）
+        "father_suffix": _father_suffix(pair),
         "female_name": ms.patient_name if ms else "",
         "male_name": fs.patient_name if fs else "",
         "female_name2": ms.patient_name if ms else "",
