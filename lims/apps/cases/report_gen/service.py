@@ -171,6 +171,27 @@ def generate_and_save(pair, out_dir, user=None):
     return files, ""
 
 
+def save_sex_only(pair, src_path, user=None):
+    """只补性别报告：写 report_file_sex，不动主报告、不标记 PDF 过期（2026-11-18）。"""
+    from django.utils import timezone as _tz
+
+    history = list(pair.report_history or [])
+    old = getattr(pair, "report_file_sex", None)
+    history.append({
+        "action": "generate_sex",
+        "filename": os.path.basename(src_path),
+        "prev_filename": os.path.basename(old.name or "") if old else "",
+        "format": "word",
+        "by": getattr(user, "username", "") or "",
+        "at": _tz.now().isoformat(),
+        "size": os.path.getsize(src_path) if os.path.exists(src_path) else 0,
+    })
+    _save_storage_file(pair, "report_file_sex", src_path)
+    pair.report_history = history[-20:]
+    pair.save(update_fields=["report_file_sex", "report_history", "updated_at"])
+    return os.path.basename(src_path)
+
+
 def zip_files(files, out_dir, zip_path):
     """把生成的文件打包（供批量生成后一次性下载）。"""
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as z:

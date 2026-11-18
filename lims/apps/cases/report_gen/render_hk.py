@@ -214,3 +214,31 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
         generated.append(sex_name)
 
     return generated, None
+
+
+def render_sex_only(row, tpl_dir, out_dir):
+    """只渲染「孕期胎儿性别报告」（2026-11-18）。
+
+    与主报告解耦：性别模板只用到 mother/日期/编号，不需要附表（.last），
+    也不会因主报告缺必填项而被拖住。返回 (文件名 or None, 跳过原因)。
+    """
+    version = (row.get("报告版本") or "").strip()
+    if version not in SEX_BY_VERSION:
+        return None, "报告版本 %r 没有性别报告模板" % (version or "空")
+    if str(row.get("gender_info") or "").strip() != "Yes":
+        return None, "「额外信息」不是「是」→ 不出性别报告"
+    sex = str(row.get("gender") or "").strip()
+    if sex not in ("M", "F"):
+        return None, "性别无法判定（%s）" % ("临界" if sex == "uncertain" else (sex or "空"))
+
+    tpl_file, words, tag = SEX_BY_VERSION[version]
+    ctx = dict(row)
+    ctx["fetal_gender"] = words[sex]
+    vg_id = str(row.get("万基编号") or "")
+    name_pt = pt_prefix_of(vg_id) or vg_id
+    lsuf = str(row.get("father_suffix") or "")
+    tpl = DocxTemplate(os.path.join(tpl_dir, tpl_file))
+    tpl.render(ctx)
+    name = "HK_report_%s_%s%s.docx" % (tag, name_pt, lsuf)
+    tpl.save(os.path.join(out_dir, name))
+    return name, None

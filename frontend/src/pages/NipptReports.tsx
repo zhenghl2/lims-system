@@ -112,6 +112,9 @@ export default function NipptReports() {
   // ── 生成报告（2026-10-12）──
   const [genOpen, setGenOpen] = useState(false);
   const [genBusy, setGenBusy] = useState(false);
+  // 2026-11-18：只补性别报告（不动主报告）
+  const [sexBusy, setSexBusy] = useState(false);
+  const [sexRowBusy, setSexRowBusy] = useState<any>({});
   const [genPicked, setGenPicked] = useState<string[]>([]);
   const [genResult, setGenResult] = useState<any>(null);
   const [genRowBusy, setGenRowBusy] = useState<Record<string, boolean>>({});
@@ -370,6 +373,39 @@ export default function NipptReports() {
     } catch (e: any) {
       message.error("生成失败：" + (e?.response?.data?.detail || e?.message || ""));
     } finally { setGenRowBusy((p) => ({ ...p, [pairId]: false })); }
+  };
+
+  /** 2026-11-18：只补性别报告 —— 单个 */
+  const genSexOne = async (pairId: string) => {
+    if (!selectedBatch) return;
+    setSexRowBusy((p: any) => ({ ...p, [pairId]: true }));
+    try {
+      const r = await api.post(`/cases/bioinfo/${selectedBatch.id}/generate_sex_reports/`,
+        { pair_ids: [pairId] }, { timeout: 300000 });
+      const g = (r.data?.generated || []).length, why = r.data?.skipped?.[0]?.reason;
+      if (g) { message.success("性别报告已补出（主报告未改动）"); refreshDetail(); }
+      else message.warning("未生成：" + (why || "未知原因"));
+    } catch (e: any) {
+      message.error("补性别报告失败：" + (e?.response?.data?.detail || e?.message || ""));
+    } finally { setSexRowBusy((p: any) => ({ ...p, [pairId]: false })); }
+  };
+
+  /** 2026-11-18：只补性别报告 —— 本批次全部可补的 */
+  const genSexAll = async () => {
+    if (!selectedBatch) return;
+    const ids = (selectedBatch.pairs || []).filter((p: any) => p.sex_report_ready).map((p: any) => p.id);
+    if (!ids.length) { message.warning("本批次没有可补的性别报告（额外信息不是「是」/性别临界/版本无模板）"); return; }
+    setSexBusy(true);
+    try {
+      const r = await api.post(`/cases/bioinfo/${selectedBatch.id}/generate_sex_reports/`,
+        { pair_ids: ids }, { timeout: 600000 });
+      const n = r.data?.count || 0, sk = r.data?.skipped_count || 0;
+      if (n) message.success(`已补出 ${n} 份性别报告${sk ? `（${sk} 个跳过）` : ""}；主报告未改动`);
+      else message.warning(`没有补出性别报告${sk ? `（${sk} 个跳过）` : ""}`);
+      refreshDetail();
+    } catch (e: any) {
+      message.error("补性别报告失败：" + (e?.response?.data?.detail || e?.message || ""));
+    } finally { setSexBusy(false); }
   };
 
   const downloadReportZip = async () => {
@@ -1073,9 +1109,21 @@ ${histLine(h)}`}>
                 <Button size="small" onClick={() => window.open(r.report_file_sex_url, "_blank")}>W</Button>
               </Tooltip>
             ) : (
-              <Tooltip title="上传额外报告 Word（.docx）">
-                <Button size="small" icon={<UploadOutlined />} onClick={() => pickSexReport(r, "word")} />
-              </Tooltip>
+              <Space size={2}>
+                {r.sex_report_ready ? (
+                  <Tooltip title="只补性别报告（不动主报告、不改主报告 PDF）">
+                    <Button size="small" type="primary" ghost loading={!!sexRowBusy[r.id]}
+                      onClick={() => genSexOne(r.id)}>补</Button>
+                  </Tooltip>
+                ) : (
+                  <Tooltip title={r.sex_report_hint || "自动生成性别报告的条件不满足，可手工上传"}>
+                    <Button size="small" disabled>补</Button>
+                  </Tooltip>
+                )}
+                <Tooltip title="上传额外报告 Word（.docx）">
+                  <Button size="small" icon={<UploadOutlined />} onClick={() => pickSexReport(r, "word")} />
+                </Tooltip>
+              </Space>
             )}
             {r.report_file_sex_pdf_url ? (
               <Tooltip title="下载额外报告 PDF">
@@ -1232,6 +1280,9 @@ ${histLine(h)}`}>
                   ) : null;
                 })()}
                 <Button type="primary" icon={<FileAddOutlined />} ghost onClick={openGenerate}>生成报告</Button>
+                <Tooltip title="只补「孕期胎儿性别报告」，主报告一个字不改、不标记 PDF 过期">
+                  <Button loading={sexBusy} disabled={!selectedBatch} onClick={genSexAll}>补性别报告</Button>
+                </Tooltip>
               </Space>
             </div>
             {dupPtGroups.length > 0 && (

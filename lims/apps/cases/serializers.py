@@ -2319,6 +2319,41 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
     report_file_sex_url = serializers.SerializerMethodField()     # 2026-10-21 额外报告（性别）Word
     report_file_sex_pdf_url = serializers.SerializerMethodField() # 2026-10-21 额外报告（性别）PDF
     report_reviewer_name = serializers.SerializerMethodField()
+    # 2026-11-18：能否「只补性别报告」（前端据此显示补录按钮）
+    sex_report_ready = serializers.SerializerMethodField()
+    sex_report_hint = serializers.SerializerMethodField()
+
+    def _sex_state(self, obj):
+        """(能不能补, 原因) —— 与 generate_sex_reports / 渲染器同一口径。"""
+        try:
+            from .report_gen.service import channel_of
+            from .report_gen.core import fetal_sex_from_y_ratio
+            from .report_gen.render_hk import SEX_BY_VERSION
+        except Exception:                              # noqa: BLE001
+            return False, "报告引擎不可用"
+        rv = (obj.case.report_version or "").strip() if obj.case else ""
+        if not rv:
+            return False, "案例未设置报告版本"
+        ch = channel_of(rv)
+        if ch == "wj":
+            return False, "国内报告没有性别报告模板"
+        if ch == "hk" and rv not in SEX_BY_VERSION:
+            return False, "报告版本 %r 没有性别报告模板" % rv
+        if ch not in ("hk", "br"):
+            return False, "报告版本 %r 不支持性别报告" % rv
+        if str(obj.case.mother_gender_info() or "").strip() != "Yes":
+            return False, "「额外信息」不是「是」"
+        sex = fetal_sex_from_y_ratio(getattr(obj, "mother_y_ratio", None))
+        if sex not in ("M", "F"):
+            return False, "性别无法判定（%s）" % ("临界" if sex == "uncertain" else "空")
+        return True, ""
+
+    def get_sex_report_ready(self, obj):
+        return self._sex_state(obj)[0]
+
+    def get_sex_report_hint(self, obj):
+        # _sex_state 的第二个返回值；放这里是因为 _sex_state 是私有方法
+        return self._sex_state(obj)[1]
     report_auditor_name = serializers.SerializerMethodField()
 
     def get_report_reviewer_name(self, obj):
@@ -2513,6 +2548,7 @@ class NipptBioinfoPairSerializer(serializers.ModelSerializer):
             "note", "report_data",
             "report_file", "report_file_url", "report_file_pdf_url", "report_pdf_stale",
             "report_file_sex", "report_file_sex_url", "report_file_sex_pdf_url",
+            "sex_report_ready", "sex_report_hint",
             "report_reviewer", "report_reviewer_name",
             "report_auditor", "report_auditor_name", "report_note", "report_version",
             "has_appendix", "appendix_file_url",

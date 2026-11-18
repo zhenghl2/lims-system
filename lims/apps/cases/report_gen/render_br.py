@@ -90,3 +90,21 @@ def render(row, appendix_path, tpl_dir, out_dir="."):
         generated.append(sex_name)
 
     return generated, None
+
+
+def render_sex_only(row, tpl_dir, out_dir):
+    """只渲染巴西「Sexagem Fetal」（2026-11-18）。
+
+    不跑 REQUIRED_COLS 校验（管号 ID 等主报告必填项与性别报告无关）。
+    """
+    if str(row.get("gender_info") or "").strip() != "Yes":
+        return None, "「额外信息」不是「是」→ 不出性别报告"
+    sex = str(row.get("gender") or "").strip()
+    if sex not in ("M", "F"):
+        return None, "性别无法判定（%s）" % ("临界" if sex == "uncertain" else (sex or "空"))
+    ctx = dict(row)
+    tpl = DocxTemplate(os.path.join(tpl_dir, TPL_SEX))
+    tpl.render(ctx)
+    name = "Laudo - %s - Sexagem Fetal.docx" % (ctx.get("case_id", "") or "")
+    tpl.save(os.path.join(out_dir, name))
+    return name, None

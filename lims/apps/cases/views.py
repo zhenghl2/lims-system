@@ -5270,6 +5270,60 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
         return Response({"batch": batch.batch_number, "generated": generated, "skipped": skipped,
                          "count": len(generated), "skipped_count": len(skipped)})
 
+    @action(detail=True, methods=["post"])
+    def generate_sex_reports(self, request, pk=None):
+        """只补「孕期胎儿性别报告」（2026-11-18）。
+
+        与 generate_reports 的区别：
+        - 只渲染性别模板 → 只写 report_file_sex，主报告 report_file 一个字不动
+        - 不标记 report_pdf_stale（主报告 PDF 仍然有效）
+        - 不要求附表：性别模板只用到母亲/日期/编号
+        条件：报告版本有性别模板（海外 11 版 / 巴西）＋「额外信息」=是＋性别可判定（M/F）。
+        """
+        import tempfile as _tempfile
+        from .report_gen import service as _rs
+        from .report_gen.source_db import build_row
+        from .report_gen.render_hk import render_sex_only as _hk_sex
+        from .report_gen.render_br import render_sex_only as _br_sex
+
+        batch = self.get_object()
+        ids = request.data.get("pair_ids") or request.data.get("ids") or []
+        qs = batch.pairs.select_related("case", "mother_sample", "father_sample")
+        if ids:
+            qs = qs.filter(id__in=ids)
+        out_dir = _tempfile.mkdtemp(prefix="nippt_sex_")
+        generated, skipped = [], []
+        for pair in qs:
+            base = self._pair_brief(pair)
+            rv = (pair.case.report_version or "").strip()
+            ch = _rs.channel_of(rv)
+            if ch not in ("hk", "br"):
+                skipped.append(dict(base, reason="报告版本 %r 没有性别报告模板" % (rv or "空")))
+                continue
+            row = build_row(pair)
+            tpl_dir = os.path.join(_rs.TEMPLATES_DIR, ch)
+            try:
+                name, why = (_hk_sex if ch == "hk" else _br_sex)(row, tpl_dir, out_dir)
+            except Exception as exc:                       # noqa: BLE001
+                name, why = None, "渲染异常: %s" % exc
+            if not name:
+                skipped.append(dict(base, reason=why))
+                continue
+            try:
+                _rs.save_sex_only(pair, os.path.join(out_dir, name), request.user)
+            except Exception as exc:                       # noqa: BLE001
+                skipped.append(dict(base, reason="保存失败: %s" % exc))
+                continue
+            generated.append(dict(base, files=[name]))
+        try:
+            log_audit(request, "GENERATE_SEX_REPORTS", batch,
+                      {"generated": len(generated), "skipped": len(skipped)})
+        except Exception:                                  # noqa: BLE001
+            pass
+        return Response({"batch": batch.batch_number, "generated": generated,
+                         "skipped": skipped, "count": len(generated),
+                         "skipped_count": len(skipped)})
+
     @action(detail=True, methods=["get"], url_path="report-zip")
     def report_zip(self, request, pk=None):
         """把本批次已生成的报告打包下载（可选 pair_ids 过滤）。"""
