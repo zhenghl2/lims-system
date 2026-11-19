@@ -364,7 +364,8 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
       const idxNum = parseInt(idxVal)||0;
       const padded = String(idxNum||"").padStart(3,"0");
       const seq = INDEX_LOOKUP[padded] || {i7:"",i5:""};
-      const uploadId = chip+"_"+padded+"_"+(s.test_sample_id||"-");
+      // 2026-11-18：与页面「上传ID」列同一口径（chip 前缀）
+      const uploadId = "chip"+chip+"_"+padded+"_"+(s.test_sample_id||"-");
       return uploadId+","+seq.i7+","+seq.i5+",";
     });
     const csv = "\uFEFF" + header + "\n" + rows.join("\n");
@@ -688,7 +689,8 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                         const seq = INDEX_LOOKUP[padded] || {i7:"",i5:""};
                         const chip = selectedBatch.hyb_seq_data?.chip_number || selectedBatch.batch_number;
                         const ptId = s.test_sample_id||"-";
-                        const uploadId = chip+"_"+padded+"_"+ptId;
+                        // 2026-11-18（用户口径）：上传ID 前面固定加 chip 前缀 → chip7055_002_PT72467W
+                        const uploadId = "chip"+chip+"_"+padded+"_"+ptId;
 
   return (
                           <tr key={i} style={{background:i%2===0?"#e8f5e9":"#fafafa"}}>
@@ -729,7 +731,7 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
                   )}
                   {hybIndexCheck.empty > 0 && (
                     <Alert type="warning" showIcon style={{marginTop:8}}
-                      message={`有 ${hybIndexCheck.empty} 个样本未填 Index —— 上传ID 会退化成行号（如 ${'chip'}_005_PTxxxx），请到上游「汇」模块补填`} />
+                      message={`有 ${hybIndexCheck.empty} 个样本未填 Index —— 上传ID 会退化成行号（如 chip7055_005_PTxxxx），请到上游「汇」模块补填`} />
                   )}
                 </div>
               </Card>
