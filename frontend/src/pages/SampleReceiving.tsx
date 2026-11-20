@@ -5,7 +5,7 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
   Table, Button, Tag, Input, Select, Space, Typography, message,
-  Modal, Tabs, Row, Col, Image, Tooltip, Segmented, Alert, Checkbox,
+  Modal, Tabs, Row, Col, Image, Tooltip, Segmented, Alert, Checkbox, Radio,
 } from "antd";
 import {
   CheckOutlined, CloseOutlined, CameraOutlined, PlusOutlined,
@@ -146,6 +146,8 @@ interface CaseSampleRow {
   receivedByName: string;
   receiptLocation: string;
   workflowStage: string;
+  isBackup?: boolean;           // 2026-11-20 备用样本（签收后挂起，不进前处理待处理）
+  backupReleased?: boolean;     // 备用样本是否已启用
   personTypes: string[];        // 该人（同案例+同角色+同姓名）已存在的样本类型集合
   caseHasPhoto?: boolean;
   idCard?: string;
@@ -254,6 +256,7 @@ export default function SampleReceiving() {
   const [supTarget, setSupTarget] = useState<CaseSampleRow | null>(null);
   const [supTypes, setSupTypes] = useState<string[]>([]);
   const [supRepeat, setSupRepeat] = useState(false);      // 2026-11-06：同类型重采
+  const [supBackup, setSupBackup] = useState(false);      // 2026-11-20：用途=备用样本
   const [supLoading, setSupLoading] = useState(false);
 
   // Reject Modal
@@ -307,6 +310,8 @@ export default function SampleReceiving() {
           collectionNotes: c.notes || cs.collection_notes || "",
           status: cs.sample_status || "REGISTERED",
           workflowStage: cs.workflow_stage || "",
+          isBackup: !!cs.is_backup,
+          backupReleased: !!cs.backup_released,
           image: cs.receipt_photo_url || null,
           ptBase: c.pt_number ? c.pt_number.replace(/^PT/i, "") : "",
           ptBaseOriginal: c.pt_number ? c.pt_number.replace(/^PT/i, "") : "",
@@ -811,6 +816,7 @@ export default function SampleReceiving() {
     if (row.received || row.status === "REJECTED") return;
     setSupTypes([]);
     setSupRepeat(false);                                 // 2026-11-06：重采开关默认关
+    setSupBackup(false);                                 // 2026-11-20：用途默认补样
     setSupTarget(row);
   };
 
@@ -826,7 +832,8 @@ export default function SampleReceiving() {
         case_sample_id: supTarget.csId,
         sample_types: supTypes,
         pt_number: supTarget.ptBase ? `PT${supTarget.ptBase}` : undefined,
-        allow_repeat: supRepeat,                         // 重采：允许再建一条同类型样本
+        allow_repeat: supRepeat || supBackup,            // 备用样本天然同人同类型，按重采口径编号
+        is_backup: supBackup,                            // 2026-11-20：备用样本（签收后挂起）
       });
       const created = resp?.data?.created || [];
       const skipped = resp?.data?.skipped || [];
@@ -837,7 +844,7 @@ export default function SampleReceiving() {
             return x.test_sample_id ? `${nm}（${x.test_sample_id}）` : nm;
           })
           .join("、");
-        message.success(`已新增补样：${names} —— 待签收，随本批一起签收`, 6);
+        message.success(`已新增${supBackup ? "备用样本" : "补样"}：${names} —— 待签收，随本批一起签收`, 6);
       }
       if (skipped.length) {
         const sk = skipped
@@ -1079,10 +1086,19 @@ export default function SampleReceiving() {
         ),
     },
     {
-      title: "状态", dataIndex: "status", key: "status", width: 80,
-      render: (v: string) => {
+      title: "状态", dataIndex: "status", key: "status", width: 110,
+      render: (v: string, r: CaseSampleRow) => {
         const t = STATUS_TAGS[v] || { color: "default", label: v };
-        return <Tag color={t.color}>{t.label}</Tag>;
+        return (
+          <Space size={2} wrap>
+            <Tag color={t.color}>{t.label}</Tag>
+            {r.isBackup && (
+              <Tag color={r.backupReleased ? "green" : "orange"}>
+                {r.backupReleased ? "备用·已启用" : "备用·未启用"}
+              </Tag>
+            )}
+          </Space>
+        );
       },
     },
     {
@@ -1428,7 +1444,7 @@ export default function SampleReceiving() {
       <Modal
         open={!!supTarget}
         title={supTarget ? `新增补样（待签收）— ${supTarget.patientName}（${supTarget.caseNumber}）` : ""}
-        onCancel={() => { setSupTarget(null); setSupTypes([]); setSupRepeat(false); }}
+        onCancel={() => { setSupTarget(null); setSupTypes([]); setSupRepeat(false); setSupBackup(false); }}
         onOk={submitReceiptSupplement}
         confirmLoading={supLoading}
         okText="确认新增"
@@ -1440,6 +1456,26 @@ export default function SampleReceiving() {
             新增的样本按「补样」登记为 <span style={{ fontWeight: 600 }}>待签收</span>，
             签收状态与加号所在行一致（不会提前签收）；PT 号、照片可在签收前继续修改，
             签收人 / 签收地随本批签收时按行选择。已登记的类型不会重复建档；如需同类型再采一次，勾选「重采」。
+          </div>
+          <div>
+            <Text strong style={{ display: "block", marginBottom: 6 }}>用途</Text>
+            <Radio.Group
+              value={supBackup ? "BACKUP" : "NORMAL"}
+              onChange={(e) => {
+                const bk = e.target.value === "BACKUP";
+                setSupBackup(bk);
+                if (bk) setSupRepeat(true);   // 备用=同人同类型再来一管，必须按重采口径编号
+              }}
+            >
+              <Radio value="NORMAL">补样（正常做实验）</Radio>
+              <Radio value="BACKUP">备用样本（先挂起，原样本失败时才启用）</Radio>
+            </Radio.Group>
+            {supBackup && (
+              <div style={{ marginTop: 6, fontSize: 12, color: "#874d00" }}>
+                备用样本签收后 <b>不进前处理待处理列表</b>，要启用请到「案例管理 → 该样本卡片 → 启用备用」；
+                PT 号按补样规则给，撞号自动 <b>{"_R{n}"}</b>。
+              </div>
+            )}
           </div>
           <div>
             <Checkbox

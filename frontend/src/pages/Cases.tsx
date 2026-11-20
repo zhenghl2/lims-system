@@ -124,6 +124,9 @@ export default function Cases() {
   const [drawerLoading, setDrawerLoading] = useState(false);
   const [redoOpen, setRedoOpen] = useState(false);
   const [redoTarget, setRedoTarget] = useState<any>(null);
+  // 2026-11-20 备用样本：启用（进入前处理待处理，原样本一律不动）
+  const [backupTarget, setBackupTarget] = useState<any>(null);
+  const [backupSaving, setBackupSaving] = useState(false);
   const [sampleHistory, setSampleHistory] = useState<any>({});
   const [historyOpen, setHistoryOpen] = useState<Set<string>>(new Set());
   const [caseAudit, setCaseAudit] = useState<any[] | null>(null);   // null=未加载
@@ -327,6 +330,26 @@ export default function Cases() {
       loadData();
     } catch (e: any) {
       message.error(String(e?.response?.data?.detail || "操作失败"));
+    }
+  };
+
+  /** 2026-11-20：启用备用样本 → 进入前处理待处理列表（原样本不删除/不作废/不改阶段） */
+  const doReleaseBackup = async () => {
+    if (!backupTarget) return;
+    setBackupSaving(true);
+    try {
+      await (casesApi as any).releaseBackup(backupTarget.caseId, {
+        case_sample_id: backupTarget.csId,
+      });
+      message.success(`备用样本 ${backupTarget.testSampleId} 已启用，已进入前处理待处理列表`);
+      const r = await casesApi.get(backupTarget.caseId);
+      setSelectedCase(r.data);
+      setBackupTarget(null);
+    } catch (e: any) {
+      const d = e?.response?.data;
+      message.error((Array.isArray(d) ? d[0] : d?.detail) || "启用失败");
+    } finally {
+      setBackupSaving(false);
     }
   };
 
@@ -991,6 +1014,18 @@ export default function Cases() {
                         <Button size="small" danger onClick={() => doResample(selectedCase!.id, cs.id)}>重采</Button>
                       </Space>
                     )}
+                    {cs.is_backup && (
+                      <Tag color={cs.backup_released ? "green" : "orange"} style={{fontSize:11}}>
+                        {cs.backup_released ? "备用·已启用" : "🅿️ 备用·未启用"}
+                      </Tag>
+                    )}
+                    {cs.is_backup && !cs.backup_released && cs.sample_status === "RECEIVED" && (
+                      <Button size="small" type="primary" ghost onClick={() => setBackupTarget({
+                        caseId: selectedCase!.id, csId: cs.id,
+                        testSampleId: cs.test_sample_id || cs.sample_id,
+                        patientName: cs.patient_name,
+                      })}>启用备用</Button>
+                    )}
                     {cs.plasma_tubes != null && (
                       <Tag color="red" style={{fontSize:11}}>🩸 血浆 {cs.plasma_tubes} 管</Tag>
                     )}
@@ -1235,6 +1270,36 @@ export default function Cases() {
             onPressEnter={doSave} autoFocus />
         </Modal>
       </Drawer>
+
+      {/* 启用备用样本（2026-11-20） */}
+      <Modal
+        title="启用备用样本"
+        open={!!backupTarget}
+        onCancel={() => setBackupTarget(null)}
+        onOk={doReleaseBackup}
+        confirmLoading={backupSaving}
+        okText="确认启用"
+        cancelText="取消"
+        destroyOnClose
+      >
+        {backupTarget && (
+          <div style={{ fontSize: 13, lineHeight: 1.9 }}>
+            <div style={{ marginBottom: 8 }}>
+              备用样本：<Text code>{backupTarget.testSampleId}</Text>
+              （{backupTarget.patientName}）
+            </div>
+            <ul style={{ paddingLeft: 18, marginBottom: 8 }}>
+              <li>启用后进入 <b>前处理 → 新建批次</b> 的待处理列表</li>
+              <li>原样本 <b>一律不动</b>（不删除、不作废、阶段不变），原样本可继续做/重做复核</li>
+              <li>同一人同一时刻只允许启用一份备用</li>
+            </ul>
+            <div style={{ background: "#fffbe6", border: "1px solid #ffe58f", borderRadius: 4,
+                          padding: "6px 10px", fontSize: 12, color: "#874d00" }}>
+              请确认原样本确实需要这条备用（原样本正常出结果时本不必启用）。
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Redo Modal */}
       <Modal title="重做样本" open={redoOpen} onCancel={() => setRedoOpen(false)} onOk={doRedo} okText="确认重做" width={560}>

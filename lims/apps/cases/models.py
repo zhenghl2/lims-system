@@ -159,20 +159,26 @@ class Case(models.Model):
         # 全部样本被拒收 → REJECTED（放在空检查前，兼容全拒收场景）
         if all(cs.sample.status == "REJECTED" for cs in css):
             return "REJECTED"
-        active = [cs for cs in css if cs.is_active and cs.sample.status != "REJECTED"]
+        # 2026-11-20：挂起中的备用样本（is_backup 且未启用）完全不参与案例状态推导。
+        # 否则「原样本已完成 + 备用挂起」会把案例永远压在 RECEIVED；重采判定也会被误触发。
+        held_ids = {cs.id for cs in css if cs.is_backup and not cs.backup_released}
+        active = [cs for cs in css
+                  if cs.is_active and cs.sample.status != "REJECTED" and cs.id not in held_ids]
         if not active:
-            active = [cs for cs in css if cs.sample.status != "REJECTED"]
+            active = [cs for cs in css
+                      if cs.sample.status != "REJECTED" and cs.id not in held_ids]
         if not active:
             return "REGISTERED"
 
-        # 有待签收的重采样本 → 有重采（重采样本被签收后自动转具体进度）
-        if any(cs.resample_of_id and cs.sample.status == "REGISTERED" for cs in css):
+        # 有待签收的重采样本 → 有重采（重采样本被签收后自动转具体进度；挂起备用不算）
+        if any(cs.resample_of_id and cs.sample.status == "REGISTERED" and cs.id not in held_ids
+               for cs in css):
             return "HAS_RESAMPLE"
 
         # 已被有效重采处理的原失败样本不再压状态（重采样本本身被拒收的不算已处理）
         resampled_origin_ids = set(
             cs.resample_of_id for cs in css
-            if cs.resample_of_id and cs.sample.status != "REJECTED"
+            if cs.resample_of_id and cs.sample.status != "REJECTED" and cs.id not in held_ids
         )
         if any((cs.workflow_stage or "").endswith("_FAILED") for cs in active
                if cs.id not in resampled_origin_ids):
@@ -431,6 +437,19 @@ class CaseSample(models.Model):
         default=False,
         help_text="重做激活标志：用其他样本重做时置True，出现在前处理待做列表，进入前处理批次后自动清除"
     )
+    # ── 2026-11-20 备用样本（用户口径）──
+    #  建档：签收页「+新增补样」/ 登记页「补样」，用途选「备用样本」，PT 号建档即给（撞号 _R{n}）
+    #  签收后：is_backup=True & backup_released=False → 挂起，不进前处理待处理列表、不影响案例状态
+    #  启用：案例管理点「启用备用」→ backup_released=True，进入前处理待处理；原样本一律不动
+    is_backup = models.BooleanField(
+        default=False, db_index=True,
+        help_text="备用样本：签收后挂起，不进前处理待处理列表，需在案例管理手动启用"
+    )
+    backup_released = models.BooleanField(
+        default=False,
+        help_text="备用样本已启用：进入前处理待处理列表（原样本不变）"
+    )
+    backup_released_at = models.DateTimeField(null=True, blank=True)
     priority = models.IntegerField(default=0)
 
     created_at = models.DateTimeField(auto_now_add=True)

@@ -649,6 +649,7 @@ export default function NipptRegistration() {
           arrival_date: values.supp_arrival_date
             ? dayjs(values.supp_arrival_date).format("YYYY-MM-DD") : undefined,
           notes: values.supp_notes || "",
+          is_backup: values.supp_purpose === "BACKUP",
           gestational_age_weeks: values.supp_ga_weeks ?? null,
           gestational_age_days: values.supp_ga_days ?? null,
           multiple_gestation: values.supp_mg === "KEEP" ? null
@@ -1268,6 +1269,22 @@ export default function NipptRegistration() {
               <Col xs={24} sm={6}>
                 <Form.Item name="supp_arrival_date" label="到样日期" style={{ marginBottom: 8 }}>
                   <DatePicker style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="supp_purpose" label="用途" initialValue="NORMAL" style={{ marginBottom: 8 }}>
+                  <Select options={[
+                    { value: "NORMAL", label: "补样（正常实验）" },
+                    { value: "BACKUP", label: "备用样本（先挂起）" },
+                  ]} />
+                </Form.Item>
+              </Col>
+              <Col xs={24} sm={6}>
+                <Form.Item name="supp_purpose" label="用途" initialValue="NORMAL" style={{ marginBottom: 8 }}>
+                  <Select options={[
+                    { value: "NORMAL", label: "补样（正常实验）" },
+                    { value: "BACKUP", label: "备用样本（先挂起）" },
+                  ]} />
                 </Form.Item>
               </Col>
               <Col xs={24} sm={6}>

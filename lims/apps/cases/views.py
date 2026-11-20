@@ -1558,6 +1558,8 @@ class CaseViewSet(viewsets.ModelViewSet):
         received_by_name = (request.data.get("received_by_name") or "").strip()
         receipt_location = (request.data.get("receipt_location") or "").strip()
         pt_number = (request.data.get("pt_number") or "").strip()
+        # 2026-11-20：用途=备用样本（签收后挂起，原样本失败时才启用）
+        is_backup = str(request.data.get("is_backup")).lower() in ("1", "true", "yes", "on")
 
         if not src_id:
             raise ValidationError("case_sample_id is required")
@@ -1596,6 +1598,10 @@ class CaseViewSet(viewsets.ModelViewSet):
         # 前端勾「重采」后带 allow_repeat=true：不再把已登记类型丢进 skipped，
         # 而是照常建档；PT 号由 assign_supplement_test_id 自动判撞号 → _R{n}。
         allow_repeat = str(request.data.get("allow_repeat")).lower() in ("1", "true", "yes", "on")
+        # 备用样本天然是「同一个人 + 同一类型再来一管」，必须按重采口径建档（不跳过已登记类型），
+        # 这样 PT 号才会走 assign_supplement_test_id 的撞号逻辑 → _R{n}
+        if is_backup:
+            allow_repeat = True
         if allow_repeat:
             extras = list(types)
             skipped = []
@@ -1639,8 +1645,10 @@ class CaseViewSet(viewsets.ModelViewSet):
                         actual_sample_type=t,
                         workflow_stage="REGISTERED",  # 待签收
                         receipt_condition="",
-                        collection_notes=("签收补录新增重采样本（待签收）" if allow_repeat
-                                          else "签收补录新增补样（待签收）"),
+                        is_backup=is_backup,
+                        collection_notes=("签收补录新增备用样本（待签收，暂不实验）" if is_backup
+                                          else ("签收补录新增重采样本（待签收）" if allow_repeat
+                                                else "签收补录新增补样（待签收）")),
                     )
                     if has_pt:
                         # 案例已有 PT → 按补样规则立即补号（撞号自动 _R{n}）；
@@ -1659,7 +1667,8 @@ class CaseViewSet(viewsets.ModelViewSet):
                     (cs.get_sample_source_display() or cs.sample_source) for cs in created
                 )
                 case.notes = (case.notes + "\n" if case.notes else "") + \
-                    f"[签收补登] 新增补样 {labels}（待签收）"
+                    ("[签收补登] 新增备用样本 %s（待签收，暂不实验）" % labels if is_backup
+                     else f"[签收补登] 新增补样 {labels}（待签收）")
                 case.save(update_fields=["notes", "updated_at"])
                 case.update_status()
 
@@ -2084,6 +2093,67 @@ class CaseViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
         return out
+
+    @action(detail=True, methods=["post"], url_path="release-backup")
+    def release_backup(self, request, pk=None):
+        """启用备用样本：签收后挂起的备用样本 → 进入前处理待处理列表。
+
+        用户口径（2026-11-20）：
+        · 原样本一律不动（不删除、不作废 is_active、不改阶段）——原样本通常已 fail，
+          但可能还要重做复核；
+        · 原样本即使已出结果也允许启用，按「重做」口径处理（备用样本自己走一遍流程）；
+        · 同一人（同案例 + 同角色 + 同姓名）同一时刻只允许启用一份备用。
+        """
+        case = self.get_object()
+        cs_id = (request.data.get("case_sample_id") or request.data.get("cs_id") or "").strip()
+        cs = case.case_samples.filter(id=cs_id).select_related("sample").first() if cs_id else None
+        if not cs:
+            raise NotFound("CaseSample not found")
+        if not cs.is_backup:
+            raise ValidationError("该样本不是备用样本")
+        if cs.backup_released:
+            raise ValidationError("该备用样本已启用，无需重复操作")
+        if cs.sample.status != "RECEIVED":
+            raise ValidationError("备用样本尚未签收，请先在「样本签收」页签收后再启用")
+
+        pname = (cs.sample.patient_name or "").strip()
+        released_others = [
+            x for x in case.case_samples.filter(role=cs.role, is_backup=True, backup_released=True)
+            .exclude(id=cs.id).select_related("sample")
+            if (x.sample.patient_name or "").strip() == pname
+        ]
+        if released_others:
+            raise ValidationError(
+                "该人已有备用样本 %s 处于启用状态，请先完成/取消它再启用这一份"
+                % (released_others[0].test_sample_id or released_others[0].sample.sample_id))
+
+        with transaction.atomic():
+            cs.backup_released = True
+            cs.backup_released_at = timezone.now()
+            cs.reactivated = True                 # 与「重做/用该男性其他样本做」同一口径
+            cs.workflow_stage = "PRE_PROCESSING"
+            cs.save(update_fields=["backup_released", "backup_released_at",
+                                   "reactivated", "workflow_stage", "updated_at"])
+            WorkflowLog.objects.create(
+                case_sample=cs, stage="PRE_PROCESSING", action="REACTIVATE",
+                operator=request.user,
+                note="启用备用样本 → 进入前处理待处理（原样本未改动）")
+            case.notes = ((case.notes or "") + "\n" if case.notes else "") + \
+                "[启用备用] %s 进入前处理（原样本保持不动）" % (cs.test_sample_id or cs.sample.sample_id)
+            case.save(update_fields=["notes", "updated_at"])
+            # ⚠️ get_object() 预取了 case_samples，不清缓存 computed_status 会读到旧阶段
+            #    （实测：启用后案例状态仍停在 COMPLETED）
+            if hasattr(case, "_prefetched_objects_cache"):
+                case._prefetched_objects_cache.pop("case_samples", None)
+            case.update_status()
+
+        log_audit(request, "UPDATE", cs, changes={
+            "backup_released": {"old": False, "new": True},
+            "workflow_stage": {"old": "RECEIVED", "new": "PRE_PROCESSING"},
+            "reason": {"old": "", "new": "启用备用样本（原样本不动）"},
+        }, entity_type="casesample",
+            entity_repr="%s/%s" % (case.case_number, cs.sample_id))
+        return Response(CaseSampleSerializer(cs).data)
 
     @action(detail=True, methods=["post"])
     def resample(self, request, pk=None):
@@ -3195,6 +3265,8 @@ class NipptPreProcessingViewSet(NipptPhotosMixin, NipptBatchDeleteMixin, viewset
         # is_active=True：已被重做取代的失效样本不再进入候选（否则原始+重做会被合并处理）
         qs = CaseSample.objects.filter(
             sample__status="RECEIVED", is_active=True
+        ).exclude(
+            is_backup=True, backup_released=False      # 2026-11-20：挂起的备用样本不进待处理
         ).exclude(
             id__in=list(excluded_ids)[:10000] if excluded_ids else []
         ).select_related("case", "sample").order_by("case__case_number", "sample__patient_name")

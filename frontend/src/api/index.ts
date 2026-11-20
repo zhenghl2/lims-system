@@ -209,8 +209,11 @@ export const casesApi = {
   confirmReceipt: (id: string, data: ConfirmReceiptPayload) =>
     api.post(`/cases/${id}/confirm_receipt/`, data),
   // 签收时补录「实收比登记多出」的样本类型（按补样建档并直接计为已签收）
-  receiptSupplement: (id: string, data: { case_sample_id: string; sample_types: string[]; pt_number?: string; received_by_name: string; receipt_location: string }) =>
+  receiptSupplement: (id: string, data: { case_sample_id: string; sample_types: string[]; pt_number?: string; received_by_name: string; receipt_location: string; allow_repeat?: boolean; is_backup?: boolean }) =>
     api.post(`/cases/${id}/receipt-supplement/`, data),
+  // 2026-11-20 备用样本：案例管理里启用 → 进入前处理待处理（原样本不动）
+  releaseBackup: (id: string, data: { case_sample_id: string }) =>
+    api.post(`/cases/${id}/release-backup/`, data),
   dashboard: () => api.get<CaseDashboard>("/cases/dashboard/"),
   stats: (params?: Record<string, unknown>) =>
     api.get("/cases/stats/", { params }),

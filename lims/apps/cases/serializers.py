@@ -63,6 +63,7 @@ class CaseSampleSerializer(serializers.ModelSerializer):
             "test_sample_id", "resample_of", "resample_number",
             "redo_of", "redo_count",
             "workflow_stage", "is_active",
+            "is_backup", "backup_released", "backup_released_at",
             "arrival_date", "actual_sample_type", "preservation_method",
             "receipt_note",
             "rejection_reason", "rejection_note", "external_id",
@@ -659,6 +660,8 @@ class SupplementSerializer(serializers.Serializer):
     external_id = serializers.CharField(max_length=100, required=False, allow_blank=True)
     ethnicity = serializers.CharField(max_length=50, required=False, allow_blank=True)
     relationship_to_mother = serializers.CharField(max_length=50, required=False, allow_blank=True)
+    is_backup = serializers.BooleanField(required=False, default=False,
+                                         help_text="备用样本：签收后挂起，不进前处理待处理列表（2026-11-20）")
     notes = serializers.CharField(max_length=1000, required=False, allow_blank=True, default="",
                                   help_text="备注，存 CaseSample.collection_notes")
     # 2026-11-09（巴西报告需要）：补充样本也要登记证件号(RG) / 管号(ID do tubo)。
@@ -776,7 +779,9 @@ class SupplementSerializer(serializers.Serializer):
                 arrival_date=arrival_date,
                 ethnicity=ethnicity,
                 relationship_to_mother=relationship,
-                collection_notes=notes,
+                collection_notes=(("备用样本（暂不实验，需案例管理启用）：" + notes)
+                                  if validated_data.get("is_backup") else notes),
+                is_backup=bool(validated_data.get("is_backup")),
             )
             # PT 编号：
             # · 本次补样的第一个类型 → 正常分配（与既有样本撞号时按重采给 _R{n}）
