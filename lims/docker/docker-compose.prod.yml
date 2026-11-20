@@ -20,6 +20,12 @@ services:
     restart: unless-stopped
 
   worker:
+    profiles: ["disabled"]   # 2026-11-20 暂停：镜像 2026-05-14 构建缺 docxtpl，且无异步任务在跑
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     build:
       context: ../..
       dockerfile: lims/docker/Dockerfile.worker
@@ -36,6 +42,12 @@ services:
     restart: unless-stopped
 
   celery-beat:
+    profiles: ["disabled"]   # 2026-11-20 暂停：镜像 2026-05-14 构建缺 docxtpl，且无异步任务在跑
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
     build:
       context: ../..
       dockerfile: lims/docker/Dockerfile.worker
