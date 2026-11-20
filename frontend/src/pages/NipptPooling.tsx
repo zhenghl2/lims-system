@@ -389,10 +389,20 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     }catch{message.error("加载失败")}
   };
 
+  /** 2026-11-20：创建中锁（防连点建出重复批次） */
+  const [creating, setCreating] = useState(false);
   const createBatch = async()=>{
+    if(creating) return;
     if(selectedKeys.size===0 && selectedQCSrc.size===0){message.warning("请选择样本");return}
-    try{const r=await(casesApi as any).createPoolingBatch({case_sample_ids:Array.from(selectedKeys), qc_source_ids:Array.from(selectedQCSrc)});message.success(`批次 ${r.data.batch_number} 已创建`);setModalOpen(false);fetchBatches()}
+    setCreating(true);
+    try{
+      const r=await(casesApi as any).createPoolingBatch({case_sample_ids:Array.from(selectedKeys), qc_source_ids:Array.from(selectedQCSrc)});
+      if(r.data?.idempotent) message.info(`批次 ${r.data.batch_number} 已存在，未重复创建`);
+      else message.success(`批次 ${r.data.batch_number} 已创建`);
+      setModalOpen(false);fetchBatches();
+    }
     catch(e:any){message.error(e?.response?.data?.detail||"创建失败")}
+    finally{setCreating(false)}
   };
 
   /** 回车跳本列下一格（Mix 表：浓度/洗脱/投入；跨组自动衔接，到底停住） */
@@ -821,7 +831,9 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
           <div style={{textAlign:"center",paddingTop:100,color:"#999"}}><Title level={5} type="secondary">选择批次查看详情</Title><Button type="primary" icon={<PlusOutlined/>} onClick={openNewBatch}>新建Pooling批次</Button></div>
         )}
       </div>
-      <Modal title="新建文库定量及Pooling批次" open={modalOpen} onOk={createBatch} onCancel={()=>setModalOpen(false)} width={700} okText={`创建批次 (${selectedKeys.size}个样本)`}>
+      <Modal title="新建文库定量及Pooling批次" open={modalOpen} onOk={createBatch} onCancel={()=>setModalOpen(false)} width={700}
+        confirmLoading={creating} cancelButtonProps={{disabled:creating}}
+        okText={creating ? "创建中…" : `创建批次 (${selectedKeys.size}个样本)`}>
         {pendingData&&(<div>
           <div style={{marginBottom:12,padding:"8px 12px",background:"#f6ffed",borderRadius:6}}><Text strong>批次号：</Text><Text code style={{fontSize:16}}>{batchNumberPreview}</Text></div>
           <Space style={{marginBottom:8}} wrap><Tag color="magenta">👩 {visCount(true)}</Tag><Tag color="blue">👨 {visCount(false)}</Tag>

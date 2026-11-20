@@ -235,8 +235,12 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
     }catch{message.error("加载失败")}
   };
 
+  /** 2026-11-20：创建中锁（防连点建出重复批次） */
+  const [creating, setCreating] = useState(false);
   const createBatch = async()=>{
+    if(creating) return;
     if(selectedMixIds.size===0){message.warning("请选择mix");return}
+    setCreating(true);
     try{
       const mixIds = Array.from(selectedMixIds);
       const sources = mixIds.map(mid=>{
@@ -244,8 +248,11 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
         return pm?.mix_name || "";
       });
       const r=await(casesApi as any).createHybSeqBatch({mix_ids:mixIds, mix_sources:sources, chip_number:chipNumber});
-      message.success(`批次 ${r.data.batch_number} 已创建`); setModalOpen(false); fetchBatches();
+      if(r.data?.idempotent) message.info(`批次 ${r.data.batch_number} 已存在，未重复创建`);
+      else message.success(`批次 ${r.data.batch_number} 已创建`);
+      setModalOpen(false); fetchBatches();
     }catch(e:any){message.error(e?.response?.data?.detail||"创建失败")}
+    finally{setCreating(false)}
   };
 
   // Mix table computations
@@ -760,7 +767,9 @@ const [reviewers, setReviewers] = useState<Record<string,string[]>>({});
           <div style={{textAlign:"center",paddingTop:100,color:"#999"}}><Title level={5} type="secondary">选择批次查看详情</Title><Button type="primary" icon={<PlusOutlined/>} onClick={openNewBatch}>新建上机批次</Button></div>
         )}
       </div>
-      <Modal title="新建杂交测序批次" open={modalOpen} onOk={createBatch} onCancel={()=>setModalOpen(false)} width={650} okText={`创建批次 (${selectedMixIds.size}个mix)`}>
+      <Modal title="新建杂交测序批次" open={modalOpen} onOk={createBatch} onCancel={()=>setModalOpen(false)} width={650}
+        confirmLoading={creating} cancelButtonProps={{disabled:creating}}
+        okText={creating ? "创建中…" : `创建批次 (${selectedMixIds.size}个mix)`}>
         <div style={{marginBottom:12,padding:"8px 12px",background:"#f6ffed",borderRadius:6}}>
           <Text strong>批次号：</Text><Text code style={{fontSize:16}}>{batchNumberPreview}</Text>
         </div>

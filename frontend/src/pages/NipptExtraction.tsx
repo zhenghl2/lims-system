@@ -512,15 +512,21 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
     finally { setQcSearching(false); }
   };
 
+  /** 2026-11-20：创建中锁 —— 接口慢时连点会建出重复批次（第二个还会再扣一次血浆管） */
+  const [creating, setCreating] = useState(false);
   const createBatch = async () => {
+    if (creating) return;                              // 连点直接忽略
     if (selectedKeys.size === 0 && !selectedQC) { message.warning("请至少选择一个样本"); return; }
+    setCreating(true);
     try {
       const payload: any = { case_sample_ids: Array.from(selectedKeys) };
       if (selectedQC) payload.qc_sample_id = selectedQC.id;
       const res = await (casesApi as any).createExtractionBatch(payload);
-      message.success(`批次 ${res.data.batch_number} 已创建`);
+      if (res.data?.idempotent) message.info(`批次 ${res.data.batch_number} 已存在，未重复创建`);
+      else message.success(`批次 ${res.data.batch_number} 已创建`);
       setModalOpen(false); fetchBatches();
     } catch (e: any) { message.error(e?.response?.data?.detail || "创建失败"); }
+    finally { setCreating(false); }
   };
 
   /** 顶部计数：当前筛选可见的条目数（与分组标题同口径，条目数而非样本数） */
@@ -1725,7 +1731,8 @@ const [reviewersM, setReviewersM] = useState<Record<string,string[]>>({});
 
       {/* New Batch Modal */}
       <Modal title="新建核酸提取批次" open={modalOpen} onOk={createBatch} onCancel={() => setModalOpen(false)} width={750}
-        okText={`创建批次 (${selectedKeys.size + (selectedQC ? 1 : 0)}个样本)`}>
+        confirmLoading={creating} cancelButtonProps={{ disabled: creating }}
+        okText={creating ? "创建中…" : `创建批次 (${selectedKeys.size + (selectedQC ? 1 : 0)}个样本)`}>
         {pendingData && (<div>
           <div style={{ marginBottom: 12, padding: "8px 12px", background: "#f6ffed", borderRadius: 6 }}>
             <Text strong>批次号：</Text><Text code style={{ fontSize: 16 }}>{batchNumberPreview}</Text><Text type="secondary" style={{ marginLeft: 8 }}>（自动生成）</Text></div>

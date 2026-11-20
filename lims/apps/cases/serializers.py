@@ -1269,9 +1269,54 @@ class NipptExtractionBatchDetailSerializer(serializers.ModelSerializer):
             return True
         return False
 
+# ── 2026-11-20：建批次防重（同一批样本不能建两次）──────────────────────────
+NIPPT_DUP_WINDOW_MINUTES = 10
+
+
+def nippt_batch_sample_set(batch):
+    ids = set()
+    for sp in batch.samples.all():
+        for cid in (sp.case_sample_ids or []):
+            ids.add(str(cid))
+    return ids
+
+
+def nippt_find_identical_batch(model, sample_set):
+    """同阶段 10 分钟内、样本集合完全相同的 DRAFT/IN_PROGRESS 批次 → 幂等返回它。
+
+    用于吃掉「接口慢 + 用户连点」「两个标签页同时点」「前端重试」造成的重复提交：
+    命中时直接返回已有批次，不新建、不重复扣血浆管。
+    """
+    from datetime import timedelta
+    from django.utils import timezone as _tz
+    if not sample_set:
+        return None
+    since = _tz.now() - timedelta(minutes=NIPPT_DUP_WINDOW_MINUTES)
+    for b in model.objects.filter(status__in=["DRAFT", "IN_PROGRESS"], created_at__gte=since).order_by("-created_at"):
+        if nippt_batch_sample_set(b) == sample_set:
+            return b
+    return None
+
+
+def nippt_find_overlap_batch(model, sample_set):
+    """同阶段已有 DRAFT/IN_PROGRESS 批次里出现过的样本 → (批次, 重叠数)。"""
+    if not sample_set:
+        return None, 0
+    for b in model.objects.filter(status__in=["DRAFT", "IN_PROGRESS"]).order_by("-created_at"):
+        n = len(nippt_batch_sample_set(b) & sample_set)
+        if n:
+            return b, n
+    return None, 0
+
+
 class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
     case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True)
     qc_sample_id = serializers.UUIDField(required=False, allow_null=True, write_only=True)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["idempotent"] = bool(getattr(instance, "_nippt_idempotent", False))
+        return data
 
     class Meta:
         model = NipptExtractionBatch
@@ -1282,6 +1327,17 @@ class NipptExtractionBatchCreateSerializer(serializers.ModelSerializer):
         request = self.context["request"]
         case_sample_ids = validated_data.pop("case_sample_ids", [])
         qc_sample_id = validated_data.pop("qc_sample_id", None)
+        # 2026-11-20：防重复提交（双击/多窗口/网络重放）——相同样本集合只建一个批次
+        _set = {str(x) for x in case_sample_ids}
+        _same = nippt_find_identical_batch(NipptExtractionBatch, _set)
+        if _same is not None:
+            _same._nippt_idempotent = True
+            return _same
+        _prev, _n = nippt_find_overlap_batch(NipptExtractionBatch, _set)
+        if _prev is not None:
+            raise serializers.ValidationError({
+                "case_sample_ids": "这些样本已在待处理批次 %s（%d 个）里，请先完成或删除它"
+                                   % (_prev.batch_number, _n)})
         with transaction.atomic():
             batch_number = NipptExtractionBatch.generate_batch_number()
             batch = NipptExtractionBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
@@ -1475,6 +1531,11 @@ class NipptLibraryBatchDetailSerializer(serializers.ModelSerializer):
 class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
     case_sample_ids = serializers.ListField(child=serializers.CharField(), write_only=True, required=False, default=list)
     qc_source_ids = serializers.ListField(child=serializers.CharField(), write_only=True, required=False, default=list)
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["idempotent"] = bool(getattr(instance, "_nippt_idempotent", False))
+        return data
     class Meta:
         model = NipptLibraryBatch
         fields = ["id","batch_number","status","case_sample_ids","qc_source_ids"]
@@ -1483,6 +1544,17 @@ class NipptLibraryBatchCreateSerializer(serializers.ModelSerializer):
         request = self.context["request"]
         case_sample_ids = validated_data.pop("case_sample_ids",[])
         qc_source_ids = validated_data.pop("qc_source_ids", [])
+        # 2026-11-20：防重复提交（与提取同一口径）
+        _set = {str(x) for x in case_sample_ids}
+        _same = nippt_find_identical_batch(NipptLibraryBatch, _set)
+        if _same is not None:
+            _same._nippt_idempotent = True
+            return _same
+        _prev, _n = nippt_find_overlap_batch(NipptLibraryBatch, _set)
+        if _prev is not None:
+            raise serializers.ValidationError({
+                "case_sample_ids": "这些样本已在待处理批次 %s（%d 个）里，请先完成或删除它"
+                                   % (_prev.batch_number, _n)})
         with transaction.atomic():
             batch_number = NipptLibraryBatch.generate_batch_number()
             batch = NipptLibraryBatch.objects.create(batch_number=batch_number, status="DRAFT", created_by=request.user)
