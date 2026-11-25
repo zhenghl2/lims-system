@@ -6,6 +6,7 @@ from rest_framework import serializers
 from django.utils import timezone
 import datetime
 import re
+from .status_utils import case_progress_summary
 from .models import Case, CaseSample, NipptPreProcessingBatch, NipptPreProcessingSample, NipptPlasmaTubeLog
 
 
@@ -113,6 +114,7 @@ class CaseListSerializer(serializers.ModelSerializer):
     can_redo = serializers.SerializerMethodField()
     case_source = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
+    progress_groups = serializers.SerializerMethodField()
     case_samples = CaseSampleSerializer(many=True, read_only=True)
 
     class Meta:
@@ -120,7 +122,7 @@ class CaseListSerializer(serializers.ModelSerializer):
         fields = [
             "id", "case_number", "pt_number", "panel_code", "panel_name",
             "status", "status_display", "is_urgent",
-            "sample_count", "received_count", "mother_name", "can_redo", "progress",
+            "sample_count", "received_count", "mother_name", "can_redo", "progress", "progress_groups",
             "gestational_age_weeks", "gestational_age_days",
             "clinic_name", "sales_person", "report_version",
             "applicant", "case_source", "registration_type",
@@ -179,27 +181,17 @@ class CaseListSerializer(serializers.ModelSerializer):
                 if (cs.workflow_stage or "").endswith("_FAILED")]
 
     def get_progress(self, obj):
-        WORKFLOW_WEIGHT = {
-            "REGISTERED": 5, "RECEIVED": 12,
-            "PRE_PROCESSING": 22, "EXTRACTION": 35,
-            "LIBRARY_PREP": 48, "POOLING": 58,
-            "HYB_SEQ": 70, "BIOINFO": 82,
-            "REPORT_DRAFT": 92, "COMPLETED": 100,
-        }
-        css = obj.case_samples.all()
-        total_weight = 0
-        count = 0
-        for cs in css:
-            if not cs.is_active:
-                continue
-            stage = cs.workflow_stage or "REGISTERED"
-            if stage.endswith("_FAILED"):
-                continue
-            total_weight += WORKFLOW_WEIGHT.get(stage, 0)
-            count += 1
-        if count == 0:
-            return 0
-        return round(total_weight / count, 1)
+        """案例总进度：按人分组后取「最靠后那一组」的百分比（不再对全部样本求平均）。
+
+        2026-11-21 用户口径：同一人多种样本类型取最快的一份；组间取最靠后的组。
+        例 NIPPT-20261109-0021：母亲血液 92 / 疑父血液 92 / 疑父血痕 35
+        → 疑父组取 92、案例 92%（旧的「平均」给出 73%）。
+        """
+        return case_progress_summary(obj.case_samples.all())[1]
+
+    def get_progress_groups(self, obj):
+        """每个「人」一份进度明细（母亲 W + 各疑父 H/HB），前端用于双疑父分行显示。"""
+        return case_progress_summary(obj.case_samples.all())[2]
 
     def get_sample_count(self, obj):
         return len(obj.case_samples.all())
@@ -208,26 +200,12 @@ class CaseListSerializer(serializers.ModelSerializer):
         return sum(1 for cs in obj.case_samples.all() if cs.received_at is not None)
 
     def get_workflow_status(self, obj):
-        WORKFLOW_ORDER = [
-            "REGISTERED", "RECEIVED", "PRE_PROCESSING", "EXTRACTION",
-            "LIBRARY_PREP", "POOLING", "HYB_SEQ", "BIOINFO",
-            "REPORT_DRAFT", "COMPLETED"
-        ]
-        css = [cs for cs in obj.case_samples.all() if cs.is_active]
-        if not css:
-            css = list(obj.case_samples.all())
-        slowest = "REGISTERED"
-        slowest_idx = len(WORKFLOW_ORDER)
-        for cs in css:
-            stage = cs.workflow_stage or "REGISTERED"
-            if stage.endswith("_FAILED"):
-                continue
-            if stage in WORKFLOW_ORDER:
-                idx = WORKFLOW_ORDER.index(stage)
-                if idx < slowest_idx:
-                    slowest_idx = idx
-                    slowest = stage
-        return slowest
+        """案例状态：组内取最快、组间取最靠后；整组失败仍返回 HAS_FAILURE。
+
+        与 Case.computed_status（最慢样本口径）并存：列表页用这个新口径，
+        dashboard / 签收页继续用 Case.status，互不影响。
+        """
+        return case_progress_summary(obj.case_samples.all())[0]
 
 
 class CaseDetailSerializer(serializers.ModelSerializer):
@@ -242,13 +220,14 @@ class CaseDetailSerializer(serializers.ModelSerializer):
     all_samples_received = serializers.BooleanField(read_only=True)
     registration_url = serializers.SerializerMethodField()
     progress = serializers.SerializerMethodField()
+    progress_groups = serializers.SerializerMethodField()
     plasma_tube_logs = serializers.SerializerMethodField()
 
     class Meta:
         model = Case
         fields = [
             "id", "case_number", "pt_number", "panel", "panel_code", "panel_name",
-            "status", "status_display", "all_samples_received", "progress",
+            "status", "status_display", "all_samples_received", "progress", "progress_groups",
             "gestational_age_weeks", "gestational_age_days",
             "clinic_name", "clinic_contact", "sales_person", "report_version",
             "applicant", "phone", "email", "multiple_gestation",
@@ -318,6 +297,10 @@ class CaseDetailSerializer(serializers.ModelSerializer):
             if cs.sample and cs.sample.sample_source:
                 return cs.sample.sample_source
         return ""
+
+    def get_progress_groups(self, obj):
+        """与列表同口径的分组进度（母亲 W + 各疑父 H/HB）——2026-11-21。"""
+        return case_progress_summary(obj.case_samples.all())[2]
 
     def get_can_redo(self, obj):
         """Return list of CaseSample IDs that have a FAIL workflow stage."""

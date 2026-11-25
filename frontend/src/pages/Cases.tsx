@@ -85,6 +85,30 @@ const STATUS_DISPLAY: Record<string, string> = {
   REPORTED: "已报告", HAS_FAILURE: "有失败", HAS_RESAMPLE: "有重采", REJECTED: "已拒收",
 };
 
+const WORKFLOW_ORDER_UI = [
+  "REGISTERED", "RECEIVED", "PRE_PROCESSING", "EXTRACTION",
+  "LIBRARY_PREP", "POOLING", "HYB_SEQ", "BIOINFO",
+  "REPORT_DRAFT", "COMPLETED",
+];
+
+/** 2026-11-21：与后端 progress_groups 同口径 —— 组内取最快、组间取最靠后；整组失败 → 有失败。
+ *  列表与详情抽屉共用，保证两处显示一致。 */
+const caseAgg = (r: any) => {
+  const gs: any[] = r?.progress_groups || [];
+  if (!gs.length) return { stage: r?.status || "REGISTERED", percent: r?.progress || 0 };
+  const top = gs.reduce(
+    (a: any, b: any) =>
+      WORKFLOW_ORDER_UI.indexOf(b.stage) > WORKFLOW_ORDER_UI.indexOf(a.stage) ? b : a,
+    gs[0],
+  );
+  return {
+    stage: gs.some((g: any) => g.failed) ? "HAS_FAILURE" : top.stage,
+    percent: Math.max(...gs.map((g: any) => g.percent || 0)),
+  };
+};
+const aggStage = (r: any) =>
+  r?.status === "HAS_RESAMPLE" || r?.status === "REJECTED" ? r.status : caseAgg(r).stage;
+
 /** 时间统一北京时间（2026-10-16 修正）：接口返回 UTC(ISO, 带 Z)，
  *  原实现直接切字符串 → 显示 UTC，比北京时间少 8 小时；凌晨数据日期还可能差一天。
  *  改用 dayjs 按本地时区换算（与本文件 439 行现成写法一致）；非法值退回原行为。 */
@@ -415,11 +439,30 @@ export default function Cases() {
         r.sales_person ? <Text style={{ fontSize: 12 }}>{r.sales_person}</Text> : <Text type="secondary">-</Text>,
     },
     {
-      title: "状态", dataIndex: "status", width: 100,
+      // 2026-11-21：列表状态改用后端 workflow_status —— 按「人」分组，组内取最快的样本类型，
+      // 组间取最靠后的组（同一人寄了血液+血痕只用了一份时，不再被没做的那份压住）。
+      // 双疑父（HA/HB）分别显示各自状态；单疑父仍是案例聚合状态。
+      title: "状态", dataIndex: "workflow_status", width: 160,
       render: (_v: string, r: any) => {
-        const display = r.status_display || _v;
-        const color = STATUS_COLORS[r.status] || STATUS_COLORS[_v] || "default";
-        return <Tag color={color}>{display}</Tag>;
+        const fathers = (r.progress_groups || []).filter((g: any) => g.role === "ALLEGED_FATHER");
+        if (fathers.length > 1) {
+          return (
+            <Space size={2} wrap>
+              {fathers.map((g: any) => (
+                <Tag key={g.key} color={STATUS_COLORS[g.stage] || "default"}
+                     style={{ margin: 0, fontSize: 11 }}>
+                  {g.label} {STATUS_DISPLAY[g.stage] || g.stage}
+                </Tag>
+              ))}
+            </Space>
+          );
+        }
+        const st = r.workflow_status || r.status;
+        return (
+          <Tag color={STATUS_COLORS[st] || "default"}>
+            {STATUS_DISPLAY[st] || r.status_display || st}
+          </Tag>
+        );
       },
     },
     {
@@ -472,8 +515,24 @@ export default function Cases() {
       render: (v: boolean) => v ? <Tag color="red">加急</Tag> : null,
     },
     {
-      title: "进度", dataIndex: "progress", width: 140, responsive: ["lg" as const],
-      render: (v: number) => <Progress percent={v || 0} size="small" />,
+      // 2026-11-21：双疑父时每个疑父一条进度条（母亲不单独占行）；单疑父保持一条（案例总进度 = 最靠后那一组）
+      title: "进度", dataIndex: "progress", width: 150, responsive: ["lg" as const],
+      render: (v: number, r: any) => {
+        const fathers = (r.progress_groups || []).filter((g: any) => g.role === "ALLEGED_FATHER");
+        if (fathers.length > 1) {
+          return (
+            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+              {fathers.map((g: any) => (
+                <div key={g.key} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span style={{ fontSize: 11, width: 20, color: "#999" }}>{g.label}</span>
+                  <Progress percent={g.percent || 0} size="small" style={{ margin: 0, flex: 1 }} />
+                </div>
+              ))}
+            </div>
+          );
+        }
+        return <Progress percent={v || 0} size="small" />;
+      },
     },
     {
       title: "签收时间", width: 100, responsive: ["lg" as const],
@@ -619,7 +678,9 @@ export default function Cases() {
           <Space>
             <Text strong code>{selectedCase.case_number}</Text>
             {selectedCase.pt_number && <Tag color="blue">{selectedCase.pt_number}</Tag>}
-            <Tag color={STATUS_COLORS[selectedCase.status]}>{STATUS_DISPLAY[selectedCase.status] || selectedCase.status}</Tag>
+            <Tag color={STATUS_COLORS[aggStage(selectedCase)]}>
+              {STATUS_DISPLAY[aggStage(selectedCase)] || aggStage(selectedCase)}
+            </Tag>
             {selectedCase.is_urgent && <Tag color="red">加急</Tag>}
             <Button
               size="small"
@@ -638,7 +699,8 @@ export default function Cases() {
       >
         {selectedCase && (
           <>
-            <Progress percent={selectedCase.progress || 0} style={{ marginBottom: 16 }} />
+            {/* 与列表同口径：最靠后那一组的百分比（不再对全部样本求平均） */}
+            <Progress percent={caseAgg(selectedCase).percent} style={{ marginBottom: 16 }} />
 
             <Collapse defaultActiveKey={["basic", "samples"]} size="small" style={{ marginBottom: 12 }}
               onChange={(keys: any) => {
