@@ -88,6 +88,21 @@ def pt_suffix_of(code, default="H"):
     return suffix, suffix_upper
 
 
+_CYCLE_SUFFIX_RE = re.compile(r"(?:_[RT]\d+)+$", re.I)
+
+
+def strip_cycle_suffix(code):
+    """去掉尾部「重采 _R{n} / 重做 _T{n}」循环后缀（可叠加、可乱序）；W/H/HA/HB 保留。
+
+    2026-11-25 用户口径：报告（含文件名）里不出现 R1/T1 这类循环后缀。
+        PT72650W_R1_T1 → PT72650W
+        PT72611W_R2    → PT72611W
+        PT72630H       → 原样
+    """
+    s = str(code or "").strip()
+    return _CYCLE_SUFFIX_RE.sub("", s)
+
+
 def strip_mother_w(code):
     """去掉母亲样本号的 W 后缀（只去紧跟 PT 数字的那个 W）。
 

@@ -19,6 +19,8 @@ import django  # noqa: E402
 
 django.setup()
 
+from core import strip_cycle_suffix  # noqa: E402
+
 from lims.apps.cases.models import Case, CaseSample, NipptBioinfoPair  # noqa: E402
 
 # 报告版本 → 渠道
@@ -148,7 +150,7 @@ def build_row(pair):
     ms = mother.sample if mother else None
     fs = father.sample if father else None
     rv = (case.report_version or "").strip()
-    vg_id = _pt_of(mother)
+    vg_id = strip_cycle_suffix(_pt_of(mother))       # 2026-11-25：报告里不出现 _R/_T
     # 样本类型 = 【该配对实际使用的父方样本】的 sample_source，并按报告版本语言化
     # （2026-10-13 用户确认；此前取的是母亲 → 报告该栏恒为 血液/BLOOD，男性材质错）
     from core import localize_sample_source
@@ -180,8 +182,8 @@ def build_row(pair):
         "vg_id": vg_id,
         "test_id": vg_id,
         "万基编号": vg_id,
-        "mother_test_id": (mother.test_sample_id if mother else "") or "",
-        "father_test_id": (father.test_sample_id if father else "") or "",
+        "mother_test_id": strip_cycle_suffix(mother.test_sample_id if mother else ""),
+        "father_test_id": strip_cycle_suffix(father.test_sample_id if father else ""),
         # 2026-11-03：多疑父（同案例多条配对、父方样本不同）→ 国内报告名加 a/b 区分
         "father_label": (getattr(pair, "father_label", "") or ""),
         "multi_father": _multi_father(pair),

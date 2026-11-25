@@ -17,6 +17,7 @@ from docxtpl import DocxTemplate
 from core import (check_consistency, fmt_date, norm_result, parse_appendix,
                   strip_mother_w,
                   translate_posi)
+from core import strip_cycle_suffix
 
 TEMPLATE_FILES = {
     ("WJ", False): "WJPT_template.docx",
@@ -42,7 +43,7 @@ def _posi_cn(rec):
 def render(row, appendix_path, tpl_dir, out_dir="."):
     """返回 (生成的文件名列表, 跳过原因 或 None)。"""
     ctx = dict(row)
-    code = str(ctx.get("万基编号", "") or "")
+    code = strip_cycle_suffix(str(ctx.get("万基编号", "") or ""))   # 2026-11-25：去 _R/_T
     if not code:
         return [], "缺少万基编号"
     wq_label = str(ctx.get("编号", "") or "")[:2]
@@ -98,7 +99,7 @@ def render(row, appendix_path, tpl_dir, out_dir="."):
     # WJPT72570W + HA → WJPT72570a；单疑父保持原样 WJPT72570W
     # 2026-11-13（用户口径）：文件名里的母亲号去掉 W 后缀
     #   PT72573W → PT72573；PT72573W_R1 → PT72573_R1；WQ 编号不受影响
-    base_code = strip_mother_w(base_code)
+    base_code = strip_cycle_suffix(strip_mother_w(base_code))   # 2026-11-25：文件名也不带 _R/_T
 
     _flabel = str(ctx.get("father_label") or "").strip().upper()
     _suf = str(ctx.get("father_suffix") or "")

@@ -18,6 +18,7 @@ from docxtpl import DocxTemplate
 from core import (SEX_M_THRESHOLD, check_consistency, fmt_date, fmt_date_lang,
                   strip_mother_w,
                   norm_result, parse_appendix, pt_prefix_of, pt_suffix_of, translate_posi)
+from core import strip_cycle_suffix
 
 DATE_COLS = ["report_date", "collection_date", "received_date"]
 
@@ -112,15 +113,16 @@ def render(row, appendix_path, tpl_dir, out_dir=".", sex_override=None):
     # 男女样本号直接用各自的 test_sample_id（2026-10-21 修正）：
     # 原来男样本号是 pt_id + pt_suffix_of(vg_id)，而 vg_id 是母亲号（PT72046W），
     # pt_suffix_of 会把非 H 开头的前缀补成 "HW" → 报告里出现 PT72046HW。
-    _father_code = str(ctx.get("father_test_id") or "").strip()
-    _mother_code = str(ctx.get("mother_test_id") or "").strip()
+    # 2026-11-25：展示用编号去掉 _R{n}/_T{n}（PT72650W_R1_T1 → PT72650W）
+    _father_code = strip_cycle_suffix(str(ctx.get("father_test_id") or "").strip())
+    _mother_code = strip_cycle_suffix(str(ctx.get("mother_test_id") or "").strip())
     _, suffix_upper = pt_suffix_of(_father_code or vg_id)
     ctx["pt_suffix_upper"] = suffix_upper
     ctx["female_id"] = _mother_code or (ctx["pt_id"] + "W")
     ctx["male_id"] = _father_code or (ctx["pt_id"] + "H")
     # 2026-11-13（用户口径）：Test ID 去掉母亲号 W 后缀
     #   VGHK202610PT72528W → VGHK202610PT72528（Sample ID 列仍保留 W/H）
-    _tid_code = strip_mother_w(vg_id)
+    _tid_code = strip_mother_w(strip_cycle_suffix(vg_id))
     ctx["report_id"] = "VGHK" + date_short + _tid_code
     # 2026-11-10（用户口径）：泰国报告的出生日期按「登记时怎么填就怎么出」。
     # 登记时原样文本存在 sample.patient_dob_text（例：14 Jul 1998 / 31/12/2005）；

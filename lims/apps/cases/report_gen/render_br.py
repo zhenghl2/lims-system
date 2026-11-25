@@ -19,6 +19,7 @@ from docxtpl import DocxTemplate
 
 from core import (check_consistency, fmt_date, norm_result, parse_appendix,
                   strip_mother_w, translate_posi)
+from core import strip_cycle_suffix
 
 REQUIRED_COLS = ["case_id", "female_name", "RG_F", "ID do tubo-F", "male_name", "RG_M",
                  "ID do tubo-M", "report_date", "collection_date", "received_date", "FF", "result"]
@@ -72,7 +73,7 @@ def render(row, appendix_path, tpl_dir, out_dir="."):
     tpl.render(ctx)
     # 2026-11-13（用户口径）：文件名不带母亲号 W（PT72499W → PT72499）
     main_name = "Laudo - %s_%s - %s.docx" % (ctx["case_id"], ctx["result"],
-                                             strip_mother_w(ctx["test_id"]))
+                                             strip_mother_w(strip_cycle_suffix(ctx["test_id"])))
     tpl.save(os.path.join(out_dir, main_name))
     generated.append(main_name)
 
