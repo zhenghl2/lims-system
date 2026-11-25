@@ -3171,10 +3171,9 @@ class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
             for case_id, groups in case_samples_map.items():
                 has_mother = len(groups["MOTHER"]) > 0
                 has_father = len(groups["FATHER"]) > 0
-
-                if has_mother and has_father:
-                    continue
-
+                # 2026-11-20：原来「父母都在本批」直接 continue，导致同一案例的第二个疑父
+                #（分批测序、在别的杂交批次里）永远配不上、一直停在「生信」没有结果。
+                # 现在母亲侧仍只在缺失时补；疑父侧改为逐个判断（见下）。
                 case = Case.objects.get(id=case_id)
                 all_cs = case.case_samples.filter(
                     # 2026-11-18：加入 BIOINFO_FAILED（失败后需重新配对的男性）
@@ -3200,25 +3199,31 @@ class NipptBioinfoBatchCreateSerializer(serializers.ModelSerializer):
                             created_sample_map[str(hss.id)] = bs
                             groups["MOTHER"].append(bs)
 
-                if not has_father:
-                    existing_names = {f.patient_name for f in groups["FATHER"]}
-                    for cs in all_cs.filter(role="ALLEGED_FATHER"):
-                        if cs.sample.patient_name in existing_names:
-                            continue
-                        hss = NipptHybSeqSample.objects.filter(
-                            case_sample_ids__contains=[str(cs.id)],
-                            batch__status="COMPLETED", qc_status="PASS",
-                        ).select_related("batch").first()
-                        if hss and str(hss.id) not in created_sample_map:
-                            bs = NipptBioinfoSample.objects.create(
-                                batch=batch, case=case,
-                                patient_name=hss.patient_name, role="ALLEGED_FATHER",
-                                category=hss.category,
-                                case_sample_ids=hss.case_sample_ids,
-                                source_hybseq_sample_id=str(hss.id),
-                            )
-                            created_sample_map[str(hss.id)] = bs
-                            groups["FATHER"].append(bs)
+                # 疑父：本批没有这个人、且他还没有任何结果 → 从其它已完成杂交批次补进来配
+                existing_names = {f.patient_name for f in groups["FATHER"]}
+                for cs in all_cs.filter(role="ALLEGED_FATHER"):
+                    if cs.sample.patient_name in existing_names:
+                        continue
+                    # 已有结果的疑父不再补（避免给已出报告的人重复造报告）
+                    if NipptBioinfoPair.objects.filter(
+                        case_id=case_id,
+                        father_sample__patient_name=cs.sample.patient_name,
+                    ).exclude(result="").exists():
+                        continue
+                    hss = NipptHybSeqSample.objects.filter(
+                        case_sample_ids__contains=[str(cs.id)],
+                        batch__status="COMPLETED", qc_status="PASS",
+                    ).select_related("batch").first()
+                    if hss and str(hss.id) not in created_sample_map:
+                        bs = NipptBioinfoSample.objects.create(
+                            batch=batch, case=case,
+                            patient_name=hss.patient_name, role="ALLEGED_FATHER",
+                            category=hss.category,
+                            case_sample_ids=hss.case_sample_ids,
+                            source_hybseq_sample_id=str(hss.id),
+                        )
+                        created_sample_map[str(hss.id)] = bs
+                        groups["FATHER"].append(bs)
 
                 # Cross-batch pairing
                 for mother in groups["MOTHER"]:
