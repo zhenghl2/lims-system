@@ -4586,6 +4586,23 @@ def nippt_pipeline_parse_name(h_val, w_val):
     return pt_h, label, _pt(w_val)
 
 
+def nippt_father_label_ord(label):
+    """疑父标签 → 「第几个疑父」序号：H/HA=1、HB=2、HC=3…（无法判定返回 0）。
+
+    为什么要归一化：LIMS 里只有 1 个疑父时编号是 `PT123H`，有 2 个时是 `PT123HA` / `PT123HB`；
+    而测序管线文件对两个疑父一律生成 `..._PT123HA.unif` / `..._PT123HB.unif`。
+    只做字符串比较的话 `H` 与 `HA` 永远不等 → 上传结果会对不上号（2026-11-20 报障）。
+    """
+    t = str(label or "").strip().upper()
+    if not t:
+        return 0
+    if t == "H":
+        return 1
+    if len(t) == 2 and t[0] == "H" and t[1].isalpha():
+        return ord(t[1]) - ord("A") + 1
+    return 0
+
+
 def nippt_pt_norm(s):
     """PT 号归一化（去空白、转大写）用于匹配比较。"""
     import re as _re
@@ -5984,10 +6001,24 @@ class NipptBioinfoViewSet(NipptBatchDeleteMixin, viewsets.ModelViewSet):
             if has_f:
                 # ── 有疑父数据：按 PT 找配对（同 PT 多父时用文件名标签缩小）──
                 cands = pt_index.get(pt_key, [])
+                label_ord = nippt_father_label_ord(label)
                 if len(cands) == 1:
-                    pair = cands[0]
+                    # 2026-11-20：唯一配对也必须校验标签序号 —— 否则同一 PT 的 HA 行会把结果
+                    # 覆盖到 HB 上（该 PT 在本批次只有 HB 时，HA 的行会命中这唯一的配对）
+                    _only = cands[0]
+                    _only_ord = nippt_father_label_ord(_only.father_label)
+                    if label_ord and _only_ord and label_ord != _only_ord:
+                        errors.append(
+                            f"行 {i}: 文件疑父标签 '{label}'（第{label_ord}个疑父）与本批次该 PT 的唯一疑父 "
+                            f"'{_only.father_label}'（第{_only_ord}个）不符 → 已跳过，未覆盖已有结果")
+                        continue
+                    pair = _only
                 elif len(cands) > 1:
                     narrowed = [p for p in cands if (p.father_label or "").upper() == label]
+                    if len(narrowed) != 1 and label_ord:
+                        # H 与 HA 视为同一个（第 1 个疑父），HB=第 2 个…
+                        narrowed = [p for p in cands
+                                    if nippt_father_label_ord(p.father_label) == label_ord]
                     if len(narrowed) != 1:
                         errors.append(
                             f"行 {i}: PT={pt_key} 在本批次有 {len(cands)} 个疑父样本，标签='{label}' 无法唯一确定 → 已跳过")
